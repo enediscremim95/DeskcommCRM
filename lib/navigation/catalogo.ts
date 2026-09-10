@@ -465,8 +465,8 @@ export const NAV_CATALOG = [
   // ── QUEM FICA NO MENU, E POR QUÊ ─────────────────────────────────────────
   //
   // A régua é a FREQUÊNCIA de quem opera vendas por WhatsApp, não a importância
-  // da tela. As três de cima entram na rotina — o dono abre Desempenho para
-  // saber como vai o mês, Meta Ads para saber quanto custou trazer quem chegou,
+  // da tela. As três de cima entram na rotina — o dono abre Resultados para
+  // saber como vai o mês, Relatório para saber quanto custou trazer quem chegou,
   // e Atividades para saber se a equipe (e a IA) trabalhou no período. São
   // perguntas que se refazem toda semana, e um menu é para o que se refaz.
   //
@@ -502,6 +502,18 @@ export const NAV_CATALOG = [
     // pessoa — orçamento e criativo são da empresa inteira. Mesmo grau dos
     // outros dois vizinhos do grupo.
     sidebar: true,
+  },
+  {
+    // O Relatório responde à visão recorrente de custo por resultado. Meta Ads
+    // preserva o detalhe por campanha para uma análise deliberada, acessível no
+    // hub e na paleta sem voltar a ocupar o menu lateral.
+    href: "/app/ads/meta",
+    label: "Meta Ads",
+    description: "O desempenho detalhado das campanhas que trazem gente para cá.",
+    icon: "Megaphone",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "manager",
   },
   {
     // Irmã de "Desempenho", não a mesma coisa: lá é DESFECHO (funil agora,
