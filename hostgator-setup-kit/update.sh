@@ -42,7 +42,7 @@ setup_update_agent_cron
 # ── 1. Tem atualização mesmo? ────────────────────────────────────────────────
 step "Procurando atualizações"
 git fetch --tags --quiet origin 2>/dev/null || c_ylw "⚠ não consegui falar com o GitHub — sigo com o código que já está aqui."
-[ -n "$TARGET_TAG" ] || TARGET_TAG="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+[ -n "$TARGET_TAG" ] || TARGET_TAG="$(git tag -l 'v*-veritas.*' --sort=-v:refname | head -1)"
 [ -n "$TARGET_TAG" ] || die "Não encontrei nenhuma versão publicada para instalar."
 git rev-parse --verify --quiet "${TARGET_TAG}^{commit}" >/dev/null \
   || die "Não conheço a versão $TARGET_TAG aqui. Confira o nome (ex.: v1.1.0) ou tente de novo quando o servidor conseguir falar com o GitHub."

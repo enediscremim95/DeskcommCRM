@@ -5,7 +5,7 @@ name: release
 #   1. VOCÊ dispara "Run workflow" → ele lê `.changes/`, calcula o número, monta
 #      a seção do CHANGELOG e abre um PR de release em português dizendo o que
 #      vai sair. Nada é publicado ainda.
-#   2. VOCÊ faz merge desse PR → ele cria a tag `vX.Y.Z`, e é a tag que faz o
+#   2. No upstream, VOCÊ faz merge desse PR → ele cria a tag `vX.Y.Z`, e é a tag que faz o
 #      `publish-image.yml` publicar as três imagens que a VPS puxa.
 #
 # Quem escreve (branch, PR, tag) é o token de um GitHub App, NUNCA o
@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   abrir-pr-de-release:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.repository_owner == 'melgarafael' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -87,7 +87,7 @@ jobs:
             --title "Release ${VERSAO}" --body-file /tmp/corpo.md
 
   cortar-tag:
-    if: github.event_name == 'push'
+    if: github.repository_owner == 'melgarafael' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read

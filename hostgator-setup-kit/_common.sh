@@ -433,7 +433,7 @@ psql_run() { docker run --rm -i postgres:17-alpine psql "$(url_do_schema)" -v ON
 # `docker-compose.prod.yml`, `.env.hostgator.example` e a matriz de
 # `publish-image.yml` digam o mesmo. Se você é um fork, é lá que está a lista do
 # que trocar junto.
-IMG_NS="ghcr.io/melgarafael"
+IMG_NS="ghcr.io/enediscremim95"
 IMG_APP="${IMG_NS}/deskcommcrm"
 IMG_WORKER="${IMG_NS}/deskcomm-worker"
 IMG_SCHEDULER="${IMG_NS}/deskcomm-scheduler"
@@ -450,14 +450,14 @@ IMG_SCHEDULER="${IMG_NS}/deskcomm-scheduler"
 # alguém porque não deu para resolver um número de versão seria trocar um
 # problema de previsibilidade por um de disponibilidade.
 ultima_versao_publicada() {
-  local url="${1:-https://github.com/melgarafael/DeskcommCRM.git}" ref
+  local url="${1:-https://github.com/enediscremim95/DeskcommCRM.git}" ref
   command -v git >/dev/null 2>&1 || return 0
-  # `grep -v -- -` descarta PRERELEASE (v1.11.0-rc1, v1.1.1-jmpo.1 — esta última
-  # existe de verdade neste repo). O `--sort=-v:refname` do git põe o prerelease
-  # ACIMA do release final quando `versionsort.suffix` não está configurado, e
-  # uma instalação nova nasceria num release candidate sem ninguém pedir.
-  ref="$(git ls-remote --tags --refs --sort=-v:refname "$url" 'v*' 2>/dev/null \
-        | awk '{print $2}' | grep -v -- '-' | head -1)" || return 0
+  # Este fork só entrega tags `vX.Y.Z-veritas.N`. Tags sem o sufixo pertencem
+  # ao histórico do upstream e não podem escolher a imagem de uma VPS Veritas.
+  # `sort -V` mantém `veritas.10` depois de `veritas.9`.
+  ref="$(git ls-remote --tags --refs "$url" 'v*-veritas.*' 2>/dev/null \
+        | awk '{print $2}' | grep -E '/v[0-9]+\.[0-9]+\.[0-9]+-veritas\.[0-9]+$' \
+        | sort -V -r | head -1)" || return 0
   [ -n "$ref" ] || return 0
   printf '%s' "${ref#refs/tags/v}"
 }
@@ -556,7 +556,11 @@ pin_incompleto() {  # pin_incompleto [caminho do .env]
       faltando="$faltando $svc"                    # ausente: segue o default do compose
     else
       tag="$(tag_da_imagem "$img")"
-      case "$tag" in latest|main|stable|"") faltando="$faltando $svc" ;; esac
+      case "$tag" in
+        latest|main|stable|"") faltando="$faltando $svc" ;;
+        "$app_tag") : ;;
+        *) faltando="$faltando $svc" ;;
+      esac
     fi
   done
   printf '%s' "${faltando# }"

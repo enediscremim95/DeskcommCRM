@@ -54,6 +54,11 @@ describe("nenhuma tag publica sem estar contida na main", () => {
     // (quatro espaços), que faz o GitHub pular o job inteiro.
     expect(t.split("\n").filter((l) => /^ {4}if:/.test(l))).toEqual([]);
   });
+
+  it("o fork só aceita a tag Veritas, que tem versão e contador explícitos", () => {
+    expect(publish).toContain('tags: ["v*-veritas.*"]');
+    expect(job(publish, "a-tag-veio-da-main")).toContain('^v[0-9]+\\.[0-9]+\\.[0-9]+-veritas\\.[0-9]+$');
+  });
 });
 
 describe("a tag nasce no CI, e nunca do GITHUB_TOKEN", () => {
@@ -105,8 +110,8 @@ describe("a tag nasce no CI, e nunca do GITHUB_TOKEN", () => {
     expect(t).toMatch(/deskcomm-release\[bot\]/);
   });
 
-  it("a tag só é criada em push na main, nunca num dispatch de branch qualquer", () => {
-    expect(job(release, "cortar-tag")).toMatch(/if:\s*github\.event_name == 'push'/);
+  it("o corte automático fica restrito ao upstream, pois no fork a tag Veritas é revisada e criada manualmente", () => {
+    expect(job(release, "cortar-tag")).toMatch(/if:\s*github\.repository_owner == 'melgarafael' && github\.event_name == 'push'/);
     expect(release).toMatch(/push:\s*\n\s*branches:\s*\[main\]/);
   });
 });

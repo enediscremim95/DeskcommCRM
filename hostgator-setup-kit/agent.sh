@@ -108,7 +108,7 @@ git fetch --tags --quiet origin 2>/dev/null || FETCH_OK=0
 
 CURRENT_TAG="$(git describe --tags --exact-match HEAD 2>/dev/null || true)"
 CURRENT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
-LATEST_TAG="$(git tag -l 'v*' --sort=-v:refname | head -1)" || true
+LATEST_TAG="$(git tag -l 'v*-veritas.*' --sort=-v:refname | head -1)" || true
 
 # Guardado ANTES de qualquer zeragem abaixo: "vi uma tag" e "não anunciei"
 # são coisas diferentes. Sem isto, um fork sem NENHUMA tag `v*` chega ao app

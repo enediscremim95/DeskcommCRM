@@ -167,7 +167,7 @@ git init --quiet
 git config user.email t@t.t; git config user.name t
 git add -A
 git commit --quiet -m "v0.9.0"
-git tag v0.9.0
+git tag v0.9.0-veritas.1
 # Instalação que SEGUE A MAIN: HEAD à frente da última tag publicada.
 echo topo > topo.txt; git add -A; git commit --quiet -m "topo da main"
 
@@ -179,7 +179,7 @@ run_update() {  # run_update <args...> → saída em $OUTFILE, status em $RC
 }
 
 echo "── 1. Alvo anterior ao instalado é recusado antes do backup"
-run_update --to v0.9.0
+run_update --to v0.9.0-veritas.1
 check "aborta com status != 0" test "$RC" -ne 0
 check "explica em português que é retrocesso" grep -q "ANTERIOR à que já está instalada" "$OUTFILE"
 check "não chegou a rodar o backup" test ! -f "$BACKUP_MARK"
@@ -193,7 +193,7 @@ check "mesmo recusando, deixou o agente da tela instalado (com cd no diretório 
   grep -q "cd ${PROJ} && bash hostgator-setup-kit/agent.sh" "$FAKE_CRONTAB"
 
 echo "── 3. --force é a saída explícita de quem quer mesmo voltar"
-run_update --to v0.9.0 --force
+run_update --to v0.9.0-veritas.1 --force
 check "passou da guarda e rodou o backup" test -f "$BACKUP_MARK"
 
 echo "── 4. Atualização de verdade grava a imagem no .env, sem duplicar a chave"
@@ -202,13 +202,13 @@ echo "── 4. Atualização de verdade grava a imagem no .env, sem duplicar a 
 set_env_missing() { grep -v '^APP_PULL_POLICY=' .env > .env.t; echo 'APP_PULL_POLICY=missing' >> .env.t; mv .env.t .env; }
 set_env_missing
 git checkout --quiet main 2>/dev/null || git checkout --quiet master
-echo nova > nova.txt; git add -A; git commit --quiet -m "v1.1.0"; git tag v1.1.0
-git checkout --quiet v0.9.0
-run_update --to v1.1.0
+echo nova > nova.txt; git add -A; git commit --quiet -m "v1.1.0"; git tag v1.1.0-veritas.1
+git checkout --quiet v0.9.0-veritas.1
+run_update --to v1.1.0-veritas.1
 check "a atualização termina com sucesso" test "$RC" -eq 0
-check ".env aponta para a imagem da versão instalada" grep -q "^APP_IMAGE=${NS}/deskcommcrm:1.1.0$" .env
+check ".env aponta para a imagem da versão instalada" grep -q "^APP_IMAGE=${NS}/deskcommcrm:1.1.0-veritas.1$" .env
 check "a chave APP_IMAGE não duplicou" test "$(grep -c '^APP_IMAGE=' .env)" -eq 1
-run_update --to v1.1.0 --force
+run_update --to v1.1.0-veritas.1 --force
 check "segunda execução também não duplica" test "$(grep -c '^APP_IMAGE=' .env)" -eq 1
 check "as outras chaves do .env sobreviveram" grep -q '^INTERNAL_SECRET=segredo$' .env
 check "a política de pull vira 'missing' — a tag é imutável, e 'always' derrubaria o CRM se o GHCR caísse" \
@@ -236,9 +236,9 @@ echo "── 4b. As três imagens sobem juntas, na mesma versão"
 # runtime do agente de IA — ficava congelado no código do dia da instalação.
 # Se estas três linhas voltarem a divergir, o defeito voltou.
 check "o worker é pinado na MESMA versão do app" \
-  grep -q "^WORKER_IMAGE=${NS}/deskcomm-worker:1.1.0$" .env
+  grep -q "^WORKER_IMAGE=${NS}/deskcomm-worker:1.1.0-veritas.1$" .env
 check "o scheduler é pinado na MESMA versão do app" \
-  grep -q "^SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:1.1.0$" .env
+  grep -q "^SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:1.1.0-veritas.1$" .env
 check "o worker herda a política da tag imutável" \
   grep -q '^WORKER_PULL_POLICY=missing$' .env
 check "o scheduler herda a política da tag imutável" \
@@ -261,7 +261,7 @@ printf 'services:\n  app:\n    image: \${APP_IMAGE:-x}\n' > "$SRC/docker-compose
 printf '.env\n' > "$SRC/.gitignore"
 cd "$SRC" || exit 1
 git init --quiet; git config user.email t@t.t; git config user.name t
-git add -A; git commit --quiet -m "release antiga"; git tag v0.9.0
+git add -A; git commit --quiet -m "release antiga"; git tag v0.9.0-veritas.1
 echo topo > topo.txt; git add -A; git commit --quiet -m "main, depois da release"
 
 clona_raso() {  # clona_raso <destino> — igual ao install.sh: --depth 1
@@ -332,9 +332,9 @@ echo "── 8. CONTIDA=2 (unshallow falhou) SOZINHO já acende compare_failed, 
 # e falha — origin continua alcançável o tempo todo, ao contrário do caso 9.
 echo mid > "$SRC/mid.txt"; git -C "$SRC" add -A; git -C "$SRC" commit --quiet -m "depois da 0.9.0"
 echo nova > "$SRC/nova.txt"; git -C "$SRC" add -A; git -C "$SRC" commit --quiet -m "release nova"
-git -C "$SRC" tag v1.1.0
+git -C "$SRC" tag v1.1.0-veritas.1
 CONTIDA2="$WORK/contida2"
-git -c advice.detachedHead=false clone --depth 1 --branch v0.9.0 --quiet "file://$SRC" "$CONTIDA2"
+git -c advice.detachedHead=false clone --depth 1 --branch v0.9.0-veritas.1 --quiet "file://$SRC" "$CONTIDA2"
 cp "$RASO/.env" "$CONTIDA2/.env"; chmod 600 "$CONTIDA2/.env"
 cd "$CONTIDA2" || exit 1
 check "fixture: ainda é raso, e a origin CONTINUA alcançável (nada quebrado)" \
@@ -398,6 +398,14 @@ pin_caso "as três na mesma versão → silêncio" \
   "APP_IMAGE=${NS}/deskcommcrm:1.3.0
 WORKER_IMAGE=${NS}/deskcomm-worker:1.3.0
 SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:1.3.0" ""
+pin_caso "worker pinado em outra versão → acusa" \
+  "APP_IMAGE=${NS}/deskcommcrm:1.3.0-veritas.1
+WORKER_IMAGE=${NS}/deskcomm-worker:1.3.0-veritas.2
+SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:1.3.0-veritas.1" "worker"
+pin_caso "scheduler pinado em outra versão → acusa" \
+  "APP_IMAGE=${NS}/deskcommcrm:1.3.0-veritas.1
+WORKER_IMAGE=${NS}/deskcomm-worker:1.3.0-veritas.1
+SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:1.3.0-veritas.2" "scheduler"
 pin_caso "app num canal deliberado (:latest) → não é 'metade', silêncio" \
   "APP_IMAGE=${NS}/deskcommcrm:latest" ""
 # As aspas SIMPLES são o objeto deste caso — o `install.sh` grava assim. Elas

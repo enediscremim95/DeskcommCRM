@@ -13,7 +13,7 @@ name: Publicar imagem Docker (GHCR)
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*-veritas.*"]
     branches: ["main"]
   # NÃO acrescente `release: types: [published]` aqui. Ele já esteve, e o efeito
   # foi medido na v1.3.0: `gh release create` empurra a tag E publica a release,
@@ -80,6 +80,10 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
             echo "não é push de tag (${GITHUB_REF_TYPE}) — nada a conferir"
             exit 0
+          fi
+          if ! [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-veritas\.[0-9]+$ ]]; then
+            echo "::error::A tag ${GITHUB_REF_NAME} não segue o formato vX.Y.Z-veritas.N."
+            exit 1
           fi
           estado=$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${GITHUB_SHA}" --jq .status)
           echo "compare main...${GITHUB_SHA} → ${estado}"
@@ -194,7 +198,7 @@ jobs:
           # PR de fork não tem permissão de escrita no GHCR, e publicar imagem
           # de código não revisado seria pior que não gatear. Em PR: constrói
           # (que é o gate) e descarta.
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
