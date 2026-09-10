@@ -7,6 +7,7 @@ import { listSelectableChannels } from "@/lib/channels/selectable";
 import { createClient } from "@/lib/supabase/server";
 import type { RouterDetailState } from "@/hooks/ai/useRouters";
 import { RouterEditorClient } from "./_client";
+import { Voltar } from "@/components/navigation/Voltar";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,7 @@ export default async function RouterEditorPage({ params }: { params: Promise<{ i
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
+      <Voltar href="/app/ai/routers">Roteadores</Voltar>
       <RouterEditorClient
         routerId={id}
         initialState={initialState}

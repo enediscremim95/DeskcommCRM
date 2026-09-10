@@ -10,6 +10,6 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     display: "standalone",
     start_url: "/app",
     scope: "/",
-    icons: [{ src: "/icon", sizes: "64x64", type: "image/png" }],
+    icons: [{ src: "/icon.svg", sizes: "64x64", type: "image/svg+xml" }],
   };
 }

@@ -480,8 +480,8 @@ export const NAV_CATALOG = [
   // lista as cinco (`hubSections`), então as duas continuam a um clique, com a
   // frase que explica para que servem. O ⌘K também as acha por nome.
   {
-    href: "/app/metrics",
-    label: "Desempenho",
+    href: "/app/resultados",
+    label: "Resultados",
     description: "Funil e performance por atendente nos últimos 30 dias.",
     icon: "ChartBar",
     group: "analise",

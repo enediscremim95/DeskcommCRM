@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import { ContactDetailClient } from "./_client";
+import { Voltar } from "@/components/navigation/Voltar";
 
 export const dynamic = "force-dynamic";
 
@@ -26,5 +27,10 @@ export default async function ContactDetailPage({
     .eq("id", id)
     .maybeSingle();
   if (!contact) notFound();
-  return <ContactDetailClient contactId={id} />;
+  return (
+    <div className="flex h-full flex-col gap-4 p-6">
+      <Voltar href="/app/contacts">Contatos</Voltar>
+      <ContactDetailClient contactId={id} />
+    </div>
+  );
 }

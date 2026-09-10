@@ -17,6 +17,7 @@ import { coberturaDoFunil, type EtapaDoMapa } from "@/lib/leads/agent-mapping";
 import type { CoberturaPorFunil } from "./_components/FunisDoAgente";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 import { escolherVersoesDaTela } from "@/lib/ai/agents/versoes-da-tela";
+import { Voltar } from "@/components/navigation/Voltar";
 
 export const dynamic = "force-dynamic";
 
@@ -154,6 +155,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
+      <Voltar href="/app/ai/agents">Agentes</Voltar>
       <AgentOperation agent={agent} readOnly={readOnly} />
       {(agent.kind ?? "rag_bot") !== "mcp_agent" && !agent.published_version_id && (
         <LegacyRecovery

@@ -24,6 +24,7 @@ import { ThemeProvider } from "@/lib/theme";
 import { Providers } from "./providers";
 import { PublicEnvScript } from "./public-env-script";
 import "./globals.css";
+import "./veritas-theme.css";
 
 const atkinson = Atkinson_Hyperlegible({
   subsets: ["latin", "latin-ext"],
@@ -98,13 +99,6 @@ export async function generateMetadata(): Promise<Metadata> {
       "multi-tenant",
     ],
     robots: { index: false, follow: false },
-    // Sem esta linha o navegador pede `/favicon.ico`, que não existe: medido em
-    // produção, o 404 é a `app/not-found.tsx` INTEIRA (19.435 bytes de HTML)
-    // servida para um pedido de ícone, em toda navegação sem cache. Declarar
-    // `/icon` faz o pedido ir para `app/icon.tsx`, que desenha a marca da
-    // instalação em runtime — ver o cabeçalho daquele arquivo para por que ele
-    // não pode ser um arquivo estático em `public/`.
-    icons: { icon: "/icon" },
   };
 }
 
