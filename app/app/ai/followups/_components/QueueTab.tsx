@@ -205,7 +205,7 @@ export function QueueTab({ canWrite }: Props) {
               {rows.map((row) => {
                 const canCancel = canWrite && podeCancelar(row);
                 return (
-                  <TableRow key={`${row.source}:${row.id}`} data-testid="queue-row">
+                  <TableRow key={`${row.source}:${row.id}`} className="group" data-testid="queue-row">
                     <TableCell className="font-medium">
                       {/*
                         A porta do dossiê. Só enrollment tem história para contar:
@@ -246,6 +246,7 @@ export function QueueTab({ canWrite }: Props) {
                       <TableCell>
                         {canCancel && (
                           <Button
+                            className="opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100"
                             variant="ghost"
                             size="sm"
                             data-testid="cancelar-item-da-fila"

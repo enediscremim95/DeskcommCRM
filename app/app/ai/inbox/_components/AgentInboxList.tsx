@@ -123,7 +123,7 @@ function InboxRow({
     locale: localeDaData,
   });
   return (
-    <li className="flex flex-wrap items-start gap-3 px-4 py-3" data-testid="inbox-item">
+    <li className="group flex flex-wrap items-start gap-3 px-4 py-2.5" data-testid="inbox-item">
       <Badge variant={SEVERITY_VARIANT[item.severity]} className="mt-0.5 shrink-0">
         {t(SEVERITY_LABEL[item.severity])}
       </Badge>
@@ -152,11 +152,11 @@ function InboxRow({
       </div>
       {canResolve ? (
         item.status === "resolved" ? (
-          <Button size="sm" variant="ghost" disabled={pending} onClick={() => onToggle("open")}>
+          <Button className="opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100" size="sm" variant="ghost" disabled={pending} onClick={() => onToggle("open")}>
             {t("Reabrir")}
           </Button>
         ) : (
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => onToggle("resolved")}>
+          <Button className="opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100" size="sm" variant="outline" disabled={pending} onClick={() => onToggle("resolved")}>
             <Check size={14} aria-hidden />
             {t("Marcar resolvido")}
           </Button>

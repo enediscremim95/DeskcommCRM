@@ -534,6 +534,7 @@
   /* Tipografia */
   --font-sans: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-sora), var(--font-atkinson), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
     Consolas, monospace;
 
@@ -686,6 +687,12 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* Sora orienta a varredura visual. Corpo, controles, tabelas e listas não
+     entram aqui: continuam em Atkinson para sustentar uma jornada operacional. */
+  h1, h2, h3 {
+    font-family: var(--font-sora), var(--font-atkinson), ui-sans-serif, system-ui, sans-serif;
+  }
+
   code, kbd, pre, samp {
     font-family: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo,
       Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -772,6 +779,15 @@
     background-clip: padding-box;
     border: 2px solid transparent;
   }
+}
+
+@utility font-display {
+  font-family: var(--font-sora), var(--font-atkinson), ui-sans-serif, system-ui, sans-serif;
+}
+
+@utility font-numeric-display {
+  font-family: var(--font-sora), var(--font-atkinson), ui-sans-serif, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- Pulso de chegada no card do Kanban (CRM Vivo, Wave 3) --------------

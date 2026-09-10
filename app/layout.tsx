@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Atkinson_Hyperlegible, IBM_Plex_Mono } from "next/font/google";
+import { Atkinson_Hyperlegible, IBM_Plex_Mono, Sora } from "next/font/google";
 import { headers } from "next/headers";
 import { Toaster } from "sonner";
 import { coresDaBarraDoNavegador } from "@/lib/branding/barra-do-navegador";
@@ -38,6 +38,16 @@ const plexMono = IBM_Plex_Mono({
   weight: ["400", "500"],
   display: "swap",
   variable: "--font-mono",
+});
+
+// Sora é deliberadamente uma fonte de destaque: títulos e números que precisam
+// orientar a leitura. O restante da interface permanece em Atkinson, que é a
+// fonte de trabalho e leitura contínua do produto.
+const sora = Sora({
+  subsets: ["latin", "latin-ext"],
+  weight: ["600", "700"],
+  display: "swap",
+  variable: "--font-sora",
 });
 
 /**
@@ -272,7 +282,7 @@ export default function RootLayout({
       lang="pt-BR"
       data-theme="light"
       suppressHydrationWarning
-      className={`${atkinson.variable} ${plexMono.variable}`}
+      className={`${atkinson.variable} ${plexMono.variable} ${sora.variable}`}
     >
       <head>
         {/* Primeiro de tudo: a cor da instalação, antes do CSS e do script de tema. */}

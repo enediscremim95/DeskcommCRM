@@ -289,7 +289,7 @@ function CartaoDeOrigem({
           <MarcadorDeAtor forma={forma} />
           {rotulo}
         </div>
-        <div className="text-2xl font-semibold tabular-nums">{valor}</div>
+        <div className="font-numeric-display text-2xl font-semibold tabular-nums">{valor}</div>
         <div className="text-xs text-muted-foreground tabular-nums">{fatia}%</div>
       </CardContent>
     </Card>
