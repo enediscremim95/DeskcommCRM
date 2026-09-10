@@ -492,16 +492,15 @@ export const NAV_CATALOG = [
     // Logo abaixo de Desempenho porque responde a metade da MESMA pergunta: lá
     // está o que aconteceu depois que a pessoa chegou; aqui, quanto custou
     // trazê-la. Ler as duas juntas é o que fecha a conta do custo por cliente.
-    href: "/app/ads/meta",
-    label: "Meta Ads",
+    href: "/app/relatorio",
+    label: "Relatório",
     description: "Quanto custou cada resultado das campanhas que trazem gente para cá.",
-    icon: "Megaphone",
+    icon: "ChartBar",
     group: "analise",
     section: "Os números do período",
     // `manager`, e não o `viewer` de Desempenho: aqui não há recorte por
     // pessoa — orçamento e criativo são da empresa inteira. Mesmo grau dos
     // outros dois vizinhos do grupo.
-    minRole: "manager",
     sidebar: true,
   },
   {

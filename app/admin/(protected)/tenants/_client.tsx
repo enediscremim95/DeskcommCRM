@@ -37,6 +37,9 @@ export function TenantsClient() {
             {t("Novo tenant")}
           </Link>
         </Button>
+        <Button asChild size="sm" variant="outline" className="shrink-0">
+          <Link href="/admin/tenants/reports">Importar relatórios</Link>
+        </Button>
       </div>
 
       {/* Filters */}

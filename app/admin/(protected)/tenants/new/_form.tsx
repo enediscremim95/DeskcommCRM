@@ -86,6 +86,7 @@ export function NewTenantForm() {
       legal_name: "",
       cnpj: "",
       plan: "standard",
+      report_url: "",
       owner_email: "",
     },
   });
@@ -123,6 +124,7 @@ export function NewTenantForm() {
         legal_name: values.legal_name || undefined,
         cnpj: values.cnpj || undefined,
         plan: values.plan,
+        report_url: values.report_url || undefined,
         owner_email: values.owner_email,
         owner_interface_settings: ownerInterface,
       });
@@ -300,6 +302,13 @@ export function NewTenantForm() {
             </div>
 
             {/* owner_email */}
+            <div className="space-y-1.5">
+              <Label htmlFor="report_url">{t("URL do relatório")}</Label>
+              <Input id="report_url" type="url" placeholder="https://relatorio-performance.online/cliente/" {...register("report_url")} aria-invalid={!!errors.report_url} />
+              <p className="text-xs text-muted-foreground">{t("Opcional. O cliente verá este endereço dentro do CRM.")}</p>
+              {errors.report_url && <p className="text-xs text-error-fg">{t(errors.report_url.message ?? "")}</p>}
+            </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="owner_email">
                 {t("E-mail do responsável")} <span className="text-error-fg">*</span>

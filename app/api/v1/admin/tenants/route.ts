@@ -77,6 +77,7 @@ export async function GET(req: NextRequest) {
       display_name,
       legal_name,
       cnpj,
+      report_url,
       status,
       onboarded_at,
       suspended_at,

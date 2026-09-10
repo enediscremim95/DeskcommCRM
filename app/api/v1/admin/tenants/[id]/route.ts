@@ -4,6 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
+
+const reportUrlSchema = z.object({ report_url: z.string().url().startsWith("https://").nullable() });
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/admin/tenants/[id]
@@ -35,6 +38,7 @@ export async function GET(
       display_name,
       legal_name,
       cnpj,
+      report_url,
       status,
       onboarded_at,
       suspended_at,
@@ -157,4 +161,19 @@ export async function GET(
   });
 
   return ok({ organization: org, counts, integrations }, { requestId });
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = randomUUID();
+  const { id } = await params;
+  let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
+  try { adminCtx = await requirePlatformAdmin(); } catch { return fail("forbidden", "Platform admin required", 403, { requestId }); }
+  const parsed = reportUrlSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return fail("validation_error", "URL de relatório inválida", 400, { requestId, details: parsed.error.flatten() });
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("organizations").update({ report_url: parsed.data.report_url }).eq("id", id).select("id").maybeSingle();
+  if (error) return fail("internal_error", "Não foi possível salvar o relatório", 500, { requestId });
+  if (!data) return fail("not_found", "Tenant not found", 404, { requestId });
+  void audit({ action: "platform_admin.tenant_report_updated", actorUserId: adminCtx.user.id, actingAsPlatformAdmin: true, bypassedRls: true, organizationId: id, resourceType: "organization", resourceId: id, requestId, metadata: { configured: !!parsed.data.report_url } });
+  return ok(data, { requestId });
 }

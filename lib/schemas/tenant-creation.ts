@@ -12,6 +12,7 @@ export const tenantCreationFields = {
   legal_name: z.string().max(255).optional(),
   cnpj: z.string().max(18).optional(),
   plan: z.enum(["standard", "pro", "enterprise"]),
+  report_url: z.string().url().startsWith("https://").optional().or(z.literal("")),
   owner_interface_settings: interfaceSettingsSchema.optional(),
   owner_email: z.string().trim().email(),
 };
