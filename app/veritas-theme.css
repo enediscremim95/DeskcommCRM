@@ -1,8 +1,8 @@
 /* Tema-base do fork Veritas. A marca por instalação continua podendo sobrepor só a accent. */
 :root {
-  --color-bg: #f7f9f4;
+  --color-bg: #f7f7f7;
   --color-surface: #ffffff;
-  --color-surface-elevated: #fbfdf8;
+  --color-surface-elevated: #fafafa;
   --color-text: #16210e;
   --color-text-muted: #5c6a52;
   --color-text-subtle: #68745d;
