@@ -64,11 +64,17 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: () => {
       const cadeia: Record<string, unknown> = {};
-      for (const m of ["select", "is", "eq"]) cadeia[m] = () => cadeia;
+      // `gte` e `order` entraram com o vigia de silêncio (fork Veritas): ele lê
+      // `messages` por `sent_at` para aprender a cadência de cada número. Sem os
+      // dois no mock, a chamada estourava DENTRO do `try` da iteração, caía no
+      // `catch`, e o `warn` de lá fazia este teste contar um aviso que não é da
+      // voz — o `continue` da linha de voz segue vindo ANTES do vigia.
+      for (const m of ["select", "is", "eq", "gte", "order"]) cadeia[m] = () => cadeia;
       cadeia.update = (patch: unknown) => {
         atualizou(patch);
         return cadeia;
       };
+      cadeia.insert = async () => ({ data: null, error: null });
       cadeia.limit = async () => ({ data: linhas, error: null });
       return cadeia;
     },

@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
  */
 
 const CSS = readFileSync("app/globals.css", "utf8");
+const CANVAS = readFileSync("app/app/ai/followups/[id]/_components/FlowCanvas.tsx", "utf8");
 
 function bloco(seletor: string): string {
   const rx = new RegExp(`^${seletor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{`, "m");
@@ -43,5 +44,12 @@ describe("controles do canvas de follow-up seguem o tema", () => {
     const corpo = bloco(".react-flow__controls");
     expect(corpo).toMatch(/background:\s*var\(--color-surface\)/);
     expect(corpo).toMatch(/border:\s*1px solid var\(--color-border\)/);
+  });
+
+  it("não deixa o zoom reduzir o handle abaixo da área confiável de conexão", () => {
+    // A folha da XYFlow define 6px de conteúdo + 1px de borda em cada lado.
+    // Com o piso padrão 0,5, a caixa visual cai para 4px e o drop no handle
+    // pode não chegar ao onConnect. Este piso conserva pelo menos 6px.
+    expect(CANVAS).toMatch(/minZoom=\{0\.75\}/);
   });
 });
