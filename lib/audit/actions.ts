@@ -68,6 +68,10 @@ export const AUDIT_ACTIONS = [
   "member.accepted",
   "member.role_changed",
   "member.revoked",
+  // O inverso de `member.revoked`. Auditável pelo mesmo motivo que ela: a
+  // pergunta "quem devolveu o acesso desta pessoa, e quando?" só tem resposta
+  // aqui — a coluna `revoked_at` volta a NULL e não guarda histórico.
+  "member.reactivated",
   "token.created",
   "token.revoked",
   "profile.updated",
@@ -179,6 +183,7 @@ export const AUDIT_ACTIONS = [
   "ai.org_memory_entry_updated",
   /** Provedor/modelo de um ponto do sistema que usa IA foi trocado no painel. */
   "ai.purpose_binding_updated",
+  "ai.org_default_updated",
   // Ligar/desligar uma das duas verificações que consultam modelo. Auditável
   // porque muda o que o sistema confere antes de falar com o cliente — e porque
   // custa dinheiro por mensagem.
@@ -200,6 +205,21 @@ export const AUDIT_ACTIONS = [
   // `lib/channels/reactivate.ts` — o único caminho de volta, e é o que faz a
   // frase acima valer para os DOIS casos em vez de para o que lembraram.
   "channel.reactivated",
+  // Chamada de voz WhatsApp (WaCalls, spec 18) — pareamento do segundo
+  // dispositivo vinculado, opt-in por org. Admin only.
+  "voice.session_pair_started",
+  // As mutações da chamada em si. Todas auditadas porque todas têm efeito no
+  // mundo: uma ligação sai do CRM para o telefone de uma pessoa, alguém a
+  // atende ou a recusa, e alguém a derruba. Um registro em `voice_calls` diz o
+  // QUE aconteceu; a trilha diz QUEM mandou acontecer, e são perguntas
+  // diferentes quando o time inteiro compartilha o mesmo número.
+  "voice.call_started",
+  "voice.call_accepted",
+  "voice.call_rejected",
+  "voice.call_ended",
+  // Troca de SDP: é o que abre o ÁUDIO de uma ligação para um navegador. Sem
+  // esta linha não há como responder "quem estava ouvindo esta conversa".
+  "voice.call_media_attached",
   "authz.denied",
   "team.role_changed",
   "leads.bulk_assigned",
@@ -409,6 +429,10 @@ export const AUDIT_ACTIONS = [
   "agenda.tipo_criado",
   "agenda.tipo_alterado",
   "agenda.tipo_desativado",
+  // A rodada que AVISOU alguém do próprio compromisso. Mensagem que saiu para o
+  // telefone de um cliente é efeito, e efeito audita — mas só a rodada que
+  // enviou: a que varreu e não achou ninguém a avisar não é mutação.
+  "agenda.lembrete_enviado",
   // A rodada de renovação — e ela só audita quando FEZ algo, como manda a regra
   // do cron desta base. Uma linha por rodada com efeito, carregando a contagem:
   // é o que permite responder "quantas agendas precisaram reconectar esta
@@ -459,6 +483,14 @@ export const AUDIT_ACTIONS = [
   "crm_task.updated",
   "crm_task.deleted",
   "organization.switched",
+
+  // Chamada de voz WhatsApp (spec 18, migration 0234). Ligá-la vincula um
+  // SEGUNDO aparelho ao número que já atende, por um caminho que não é o
+  // oficial — o risco é a conta ser bloqueada. Estas duas linhas são a resposta
+  // a "quem autorizou isso" e a "quando isso foi desfeito"; sem elas, depois de
+  // um bloqueio não há como saber nem uma coisa nem outra.
+  "voice.opt_in_changed",
+  "voice.session_unpaired",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -636,6 +636,45 @@ gravar_imagens() {
   set_env_var "$envfile" SCHEDULER_PULL_POLICY "$politica"
 }
 
+# ── Os segredos da chamada de voz, no .env de quem já tinha instalado ────────
+#
+# A doutrina de packaging é literal: "bump de versão não pode exigir que o
+# operador edite `.env`, compose ou qualquer arquivo à mão". A chamada de voz
+# (spec 18) trouxe três chaves novas, e o serviço NÃO SOBE sem duas delas.
+#
+# Quem instalou antes desta versão não as tem. Sem esta função, o dia em que ele
+# quisesse ligar a voz começaria por inventar dois segredos num editor de texto
+# dentro de uma VPS — que é exatamente o passo que a doutrina proíbe.
+#
+# LACUNA APENAS, como `completar_pin_ausente`: chave já presente (mesmo vazia
+# por escolha de quem operou) é intocável. Preencher só o que falta é a
+# diferença entre curar e sobrescrever.
+#
+# ⚠️ ISTO NÃO LIGA A FEATURE. As chaves geradas ficam paradas até alguém pôr
+# `voz` em COMPOSE_PROFILES: sem o profile, o compose nem cria o contêiner.
+# Gerar credencial para um serviço desligado não é risco — é o que faz o
+# desligado poder virar ligado sem passo manual.
+completar_segredos_da_voz() {  # completar_segredos_da_voz [envfile]
+  local envfile="${1:-.env}" criados="" chave
+  [ -f "$envfile" ] || return 0
+  # Somente-leitura (montagem read-only, permissão errada): não é erro daqui.
+  [ -w "$envfile" ] || return 0
+
+  for chave in WACALLS_ADMIN_USER WACALLS_ADMIN_PASSWORD WACALLS_API_TOKEN; do
+    # `^CHAVE=` casa inclusive a linha com valor vazio — que é presença, não
+    # lacuna. Só a AUSÊNCIA da linha é preenchida.
+    grep -qE "^${chave}=" "$envfile" && continue
+    if [ "$chave" = "WACALLS_ADMIN_USER" ]; then
+      set_env_var "$envfile" "$chave" "deskcomm"
+    else
+      set_env_var "$envfile" "$chave" "$(openssl rand -hex 32)"
+    fi
+    criados="$criados $chave"
+  done
+
+  printf '%s' "${criados# }"
+}
+
 # Grava (ou reescreve) uma chave no .env — sem duplicar linha se ela já existe.
 #   set_env_var .env APP_IMAGE ghcr.io/…:1.1.0
 #

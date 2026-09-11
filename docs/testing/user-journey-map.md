@@ -1670,6 +1670,32 @@ alimentado com 7 classes, emitiu **4** — nenhuma das 3 com barra.
 | Telas internas (`/app`, kanban, inbox, contatos) | — | **NÃO COBERTO.** Numa instalação fresca todas redirecionam para `/onboarding/welcome`; alcançá-las pede concluir o onboarding, o que pede WAHA e chave de IA. A sonda registra o redirecionamento em vez de fingir cobertura |
 | O efeito visual das 252 revividas foi *revisto por um designer* | — | **NÃO MEDIDO.** A migração provou que passaram a pintar; não provou que cada uma pinta o que a tela precisa. Onde a intenção original estava errada, o erro agora está visível |
 
+### O que a linha "NÃO COBERTO" acima custou: `text-accent-fg` (2026-09-10)
+
+A tabela acima declara, desde 2026-08-26, que as telas internas de `/app` não
+foram medidas — porque numa instalação fresca elas redirecionam para o
+onboarding, e alcançá-las pede WAHA e chave de IA. **Um defeito morou exatamente
+ali por duas semanas, e quem o encontrou foi uma clínica em produção.**
+
+A classe `text-accent-fg` **nunca existiu**. O `@theme inline` faz a ponte com o
+nome `--color-accent-foreground`; `--color-accent-fg` é o token do `:root`, e
+token do `:root` não vira utilitário sozinho. Escrever `text-accent-fg` não é
+erro — é NADA: a regra não é emitida, o elemento não recebe `color`, e o texto
+herda a cor da página. Como a mesma `className` trazia `bg-accent`, que existe, o
+resultado era fundo da marca com letra da página.
+
+Medido no CSS que o dev server servia: `bg-accent` 24 vezes, `text-accent-fg`
+**zero**. Numa instalação com marca escura (`#062b46`, cliente real) isso deu
+escuro sobre escuro em 9 lugares de 6 arquivos — aba do histórico, dia de hoje na
+grade, dia e horário escolhidos na marcação. Com a paleta Sage padrão o defeito
+existia igual, só menos gritante, e por isso ninguém viu.
+
+| caso | prioridade | estado |
+|---|---|---|
+| Toda classe de cor usada em componente corresponde a chave do `@theme inline` | `[P0]` | **PASS**, congelado em `tests/unit/tailwind-tokens.test.ts`. A guarda deriva a lista de proibidos do próprio CSS (token do `:root` sem ponte), não de lista digitada — no nascimento o conjunto era exatamente um: `accent-fg`. Sabotagem provada nas duas direções |
+| A letra sobre `bg-accent` passa no contraste, nos dois temas, com marca de cliente | `[P0]` | **PASS** por medição de token: `#062b46` dá 14.57 no claro e 6.97 no escuro; a auditoria completa da marca deu **0 reprovas** em 18 + 26 pares |
+| As telas internas de `/app` medidas na tela, em instalação com marca | `[P0]` | **CONTINUA NÃO COBERTO.** Este defeito foi achado por leitura de CSS e por print de usuário, não por sonda. A lacuna que o produziu segue aberta |
+
 ### O defeito que só o antes/depois encontrou: o rótulo colado no campo
 
 O `space-*` inverteu o lado da margem — e isso não é cosmético:
