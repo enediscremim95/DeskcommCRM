@@ -146,6 +146,7 @@ async function connectHandles(
     : `.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source`;
   const source = page.locator(sourceSel).first();
   const target = page.locator(`.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`);
+  const edgesAntes = await page.locator(".react-flow__edge").count();
   const sBox = await source.boundingBox();
   const tBox = await target.boundingBox();
   if (!sBox || !tBox) throw new Error(`handle não encontrado: ${sourceNodeId} -> ${targetNodeId}`);
@@ -153,8 +154,21 @@ async function connectHandles(
   await page.mouse.down();
   await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
   await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 12 });
+  // Sem browser neste ambiente, o CI precisa devolver a evidência do estado
+  // do handle no exato drop, não só uma contagem final de arestas.
+  const alvoDuranteArrasto = await target.evaluate((el) => ({
+    className: el.className,
+    ariaDisabled: el.getAttribute("aria-disabled"),
+  }));
   await page.mouse.up();
   await page.waitForTimeout(200);
+  const edgesDepois = await page.locator(".react-flow__edge").count();
+  if (edgesDepois !== edgesAntes + 1) {
+    throw new Error(
+      `conexão não criada: ${sourceNodeId} → ${targetNodeId}; ` +
+        JSON.stringify({ edgesAntes, edgesDepois, source: sBox, target: tBox, alvoDuranteArrasto }),
+    );
+  }
 }
 
 async function nodeIdsByPrefix(page: Page, prefix: string): Promise<string[]> {

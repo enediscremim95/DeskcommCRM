@@ -30,7 +30,7 @@ export default async function PipelinePage({
   return (
     <div className="flex min-h-[640px] flex-col gap-4 p-6">
       <div className="shrink-0">
-        <Voltar href="/app/pipelines">Funis</Voltar>
+        <Voltar href="/app/settings/tenant/pipelines">Funis</Voltar>
       </div>
       <div className="min-h-0 flex-1">
         <PipelinePageClient pipelineId={id} initialName={pipeline.name} />

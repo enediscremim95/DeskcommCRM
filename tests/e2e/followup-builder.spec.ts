@@ -166,6 +166,7 @@ async function connectHandles(
   const target = page.locator(
     `.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`,
   );
+  const edgesAntes = await page.locator(".react-flow__edge").count();
   const sBox = await source.boundingBox();
   const tBox = await target.boundingBox();
   if (!sBox || !tBox) throw new Error(`handle não encontrado: ${sourceNodeId} -> ${targetNodeId}`);
@@ -173,8 +174,22 @@ async function connectHandles(
   await page.mouse.down();
   await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
   await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 12 });
+  // Instrumentação de falha: o CI não tem vídeo interativo. Se o drop não
+  // nascer como aresta, este retrato diz se o alvo estava sendo aceito pelo
+  // React Flow no instante do mouseup e quais eram as caixas reais.
+  const alvoDuranteArrasto = await target.evaluate((el) => ({
+    className: el.className,
+    ariaDisabled: el.getAttribute("aria-disabled"),
+  }));
   await page.mouse.up();
   await page.waitForTimeout(200);
+  const edgesDepois = await page.locator(".react-flow__edge").count();
+  if (edgesDepois !== edgesAntes + 1) {
+    throw new Error(
+      `conexão não criada: ${sourceNodeId} → ${targetNodeId}; ` +
+        JSON.stringify({ edgesAntes, edgesDepois, source: sBox, target: tBox, alvoDuranteArrasto }),
+    );
+  }
 }
 
 /** All React Flow node ids currently rendered whose id starts with `${prefix}-`, in DOM order. */

@@ -64,6 +64,32 @@ const ROTAS = rotasNoDisco(BASE).sort();
 const NO_REGISTRO = new Set(NAV_DESTINATIONS.map((d) => d.href));
 const HUBS = NAV_GROUPS.flatMap((g) => (g.hub ? [g.hub.href] : []));
 
+/**
+ * O registro cobre a entrada na tela. Retornos determinísticos são a direção
+ * inversa e também navegam o usuário, mas vivem dentro das páginas de detalhe
+ * em vez do catálogo. Extraímos apenas `Voltar href="/rota-estática"`: hrefs
+ * dinâmicos continuam fora deste contrato e precisam de teste de fluxo próprio.
+ */
+function retornosDeterministicosNoDisco(dir: string): Array<{ arquivo: string; href: string }> {
+  const retornos: Array<{ arquivo: string; href: string }> = [];
+  for (const entrada of fs.readdirSync(dir, { withFileTypes: true })) {
+    const arquivo = path.join(dir, entrada.name);
+    if (entrada.isDirectory()) {
+      retornos.push(...retornosDeterministicosNoDisco(arquivo));
+      continue;
+    }
+    if (!entrada.isFile() || !/\.(?:ts|tsx)$/.test(entrada.name)) continue;
+    const conteudo = fs.readFileSync(arquivo, "utf8");
+    for (const match of conteudo.matchAll(/<Voltar\s+href=["'](\/app\/[\w/-]+)["']/g)) {
+      const href = match[1];
+      if (href) retornos.push({ arquivo: path.relative(RAIZ, arquivo), href });
+    }
+  }
+  return retornos;
+}
+
+const RETORNOS = retornosDeterministicosNoDisco(path.join(RAIZ, "app"));
+
 describe("completude da navegação", () => {
   it("encontrou as rotas do app — se isto zerar, o resto do arquivo não prova nada", () => {
     expect(ROTAS.length).toBeGreaterThan(20);
@@ -91,6 +117,16 @@ describe("completude da navegação", () => {
   it("todo hub de grupo aponta para uma tela que existe", () => {
     const mortos = HUBS.filter((h) => !ROTAS.includes(h));
     expect(mortos, `Hub apontando para rota inexistente:\n  ${mortos.join("\n  ")}`).toEqual([]);
+  });
+
+  it("todo retorno determinístico aponta para uma tela que existe", () => {
+    const mortos = RETORNOS.filter(({ href }) => !ROTAS.includes(href));
+    expect(
+      mortos,
+      `Voltar apontando para rota inexistente:\n  ${mortos
+        .map(({ arquivo, href }) => `${arquivo} → ${href}`)
+        .join("\n  ")}`,
+    ).toEqual([]);
   });
 
   it("a allowlist não guarda rota que já morreu", () => {
