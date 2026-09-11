@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAdapter } from '@/lib/channels';
 import { DETALHE_CREDENCIAL_RECUSADA } from '@/lib/channels/health';
-import { statusHttpDoErroWaha } from '@/lib/channels/adapters/waha';
+import { destinatarioDaFotoNoWaha, statusHttpDoErroWaha } from '@/lib/channels/adapters/waha';
 
 /** A organização atravessa o seam desde a issue #236. */
 const ORG = "00000000-0000-4000-8000-000000000236";
@@ -101,6 +101,29 @@ describe('adapter WAHA', () => {
       // `messages.error_message`), só a casa.
       unknownError: 'waha_unknown',
     });
+  });
+
+  it('normaliza a identidade interna antes de pedir a foto ao WAHA', async () => {
+    const fetchMock = stubWaha({ profilePictureURL: 'https://cdn.example/avatar.jpg' });
+
+    await expect(getAdapter('waha').fetchProfilePictureUrl!({
+      organizationId: ORG,
+      sessionRef: 'default',
+      recipient: 'phone:+5511999998888',
+      forceRefresh: true,
+    })).resolves.toBe('https://cdn.example/avatar.jpg');
+
+    const href = String(fetchMock.mock.calls[0]?.[0]);
+    expect(href).toContain('contactId=5511999998888%40c.us');
+    expect(href).toContain('refresh=true');
+  });
+
+  it.each([
+    ['phone:+5511999998888', '5511999998888@c.us'],
+    ['lid:12345', '12345@lid'],
+    ['5511999998888@c.us', '5511999998888@c.us'],
+  ])('converte %s para o identificador de foto %s', (input, expected) => {
+    expect(destinatarioDaFotoNoWaha(input)).toBe(expected);
   });
 
   it('canal não configurado é NOOP, não erro — e nada sai pela rede', async () => {

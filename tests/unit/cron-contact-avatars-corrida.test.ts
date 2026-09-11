@@ -22,6 +22,8 @@ let linhasAfetadas: { id: string }[] = [];
 const updatesContacts: { patch: Record<string, unknown>; filtros: Record<string, unknown> }[] = [];
 const upsertsFila: Record<string, unknown>[] = [];
 const uploads: string[] = [];
+const filtrosDeJanela: string[] = [];
+const fetchAvatar = vi.fn(async () => "https://cdn.exemplo.invalid/foto.jpg");
 
 vi.mock("@/lib/env", () => ({
   env: { INTERNAL_CRON_SECRET: "segredo-de-teste", INTERNAL_SECRET: "segredo-de-teste" },
@@ -29,9 +31,7 @@ vi.mock("@/lib/env", () => ({
 
 vi.mock("@/lib/channels", () => ({
   DEFAULT_CHANNEL_PROVIDER: "waha",
-  getAdapter: () => ({
-    fetchProfilePictureUrl: async () => "https://cdn.exemplo.invalid/foto.jpg",
-  }),
+  getAdapter: () => ({ fetchProfilePictureUrl: fetchAvatar }),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -50,6 +50,10 @@ vi.mock("@/lib/supabase/admin", () => ({
                 return (ok: (v: unknown) => unknown) => Promise.resolve({ data: dados, error: null }).then(ok);
               }
               if (prop === "maybeSingle") return async () => ({ data: dados, error: null });
+              if (prop === "or") return (filtro: string) => {
+                filtrosDeJanela.push(filtro);
+                return proxy;
+              };
               return () => proxy;
             },
           },
@@ -108,6 +112,8 @@ beforeEach(() => {
   updatesContacts.length = 0;
   upsertsFila.length = 0;
   uploads.length = 0;
+  filtrosDeJanela.length = 0;
+  fetchAvatar.mockClear();
   linhasAfetadas = [{ id: CONTATO }];
   vi.stubGlobal(
     "fetch",
@@ -115,9 +121,9 @@ beforeEach(() => {
   );
 });
 
-function chamar(): Promise<Response> {
+function chamar(query = ""): Promise<Response> {
   return POST(
-    new Request("http://localhost/api/v1/cron/contact-avatars", {
+    new Request(`http://localhost/api/v1/cron/contact-avatars${query}`, {
       method: "POST",
       headers: { authorization: "Bearer segredo-de-teste" },
     }) as never,
@@ -125,6 +131,18 @@ function chamar(): Promise<Response> {
 }
 
 describe("cron de fotos de perfil vs. anonimização", () => {
+  it("force=true ignora o cutoff e força nova consulta no WAHA", async () => {
+    const resposta = await chamar("?force=true");
+
+    expect(resposta.status).toBe(200);
+    expect(filtrosDeJanela).toHaveLength(0);
+    expect(fetchAvatar).toHaveBeenCalledWith(expect.objectContaining({
+      recipient: "phone:+5511999990000",
+      forceRefresh: true,
+    }));
+    await expect(resposta.json()).resolves.toMatchObject({ data: { forced: true } });
+  });
+
   it("a gravação da foto exige is_anonymized=false — não basta ter filtrado no SELECT", async () => {
     await chamar();
 

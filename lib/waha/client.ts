@@ -419,11 +419,16 @@ export class WahaClient {
    * instalação real). Quem chama baixa e persiste; guardar a URL faz a foto
    * sumir sozinha depois.
    */
-  async getProfilePictureUrl(session: string, chatId: string): Promise<string | null> {
+  async getProfilePictureUrl(
+    session: string,
+    chatId: string,
+    options: { refresh?: boolean } = {},
+  ): Promise<string | null> {
     try {
+      const refresh = options.refresh ? "&refresh=true" : "";
       const res = await this.fetchComTeto(
         `${this.baseUrl}/api/contacts/profile-picture` +
-          `?session=${encodeURIComponent(session)}&contactId=${encodeURIComponent(chatId)}`,
+          `?session=${encodeURIComponent(session)}&contactId=${encodeURIComponent(chatId)}${refresh}`,
         { headers: { "X-Api-Key": this.apiKey } },
       );
       if (!res.ok) return null;

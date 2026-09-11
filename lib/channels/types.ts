@@ -182,6 +182,8 @@ export interface ChannelAdapter {
   fetchProfilePictureUrl?(input: ChannelTenantScope & {
     sessionRef: string;
     recipient: string;
+    /** Reconsulta o provedor, ignorando seu cache de foto quando suportado. */
+    forceRefresh?: boolean;
   }): Promise<string | null>;
 
   /**

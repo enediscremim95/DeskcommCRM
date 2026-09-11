@@ -38,6 +38,13 @@ export function statusHttpDoErroWaha(msg: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/** Converte a identidade interna do CRM no JID que o endpoint do WAHA aceita. */
+export function destinatarioDaFotoNoWaha(recipient: string): string {
+  if (recipient.startsWith("phone:")) return `${recipient.slice("phone:".length).replace(/\D/g, "")}@c.us`;
+  if (recipient.startsWith("lid:")) return `${recipient.slice("lid:".length)}@lid`;
+  return recipient;
+}
+
 export const wahaAdapter: ChannelAdapter = {
   provider: "waha",
 
@@ -83,10 +90,13 @@ export const wahaAdapter: ChannelAdapter = {
   async fetchProfilePictureUrl(input: {
     sessionRef: string;
     recipient: string;
+    forceRefresh?: boolean;
   }): Promise<string | null> {
     const client = getWahaClient();
     if (!client) return null;
-    return client.getProfilePictureUrl(input.sessionRef, input.recipient);
+    return client.getProfilePictureUrl(input.sessionRef, destinatarioDaFotoNoWaha(input.recipient), {
+      refresh: input.forceRefresh,
+    });
   },
 
   /**

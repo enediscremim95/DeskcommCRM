@@ -45,13 +45,6 @@ interface ContactRow {
   avatar_storage_path: string | null;
 }
 
-/** `lid:123…` / `phone:+55…` → o chatId que o adapter espera. */
-function chatIdFromIdentity(identity: string): string | null {
-  if (identity.startsWith("lid:")) return `${identity.slice(4)}@lid`;
-  if (identity.startsWith("phone:")) return `${identity.slice(6).replace(/\D/g, "")}@c.us`;
-  return null;
-}
-
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
@@ -64,6 +57,9 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const admin = createAdminClient();
   const cutoff = new Date(Date.now() - REFRESH_AFTER_DAYS * 86_400_000).toISOString();
+  // Operação explícita, nunca usada pelo scheduler: reprocessa imediatamente
+  // depois de corrigir a integração, sem esperar os sete dias do cache local.
+  const force = new URL(req.url).searchParams.get("force") === "true";
 
   // Nunca buscados (null) OU buscados há mais de REFRESH_AFTER_DAYS.
   //
@@ -72,12 +68,13 @@ async function handle(req: NextRequest): Promise<Response> {
   // seguinte e o cron BAIXARIA O ROSTO DELE DE NOVO — reintroduzindo, sozinho e
   // periodicamente, o dado pessoal que acabara de ser apagado. A anonimização é
   // declarada irreversível no produto; esta linha é o que sustenta isso.
-  const { data: contatos, error: queryError } = await admin
+  let query = admin
     .from("contacts")
     .select("id, organization_id, wa_identity, avatar_storage_path")
     .not("wa_identity", "is", null)
-    .eq("is_anonymized", false)
-    .or(`avatar_updated_at.is.null,avatar_updated_at.lt.${cutoff}`)
+    .eq("is_anonymized", false);
+  if (!force) query = query.or(`avatar_updated_at.is.null,avatar_updated_at.lt.${cutoff}`);
+  const { data: contatos, error: queryError } = await query
     .order("avatar_updated_at", { ascending: true, nullsFirst: true })
     .limit(SCAN_LIMIT);
 
@@ -92,7 +89,7 @@ async function handle(req: NextRequest): Promise<Response> {
   let falhas = 0;
 
   for (const c of rows) {
-    const chatId = c.wa_identity ? chatIdFromIdentity(c.wa_identity) : null;
+    const identity = c.wa_identity;
     // Carimba mesmo sem conseguir resolver o chatId: sem isso o contato voltaria
     // em TODA rodada do cron, para sempre, batendo no canal à toa.
     //
@@ -118,7 +115,7 @@ async function handle(req: NextRequest): Promise<Response> {
       return (afetadas ?? []).length > 0;
     };
 
-    if (!chatId) {
+    if (!identity) {
       await carimbar(null);
       semFoto++;
       continue;
@@ -156,7 +153,8 @@ async function handle(req: NextRequest): Promise<Response> {
       const profilePictureURL = await adapter.fetchProfilePictureUrl({
         organizationId: c.organization_id,
         sessionRef: ref,
-        recipient: chatId,
+        recipient: identity,
+        forceRefresh: force,
       });
       if (!profilePictureURL) {
         // Contato sem foto ou com privacidade fechada: estado normal, não erro.
@@ -231,7 +229,7 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   return ok(
-    { scanned: rows.length, updated: atualizados, no_picture: semFoto, failed: falhas },
+    { scanned: rows.length, updated: atualizados, no_picture: semFoto, failed: falhas, forced: force },
     { requestId },
   );
 }
