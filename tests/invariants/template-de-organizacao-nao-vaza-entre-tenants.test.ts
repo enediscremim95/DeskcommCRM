@@ -159,34 +159,48 @@ describe("0233 · template de organização", () => {
     // respostas que o caso anterior criou na organização dele. A primeira versão
     // deste caso fazia isso e acusou 3 linhas "forasteiras" que eram do caso de
     // cima — um vermelho que falava da sonda, não da função.
-    const totais = () =>
-      lastLine(
-        sql(`select (
-               (select count(*) from public.crm_stages) +
-               (select count(*) from public.message_templates) +
-               (select count(*) from public.followup_flow_pointers)
-             )::text || '|' || (
-               (select count(*) from public.crm_stages where organization_id = '${a.org}'::uuid) +
-               (select count(*) from public.message_templates where organization_id = '${a.org}'::uuid) +
-               (select count(*) from public.followup_flow_pointers where organization_id = '${a.org}'::uuid)
-             )::text;`),
-      )
-        .split("|")
-        .map(Number);
+    const contar = (escopo: string): number =>
+      Number(
+        lastLine(
+          sql(`select (
+                 (select count(*) from public.crm_stages ${escopo}) +
+                 (select count(*) from public.message_templates ${escopo}) +
+                 (select count(*) from public.followup_flow_pointers ${escopo})
+               )::text;`),
+        ),
+      );
+    const deA = `where organization_id = '${a.org}'::uuid`;
 
-    const [globalAntes, deAAntes] = totais();
+    const globalAntes = contar("");
+    const deAAntes = contar(deA);
     expect(aplicar(a.org, ator)).toContain('"ok": true');
-    const [globalDepois, deADepois] = totais();
+    const globalDepois = contar("");
+    const deADepois = contar(deA);
 
-    // Se toda linha criada pertence a A, os dois crescimentos são iguais. Uma
-    // linha com organização nula, de B, ou de uma org inexistente faria o total
-    // global crescer mais que o de A.
+    // Se toda linha criada pertence a A, os dois saldos são IGUAIS. Uma linha com
+    // organização nula, de B, ou de uma org inexistente faria o total global
+    // variar mais que o de A.
+    //
+    // ⚠️ O saldo é NEGATIVO e isso é correto: o template troca as 8 etapas que o
+    // gatilho semeia pelas 4 dele (-4), cria 2 respostas e 1 cadência, e fecha em
+    // -1. A primeira versão deste caso exigia saldo POSITIVO como controle
+    // positivo e vermelhava por isso, falando da sonda e não da função.
     expect(
       globalDepois - globalAntes,
       "linha criada fora da organização que recebeu o template",
     ).toBe(deADepois - deAAntes);
-    // Controle positivo: sem isto, uma função que não escrevesse NADA passaria.
-    expect(deADepois - deAAntes, "o template não criou nada (sonda cega)").toBeGreaterThan(0);
+
+    // Controle positivo medido onde só há INSERÇÃO, para não se confundir com a
+    // troca de etapas: sem isto, uma função que não escrevesse nada passaria.
+    const criadas = Number(
+      lastLine(
+        sql(`select (
+               (select count(*) from public.message_templates ${deA}) +
+               (select count(*) from public.followup_flow_pointers ${deA})
+             )::text;`),
+      ),
+    );
+    expect(criadas, "o template não criou nada (sonda cega)").toBe(3);
   });
 
   it("não cria contato, conversa, mensagem, credencial, canal nem webhook", () => {
