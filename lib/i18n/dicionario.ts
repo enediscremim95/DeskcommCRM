@@ -361,6 +361,73 @@ export const DICIONARIO: Traducoes = {
   // da tela de configuração, que antes disputava "Funis" com ela.
   Funis: { es: "Embudos" },
   "Etapas do funil": { es: "Etapas del embudo" },
+  // As duas telas de medição. "Resultados" é a de dentro, que a equipe usa;
+  // "Relatório" é a que o cliente final recebe.
+  Resultados: { es: "Resultados" },
+  "Relatório": { es: "Informe" },
+  "Relatório de desempenho": { es: "Informe de rendimiento" },
+  "Acompanhe o desempenho que foi preparado para sua empresa.": {
+    es: "Siga el rendimiento que se preparó para su empresa.",
+  },
+  "Seu relatório ainda não foi configurado.": { es: "Su informe aún no está configurado." },
+  "Peça à pessoa que administra sua conta para vincular o endereço do relatório.": {
+    es: "Pida a quien administra su cuenta que vincule la dirección del informe.",
+  },
+  "Abrir em nova aba": { es: "Abrir en una pestaña nueva" },
+  "URL do relatório": { es: "URL del informe" },
+  "Opcional. O cliente verá este endereço dentro do CRM.": {
+    es: "Opcional. El cliente verá esta dirección dentro del CRM.",
+  },
+  "Importar relatórios": { es: "Importar informes" },
+  "Cole CSV, com uma linha por organização: ID,URL.": {
+    es: "Pegue CSV, con una línea por organización: ID,URL.",
+  },
+  "Ver prévia": { es: "Ver vista previa" },
+  // O exemplo do campo de colar CSV. Traduz porque a pessoa LÊ o placeholder; o
+  // uuid é o mesmo, muda só o caminho de exemplo da URL.
+  "00000000-0000-0000-0000-000000000000,https://exemplo.com/cliente/": {
+    es: "00000000-0000-0000-0000-000000000000,https://ejemplo.com/cliente/",
+  },
+  "Prévia:": { es: "Vista previa:" },
+  "organizações": { es: "organizaciones" },
+  "Confirmar importação": { es: "Confirmar importación" },
+  // A trilha de navegação ("Configurações › Equipe") e o cartão de modelo de
+  // negócio na tela da organização.
+  "Trilha de navegação": { es: "Ruta de navegación" },
+  "Modelo de negócio": { es: "Modelo de negocio" },
+  "Deixa o funil, os campos, as respostas prontas e o atendente prontos para o nicho do cliente.":
+    {
+      es: "Deja el embudo, los campos, las respuestas rápidas y el asistente listos para el sector del cliente.",
+    },
+  "Já aplicado:": { es: "Ya aplicado:" },
+  campos: { es: "campos" },
+  "respostas prontas": { es: "respuestas rápidas" },
+  "cadências (desligadas)": { es: "secuencias (apagadas)" },
+  Aplicar: { es: "Aplicar" },
+  "Aplicar modelo": { es: "Aplicar modelo" },
+  "Aplicando…": { es: "Aplicando…" },
+  "As colunas do funil atual serão substituídas pelas do modelo. Só funciona em funil vazio: se já tiver negócio dentro, nada é alterado.":
+    {
+      es: "Las columnas del embudo actual se reemplazan por las del modelo. Solo funciona con el embudo vacío: si ya tiene negocios dentro, nada cambia.",
+    },
+  "O atendente recebe as instruções do nicho em rascunho, sem publicar. As cadências entram desligadas. Contatos, conversas e canais não são tocados.":
+    {
+      es: "El asistente recibe las instrucciones del sector como borrador, sin publicar. Las secuencias entran apagadas. Contactos, conversaciones y canales no se tocan.",
+    },
+  // Os três modelos do catálogo (`lib/templates/organizacao/catalogo.ts`), que a
+  // tela passa por t() pelo nome e pela descrição.
+  "Serviços e agência": { es: "Servicios y agencia" },
+  Imobiliária: { es: "Inmobiliaria" },
+  "Clínica e agenda": { es: "Clínica y agenda" },
+  "Agência, consultoria, obra, manutenção e prestação de serviço sob orçamento": {
+    es: "Agencia, consultoría, obra, mantenimiento y servicios por presupuesto",
+  },
+  "Imobiliária, corretor autônomo e lançamento de empreendimento": {
+    es: "Inmobiliaria, agente independiente y lanzamiento de desarrollo",
+  },
+  "Odontologia, laboratório, consultório, estética e qualquer negócio que marca horário": {
+    es: "Odontología, laboratorio, consultorio, estética y cualquier negocio con agenda de turnos",
+  },
   "Tipos de agendamento": { es: "Tipos de cita" },
   Automação: { es: "Automatización" },
   Agentes: { es: "Agentes" },

@@ -32,7 +32,11 @@ it("todo handler mutante do app declara guarda de suporte ou é infraestrutura i
 });
 it("Server Actions que resolvem tenant declaram efeito ou uma exceção pessoal/transição",()=>{
  const exceptions=new Set(["updateProfile.ts","trocarIdioma.ts","recoverOrganization.ts"]); // preferências próprias e recuperação sem org
- const uncovered=files("app/actions").filter(p=>!p.endsWith(".test.ts")&&!exceptions.has(p.split("/").at(-1)!)).filter(p=>{
+ // `split(/[\\/]/)` e não `split("/")`: no Windows o `join` devolve `\`, o split
+ // por `/` não separa nada, nenhuma exceção casa e o gate acusa os três arquivos
+ // isentos. O vermelho só aparecia fora do CI, que é justamente onde quem escreve
+ // roda a suíte antes de abrir PR.
+ const uncovered=files("app/actions").filter(p=>!p.endsWith(".test.ts")&&!exceptions.has(p.split(/[\\/]/).at(-1)!)).filter(p=>{
   const text=readFileSync(p,"utf8");return /await resolveActiveOrg\(/.test(text)&&!text.includes("supportWriteError(");
  });expect(uncovered).toEqual([]);
 });

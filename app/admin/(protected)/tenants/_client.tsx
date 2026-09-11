@@ -38,7 +38,7 @@ export function TenantsClient() {
           </Link>
         </Button>
         <Button asChild size="sm" variant="outline" className="shrink-0">
-          <Link href="/admin/tenants/reports">Importar relatórios</Link>
+          <Link href="/admin/tenants/reports">{t("Importar relatórios")}</Link>
         </Button>
       </div>
 

@@ -154,16 +154,39 @@ describe("0233 · template de organização", () => {
     criarTenant("inv-0233-dono-b");
     const ator = criarOperador("op-0233-dono@invariant.test");
 
-    expect(aplicar(a.org, ator)).toContain('"ok": true');
+    // Medido como DELTA, e não contando linhas pelo título do template: os casos
+    // deste arquivo compartilham o banco, e uma contagem por título somaria as
+    // respostas que o caso anterior criou na organização dele. A primeira versão
+    // deste caso fazia isso e acusou 3 linhas "forasteiras" que eram do caso de
+    // cima — um vermelho que falava da sonda, não da função.
+    const totais = () =>
+      lastLine(
+        sql(`select (
+               (select count(*) from public.crm_stages) +
+               (select count(*) from public.message_templates) +
+               (select count(*) from public.followup_flow_pointers)
+             )::text || '|' || (
+               (select count(*) from public.crm_stages where organization_id = '${a.org}'::uuid) +
+               (select count(*) from public.message_templates where organization_id = '${a.org}'::uuid) +
+               (select count(*) from public.followup_flow_pointers where organization_id = '${a.org}'::uuid)
+             )::text;`),
+      )
+        .split("|")
+        .map(Number);
 
-    const forasteiras = lastLine(
-      sql(`select (
-             (select count(*) from public.crm_stages where organization_id is distinct from '${a.org}'::uuid and pipeline_id='${a.pipeline}'::uuid) +
-             (select count(*) from public.message_templates where organization_id is distinct from '${a.org}'::uuid and title in ('Primeira resposta','Oferecer horários')) +
-             (select count(*) from public.followup_flow_pointers where organization_id is distinct from '${a.org}'::uuid and name='Interessado que não marcou')
-           )::text;`),
-    );
-    expect(forasteiras, "linha criada fora da organização que recebeu o template").toBe("0");
+    const [globalAntes, deAAntes] = totais();
+    expect(aplicar(a.org, ator)).toContain('"ok": true');
+    const [globalDepois, deADepois] = totais();
+
+    // Se toda linha criada pertence a A, os dois crescimentos são iguais. Uma
+    // linha com organização nula, de B, ou de uma org inexistente faria o total
+    // global crescer mais que o de A.
+    expect(
+      globalDepois - globalAntes,
+      "linha criada fora da organização que recebeu o template",
+    ).toBe(deADepois - deAAntes);
+    // Controle positivo: sem isto, uma função que não escrevesse NADA passaria.
+    expect(deADepois - deAAntes, "o template não criou nada (sonda cega)").toBeGreaterThan(0);
   });
 
   it("não cria contato, conversa, mensagem, credencial, canal nem webhook", () => {

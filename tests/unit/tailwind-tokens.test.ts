@@ -82,11 +82,15 @@ describe("Tailwind 4 — a ponte token → utilitário", () => {
 
     expect(consumidos.length).toBeGreaterThan(50);
 
-    // As duas fontes são injetadas pelo `next/font` como custom property no
+    // As fontes são injetadas pelo `next/font` como custom property no
     // `<html>` (app/layout.tsx), não pelo `:root` do CSS — por isso não caem na
     // regra acima. A isenção não é um buraco: o teste confere logo abaixo que
     // elas continuam sendo declaradas lá.
-    const DE_FORA_DO_CSS = ["--font-atkinson", "--font-mono"];
+    //
+    // `--font-sora` entrou com a tipografia de destaque (títulos e números). A
+    // de leitura contínua segue sendo a Atkinson, que é escolha de
+    // acessibilidade — Sora é bonita e não foi desenhada para baixa visão.
+    const DE_FORA_DO_CSS = ["--font-atkinson", "--font-mono", "--font-sora"];
     const layout = fs.readFileSync(path.join(RAIZ, "app/layout.tsx"), "utf8");
     for (const v of DE_FORA_DO_CSS) {
       expect(layout, `${v} deixou de ser declarada pelo next/font`).toContain(`"${v}"`);

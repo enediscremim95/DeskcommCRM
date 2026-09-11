@@ -109,6 +109,19 @@ export async function generateMetadata(): Promise<Metadata> {
       "multi-tenant",
     ],
     robots: { index: false, follow: false },
+    // Sem esta linha o navegador pede `/favicon.ico`, que não existe: medido em
+    // produção, o 404 é a `app/not-found.tsx` INTEIRA (19.435 bytes de HTML)
+    // servida para um pedido de ícone, em toda navegação sem cache. Declarar
+    // `/icon` faz o pedido ir para `app/icon.tsx`, que desenha a marca da
+    // instalação em runtime — ver o cabeçalho daquele arquivo para por que ele
+    // não pode ser um arquivo estático em `public/`.
+    //
+    // ⚠️ A linha já foi apagada uma vez, para dar lugar a um `app/icon.svg`
+    // estático ao lado do `app/icon.tsx`. O desfecho foi o pior dos dois
+    // mundos: dois ícones declarados no mesmo diretório e o pedido a
+    // `/favicon.ico` de volta. O ícone do produto é GERADO — arquivo estático
+    // aqui entrega a marca de quem buildou na aba de todo revendedor.
+    icons: { icon: "/icon" },
   };
 }
 

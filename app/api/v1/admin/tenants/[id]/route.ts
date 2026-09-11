@@ -1,4 +1,5 @@
 import { type NextRequest } from "next/server";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -164,8 +165,15 @@ export async function GET(
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const requestId = randomUUID();
   const { id } = await params;
+  // Sessão de suporte é de LEITURA: quem entrou para diagnosticar não grava a
+  // URL do relatório do cliente. Faltava desde que o PATCH nasceu, e quem
+  // acusou foi `tests/unit/suporte-cobertura-de-efeitos.test.ts` — o gate
+  // existe exatamente para o método novo que esquece a guarda.
+  const supportDenied = await requireSupportWrite(id);
+  if (supportDenied) return supportDenied;
+
+  const requestId = randomUUID();
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try { adminCtx = await requirePlatformAdmin(); } catch { return fail("forbidden", "Platform admin required", 403, { requestId }); }
   const parsed = reportUrlSchema.safeParse(await req.json().catch(() => null));

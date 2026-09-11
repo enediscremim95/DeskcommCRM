@@ -286,4 +286,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 
 | `20260907060000` | `0230_reserva_pre_go_live` | A reserva transacional de novos canais WAHA preserva o pré-go-live da plataforma; retry mantém política e identidade existentes. Forward-fix da integração, sem alterar 0228 aplicada. |
 | `20260910120000` | `0232_url_do_relatorio` | Adiciona URL de relatório por organização e a inclui na criação atômica do tenant. |
+| `20260910220000` | `0234_criacao_de_tenant_sem_regressao` | Forward-fix da 0232: ela reescreveu `fn_create_tenant_with_owner` a partir de cópia anterior à 0221 e derrubou a gravação de `interface_settings` do dono, a marca `tenant_creation_trusted` do recibo e a conferência de procedência do replay. Devolve as três, mantendo `report_url`. |
 | `20260910210000` | `0233_template_de_organizacao` | Aplica um template de nicho (declarado em `lib/templates/organizacao/`) sobre uma organização: funil, etapas, vocabulário, campos, motivos de perda, tags, respostas prontas, prompt do atendente em rascunho e cadências desligadas. Transacional e idempotente; escreve somente a organização recebida, nunca copia dado de outra. |

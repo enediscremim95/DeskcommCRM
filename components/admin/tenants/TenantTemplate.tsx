@@ -109,7 +109,7 @@ export function TenantTemplate({ organizationId, status }: TenantTemplateProps) 
               <div className="space-y-2 text-sm">
                 <p>
                   {t(
-                    "As colunas do funil atual serão substituídas pelas do modelo. Só funciona em funil vazio — se já tiver negócio dentro, nada é alterado.",
+                    "As colunas do funil atual serão substituídas pelas do modelo. Só funciona em funil vazio: se já tiver negócio dentro, nada é alterado.",
                   )}
                 </p>
                 <p>
