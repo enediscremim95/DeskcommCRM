@@ -61,7 +61,14 @@ export const dynamic = "force-dynamic";
 
 /** Teto por rodada. Cada sessão é uma chamada de rede ao transporte. */
 const LIMITE = 50;
-const CORPO_DO_SILENCIO = "A sessão continua WORKING, mas parou de registrar mensagens além do padrão recente deste número. Confira o WAHA e reinicie a sessão somente se a investigação confirmar que a entrada travou.";
+// ⚠️ O texto NÃO nomeia o provider, e não é preferência de estilo: o
+// `lint:channels` (doutrina restrição-de-canal, invariante 1) reprova o nome em
+// qualquer posição do arquivo, string de aviso inclusive. E o aviso fica melhor
+// assim — quem atende não precisa saber qual transporte está por baixo, precisa
+// saber que o número parou de receber.
+const CORPO_DO_SILENCIO =
+  "O canal continua conectado, mas parou de registrar mensagens além do padrão recente deste número. " +
+  "Confira a conexão do WhatsApp e reconecte somente se a investigação confirmar que a entrada travou.";
 
 async function vigiarSilencioInbound(
   admin: ReturnType<typeof createAdminClient>,
