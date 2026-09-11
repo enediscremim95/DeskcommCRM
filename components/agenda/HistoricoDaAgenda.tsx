@@ -115,7 +115,11 @@ export function HistoricoDaAgenda({
   const daAba = grupos[aba];
 
   return (
-    <div data-testid="historico-da-agenda" data-aba={aba} className={cn("flex min-h-0 flex-col", className)}>
+    <div
+      data-testid="historico-da-agenda"
+      data-aba={aba}
+      className={cn("flex min-h-[160px] shrink-0 flex-col", className)}
+    >
       <div
         role="tablist"
         aria-label={t("Filtrar o histórico")}

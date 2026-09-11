@@ -26,7 +26,7 @@ interface Props {
 
 export function FlowBuilder({ flowId, initialData }: Props) {
   return (
-    <div className="flex h-full min-h-[600px] flex-1 flex-col" data-testid="flow-builder-shell">
+    <div className="flex min-h-[600px] flex-1 flex-col" data-testid="flow-builder-shell">
       <FlowCanvas flowId={flowId} initialData={initialData} />
     </div>
   );

@@ -56,7 +56,7 @@ export function PipelinePageClient({
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col gap-4"
+      className="flex min-h-[600px] flex-col gap-4"
       // OBSERVÁVEL de propósito, e é a razão de existir desta linha: "a
       // assinatura morreu" e "nada aconteceu" produzem o MESMO silêncio na
       // tela, e sem este valor nem o produto nem o teste conseguem separar as

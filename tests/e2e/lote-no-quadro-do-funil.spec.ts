@@ -216,8 +216,12 @@ test.describe("Quadro do funil — agir em vários cards de uma vez", () => {
     page,
   }) => {
     const errosDeConsole: string[] = [];
+    const respostas404: string[] = [];
     page.on("console", (m) => {
       if (m.type() === "error") errosDeConsole.push(m.text());
+    });
+    page.on("response", (response) => {
+      if (response.status() === 404) respostas404.push(response.url());
     });
 
     await login(page, creds.users.manager!.email, creds.password);
@@ -250,7 +254,10 @@ test.describe("Quadro do funil — agir em vários cards de uma vez", () => {
     const inesperados = errosDeConsole.filter(
       (e) => !/favicon|ResizeObserver|Download the React DevTools/i.test(e),
     );
-    expect(inesperados, `erros de console: ${inesperados.join(" | ")}`).toEqual([]);
+    expect(
+      inesperados,
+      `erros de console: ${inesperados.join(" | ")}\nrespostas 404: ${respostas404.join(" | ")}`,
+    ).toEqual([]);
   });
 
   test("a caixa da etapa tem o terceiro estado: indeterminado quando é parcial", async ({

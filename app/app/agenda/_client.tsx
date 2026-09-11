@@ -825,7 +825,7 @@ export function AgendaClient({
           setRemarcandoId(null);
           setMarcando(true);
         }}
-        className="min-h-0 flex-1"
+        className="min-h-[720px] flex-1"
       />
 
     </div>

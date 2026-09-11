@@ -61,7 +61,7 @@ export default async function FollowupFlowBuilderPage({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 p-6">
+    <div className="flex min-h-[640px] flex-col gap-4 p-6">
       <div className="shrink-0">
         <Voltar href="/app/ai/followups">Follow-ups</Voltar>
       </div>
