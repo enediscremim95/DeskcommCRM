@@ -285,4 +285,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260907050000` | `0229_mfa_e_lgpd_agenda` | MFA nas quatro ações humanas, ordem de locks LGPD/agenda e footprint de avisos de presença/Meet na redação; baseline e backfill idempotentes. |
 
 | `20260907060000` | `0230_reserva_pre_go_live` | A reserva transacional de novos canais WAHA preserva o pré-go-live da plataforma; retry mantém política e identidade existentes. Forward-fix da integração, sem alterar 0228 aplicada. |
-| 0232 | 20260910120000_0232_url_do_relatorio.sql | Adiciona URL de relatório por organização e a inclui na criação atômica. |
+| `20260910120000` | `0232_url_do_relatorio` | Adiciona URL de relatório por organização e a inclui na criação atômica do tenant. |
+| `20260910210000` | `0233_template_de_organizacao` | Aplica um template de nicho (declarado em `lib/templates/organizacao/`) sobre uma organização: funil, etapas, vocabulário, campos, motivos de perda, tags, respostas prontas, prompt do atendente em rascunho e cadências desligadas. Transacional e idempotente; escreve somente a organização recebida, nunca copia dado de outra. |

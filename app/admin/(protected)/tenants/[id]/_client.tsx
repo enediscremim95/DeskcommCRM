@@ -3,6 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useTenantDetail } from "@/hooks/useTenantDetail";
 import { TenantOverview } from "@/components/admin/tenants/TenantOverview";
 import { TenantActions } from "@/components/admin/tenants/TenantActions";
+import { TenantTemplate } from "@/components/admin/tenants/TenantTemplate";
 import { SuspendedBanner } from "@/components/admin/tenants/SuspendedBanner";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -50,11 +51,14 @@ export function TenantOverviewClient({ id }: TenantOverviewClientProps) {
           counts={counts}
           integrations={integrations}
         />
-        <TenantActions
-          organizationId={organization.id}
-          status={organization.status}
-          displayName={organization.display_name}
-        />
+        <div className="space-y-6">
+          <TenantActions
+            organizationId={organization.id}
+            status={organization.status}
+            displayName={organization.display_name}
+          />
+          <TenantTemplate organizationId={organization.id} status={organization.status} />
+        </div>
       </div>
     </div>
   );
