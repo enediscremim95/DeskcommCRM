@@ -255,7 +255,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
           onPublishSuccess={clearNodeErrors}
         />
       )}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <NodePalette onAdd={onPaletteAdd} />
         {/* Abaixo de `lg` a paleta fixa de 224px não cabe do lado do canvas —
             vira um drawer, disparado por este botão flutuante. */}
@@ -272,7 +272,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
           </SheetContent>
         </Sheet>
 
-        <div className="relative h-full flex-1" data-testid="flow-canvas" onDragOver={onDragOver} onDrop={onDrop}>
+        <div className="relative min-h-0 flex-1" data-testid="flow-canvas" onDragOver={onDragOver} onDrop={onDrop}>
           <ReactFlow
             nodes={nodes}
             edges={edgesForRender}
