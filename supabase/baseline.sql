@@ -23770,6 +23770,24 @@ revoke all on function public.fn_aplicar_template_de_organizacao(uuid, uuid, jso
 grant execute on function public.fn_aplicar_template_de_organizacao(uuid, uuid, jsonb)
   to service_role;
 
+-- ---- implementações anteriores de template sem EXECUTE externo (migration 0237) ----
+-- `ALTER FUNCTION ... RENAME` carrega grants. As versões preservadas para
+-- compatibilidade só são chamadas dentro do SECURITY DEFINER atual, nunca por
+-- sessão, portanto não recebem EXECUTE de nenhum papel externo.
+do $$
+declare
+  assinatura text;
+begin
+  foreach assinatura in array array[
+    'public.fn_aplicar_template_de_organizacao_0233(uuid,uuid,jsonb)',
+    'public.fn_aplicar_template_de_organizacao_0235(uuid,uuid,jsonb)'
+  ] loop
+    if to_regprocedure(assinatura) is not null then
+      execute format('revoke all on function %s from public, anon, authenticated, service_role', assinatura);
+    end if;
+  end loop;
+end $$;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
