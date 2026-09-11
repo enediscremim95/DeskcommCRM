@@ -52,6 +52,7 @@ import {
   type ChannelSessionRef,
 } from "@/lib/channels";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
+import { diagnosticarSilencioInbound } from "@/lib/channels/inbound-silence";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -60,6 +61,61 @@ export const dynamic = "force-dynamic";
 
 /** Teto por rodada. Cada sessão é uma chamada de rede ao transporte. */
 const LIMITE = 50;
+const CORPO_DO_SILENCIO = "A sessão continua WORKING, mas parou de registrar mensagens além do padrão recente deste número. Confira o WAHA e reinicie a sessão somente se a investigação confirmar que a entrada travou.";
+
+async function vigiarSilencioInbound(
+  admin: ReturnType<typeof createAdminClient>,
+  sessao: Pick<LinhaDeSessao, "id" | "organization_id" | "status" | "display_name" | "phone_number">,
+): Promise<"silencio_avisado" | "silencio_resolvido" | "silencio_normal" | "silencio_sem_amostra"> {
+  // Status saudável é pré-condição. Se o canal se declarou fora do ar, o aviso
+  // de estado é mais honesto e já existe; não abrimos dois alarmes para a mesma ação.
+  if (sessao.status !== "WORKING") return "silencio_normal";
+  const desde = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
+  const { data } = await admin
+    .from("messages")
+    .select("sent_at")
+    .eq("organization_id", sessao.organization_id)
+    .eq("channel_session_id", sessao.id)
+    .eq("direction", "inbound")
+    .gte("sent_at", desde)
+    .order("sent_at", { ascending: false })
+    .limit(100);
+  const diagnostico = diagnosticarSilencioInbound((data ?? []).map((m) => m.sent_at as string));
+  if (diagnostico.limiarMs === null) return "silencio_sem_amostra";
+
+  const abertos = await admin
+    .from("agent_inbox_items")
+    .select("id")
+    .eq("organization_id", sessao.organization_id)
+    .eq("kind", "channel_number_alert")
+    .eq("ref_kind", "channel_session")
+    .eq("ref_id", sessao.id)
+    .eq("body", CORPO_DO_SILENCIO)
+    .eq("status", "open");
+  const jaAberto = (abertos.data ?? []).length > 0;
+  if (!diagnostico.deveAvisar) {
+    if (!jaAberto) return "silencio_normal";
+    await admin.from("agent_inbox_items").update({ status: "resolved" })
+      .eq("organization_id", sessao.organization_id).eq("kind", "channel_number_alert")
+      .eq("ref_kind", "channel_session").eq("ref_id", sessao.id)
+      .eq("body", CORPO_DO_SILENCIO).eq("status", "open");
+    return "silencio_resolvido";
+  }
+  if (jaAberto) return "silencio_normal";
+  const apelido = sessao.display_name ?? sessao.phone_number ?? "sem nome";
+  const minutos = Math.round(diagnostico.limiarMs / 60_000);
+  await admin.from("agent_inbox_items").insert({
+    organization_id: sessao.organization_id,
+    kind: "channel_number_alert",
+    severity: "critical",
+    title: `WhatsApp "${apelido}" parece ligado, mas não está recebendo mensagens`,
+    body: CORPO_DO_SILENCIO,
+    ref_kind: "channel_session",
+    ref_id: sessao.id,
+    metadata: { origem: "inbound_silence_watchdog", amostra: diagnostico.amostra, limiar_minutos: minutos },
+  });
+  return "silencio_avisado";
+}
 
 type LinhaDeSessao = ChannelSessionRef & {
   id: string;
@@ -139,6 +195,8 @@ async function handle(req: NextRequest): Promise<Response> {
         apelido,
       );
       desfechos[desfecho] = (desfechos[desfecho] ?? 0) + 1;
+      const silencio = await vigiarSilencioInbound(admin, { ...s, status: statusFinal });
+      desfechos[silencio] = (desfechos[silencio] ?? 0) + 1;
     } catch (err) {
       // Uma sessão problemática não derruba o lote — as outras ainda precisam
       // ser vigiadas, e é justamente numa rodada assim que alguma pode ter caído.

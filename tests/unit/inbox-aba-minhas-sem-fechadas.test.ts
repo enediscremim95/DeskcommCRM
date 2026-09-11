@@ -141,6 +141,16 @@ const temNotTerminal = (chamadas: { metodo: string; args: unknown[] }[]) =>
   );
 
 describe("listConversationsHandler — predicado", () => {
+  it("Fila sem sort explícito ordena por espera; Recentes muda só a leitura da Fila", async () => {
+    const espera = await rodar({ comando: ["aguardando"] });
+    const recentes = await rodar({ comando: ["aguardando"], sort: "recent" });
+    const ordem = (chamadas: { metodo: string; args: unknown[] }[]) =>
+      chamadas.find((c) => c.metodo === "order")?.args;
+
+    expect(ordem(espera)).toEqual(["last_inbound_at", { ascending: true, nullsFirst: false }]);
+    expect(ordem(recentes)).toEqual(["last_message_at", { ascending: false, nullsFirst: false }]);
+  });
+
   it("com exclude_finished, exclui as terminais no BANCO (não na tela)", async () => {
     expect(temNotTerminal(await rodar({ assigned_to: "me", exclude_finished: true }))).toBe(true);
   });
@@ -162,7 +172,9 @@ describe("listConversationsHandler — predicado", () => {
   it("continua filtrando por organização — o filtro novo não desloca o de tenant", async () => {
     const chamadas = await rodar({ assigned_to: "me", exclude_finished: true });
     expect(
-      chamadas.some((c) => c.metodo === "eq" && c.args[0] === "organization_id" && c.args[1] === "org-1"),
+      chamadas.some(
+        (c) => c.metodo === "eq" && c.args[0] === "organization_id" && c.args[1] === "org-1",
+      ),
     ).toBe(true);
   });
 });

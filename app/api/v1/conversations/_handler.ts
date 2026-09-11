@@ -11,10 +11,7 @@ import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
-import type {
-  ListConversationsQuery,
-  PatchConversationInput,
-} from "@/lib/schemas";
+import type { ListConversationsQuery, PatchConversationInput } from "@/lib/schemas";
 import type { Conversation } from "@/lib/types/messaging";
 
 /**
@@ -25,12 +22,14 @@ import type { Conversation } from "@/lib/types/messaging";
  * está em `tests/e2e/`.
  */
 export function termoSeguroParaOr(bruto: string): string {
-  return bruto
-    .trim()
-    // curingas do `ilike` (Postgres)
-    .replace(/[%_]/g, (m) => `\\${m}`)
-    // gramática do `or=` (PostgREST) — viram o próprio curinga
-    .replace(/[,()]/g, "*");
+  return (
+    bruto
+      .trim()
+      // curingas do `ilike` (Postgres)
+      .replace(/[%_]/g, (m) => `\\${m}`)
+      // gramática do `or=` (PostgREST) — viram o próprio curinga
+      .replace(/[,()]/g, "*")
+  );
 }
 
 type SB = SupabaseClient;
@@ -157,9 +156,14 @@ export async function listConversationsHandler(
   // a ordenação por tempo de espera sumiria **sem nenhum sintoma na tela**: a
   // lista continuaria populada, só que ordenada por atividade recente, e quem
   // espera desde ontem afundaria embaixo de quem escreveu agora.
+  // A Fila é, por padrão, uma promessa de justiça: quem espera há mais tempo
+  // vem primeiro e recebe a posição ordinal da lista. A leitura por atividade
+  // recente é uma visão separada, pedida explicitamente pela tela; sem isso,
+  // cada mensagem nova empurraria para baixo quem aguarda resposta há mais tempo.
   const isQueue = q.comando?.includes("aguardando") ?? q.assigned_to === "unassigned";
-  const sortCol = isQueue ? "last_inbound_at" : "last_message_at";
-  const asc = isQueue;
+  const recentFirst = isQueue && q.sort === "recent";
+  const sortCol = recentFirst || !isQueue ? "last_message_at" : "last_inbound_at";
+  const asc = !recentFirst && isQueue;
 
   let query = supabase
     .from("conversations")
@@ -298,13 +302,9 @@ export async function listConversationsHandler(
       // ou o formato do id mudarem.
       .limit(TETO_DE_CONTATOS_NA_BUSCA);
 
-    const ids = idsQueCabemNaURL(
-      (contatos ?? []).map((c) => (c as { id: string }).id),
-    );
+    const ids = idsQueCabemNaURL((contatos ?? []).map((c) => (c as { id: string }).id));
     if (ids.length > 0) {
-      query = query.or(
-        `last_message_preview.ilike.*${s}*,contact_id.in.(${ids.join(",")})`,
-      );
+      query = query.or(`last_message_preview.ilike.*${s}*,contact_id.in.(${ids.join(",")})`);
     } else {
       // Sem ids casados, um `contact_id.in.()` vazio é SQL inválido no
       // PostgREST — a busca por conteúdo segue sozinha, como antes.
@@ -325,9 +325,7 @@ export async function listConversationsHandler(
     }
     const op = asc ? "gt" : "lt";
     if (c.sort) {
-      query = query.or(
-        `${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`,
-      );
+      query = query.or(`${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`);
     } else {
       // Página já na região de sort NULL (nulls last): pagina só por id.
       query = query.is(sortCol, null);
@@ -431,20 +429,34 @@ export async function patchConversationHandler(
   if (input.status !== undefined) {
     const observed = await getConversationHandler(supabase, ctx, conversationId);
     const { error: statusError } = await createAdminClient().rpc("fn_service_status", {
-      p_org: ctx.organization_id, p_conversation: conversationId, p_status: input.status,
+      p_org: ctx.organization_id,
+      p_conversation: conversationId,
+      p_status: input.status,
       p_expected: input.expected_revision ?? observed.service_revision,
     });
-    if (statusError) throw new ApiError(statusError.code === "40001" ? 409 : statusError.code === "P0002" ? 404 : 500,
-      statusError.code === "40001" ? "conflict" : statusError.code === "P0002" ? "not_found" : "internal_error", undefined, ctx.requestId, statusError.message);
+    if (statusError)
+      throw new ApiError(
+        statusError.code === "40001" ? 409 : statusError.code === "P0002" ? 404 : 500,
+        statusError.code === "40001"
+          ? "conflict"
+          : statusError.code === "P0002"
+            ? "not_found"
+            : "internal_error",
+        undefined,
+        ctx.requestId,
+        statusError.message,
+      );
   }
   if (input.tags !== undefined) {
     update.tags = input.tags;
   }
 
-  const query = Object.keys(update).length > 0
-    ? supabase.from("conversations").update(update)
-    : supabase.from("conversations");
-  const { data, error } = await query.select(SELECT_COLS)
+  const query =
+    Object.keys(update).length > 0
+      ? supabase.from("conversations").update(update)
+      : supabase.from("conversations");
+  const { data, error } = await query
+    .select(SELECT_COLS)
     .eq("id", conversationId)
     .eq("organization_id", ctx.organization_id)
     .maybeSingle();

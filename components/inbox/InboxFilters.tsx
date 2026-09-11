@@ -46,6 +46,8 @@ export function visibleInboxTabs(role: Role, mode: VisibilityMode | undefined): 
 
 export interface InboxFiltersValue {
   tab: InboxTab;
+  /** A Fila tem duas leituras; fora dela este estado não altera a consulta. */
+  queue_order: "waiting" | "recent";
   search: string;
   onlyUnread: boolean;
   channel_session_id?: string;
@@ -111,7 +113,7 @@ export function InboxFilters({ value, onChange }: Props) {
             <MagnifyingGlass
               size={15}
               weight="regular"
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-subtle"
+              className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-text-subtle"
               aria-hidden
             />
             <Input
@@ -131,7 +133,7 @@ export function InboxFilters({ value, onChange }: Props) {
             onClick={() => onChange({ ...value, onlyUnread: !value.onlyUnread })}
             className={cn(
               "h-9 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors",
-              "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden",
               value.onlyUnread
                 ? "border-accent bg-accent text-accent-foreground"
                 : "border-border bg-transparent text-text-muted hover:bg-surface-elevated",
@@ -199,6 +201,40 @@ export function InboxFilters({ value, onChange }: Props) {
             )}
           </div>
         )}
+
+        {value.tab === "unassigned" && (
+          <div
+            className="inline-flex h-8 w-full rounded-full bg-surface-elevated p-0.5"
+            aria-label={t("Ordem da Fila")}
+          >
+            <button
+              type="button"
+              aria-pressed={value.queue_order === "waiting"}
+              onClick={() => onChange({ ...value, queue_order: "waiting" })}
+              className={cn(
+                "flex-1 rounded-full px-2 text-xs font-medium transition-colors",
+                value.queue_order === "waiting"
+                  ? "bg-background text-text shadow-sm"
+                  : "text-text-muted hover:text-text",
+              )}
+            >
+              {t("Por espera")}
+            </button>
+            <button
+              type="button"
+              aria-pressed={value.queue_order === "recent"}
+              onClick={() => onChange({ ...value, queue_order: "recent" })}
+              className={cn(
+                "flex-1 rounded-full px-2 text-xs font-medium transition-colors",
+                value.queue_order === "recent"
+                  ? "bg-background text-text shadow-sm"
+                  : "text-text-muted hover:text-text",
+              )}
+            >
+              {t("Recentes")}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Faixa sublinhada, não caixa cinza: cinco abas num grid de 280px
@@ -208,7 +244,7 @@ export function InboxFilters({ value, onChange }: Props) {
         onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}
         className="px-3"
       >
-        <TabsList className="h-auto w-full justify-between gap-2 rounded-none bg-transparent p-0 [scrollbar-width:none]">
+        <TabsList className="h-auto w-full [scrollbar-width:none] justify-between gap-2 rounded-none bg-transparent p-0">
           {tabs.map((tab) => {
             const meta = INBOX_TABS.find((t) => t.value === tab)!;
             const count = countFor[tab];
@@ -216,11 +252,11 @@ export function InboxFilters({ value, onChange }: Props) {
               <TabsTrigger
                 key={tab}
                 value={tab}
-                className="-mb-px shrink-0 gap-1 rounded-none border-b-2 border-transparent px-0 pb-2 pt-1 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
+                className="-mb-px shrink-0 gap-1 rounded-none border-b-2 border-transparent px-0 pt-1 pb-2 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
               >
                 {t(meta.label)}
                 {typeof count === "number" && count > 0 && (
-                  <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
+                  <span className="text-[11px] text-text-subtle tabular-nums">{count}</span>
                 )}
               </TabsTrigger>
             );

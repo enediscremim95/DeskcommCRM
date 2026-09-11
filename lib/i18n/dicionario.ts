@@ -353,6 +353,11 @@ export const DICIONARIO: Traducoes = {
   Agenda: { es: "Agenda" },
   Radar: { es: "Radar" },
   "Respostas rápidas": { es: "Respuestas rápidas" },
+  // O alternador de ordem dentro da Fila do inbox. "Por espera" é o padrão e é o
+  // que a fila promete: quem chegou primeiro não afunda.
+  "Ordem da Fila": { es: "Orden de la cola" },
+  "Por espera": { es: "Por espera" },
+  Recentes: { es: "Recientes" },
   Contatos: { es: "Contactos" },
   // A CHAVE É O TEXTO PT-BR, então renomear um rótulo no registro de navegação
   // sem mexer aqui NÃO quebra teste nenhum — degrada em silêncio: `traduzir()`

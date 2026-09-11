@@ -65,13 +65,7 @@ export type ConversationWithContact = Conversation & {
 
 /** O vocabulário de LEITURA (7), que inclui os dois estados que só o motor escreve. */
 export type StatusDeConversa =
-  | "open"
-  | "pending"
-  | "resolved"
-  | "claimed"
-  | "ai_handling"
-  | "closed"
-  | "archived";
+  "open" | "pending" | "resolved" | "claimed" | "ai_handling" | "closed" | "archived";
 
 export interface ConversationsFilters {
   /** Um status ou vários — a aba Fila precisa de dois (open + pending). */
@@ -85,6 +79,8 @@ export interface ConversationsFilters {
    * vida, este é quem responde a próxima mensagem do cliente.
    */
   comando?: readonly ComandoDoBanco[];
+  /** Ordem especial da Fila. Ausente preserva a fila justa, por tempo de espera. */
+  sort?: "recent";
   search?: string;
   channel_session_id?: string;
   tag?: string;
@@ -95,10 +91,7 @@ interface ListResponse {
   meta?: { cursor?: string | null; has_more?: boolean };
 }
 
-export function useConversationsRealtime(
-  filters: ConversationsFilters,
-  orgId: string | null,
-) {
+export function useConversationsRealtime(filters: ConversationsFilters, orgId: string | null) {
   const qc = useQueryClient();
   const queryKey = ["conversations", filters] as const;
 
@@ -119,6 +112,7 @@ export function useConversationsRealtime(
       if (filters.comando && filters.comando.length > 0) {
         qs.set("comando", filters.comando.join(","));
       }
+      if (filters.sort === "recent") qs.set("sort", "recent");
       if (filters.exclude_finished) qs.set("exclude_finished", "true");
       if (filters.assigned_to) qs.set("assigned_to", filters.assigned_to);
       if (filters.search) qs.set("search", filters.search);

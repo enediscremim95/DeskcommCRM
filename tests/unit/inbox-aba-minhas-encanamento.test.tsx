@@ -17,7 +17,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 // Tipado com a URL: o teste lê o 1º argumento, e `(...a: unknown[])` o esconde.
-const getSpy = vi.fn(async (_url: string) => ({ data: [], meta: { has_more: false, cursor: null } }));
+const getSpy = vi.fn(async (_url: string) => ({
+  data: [],
+  meta: { has_more: false, cursor: null },
+}));
 vi.mock("@/lib/api/client", () => ({ apiClient: { get: (url: string) => getSpy(url) } }));
 vi.mock("@/components/feedback/ApiErrorToast", () => ({ showApiError: vi.fn() }));
 vi.mock("@/lib/supabase/browser", () => ({
@@ -54,19 +57,22 @@ describe("elo do meio 1 — o hook serializa", () => {
   it("NÃO manda nada quando a aba não pede", async () => {
     expect(await urlPedida({ assigned_to: "me" })).not.toContain("exclude_finished");
   });
+
+  it("manda sort=recent somente quando a leitura por atividade pede", async () => {
+    expect(await urlPedida({ comando: ["aguardando"], sort: "recent" })).toContain("sort=recent");
+    expect(await urlPedida({ comando: ["aguardando"] })).not.toContain("sort=");
+  });
 });
 
 // ---------------------------------------------------------------------------
 
 // Tipado com os 3 parâmetros reais: o teste lê o 3º (o `q` montado pela rota),
 // e com `(...a: unknown[])` esse índice não existe no tipo.
-const handlerSpy = vi.fn(
-  async (_sb: unknown, _ctx: unknown, _q: Record<string, unknown>) => ({
-    conversations: [],
-    cursor: null,
-    has_more: false,
-  }),
-);
+const handlerSpy = vi.fn(async (_sb: unknown, _ctx: unknown, _q: Record<string, unknown>) => ({
+  conversations: [],
+  cursor: null,
+  has_more: false,
+}));
 vi.mock("@/app/api/v1/conversations/_handler", () => ({
   listConversationsHandler: (sb: unknown, ctx: unknown, q: Record<string, unknown>) =>
     handlerSpy(sb, ctx, q),
@@ -93,7 +99,9 @@ async function queryRecebida(qs: string) {
 
 describe("elo do meio 2 — a rota lê da URL", () => {
   it("exclude_finished=true chega ao handler", async () => {
-    expect((await queryRecebida("assigned_to=me&exclude_finished=true")).exclude_finished).toBe(true);
+    expect((await queryRecebida("assigned_to=me&exclude_finished=true")).exclude_finished).toBe(
+      true,
+    );
   });
 
   it("sem o parâmetro, o handler não recebe o filtro", async () => {
@@ -103,5 +111,9 @@ describe("elo do meio 2 — a rota lê da URL", () => {
   it("só a string 'true' liga — 'false' não pode ligar por ser não-vazia", async () => {
     expect((await queryRecebida("exclude_finished=false")).exclude_finished).toBeUndefined();
     expect((await queryRecebida("exclude_finished=0")).exclude_finished).toBeUndefined();
+  });
+
+  it("sort=recent chega ao handler", async () => {
+    expect((await queryRecebida("comando=aguardando&sort=recent")).sort).toBe("recent");
   });
 });

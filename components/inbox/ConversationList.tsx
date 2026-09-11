@@ -50,13 +50,13 @@ export function ConversationList({
   const canais = useChannelSessions().data ?? [];
   const maisDeUmCanal = canais.length > 1;
 
-  // Fila (G5-03): a lista já vem ordenada por tempo de espera (server), então a
-  // posição é o índice na lista visível. Só mostramos posição/espera nessa visão.
-  // A Fila deixou de mandar `assigned_to=unassigned` (agora pede `comando`), e
-  // sem esta linha a numeração "1º, 2º…" e o tempo de espera sumiriam da única
-  // visão em que servem para alguma coisa — sem erro nenhum, só sumiriam.
-  const isQueue =
-    filters.comando?.includes("aguardando") ?? filters.assigned_to === "unassigned";
+  // A posição só existe na ordem que a sustenta. Na leitura por atividade a
+  // linha pode subir a cada mensagem, portanto um "3º" ali prometeria algo que
+  // não é uma fila.
+  const isWaitingQueue =
+    (filters.comando?.includes("aguardando") ?? filters.assigned_to === "unassigned") &&
+    filters.sort !== "recent";
+
   // Uma leitura por lista, compartilhada por todas as linhas (react-query dedupa
   // com o cabeçalho, que faz a mesma pergunta).
   const automaticoDaOrg = useAutomaticoAtivo();
@@ -100,8 +100,7 @@ export function ConversationList({
    * já é robô, e repetir o ícone em cada uma vira ruído. Nas outras abas a
    * lista é mista (ou pode ser), então o ícone segue dizendo algo.
    */
-  const mostrarAutomatico =
-    !(filters.comando?.length === 1 && filters.comando[0] === "automatico");
+  const mostrarAutomatico = !(filters.comando?.length === 1 && filters.comando[0] === "automatico");
 
   useEffect(() => {
     if (onVisibleChange) onVisibleChange(items.map((i) => i.id));
@@ -122,12 +121,7 @@ export function ConversationList({
     return (
       <div className="p-4 text-center text-sm text-muted-foreground">
         <p>{t("Erro ao carregar conversas.")}</p>
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-2"
-          onClick={() => q.refetch()}
-        >
+        <Button size="sm" variant="outline" className="mt-2" onClick={() => q.refetch()}>
           Tentar novamente
         </Button>
       </div>
@@ -151,7 +145,7 @@ export function ConversationList({
             conversation={c}
             isSelected={c.id === selectedId}
             onSelect={onSelect}
-            queuePosition={isQueue ? i + 1 : undefined}
+            queuePosition={isWaitingQueue ? i + 1 : undefined}
             mostrarCanal={maisDeUmCanal}
             mostrarAtendente={mostrarAtendente}
             mostrarAutomatico={mostrarAutomatico}
