@@ -1,14 +1,130 @@
 {
-  "name": "template-de-organizacao",
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Template de organização — o nicho do cliente em um clique",
+    "subtitle": "configuração declarada em código, nunca cópia de outra organização",
+    "output": "template-de-organizacao.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "codigo", "label": "Versionado em código (a Veritas edita)" },
+    { "id": "app", "label": "App — rota de plataforma" },
+    { "id": "banco", "label": "Banco (sempre a organização recebida)" },
+    { "id": "humano", "label": "O que o operador vê" }
+  ],
+  "mainPath": ["catalogo", "payload", "cartao", "rota", "rpc", "proveniencia", "recibo"],
   "nodes": [
-    { "id": "tela", "kind": "ui", "label": "Modelo de negócio" },
-    { "id": "rota", "kind": "api", "label": "POST template" },
-    { "id": "rpc", "kind": "database", "label": "fn_aplicar_template_de_organizacao" },
-    { "id": "proveniencia", "kind": "database", "label": "organization_template_items" },
-    { "id": "rascunho", "kind": "database", "label": "ai_agent_versions draft" }
+    {
+      "id": "catalogo",
+      "lane": "codigo",
+      "col": 0,
+      "type": "config",
+      "label": "lib/templates/organizacao/catalogo.ts",
+      "sublabel": "3 templates: serviços e agência · imobiliária · clínica e agenda"
+    },
+    {
+      "id": "payload",
+      "lane": "codigo",
+      "col": 1,
+      "type": "service",
+      "label": "payloadDoTemplate()",
+      "sublabel": "funções PURAS, sem organização: funil do pacote + cadência virada grafo"
+    },
+    {
+      "id": "cartao",
+      "lane": "humano",
+      "col": 1,
+      "type": "frontend",
+      "label": "Cartão \"Modelo de negócio\"",
+      "sublabel": "/admin/tenants/[id] · avisa que o funil é substituído antes do clique"
+    },
+    {
+      "id": "rota",
+      "lane": "app",
+      "col": 2,
+      "type": "api",
+      "label": "POST /api/v1/admin/tenants/[id]/template",
+      "sublabel": "platform admin escopo full + MFA + requireSupportWrite"
+    },
+    {
+      "id": "rpc",
+      "lane": "banco",
+      "col": 3,
+      "type": "database",
+      "label": "fn_aplicar_template_de_organizacao",
+      "sublabel": "transacional · advisory lock por org · recusa funil com negócio"
+    },
+    {
+      "id": "configuracao",
+      "lane": "banco",
+      "col": 4,
+      "type": "database",
+      "label": "crm_pipelines · crm_stages · message_templates · followup_flow_pointers",
+      "sublabel": "etapas, vocabulário, campos, motivos de perda, respostas, cadências DESLIGADAS"
+    },
+    {
+      "id": "rascunho",
+      "lane": "banco",
+      "col": 4,
+      "type": "database",
+      "label": "ai_agent_versions (status draft)",
+      "sublabel": "clonada da publicada; o runtime segue na publicada até alguém publicar"
+    },
+    {
+      "id": "proveniencia",
+      "lane": "banco",
+      "col": 5,
+      "type": "database",
+      "label": "organization_template_items",
+      "sublabel": "o que o template criou, com snapshot — é o que torna a troca segura"
+    },
+    {
+      "id": "recibo",
+      "lane": "humano",
+      "col": 6,
+      "type": "frontend",
+      "label": "Recibo na tela",
+      "sublabel": "itens preservados, estado híbrido e as recusas em português"
+    }
   ],
   "edges": [
-    ["tela", "rota"], ["rota", "rpc"], ["rpc", "proveniencia"], ["rpc", "rascunho"], ["proveniencia", "rpc"]
+    { "id": "e1", "from": "catalogo", "to": "payload", "label": "template validado por zod" },
+    { "id": "e2", "from": "payload", "to": "rota", "label": "jsonb, sem organização dentro" },
+    { "id": "e3", "from": "cartao", "to": "rota", "label": "o operador escolhe o nicho" },
+    { "id": "e4", "from": "rota", "to": "rpc", "label": "p_organization_id da URL, nunca do corpo" },
+    { "id": "e5", "from": "rpc", "to": "configuracao", "label": "escreve só a organização recebida" },
+    { "id": "e6", "from": "rpc", "to": "rascunho", "label": "versão draft, sem publicar" },
+    { "id": "e7", "from": "rpc", "to": "proveniencia", "label": "marca o que nasceu desta aplicação" },
+    {
+      "id": "e8",
+      "from": "proveniencia",
+      "to": "rpc",
+      "label": "LAÇO: na troca, remove só o que segue intacto"
+    },
+    { "id": "e9", "from": "rpc", "to": "recibo", "label": "o que entrou e o que foi preservado" },
+    {
+      "id": "e10",
+      "from": "configuracao",
+      "to": "recibo",
+      "label": "recusa quando o funil já tem negócio"
+    }
   ],
-  "feedback_loop": "A proveniência retorna à RPC na troca seguinte, preservando itens editados e declarando o estado híbrido ao operador."
+  "cards": [
+    {
+      "id": "porque-nao-clonar",
+      "title": "Por que não clonar uma organização",
+      "body": "Clonar é um select em tabelas que carregam contato, conversa, mensagem, credencial, sessão de WhatsApp e webhook com segredo — e a lista de exclusão cresce a cada migration, sozinha, sem ninguém ser avisado. Aqui o conteúdo vem do payload, que vem de arquivo versionado: tabela nova não atravessa por acidente, porque não existe \"copie o resto\". Cobrado por tests/invariants/template-de-organizacao-nao-vaza-entre-tenants.test.ts."
+    },
+    {
+      "id": "laco-de-retorno",
+      "title": "O laço que fecha",
+      "body": "A procedência volta à RPC na troca seguinte: o que o template criou e ninguém editou é removido, o que alguém editou é preservado e DECLARADO. Sem esse laço, trocar de nicho só poderia sobrescrever no escuro ou ser proibido."
+    },
+    {
+      "id": "desligado-de-proposito",
+      "title": "O que nasce desligado, e por quê",
+      "body": "O atendente entra como rascunho: publicar poria no ar, falando com cliente final, um texto que ninguém da empresa leu. As cadências entram sem versão ativa: cadência ligada num tenant recém-criado começa a mandar WhatsApp em nome de um cliente que ainda não viu a mensagem."
+    }
+  ]
 }

@@ -400,6 +400,10 @@ export const DICIONARIO: Traducoes = {
       es: "Deja el embudo, los campos, las respuestas rápidas y el asistente listos para el sector del cliente.",
     },
   "Já aplicado:": { es: "Ya aplicado:" },
+  "Ao trocar, o sistema remove apenas respostas e cadências que o modelo anterior criou e que continuam sem edição. Itens alterados por alguém são preservados e a confirmação informa isso.":
+    {
+      es: "Al cambiar, el sistema elimina solo las respuestas y secuencias que el modelo anterior creó y que siguen sin edición. Los elementos que alguien modificó se preservan y la confirmación lo informa.",
+    },
   campos: { es: "campos" },
   "respostas prontas": { es: "respuestas rápidas" },
   "cadências (desligadas)": { es: "secuencias (apagadas)" },
