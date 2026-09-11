@@ -1,0 +1,14 @@
+{
+  "name": "template-de-organizacao",
+  "nodes": [
+    { "id": "tela", "kind": "ui", "label": "Modelo de negócio" },
+    { "id": "rota", "kind": "api", "label": "POST template" },
+    { "id": "rpc", "kind": "database", "label": "fn_aplicar_template_de_organizacao" },
+    { "id": "proveniencia", "kind": "database", "label": "organization_template_items" },
+    { "id": "rascunho", "kind": "database", "label": "ai_agent_versions draft" }
+  ],
+  "edges": [
+    ["tela", "rota"], ["rota", "rpc"], ["rpc", "proveniencia"], ["rpc", "rascunho"], ["proveniencia", "rpc"]
+  ],
+  "feedback_loop": "A proveniência retorna à RPC na troca seguinte, preservando itens editados e declarando o estado híbrido ao operador."
+}

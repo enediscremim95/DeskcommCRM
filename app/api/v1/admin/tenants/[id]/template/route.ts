@@ -179,6 +179,11 @@ export async function POST(
     respostas_criadas?: number;
     cadencias_criadas?: number;
     atendente_aplicado?: boolean;
+    respostas_preservadas?: number;
+    cadencias_preservadas?: number;
+    regras_da_casa_preservadas?: boolean;
+    atendente_preservado?: boolean;
+    estado_hibrido?: boolean;
   };
 
   if (!r.ok) {
@@ -206,6 +211,11 @@ export async function POST(
       respostas_criadas: r.respostas_criadas ?? 0,
       cadencias_criadas: r.cadencias_criadas ?? 0,
       atendente_aplicado: r.atendente_aplicado ?? false,
+      respostas_preservadas: r.respostas_preservadas ?? 0,
+      cadencias_preservadas: r.cadencias_preservadas ?? 0,
+      regras_da_casa_preservadas: r.regras_da_casa_preservadas ?? false,
+      atendente_preservado: r.atendente_preservado ?? false,
+      estado_hibrido: r.estado_hibrido ?? false,
     },
   });
 
@@ -216,6 +226,11 @@ export async function POST(
       respostas_criadas: r.respostas_criadas ?? 0,
       cadencias_criadas: r.cadencias_criadas ?? 0,
       atendente_aplicado: r.atendente_aplicado ?? false,
+      respostas_preservadas: r.respostas_preservadas ?? 0,
+      cadencias_preservadas: r.cadencias_preservadas ?? 0,
+      regras_da_casa_preservadas: r.regras_da_casa_preservadas ?? false,
+      atendente_preservado: r.atendente_preservado ?? false,
+      estado_hibrido: r.estado_hibrido ?? false,
     },
     { requestId },
   );

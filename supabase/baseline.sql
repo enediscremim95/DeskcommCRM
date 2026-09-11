@@ -23509,6 +23509,11 @@ grant execute on function public.fn_aplicar_template_de_organizacao(uuid, uuid, 
   to service_role;
 
 
+-- ---- proveniência e troca segura de template (migration 0235) ----
+-- O baseline é aplicado por psql no install/update. Reexecutar a migration
+-- idempotente aqui mantém o caminho fresco e o de atualização no mesmo corpo.
+\ir migrations/20260910230000_0235_template_proveniencia_e_rascunho.sql
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES

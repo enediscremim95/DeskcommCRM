@@ -117,6 +117,13 @@ export function TenantTemplate({ organizationId, status }: TenantTemplateProps) 
                     "O atendente recebe as instruções do nicho em rascunho, sem publicar. As cadências entram desligadas. Contatos, conversas e canais não são tocados.",
                   )}
                 </p>
+                {aplicado && aplicado.id !== confirmando?.id && (
+                  <p>
+                    {t(
+                      "Ao trocar, o sistema remove apenas respostas e cadências que o modelo anterior criou e que continuam sem edição. Itens alterados por alguém são preservados e a confirmação informa isso.",
+                    )}
+                  </p>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>

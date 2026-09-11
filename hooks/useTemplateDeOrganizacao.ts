@@ -32,6 +32,11 @@ interface AplicacaoResponse {
     respostas_criadas: number;
     cadencias_criadas: number;
     atendente_aplicado: boolean;
+    respostas_preservadas: number;
+    cadencias_preservadas: number;
+    regras_da_casa_preservadas: boolean;
+    atendente_preservado: boolean;
+    estado_hibrido: boolean;
   };
 }
 
@@ -64,7 +69,7 @@ export function useAplicarTemplate() {
       // aplicar de novo, e aplicar de novo não recria o que já existe.
       toast.success("Template aplicado", {
         description: d
-          ? `${d.etapas} etapas no funil · ${d.respostas_criadas} resposta(s) nova(s) · ${d.cadencias_criadas} cadência(s) nova(s), desligada(s)`
+          ? `${d.etapas} etapas no funil · ${d.respostas_criadas} resposta(s) nova(s) · ${d.cadencias_criadas} cadência(s) nova(s), desligada(s)${d.respostas_preservadas || d.cadencias_preservadas || d.regras_da_casa_preservadas || d.atendente_preservado ? " · alguns itens anteriores foram preservados" : ""}`
           : undefined,
       });
     },

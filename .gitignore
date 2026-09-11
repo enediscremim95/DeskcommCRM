@@ -137,3 +137,4 @@ backups/
 # commit posterior de remoção não tira o blob.
 .qa-backups/
 *.dump
+.grok/

@@ -1945,6 +1945,12 @@ Testes: `tests/e2e/agenda-google-meet.spec.ts`, `tests/invariants/agenda-meet.te
 
 ### Autonomia e revisão de respostas (Task9)
 
+### Modelo de negócio e troca segura de template
+
+- [P0] `tests/e2e/template-de-organizacao.spec.ts`: plataforma abre o tenant, aplica um modelo, troca para outro e vê a contagem de itens removidos e preservados. A fixture altera uma resposta e uma cadência antes da troca, que devem permanecer visíveis; o rascunho do agente continua sem publicação.
+- [P0] Invariantes de banco: duas aplicações concorrentes da mesma organização convergem por advisory lock; uma fonte de webhook de outra organização não bloqueia nem é lida na troca; agente com versão publicada ganha nova versão draft que difere apenas no prompt.
+- Limite local: esta máquina não tem Docker, portanto a execução dos invariantes PG15 e a evidência Playwright ficam para o CI/ambiente QA.
+
 - [P0] Agente sem publicação: salvar versão, testar cenário e ver candidata/propostas sem mensagem operacional. Mesmo ritual de abertura, compactação e fechamento; provedor controlado deve ser identificado como tal.
 - [P0] Recuperação do agente legado: escolher canal/modelo/credencial explicitamente; preservar prompt/RAG e qualquer versão humana existente. Falta de configuração mostra reparo, nunca “no ar”.
 - [P1] Assistido: inbound gera sugestão; editar/aprovar/rejeitar na conversa. Aprovação autoriza só texto e preserva autonomia/assignment/silêncio; mudanças de contexto tornam a sugestão obsoleta.

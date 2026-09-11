@@ -176,7 +176,7 @@ const IMOBILIARIA: TemplateDeOrganizacao = templateDeOrganizacaoSchema.parse({
       titulo: "Convidar para visita",
       atalho: "visita",
       corpo:
-        "Tenho opções que batem com o que você procura. Prefere visitar em dia de semana ou no fim de semana? Me diz o melhor período e eu organizo.",
+        "Posso pedir para um corretor verificar se há algo compatível com o que você procura. Prefere visitar em dia de semana ou no fim de semana? Me diga o melhor período para solicitar a confirmação.",
     },
     {
       titulo: "Confirmar visita",
@@ -225,12 +225,12 @@ const IMOBILIARIA: TemplateDeOrganizacao = templateDeOrganizacaoSchema.parse({
         {
           esperarMinutos: 1440,
           texto:
-            "Oi! Separei algumas opções na região que você comentou. Quer que eu te mande, ou prefere já agendar uma visita?",
+            "Oi! Ainda está procurando na região que você comentou? Posso pedir para um corretor verificar a disponibilidade ou conversar sobre uma visita.",
         },
         {
           esperarMinutos: 4320,
           texto:
-            "Oi! Apareceu novidade na faixa que você procura. Se ainda estiver olhando, me chama que eu te mostro.",
+            "Oi! Se ainda estiver procurando, me chama. Um corretor pode verificar se há algo compatível com o que você busca.",
         },
       ],
     },
@@ -293,7 +293,7 @@ const CLINICA: TemplateDeOrganizacao = templateDeOrganizacaoSchema.parse({
       titulo: "Oferecer horários",
       atalho: "horarios",
       corpo:
-        "Consigo te encaixar esta semana. Você prefere manhã, tarde ou final do dia? Me diz o melhor período e eu reservo.",
+        "Posso registrar sua preferência de horário e pedir para a equipe verificar a agenda. Você prefere manhã, tarde ou final do dia?",
     },
     {
       titulo: "Confirmar agendamento",
@@ -330,15 +330,15 @@ const CLINICA: TemplateDeOrganizacao = templateDeOrganizacaoSchema.parse({
       "Com isso, ofereça dois períodos de horário e confirme o agendamento.",
       "",
       "Se perguntarem preço, explique em uma frase que o valor depende da avaliação do profissional e convide para a avaliação.",
-      "Se a pessoa descrever sintoma, dor ou piora, não interprete e não tranquilize: registre o que ela disse e priorize o encaixe mais próximo.",
-      "Se ela relatar algo que soe urgente, diga para procurar atendimento presencial imediatamente em vez de esperar resposta por mensagem.",
+      "Se a pessoa descrever sintoma, dor ou piora, não interprete nem tranquilize: registre o que ela disse e encaminhe conforme o protocolo de urgência da organização.",
+      "Se ela relatar algo que soe urgente, siga o protocolo de urgência definido pela organização, sem estabelecer conduta clínica por mensagem.",
     ].join("\n"),
     regrasDaCasa: [
       "Nunca dê diagnóstico, nunca indique ou descarte tratamento, nunca diga se um sintoma é grave — isso é do profissional de saúde.",
       "Nunca passe preço de procedimento sem a avaliação.",
       "Nunca peça dado de saúde além do necessário para marcar o horário.",
       "Nunca repita dado de saúde de um paciente em conversa com outra pessoa.",
-      "Diante de relato de urgência, oriente procurar atendimento presencial na hora.",
+      "Diante de relato de urgência, siga o protocolo de urgência definido pela organização.",
     ].join("\n"),
   },
   cadencias: [

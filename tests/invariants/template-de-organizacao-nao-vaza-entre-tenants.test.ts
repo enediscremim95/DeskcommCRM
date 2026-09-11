@@ -120,13 +120,18 @@ describe("0233 · template de organização", () => {
     const b = criarTenant("inv-0233-vaza-b");
     const ator = criarOperador("op-0233-vaza@invariant.test");
 
-    // O estado de B antes, nas seis tabelas que a função escreve.
+    // O estado de B antes, em TODAS as tabelas que a função escreve. `ai_agents`
+    // é UPDATE, não INSERT, e por isso uma contagem só das linhas novas não o
+    // protegeria. `org_memory_versions` é a metade imutável da memória: medir só
+    // o ponteiro deixaria passar uma versão criada na organização errada.
     const antesDeB = lastLine(
       sql(`select
              (select count(*) from public.crm_stages where organization_id='${b.org}'::uuid)::text || '|' ||
-             (select count(*) from public.message_templates where organization_id='${b.org}'::uuid)::text || '|' ||
-             (select count(*) from public.followup_flow_pointers where organization_id='${b.org}'::uuid)::text || '|' ||
-             (select count(*) from public.org_memory_pointers where organization_id='${b.org}'::uuid)::text || '|' ||
+              (select count(*) from public.message_templates where organization_id='${b.org}'::uuid)::text || '|' ||
+              (select count(*) from public.followup_flow_pointers where organization_id='${b.org}'::uuid)::text || '|' ||
+              (select count(*) from public.org_memory_versions where organization_id='${b.org}'::uuid)::text || '|' ||
+              (select coalesce(string_agg(id::text || '/' || name || '/' || system_prompt, ',' order by id), '') from public.ai_agents where organization_id='${b.org}'::uuid) || '|' ||
+              (select count(*) from public.org_memory_pointers where organization_id='${b.org}'::uuid)::text || '|' ||
              (select coalesce(settings::text,'{}') from public.organizations where id='${b.org}'::uuid) || '|' ||
              (select name || '/' || slug from public.crm_pipelines where id='${b.pipeline}'::uuid);`),
     );
@@ -136,9 +141,11 @@ describe("0233 · template de organização", () => {
     const depoisDeB = lastLine(
       sql(`select
              (select count(*) from public.crm_stages where organization_id='${b.org}'::uuid)::text || '|' ||
-             (select count(*) from public.message_templates where organization_id='${b.org}'::uuid)::text || '|' ||
-             (select count(*) from public.followup_flow_pointers where organization_id='${b.org}'::uuid)::text || '|' ||
-             (select count(*) from public.org_memory_pointers where organization_id='${b.org}'::uuid)::text || '|' ||
+              (select count(*) from public.message_templates where organization_id='${b.org}'::uuid)::text || '|' ||
+              (select count(*) from public.followup_flow_pointers where organization_id='${b.org}'::uuid)::text || '|' ||
+              (select count(*) from public.org_memory_versions where organization_id='${b.org}'::uuid)::text || '|' ||
+              (select coalesce(string_agg(id::text || '/' || name || '/' || system_prompt, ',' order by id), '') from public.ai_agents where organization_id='${b.org}'::uuid) || '|' ||
+              (select count(*) from public.org_memory_pointers where organization_id='${b.org}'::uuid)::text || '|' ||
              (select coalesce(settings::text,'{}') from public.organizations where id='${b.org}'::uuid) || '|' ||
              (select name || '/' || slug from public.crm_pipelines where id='${b.pipeline}'::uuid);`),
     );
@@ -165,7 +172,8 @@ describe("0233 · template de organização", () => {
           sql(`select (
                  (select count(*) from public.crm_stages ${escopo}) +
                  (select count(*) from public.message_templates ${escopo}) +
-                 (select count(*) from public.followup_flow_pointers ${escopo})
+                 (select count(*) from public.followup_flow_pointers ${escopo}) +
+                 (select count(*) from public.org_memory_versions ${escopo})
                )::text;`),
         ),
       );
