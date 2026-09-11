@@ -114,6 +114,14 @@ function aplicar(org: string, ator: string, payload = PAYLOAD): string {
   );
 }
 
+function contarComo(userId: string, consulta: string): number {
+  return Number(lastLine(sql(`
+    set role authenticated;
+    select set_config('request.jwt.claims', '{"sub":"${userId}"}', false);
+    ${consulta}
+  `)));
+}
+
 describe("0233 · template de organização", () => {
   it("aplica no tenant A e não escreve UMA linha no tenant B", () => {
     const a = criarTenant("inv-0233-vaza-a");
@@ -255,6 +263,43 @@ describe("0233 · template de organização", () => {
              from public.ai_agents where organization_id='${a.org}'::uuid and is_default;`),
     );
     expect(estado).toBe("Você atende quem procura a clínica.|SEM-VERSAO");
+  });
+
+  it("a procedência só é legível pelo admin da própria organização, nunca pelo vizinho", () => {
+    const a = criarTenant("inv-0236-proveniencia-a");
+    const b = criarTenant("inv-0236-proveniencia-b");
+    const [adminA, managerB] = lastLine(sql(`
+      with novo_admin as (
+        insert into auth.users (id, email)
+        values (gen_random_uuid(), 'op-0236-admin-a@invariant.test')
+        on conflict (email) do update set email = excluded.email
+        returning id
+      ), novo_manager as (
+        insert into auth.users (id, email)
+        values (gen_random_uuid(), 'op-0236-manager-b@invariant.test')
+        on conflict (email) do update set email = excluded.email
+        returning id
+      ), vinculos as (
+        insert into public.user_organizations (user_id, organization_id, role, accepted_at)
+        select id, '${a.org}'::uuid, 'admin', now() from novo_admin
+        union all
+        select id, '${b.org}'::uuid, 'manager', now() from novo_manager
+        on conflict do nothing
+      )
+      select (select id::text from novo_admin) || '|' || (select id::text from novo_manager);
+    `)).split("|");
+
+    sql(`
+      insert into public.organization_template_items
+        (organization_id, template_id, item_kind, item_id, snapshot)
+      values
+        ('${a.org}'::uuid, 'clinica', 'agent_draft', gen_random_uuid(), '{}'::jsonb),
+        ('${b.org}'::uuid, 'clinica', 'agent_draft', gen_random_uuid(), '{}'::jsonb);
+    `);
+
+    expect(contarComo(adminA!, `select count(*) from public.organization_template_items where organization_id='${a.org}'::uuid;`)).toBe(1);
+    expect(contarComo(adminA!, `select count(*) from public.organization_template_items where organization_id='${b.org}'::uuid;`)).toBe(0);
+    expect(contarComo(managerB!, `select count(*) from public.organization_template_items where organization_id='${b.org}'::uuid;`)).toBe(0);
   });
 
   it("as cadências entram DESLIGADAS e sem versão ativa", () => {

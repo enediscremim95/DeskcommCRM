@@ -191,7 +191,7 @@ export function SidebarContent({
           // seus itens — não há onde desenhar cabeçalho nem seta para fechá-lo.
           const aberto = collapsed || !gruposFechados.has(group.id);
           return (
-            <div key={group.id} className={cn("space-y-1 rounded-xl", aberto && !collapsed && "bg-foreground/[0.035] p-1 dark:bg-background/40")}>
+            <div key={group.id} className={cn("space-y-1 rounded-xl", aberto && !collapsed && "bg-foreground/[0.035] p-0.5 dark:bg-background/40")}>
               {/* Colapsado, o sidebar tem 64px: seis rótulos ali seriam ilegíveis.
                   Vira um filete separador, que preserva o agrupamento sem texto. */}
               {collapsed ? (
@@ -202,7 +202,7 @@ export function SidebarContent({
                     type="button"
                     onClick={() => toggleGrupo(group.id)}
                     aria-expanded={aberto}
-                    className="flex w-full items-center justify-between rounded-md px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+                    className="flex w-full items-center justify-between rounded-md px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
                   >
                     {t(group.label)}
                     <CaretDown
@@ -234,7 +234,7 @@ export function SidebarContent({
                           aria-current={isActive ? "page" : undefined}
                           onClick={onNavigate}
                           className={cn(
-                            "relative flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2.5 text-[15px] leading-[1.35] transition-colors",
+                            "relative flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-1 text-sm leading-[1.35] transition-colors",
                             isActive
                               ? "bg-accent text-accent-foreground"
                               : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -260,7 +260,7 @@ export function SidebarContent({
                         aria-current={pathname === group.hub.href ? "page" : undefined}
                         onClick={onNavigate}
                         className={cn(
-                          "flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2.5 text-[15px] leading-[1.35] transition-colors",
+                          "flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-1 text-sm leading-[1.35] transition-colors",
                           pathname === group.hub.href
                             ? "bg-accent text-accent-foreground"
                             : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",

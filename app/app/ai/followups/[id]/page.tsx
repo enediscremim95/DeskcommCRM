@@ -61,9 +61,13 @@ export default async function FollowupFlowBuilderPage({
   };
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <Voltar href="/app/ai/followups">Follow-ups</Voltar>
-      <FlowBuilder flowId={id} initialData={flow} />
+    <div className="flex h-full min-h-0 flex-col gap-4 p-6">
+      <div className="shrink-0">
+        <Voltar href="/app/ai/followups">Follow-ups</Voltar>
+      </div>
+      <div className="min-h-0 flex-1">
+        <FlowBuilder flowId={id} initialData={flow} />
+      </div>
     </div>
   );
 }

@@ -28,9 +28,13 @@ export default async function PipelinePage({
     .maybeSingle();
   if (!pipeline) notFound();
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
-      <Voltar href="/app/pipelines">Funis</Voltar>
-      <PipelinePageClient pipelineId={id} initialName={pipeline.name} />
+    <div className="flex h-full min-h-0 flex-col gap-4 p-6">
+      <div className="shrink-0">
+        <Voltar href="/app/pipelines">Funis</Voltar>
+      </div>
+      <div className="min-h-0 flex-1">
+        <PipelinePageClient pipelineId={id} initialName={pipeline.name} />
+      </div>
     </div>
   );
 }
