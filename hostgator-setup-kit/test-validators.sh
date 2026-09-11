@@ -1671,9 +1671,10 @@ rm -rf "$TMP3B"
 echo "packaging: a instalação resolve a última versão publicada"
 # O outro lado da regra de ouro: com um remoto que TEM tags, o install precisa
 # escolher a maior — e não a primeira que aparecer. `git ls-remote` devolve por
-# ordem alfabética de ref, onde "v1.10.0" vem ANTES de "v1.9.0"; sem o
-# `--sort=-v:refname` a instalação nasceria numa versão velha achando que é a
-# nova. É o tipo de erro que só aparece na décima release.
+# ordem alfabética de ref, onde "v1.10.0" vem ANTES de "v1.9.0". O fork só
+# aceita tags `-veritas.N`; tanto a versão do produto quanto a revisão Veritas
+# precisam ser ordenadas numericamente, e uma tag do upstream não pode escapar
+# desse contrato.
 (
   # `ultima_versao_publicada` já está no escopo: o preâmbulo desta suíte faz
   # `. ./_common.sh`. Sourcear de novo dentro de um subshell que muda de
@@ -1686,17 +1687,47 @@ echo "packaging: a instalação resolve a última versão publicada"
     cd "$trabalho/w" || exit 1
     git config user.email t@t; git config user.name t
     echo x > a; git add -A; git commit --quiet -m init
-    for t in v1.0.0 v1.9.0 v1.10.0 v1.2.0; do git tag "$t"; done
+    for t in \
+      v1.0.0-veritas.1 \
+      v1.9.0-veritas.9 \
+      v1.9.0-veritas.10 \
+      v1.10.0-veritas.1 \
+      v1.2.0-veritas.1 \
+      v2.0.0; do
+      git tag "$t"
+    done
     git push --quiet origin HEAD --tags 2>/dev/null
   )
 
   achou="$(ultima_versao_publicada "$repo_falso/origem.git")"
-  if [ "$achou" != "1.10.0" ]; then
-    printf '  ✗ escolheu a versão errada: esperado 1.10.0, veio "%s"\n' "$achou"
-    printf '     (ordem alfabética põe v1.9.0 depois de v1.10.0 — precisa de --sort=-v:refname)\n'
+  if [ "$achou" != "1.10.0-veritas.1" ]; then
+    printf '  ✗ escolheu a versão errada: esperado 1.10.0-veritas.1, veio "%s"\n' "$achou"
+    printf '     (ordem alfabética põe v1.9.0 depois de v1.10.0; upstream não pode vencer o fork)\n'
     rm -rf "$repo_falso" "$trabalho"; exit 1
   fi
-  printf '  ✓ entre v1.0.0/v1.2.0/v1.9.0/v1.10.0, escolhe 1.10.0 (ordem de VERSÃO, não alfabética)\n'
+  printf '  ✓ entre releases Veritas, escolhe 1.10.0-veritas.1 e ignora v2.0.0 do upstream\n'
+
+  (
+    cd "$trabalho/w" || exit 1
+    git tag -d \
+      v1.0.0-veritas.1 \
+      v1.9.0-veritas.9 \
+      v1.10.0-veritas.1 \
+      v1.2.0-veritas.1 \
+      v2.0.0 >/dev/null
+    git push --quiet origin --delete \
+      v1.0.0-veritas.1 \
+      v1.9.0-veritas.9 \
+      v1.10.0-veritas.1 \
+      v1.2.0-veritas.1 \
+      v2.0.0 2>/dev/null
+  )
+  revisao="$(ultima_versao_publicada "$repo_falso/origem.git")"
+  if [ "$revisao" != "1.9.0-veritas.10" ]; then
+    printf '  ✗ escolheu a revisão Veritas errada: esperado 1.9.0-veritas.10, veio "%s"\n' "$revisao"
+    rm -rf "$repo_falso" "$trabalho"; exit 1
+  fi
+  printf '  ✓ entre veritas.9/veritas.10, escolhe veritas.10 (ordem numérica da revisão)\n'
 
   vazio="$(mktemp -d)"; git init --quiet --bare "$vazio/sem-tags.git"
   semtag="$(ultima_versao_publicada "$vazio/sem-tags.git")"
@@ -1715,7 +1746,7 @@ echo "packaging: a instalação GRAVA a versão resolvida (não só sabe qual é
 # ligava a função ao arquivo que o cliente recebe.
 #
 # Offline de propósito: REPO_URL aponta para um repositório local com tags
-# conhecidas, então a asserção é exata (1.10.0) e não depende de o CI alcançar o
+# conhecidas, então a asserção é exata (1.10.0-veritas.1) e não depende de o CI alcançar o
 # GitHub. Um teste que precisa de rede para provar pinagem falha por motivo
 # errado no dia em que a rede oscila.
 TMP_PIN="$(mktemp -d)"
@@ -1728,7 +1759,7 @@ TMP_PIN="$(mktemp -d)"
     cd w || exit 1
     git config user.email t@t; git config user.name t
     echo x > a; git add -A; git commit --quiet -m init
-    for t in v1.0.0 v1.9.0 v1.10.0; do git tag "$t"; done
+    for t in v1.0.0-veritas.1 v1.9.0-veritas.1 v1.10.0-veritas.1; do git tag "$t"; done
     git push --quiet origin HEAD --tags 2>/dev/null
   )
 
@@ -1746,8 +1777,8 @@ STUB
 
   for par in "APP_IMAGE:deskcommcrm" "WORKER_IMAGE:deskcomm-worker" "SCHEDULER_IMAGE:deskcomm-scheduler"; do
     chave="${par%%:*}"; repo="${par##*:}"
-    if [ "$(valor_no_env "$VPS_PROJ/.env" "$chave")" != "${IMG_NS}/${repo}:1.10.0" ]; then
-      printf '  ✗ %s não foi pinado na versão resolvida (1.10.0): %s\n' "$chave" \
+    if [ "$(valor_no_env "$VPS_PROJ/.env" "$chave")" != "${IMG_NS}/${repo}:1.10.0-veritas.1" ]; then
+      printf '  ✗ %s não foi pinado na versão resolvida (1.10.0-veritas.1): %s\n' "$chave" \
         "$(grep -E "^${chave}=" "$VPS_PROJ/.env" || echo '(ausente)')"
       printf '     instalação de cliente NUNCA nasce em tag móvel — docs/doctrine/packaging.md, invariante 3.\n'
       exit 1
@@ -1756,7 +1787,7 @@ STUB
   if [ "$(valor_no_env "$VPS_PROJ/.env" APP_PULL_POLICY)" = "always" ]; then
     printf '  ✗ tag imutável com pull_policy=always: o CRM só sobe se o GHCR estiver de pé\n'; exit 1
   fi
-  printf '  ✓ com v1.0.0/v1.9.0/v1.10.0 no remoto, o .env nasce pinado em 1.10.0 (as três imagens)\n'
+  printf '  ✓ com releases Veritas no remoto, o .env nasce pinado em 1.10.0-veritas.1 (as três imagens)\n'
 ) || fail=1
 rm -rf "$TMP_PIN"
 
@@ -2281,10 +2312,16 @@ STUB
   mkdir -p "$VPS_PROJ/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
   # O update.sh decide o que instalar por TAG: sem versão publicada ele para
   # antes do banco, e o teste passaria vazio.
+  #
+  # E a tag leva `-veritas.N`: neste fork, `ultima_versao_publicada()` só aceita
+  # esse formato, porque tag do upstream não pode escolher a imagem de uma VPS
+  # Veritas. Com `v9.9.9` puro o cenário parava antes do banco e os três casos
+  # abaixo viravam "inconclusivo" — vermelho que falava do cenário, não do
+  # update.sh.
   (cd "$VPS_PROJ" && git init -q -b main . \
     && git -c user.email=t@exemplo -c user.name=teste add -A \
     && git -c user.email=t@exemplo -c user.name=teste commit -qm base \
-    && git tag v9.9.9) >/dev/null 2>&1
+    && git tag v9.9.9-veritas.1) >/dev/null 2>&1
 
   saida="$(rodar update.sh "" "SUPABASE_DB_ADMIN_URL='$URL_DO_DONO'
 INTERNAL_SECRET='segredo-de-teste'
@@ -2328,7 +2365,7 @@ STUB
   (cd "$VPS_PROJ" && git init -q -b main . \
     && git -c user.email=t@exemplo -c user.name=teste add -A \
     && git -c user.email=t@exemplo -c user.name=teste commit -qm base \
-    && git tag v9.9.9) >/dev/null 2>&1
+    && git tag v9.9.9-veritas.1) >/dev/null 2>&1
 
   extra="INTERNAL_SECRET='segredo-de-teste'
 NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'"
@@ -2408,7 +2445,7 @@ STUB
   (cd "$VPS_PROJ" && git init -q -b main . \
     && git -c user.email=t@exemplo -c user.name=teste add -A \
     && git -c user.email=t@exemplo -c user.name=teste commit -qm base \
-    && git tag v9.9.9) >/dev/null 2>&1
+    && git tag v9.9.9-veritas.1) >/dev/null 2>&1
 
   # INTERNAL_SECRET/NEXT_PUBLIC_APP_URL entram porque é o que faz o update.sh
   # chegar ao agendamento de cron — o dublê do crontab precisa ser exercitado
