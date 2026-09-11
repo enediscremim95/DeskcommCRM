@@ -94,9 +94,55 @@ export const wahaAdapter: ChannelAdapter = {
   }): Promise<string | null> {
     const client = getWahaClient();
     if (!client) return null;
-    return client.getProfilePictureUrl(input.sessionRef, destinatarioDaFotoNoWaha(input.recipient), {
+    const chatId = destinatarioDaFotoNoWaha(input.recipient);
+    const primary = await client.getProfilePictureUrl(input.sessionRef, chatId, {
       refresh: input.forceRefresh,
     });
+    if (primary || !chatId.endsWith("@c.us")) return primary;
+
+    // NOWEB pode conhecer a foto pelo LID, mas nÃ£o pelo telefone. Primeiro usa
+    // o mapa local do WAHA; se o store ainda estiver vazio, `check-exists` Ã© a
+    // segunda fonte que o prÃ³prio WAHA documenta como capaz de devolver o chatId
+    // canÃ´nico. As duas falhas degradam para as iniciais, nunca para erro na Inbox.
+    const phone = chatId.slice(0, -"@c.us".length);
+    const mappedLid = await client.resolveLidForPhone(input.sessionRef, phone);
+    if (mappedLid) {
+      const byLid = await client.getProfilePictureUrl(input.sessionRef, mappedLid, {
+        refresh: input.forceRefresh,
+      });
+      if (byLid) return byLid;
+    }
+
+    try {
+      const checked = await client.checkContactExists(input.sessionRef, phone);
+      const canonicalChatId = checked.chatId?.trim() ?? "";
+      // ⚠️ Aceita QUALQUER chatId canônico diferente do que já tentamos, não só
+      // `@lid`. Medido na VPS de produção, com WAHA 2026.8.1 / NOWEB / CORE:
+      //
+      //   GET /api/contacts/check-exists?phone=5541988353594
+      //     -> {"numberExists":true,"chatId":"554188353594@c.us"}
+      //                                          ↑ SEM o nono dígito
+      //
+      //   profile-picture com 5541988353594@c.us  -> {"profilePictureURL":null}
+      //   profile-picture com  554188353594@c.us  -> URL da foto
+      //
+      // É o NONO DÍGITO. O contato foi salvo com ele (é o que o Brasil usa hoje),
+      // e o WhatsApp conhece aquele chat pela forma antiga. Exigir `@lid` aqui
+      // descartava justamente a resposta que resolve — e era o que deixava 12 de
+      // 14 contatos sem foto nesta instalação. O `lids/pn` e o `@lid` do
+      // `check-exists` não respondem neste tier, então esta é a única fonte que
+      // devolve o identificador que o WhatsApp reconhece.
+      if (checked.numberExists && canonicalChatId && canonicalChatId !== chatId && canonicalChatId !== mappedLid) {
+        return client.getProfilePictureUrl(input.sessionRef, canonicalChatId, {
+          refresh: input.forceRefresh,
+        });
+      }
+    } catch {
+      // A consulta Ã© enriquecimento visual. Sem ela a foto pode faltar, mas o
+      // cron continua e o AvatarFallback preserva a leitura da lista.
+    }
+
+    return null;
   },
 
   /**

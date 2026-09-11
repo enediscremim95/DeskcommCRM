@@ -118,6 +118,36 @@ describe('adapter WAHA', () => {
     expect(href).toContain('refresh=true');
   });
 
+  it('tenta o LID quando a foto por telefone Ã© nula', async () => {
+    vi.stubEnv('WAHA_API_BASE_URL', WAHA_BASE);
+    vi.stubEnv('WAHA_API_KEY', 'hash123');
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      const href = String(url);
+      if (href.includes('/lids/pn/5511999998888')) {
+        return Promise.resolve(Response.json({ lid: '23423462304912@lid' }));
+      }
+      if (href.includes('contactId=5511999998888%40c.us')) {
+        return Promise.resolve(Response.json({ profilePictureURL: null }));
+      }
+      if (href.includes('contactId=23423462304912%40lid')) {
+        return Promise.resolve(Response.json({ profilePictureURL: 'https://cdn.example/lid-avatar.jpg' }));
+      }
+      return Promise.resolve(Response.json({ numberExists: true, chatId: '23423462304912@lid' }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getAdapter('waha').fetchProfilePictureUrl!({
+      organizationId: ORG,
+      sessionRef: 'default',
+      recipient: 'phone:+5511999998888',
+    })).resolves.toBe('https://cdn.example/lid-avatar.jpg');
+
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(expect.arrayContaining([
+      expect.stringContaining('/lids/pn/5511999998888'),
+      expect.stringContaining('contactId=23423462304912%40lid'),
+    ]));
+  });
+
   it.each([
     ['phone:+5511999998888', '5511999998888@c.us'],
     ['lid:12345', '12345@lid'],

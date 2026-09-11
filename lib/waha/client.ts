@@ -474,6 +474,33 @@ export class WahaClient {
   }
 
   /**
+   * O LID associado a um telefone, quando o canal jÃ¡ tiver essa associaÃ§Ã£o.
+   *
+   * A foto de perfil Ã© um caso em que o `@c.us` pode devolver `null` enquanto
+   * o mesmo contato, endereÃ§ado pelo `@lid`, devolve a imagem. NÃ£o inventamos
+   * a conversÃ£o: o WAHA mantÃ©m a tabela e pode ainda nÃ£o conhecÃª-la, sobretudo
+   * em uma sessÃ£o NOWEB cujo store acabou de ser habilitado. `null` continua
+   * significando "nÃ£o sei" e permite ao chamador preservar o fallback atual.
+   */
+  async resolveLidForPhone(session: string, phone: string): Promise<string | null> {
+    try {
+      const digits = phone.replace(/\D/g, "");
+      if (digits.length < 8) return null;
+      const res = await this.fetchComTeto(
+        `${this.baseUrl}/api/${encodeURIComponent(session)}/lids/pn/${encodeURIComponent(digits)}`,
+        { headers: { "X-Api-Key": this.apiKey } },
+      );
+      if (!res.ok) return null;
+      const body = (await res.json()) as { lid?: string | null };
+      const raw = body.lid?.trim() ?? "";
+      const lid = raw.endsWith("@lid") ? raw : `${raw}@lid`;
+      return /^\d{8,}@lid$/.test(lid) ? lid : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * `replyTo` = citar uma mensagem, como o "responder em cima" do WhatsApp.
    *
    * ─── O defeito que isto conserta ──────────────────────────────────────────
