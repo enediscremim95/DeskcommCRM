@@ -37,7 +37,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 
 import { afirmarAdminDeTenantPuro } from "./utils/precondicao";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
@@ -133,6 +133,39 @@ async function loginWithTotp(page: Page, email: string, secretTotp: string): Pro
 // (duplicados aqui de propósito: cada spec deste repo é self-contido).
 // ---------------------------------------------------------------------------
 
+// Enquadrar usa o controle disponível ao operador e só muda pan/zoom.
+// Não é "Organizar": esse comando muda o grafo e é uma das asserções da suíte.
+async function enquadrarCanvas(page: Page): Promise<void> {
+  await page.locator(".react-flow__controls-fitview").click();
+  await expect.poll(async () => page.locator(".react-flow__viewport").evaluate(async (el) => {
+    const antes = getComputedStyle(el).transform;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    return antes === getComputedStyle(el).transform;
+  }), { message: "pan/zoom deve estabilizar antes do gesto", timeout: 5_000 }).toBe(true);
+}
+
+async function pontoAcessivel(alvo: Locator): Promise<{ x: number; y: number }> {
+  await expect.poll(async () => alvo.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const canvas = el.closest(".react-flow")?.getBoundingClientRect();
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    const hit = el.ownerDocument.elementFromPoint(x, y);
+    return !!canvas && x > canvas.left + 16 && x < canvas.right - 16 &&
+      y > canvas.top + 16 && y < canvas.bottom - 16 && !!hit && el.contains(hit);
+  }), { message: "alvo do gesto deve estar dentro do canvas, sem sobreposição", timeout: 5_000 }).toBe(true);
+  const box = await alvo.boundingBox();
+  if (!box) throw new Error("alvo do gesto sem bounding box");
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+async function selecionarNo(page: Page, card: Locator): Promise<void> {
+  // Abrir o painel lateral encolhe o canvas. Reenquadrar também nesse estado.
+  await enquadrarCanvas(page);
+  await pontoAcessivel(card);
+  await card.click();
+}
+
 async function connectHandles(
   page: Page,
   sourceNodeId: string,
@@ -146,6 +179,9 @@ async function connectHandles(
     : `.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source`;
   const source = page.locator(sourceSel).first();
   const target = page.locator(`.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`);
+  await enquadrarCanvas(page);
+  await pontoAcessivel(source);
+  await pontoAcessivel(target);
   const edgesAntes = await page.locator(".react-flow__edge").count();
   const sBox = await source.boundingBox();
   const tBox = await target.boundingBox();
@@ -154,6 +190,20 @@ async function connectHandles(
   await page.mouse.down();
   await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
   await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 12 });
+  // O auto-pan pode mover o destino durante o arrasto: medir o alvo atual,
+  // não soltar na coordenada que ele ocupava antes de o mouse sair da origem.
+  const destinoAtual = await target.boundingBox();
+  if (!destinoAtual) {
+    await page.mouse.up();
+    throw new Error(`destino desapareceu: ${targetNodeId}`);
+  }
+  await page.mouse.move(destinoAtual.x + destinoAtual.width / 2, destinoAtual.y + destinoAtual.height / 2);
+  try {
+    await pontoAcessivel(target);
+  } catch (error) {
+    await page.mouse.up();
+    throw error;
+  }
   // Sem browser neste ambiente, o CI precisa devolver a evidência do estado
   // do handle no exato drop, não só uma contagem final de arestas.
   const alvoDuranteArrasto = await target.evaluate((el) => ({
@@ -183,16 +233,24 @@ async function nodeIdsByPrefix(page: Page, prefix: string): Promise<string[]> {
 
 async function moveNodeTo(page: Page, nodeId: string, targetX: number, targetY: number): Promise<void> {
   const card = page.locator(`[data-testid="node-card-${nodeId}"]`);
-  const box = await card.boundingBox();
-  if (!box) throw new Error(`nó ${nodeId} sem bounding box`);
-  const startX = box.x + box.width / 2;
-  const startY = box.y + 20;
+  const header = card.locator(":scope > div.flex.items-center").first();
+  const inicio = await pontoAcessivel(header);
+  const antes = await card.locator("..").getAttribute("style");
+  const canvas = await page.getByTestId("flow-canvas").boundingBox();
+  if (!canvas || targetX <= canvas.x + 40 || targetX >= canvas.x + canvas.width - 40 ||
+    targetY <= canvas.y + 40 || targetY >= canvas.y + canvas.height - 40) {
+    throw new Error(`destino de ${nodeId} fora da área útil do canvas`);
+  }
+  const startX = inicio.x;
+  const startY = inicio.y;
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move((startX + targetX) / 2, (startY + targetY) / 2, { steps: 5 });
   await page.mouse.move(targetX, targetY, { steps: 10 });
   await page.mouse.up();
-  await page.waitForTimeout(150);
+  await expect.poll(() => card.locator("..").getAttribute("style"), {
+    message: `o gesto deve mover o nó ${nodeId}, não somente o viewport`,
+  }).not.toBe(antes);
 }
 
 async function clickEdge(page: Page, edgeId: string): Promise<void> {
@@ -283,13 +341,16 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
       throw new Error("node ids ausentes após montar a paleta");
     }
 
-    const zoomOut = page.locator(".react-flow__controls-zoomout");
-    for (let i = 0; i < 6; i++) await zoomOut.click();
-    await page.waitForTimeout(300);
+    await enquadrarCanvas(page);
 
     const canvasBox = await page.getByTestId("flow-canvas").boundingBox();
     if (!canvasBox) throw new Error("flow-canvas sem bounding box");
-    const at = (dx: number, dy: number): [number, number] => [canvasBox.x + dx, canvasBox.y + dy];
+    // O desenho de referência mede 800 x 700, mas o canvas real pode ter
+    // só 501px de altura. Destinos fora dele ativavam pan em vez de posicionar.
+    const at = (dx: number, dy: number): [number, number] => [
+      canvasBox.x + 100 + (dx / 800) * (canvasBox.width - 200),
+      canvasBox.y + 50 + (dy / 700) * (canvasBox.height - 100),
+    ];
     await moveNodeTo(page, triggerId, ...at(150, 50));
     await moveNodeTo(page, waitId, ...at(150, 190));
     await moveNodeTo(page, actionId, ...at(150, 330));
@@ -301,19 +362,19 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     // Configura: classify → 1 classe "positivo" (troca o default hot/cold);
     // action → prompt_hint real; end-positivo → outcome "Convertido" (os
     // outros 2 fins ficam no default "Esgotado", coerente com no_reply/fallback).
-    await page.locator(`[data-testid="node-card-${classifyId}"]`).click();
+    await selecionarNo(page, page.locator(`[data-testid="node-card-${classifyId}"]`));
     const panel = page.getByTestId("node-config-panel");
     await panel.getByLabel("Classes (separadas por vírgula)").fill("positivo");
     await panel.getByLabel("Classes (separadas por vírgula)").blur();
     await expect(page.locator(`[data-testid="node-card-${classifyId}"]`)).toContainText("1 classes");
 
-    await page.locator(`[data-testid="node-card-${actionId}"]`).click();
+    await selecionarNo(page, page.locator(`[data-testid="node-card-${actionId}"]`));
     const promptHint = "Pergunte com simpatia se ainda há interesse e ofereça ajuda para fechar.";
     await panel.getByLabel("Instrução para a IA").fill(promptHint);
     await panel.getByLabel("Instrução para a IA").blur();
     await expect(page.locator(`[data-testid="node-card-${actionId}"]`)).toContainText("Pergunte com simpatia");
 
-    await page.locator(`[data-testid="node-card-${endPositivoId}"]`).click();
+    await selecionarNo(page, page.locator(`[data-testid="node-card-${endPositivoId}"]`));
     await panel.locator("#end-outcome").click();
     await page.getByRole("option", { name: "Convertido", exact: true }).click();
     await expect(page.locator(`[data-testid="node-card-${endPositivoId}"]`)).toContainText("Convertido");

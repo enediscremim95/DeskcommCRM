@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Aparências do CRM",
+    "subtitle": "Preferência pessoal de navegador aplicada ao shell e aos portais",
+    "output": "aparencias.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Interface"
+    },
+    {
+      "id": "preference",
+      "label": "Preferência local"
+    },
+    {
+      "id": "render",
+      "label": "Renderização"
+    }
+  ],
+  "mainPath": [
+    "entry",
+    "picker",
+    "store",
+    "tokens",
+    "shell"
+  ],
+  "nodes": [
+    {
+      "id": "entry",
+      "lane": "ui",
+      "col": 0,
+      "type": "frontend",
+      "label": "TopBar + catálogo de navegação",
+      "sublabel": "/app/settings/aparencia, acessível também na interface simplificada"
+    },
+    {
+      "id": "picker",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "AppearanceSettings",
+      "sublabel": "Quatro radios com miniaturas, seleção por teclado e estado visível"
+    },
+    {
+      "id": "store",
+      "lane": "preference",
+      "col": 2,
+      "type": "service",
+      "label": "lib/theme.tsx + localStorage",
+      "sublabel": "Preferência por navegador, legado light/dark/system, sem gravação no banco"
+    },
+    {
+      "id": "tokens",
+      "lane": "render",
+      "col": 3,
+      "type": "service",
+      "label": "lib/appearance.ts + veritas-theme.css",
+      "sublabel": "Script antes do paint e provider compartilham resolução. Tokens também no body para portais."
+    },
+    {
+      "id": "shell",
+      "lane": "render",
+      "col": 4,
+      "type": "frontend",
+      "label": "Sidebar, TopBar, páginas e portais",
+      "sublabel": "Identidade e dados continuam provenientes dos resolvedores existentes"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "entry",
+      "to": "picker",
+      "label": "abre"
+    },
+    {
+      "id": "e2",
+      "from": "picker",
+      "to": "store",
+      "label": "setAppearance"
+    },
+    {
+      "id": "e3",
+      "from": "store",
+      "to": "tokens",
+      "label": "data-appearance + data-theme"
+    },
+    {
+      "id": "e4",
+      "from": "tokens",
+      "to": "shell",
+      "label": "cores semânticas"
+    },
+    {
+      "id": "e5",
+      "from": "shell",
+      "to": "entry",
+      "label": "trocar novamente"
+    },
+    {
+      "id": "e6",
+      "from": "store",
+      "to": "picker",
+      "label": "seleção salva e sincronizada"
+    }
+  ]
+}

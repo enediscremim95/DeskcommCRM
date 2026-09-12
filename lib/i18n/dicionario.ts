@@ -37,6 +37,22 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Aparência": { es: "Apariencia" },
+  "Tema": { es: "Tema" },
+  "Personalize seu espaço": { es: "Personaliza tu espacio" },
+  "Escolha o visual que combina com o seu jeito de trabalhar.": { es: "Elige el aspecto que combina con tu forma de trabajar." },
+  "Veritas": { es: "Veritas" },
+  "Azul Asaas": { es: "Azul Asaas" },
+  "ChatGPT claro": { es: "ChatGPT claro" },
+  "ChatGPT escuro": { es: "ChatGPT oscuro" },
+  "Verde lima e floresta": { es: "Verde lima y bosque" },
+  "Branco e azul, inspirado no Asaas": { es: "Blanco y azul, inspirado en Asaas" },
+  "Branco e cinzas suaves": { es: "Blanco y grises suaves" },
+  "Grafite e cinzas profundos": { es: "Grafito y grises profundos" },
+  "Sua escolha fica salva neste navegador e acompanha você em todas as telas.": { es: "Tu elección se guarda en este navegador y te acompaña en todas las pantallas." },
+  "Ver nas conversas": { es: "Ver en las conversaciones" },
+  "A aparência é só sua. O nome, o logotipo e as configurações da empresa continuam os mesmos.": { es: "La apariencia es solo tuya. El nombre, el logotipo y la configuración de la empresa siguen siendo los mismos." },
+  "Escolha entre Veritas, azul, claro e escuro para este navegador.": { es: "Elige entre Veritas, azul, claro y oscuro para este navegador." },
   "números de teste autorizados": { es: "números de prueba autorizados" },
   "1 número de teste autorizado": { es: "1 número de prueba autorizado" },
   "Nenhum número autorizado — a IA não responde ninguém neste canal.": {

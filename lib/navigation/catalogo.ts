@@ -551,6 +551,7 @@ export const NAV_CATALOG = [
   },
 
   // ---- Organização — conta, empresa, acesso ----
+  { href: "/app/settings/aparencia", label: "Aparência", description: "Escolha entre Veritas, azul, claro e escuro para este navegador.", icon: "Palette", group: "organizacao", section: "Sua conta" },
   {
     href: "/app/settings/profile",
     label: "Perfil",

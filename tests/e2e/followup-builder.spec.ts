@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 
 import { afirmarAdminDeTenantPuro } from "./utils/precondicao";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
@@ -150,6 +150,39 @@ test.describe("followup flows — lista + criação (Task 6.1)", () => {
  * `steps` on the 2nd move gives React Flow's connection-line drag enough
  * intermediate pointermove events to register the gesture reliably.
  */
+// Enquadrar usa o controle disponível ao operador e só muda pan/zoom.
+// Não é "Organizar": esse comando muda o grafo e é uma das asserções da suíte.
+async function enquadrarCanvas(page: Page): Promise<void> {
+  await page.locator(".react-flow__controls-fitview").click();
+  await expect.poll(async () => page.locator(".react-flow__viewport").evaluate(async (el) => {
+    const antes = getComputedStyle(el).transform;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    return antes === getComputedStyle(el).transform;
+  }), { message: "pan/zoom deve estabilizar antes do gesto", timeout: 5_000 }).toBe(true);
+}
+
+async function pontoAcessivel(alvo: Locator): Promise<{ x: number; y: number }> {
+  await expect.poll(async () => alvo.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const canvas = el.closest(".react-flow")?.getBoundingClientRect();
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    const hit = el.ownerDocument.elementFromPoint(x, y);
+    return !!canvas && x > canvas.left + 16 && x < canvas.right - 16 &&
+      y > canvas.top + 16 && y < canvas.bottom - 16 && !!hit && el.contains(hit);
+  }), { message: "alvo do gesto deve estar dentro do canvas, sem sobreposição", timeout: 5_000 }).toBe(true);
+  const box = await alvo.boundingBox();
+  if (!box) throw new Error("alvo do gesto sem bounding box");
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+async function selecionarNo(page: Page, card: Locator): Promise<void> {
+  // Abrir o painel lateral encolhe o canvas. Reenquadrar também nesse estado.
+  await enquadrarCanvas(page);
+  await pontoAcessivel(card);
+  await card.click();
+}
+
 async function connectHandles(
   page: Page,
   sourceNodeId: string,
@@ -166,6 +199,9 @@ async function connectHandles(
   const target = page.locator(
     `.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`,
   );
+  await enquadrarCanvas(page);
+  await pontoAcessivel(source);
+  await pontoAcessivel(target);
   const edgesAntes = await page.locator(".react-flow__edge").count();
   const sBox = await source.boundingBox();
   const tBox = await target.boundingBox();
@@ -204,6 +240,20 @@ async function connectHandles(
   await page.mouse.down();
   await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
   await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 12 });
+  // O auto-pan pode mover o destino durante o arrasto: medir o alvo atual,
+  // não soltar na coordenada que ele ocupava antes de o mouse sair da origem.
+  const destinoAtual = await target.boundingBox();
+  if (!destinoAtual) {
+    await page.mouse.up();
+    throw new Error(`destino desapareceu: ${targetNodeId}`);
+  }
+  await page.mouse.move(destinoAtual.x + destinoAtual.width / 2, destinoAtual.y + destinoAtual.height / 2);
+  try {
+    await pontoAcessivel(target);
+  } catch (error) {
+    await page.mouse.up();
+    throw error;
+  }
   // Instrumentação de falha: o CI não tem vídeo interativo. Se o drop não
   // nascer como aresta, este retrato diz se o alvo estava sendo aceito pelo
   // React Flow no instante do mouseup e quais eram as caixas reais.
@@ -352,10 +402,8 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await expect(actionCard).toBeVisible();
     await expect(endCard).toBeVisible();
 
-    // fitView pode chegar ao maxZoom (2x) com poucos nós — zoom out garante
-    // que todos os handles fiquem dentro do viewport pros drags de conexão.
-    const zoomOut = page.locator(".react-flow__controls-zoomout");
-    for (let i = 0; i < 5; i++) await zoomOut.click();
+    // O controle nativo enquadra todos os nós sem pressupor zoom ou largura.
+    await enquadrarCanvas(page);
 
     const triggerId = await page
       .locator('.react-flow__node[data-id^="trigger-"]')
@@ -398,8 +446,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await page.getByTestId("palette-add-action").click();
     await page.getByTestId("palette-add-end").click();
 
-    const zoomOut = page.locator(".react-flow__controls-zoomout");
-    for (let i = 0; i < 5; i++) await zoomOut.click();
+    await enquadrarCanvas(page);
 
     const triggerId = await page
       .locator('.react-flow__node[data-id^="trigger-"]')
@@ -470,7 +517,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await page.getByTestId("palette-add-action").click();
 
     // Wait node → 10 min.
-    await page.locator('[data-testid^="node-card-wait-"]').click();
+    await selecionarNo(page, page.locator('[data-testid^="node-card-wait-"]'));
     const panel = page.getByTestId("node-config-panel");
     await expect(panel).toBeVisible();
     const durationInput = panel.getByLabel("Duração (minutos)");
@@ -485,7 +532,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     });
 
     // Action node → prompt_hint.
-    await page.locator('[data-testid^="node-card-action-"]').click();
+    await selecionarNo(page, page.locator('[data-testid^="node-card-action-"]'));
     const promptHint = panel.getByLabel("Instrução para a IA");
     await promptHint.fill("Reforce o benefício e pergunte se ainda tem interesse.");
     await promptHint.blur();
@@ -527,8 +574,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await page.getByTestId("palette-add-action").click();
     await page.getByTestId("palette-add-end").click();
 
-    const zoomOut = page.locator(".react-flow__controls-zoomout");
-    for (let i = 0; i < 5; i++) await zoomOut.click();
+    await enquadrarCanvas(page);
 
     const triggerId = await page
       .locator('.react-flow__node[data-id^="trigger-"]')
@@ -548,13 +594,13 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await expect(page.locator(".react-flow__edge")).toHaveCount(2);
 
     // 3. Configure wait=10min + action prompt_hint.
-    await page.locator(`[data-testid="node-card-${waitId}"]`).click();
+    await selecionarNo(page, page.locator(`[data-testid="node-card-${waitId}"]`));
     const panel = page.getByTestId("node-config-panel");
     await panel.getByLabel("Duração (minutos)").fill("10");
     await panel.getByLabel("Duração (minutos)").blur();
     await expect(page.locator(`[data-testid="node-card-${waitId}"]`)).toContainText("10 min");
 
-    await page.locator(`[data-testid="node-card-${actionId}"]`).click();
+    await selecionarNo(page, page.locator(`[data-testid="node-card-${actionId}"]`));
     await panel
       .getByLabel("Instrução para a IA")
       .fill("Reforce o benefício e pergunte se ainda tem interesse.");
@@ -661,22 +707,21 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await expect(page.locator('[data-testid^="node-card-wait-"]')).toBeVisible();
     await expect(page.locator('[data-testid^="node-card-end-"]')).toBeVisible();
 
-    await page.locator('[data-testid^="node-card-wait-"]').click();
+    await selecionarNo(page, page.locator('[data-testid^="node-card-wait-"]'));
     await expect(page.getByTestId("node-config-panel")).toBeVisible();
     await expect(page.getByTestId("delete-selection")).toHaveText("Excluir nó");
     await page.getByTestId("delete-node").click();
     await expect(page.locator('[data-testid^="node-card-wait-"]')).toHaveCount(0);
     await expect(page.getByTestId("node-config-sheet")).toHaveCount(0);
 
-    await page.locator('[data-testid^="node-card-end-"]').click();
+    await selecionarNo(page, page.locator('[data-testid^="node-card-end-"]'));
     await expect(page.getByTestId("delete-selection")).toHaveText("Excluir nó");
     await page.getByTestId("delete-selection").click();
     await expect(page.locator('[data-testid^="node-card-end-"]')).toHaveCount(0);
 
     await page.getByTestId("palette-add-trigger").click();
     await page.getByTestId("palette-add-end").click();
-    const zoomOut = page.locator(".react-flow__controls-zoomout");
-    for (let i = 0; i < 5; i++) await zoomOut.click();
+    await enquadrarCanvas(page);
     const triggerId = await page
       .locator('.react-flow__node[data-id^="trigger-"]')
       .getAttribute("data-id");
@@ -726,16 +771,24 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     targetY: number,
   ): Promise<void> {
     const card = page.locator(`[data-testid="node-card-${nodeId}"]`);
-    const box = await card.boundingBox();
-    if (!box) throw new Error(`nó ${nodeId} sem bounding box`);
-    const startX = box.x + box.width / 2;
-    const startY = box.y + 20; // inside the header, clear of the Top handle
+    const header = card.locator(":scope > div.flex.items-center").first();
+    const inicio = await pontoAcessivel(header);
+    const antes = await card.locator("..").getAttribute("style");
+    const canvas = await page.getByTestId("flow-canvas").boundingBox();
+    if (!canvas || targetX <= canvas.x + 40 || targetX >= canvas.x + canvas.width - 40 ||
+      targetY <= canvas.y + 40 || targetY >= canvas.y + canvas.height - 40) {
+      throw new Error(`destino de ${nodeId} fora da área útil do canvas`);
+    }
+    const startX = inicio.x;
+    const startY = inicio.y;
     await page.mouse.move(startX, startY);
     await page.mouse.down();
     await page.mouse.move((startX + targetX) / 2, (startY + targetY) / 2, { steps: 5 });
     await page.mouse.move(targetX, targetY, { steps: 10 });
     await page.mouse.up();
-    await page.waitForTimeout(150);
+    await expect.poll(() => card.locator("..").getAttribute("style"), {
+      message: `o gesto deve mover o nó ${nodeId}, não somente o viewport`,
+    }).not.toBe(antes);
   }
 
   /**
@@ -805,19 +858,20 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
       throw new Error("node ids ausentes");
     }
 
-    // `fitView` re-fits (and can hit its 2x maxZoom) every time a newly-added node
-    // finishes its first measurement — settle it to a known, stable zoom BEFORE doing
-    // any screen-space math below, or the 6 sequential palette adds keep moving the
-    // goalposts mid-repositioning (see the 6.2 canvas test for the same caveat).
-    const zoomOut = page.locator(".react-flow__controls-zoomout");
-    for (let i = 0; i < 6; i++) await zoomOut.click();
-    await page.waitForTimeout(300);
+    // Enquadrar depois de adicionar os nós e esperar a medição estabilizar
+    // antes de converter o desenho em coordenadas reais de tela.
+    await enquadrarCanvas(page);
 
     // 1b. Spread the 6 nodes into a real branching layout (source above target, siblings
     // apart on X) — see `moveNodeTo` for why the default add-grid can't be used here.
     const canvasBox = await page.getByTestId("flow-canvas").boundingBox();
     if (!canvasBox) throw new Error("flow-canvas sem bounding box");
-    const at = (dx: number, dy: number): [number, number] => [canvasBox.x + dx, canvasBox.y + dy];
+    // O desenho de referência mede 800 x 700, mas o canvas real pode ter
+    // só 501px de altura. Destinos fora dele ativavam pan em vez de posicionar.
+    const at = (dx: number, dy: number): [number, number] => [
+      canvasBox.x + 100 + (dx / 800) * (canvasBox.width - 200),
+      canvasBox.y + 50 + (dy / 700) * (canvasBox.height - 100),
+    ];
     await moveNodeTo(page, triggerId, ...at(150, 60));
     await moveNodeTo(page, classifyId, ...at(150, 220));
     await moveNodeTo(page, action1Id, ...at(50, 420));
@@ -826,7 +880,7 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     await moveNodeTo(page, end2Id, ...at(650, 220));
 
     // 2. Configure ai_classify classes = positivo, objecao (replacing the hot/cold default).
-    await page.locator(`[data-testid="node-card-${classifyId}"]`).click();
+    await selecionarNo(page, page.locator(`[data-testid="node-card-${classifyId}"]`));
     const panel = page.getByTestId("node-config-panel");
     await panel.getByLabel("Classes (separadas por vírgula)").fill("positivo, objecao");
     await panel.getByLabel("Classes (separadas por vírgula)").blur();
@@ -835,12 +889,12 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     );
 
     // 3. Configure the 2 action nodes' prompt_hint.
-    await page.locator(`[data-testid="node-card-${action1Id}"]`).click();
+    await selecionarNo(page, page.locator(`[data-testid="node-card-${action1Id}"]`));
     await panel
       .getByLabel("Instrução para a IA")
       .fill("Envie uma oferta especial reforçando o interesse.");
     await panel.getByLabel("Instrução para a IA").blur();
-    await page.locator(`[data-testid="node-card-${action2Id}"]`).click();
+    await selecionarNo(page, page.locator(`[data-testid="node-card-${action2Id}"]`));
     await panel
       .getByLabel("Instrução para a IA")
       .fill("Pergunte com empatia qual é a objeção específica.");

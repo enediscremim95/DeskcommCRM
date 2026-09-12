@@ -154,3 +154,90 @@ describe("o tema não diverge entre o SSR e a primeira renderização do cliente
     expect(container.innerHTML).toContain("Tema: dark");
   });
 });
+
+describe("troca e persistência de aparência", () => {
+  it("hidrata aparência explícita sem divergência e depois aplica o valor salvo", async () => {
+    const { APPEARANCE_STORAGE_KEY } = await import("@/lib/theme");
+    window.localStorage.setItem(APPEARANCE_STORAGE_KEY, "asaas");
+    expect(renderizarComoPrimeiraPassadaDoCliente()).toBe(renderizarComoServidor());
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(ARVORE));
+    expect(document.documentElement.dataset.appearance).toBe("asaas");
+    expect(document.documentElement.dataset.theme).toBe("light");
+    act(() => root.unmount());
+  });
+
+  it("salva escolha pessoal e o toggle legado continua efetivamente alternando", async () => {
+    const { APPEARANCE_STORAGE_KEY, useTheme } = await import("@/lib/theme");
+    function Probe() {
+      const { setAppearance, toggle, appearance } = useTheme();
+      return (
+        <>
+          <button onClick={() => setAppearance("asaas")}>Azul</button>
+          <button onClick={toggle}>Alternar</button>
+          <output>{appearance}</output>
+        </>
+      );
+    }
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <ThemeProvider>
+          <Probe />
+        </ThemeProvider>,
+      ),
+    );
+    expect(container.querySelector("output")?.textContent).toBe("veritas");
+    act(() => container.querySelectorAll("button")[0].click());
+    expect(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBe("asaas");
+    expect(document.documentElement.dataset.appearance).toBe("asaas");
+    act(() => container.querySelectorAll("button")[1].click());
+    expect(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBeNull();
+    expect(window.localStorage.getItem(CHAVE)).toBe("dark");
+    expect(document.documentElement.dataset.appearance).toBe("chatgpt-dark");
+    act(() => root.unmount());
+  });
+
+  it("sincroniza uma escolha feita em outra aba", async () => {
+    const { APPEARANCE_STORAGE_KEY } = await import("@/lib/theme");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(ARVORE));
+    act(() => {
+      window.localStorage.setItem(APPEARANCE_STORAGE_KEY, "chatgpt-dark");
+      window.dispatchEvent(new StorageEvent("storage", { key: APPEARANCE_STORAGE_KEY }));
+    });
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.documentElement.dataset.appearance).toBe("chatgpt-dark");
+    act(() => root.unmount());
+  });
+
+  it("escolha continua funcional se localStorage recusa a gravação", async () => {
+    const { useTheme } = await import("@/lib/theme");
+    function Probe() {
+      const { setAppearance } = useTheme();
+      return <button onClick={() => setAppearance("chatgpt-dark")}>Escuro</button>;
+    }
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <ThemeProvider>
+          <Probe />
+        </ThemeProvider>,
+      ),
+    );
+    act(() => container.querySelector("button")?.click());
+    expect(document.documentElement.dataset.appearance).toBe("chatgpt-dark");
+    act(() => root.unmount());
+  });
+});

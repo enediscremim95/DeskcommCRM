@@ -34,6 +34,7 @@ export const PORTAS_ESSENCIAIS = [
 ] as const;
 export function essencial(d: NavMetadata, role: Role | null, platform = false): boolean {
   return (
+    d.href === "/app/settings/aparencia" ||
     d.href === PORTAS_ESSENCIAIS[0] ||
     d.href === PORTAS_ESSENCIAIS[1] ||
     (d.href === PORTAS_ESSENCIAIS[2] && (platform || role === "admin"))

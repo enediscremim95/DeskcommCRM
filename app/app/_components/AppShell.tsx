@@ -42,7 +42,7 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
       */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="flex min-h-0 flex-1 flex-col overflow-auto p-6">
+        <main className="flex min-h-0 flex-1 flex-col overflow-auto p-3 sm:p-6">
           <Breadcrumbs />
           <div className="flex min-h-0 flex-1 flex-col pt-3">{children}</div>
         </main>
