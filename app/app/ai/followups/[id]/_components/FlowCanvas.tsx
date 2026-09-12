@@ -337,11 +337,6 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
             onPaneClick={onPaneClick}
             defaultEdgeOptions={{ type: "smoothstep" }}
             connectionLineType={ConnectionLineType.SmoothStep}
-            // O handle da XYFlow mede 8px antes do zoom. No piso padrão de
-            // 0,5 ele virava 4px na tela, menor que a área confiável para o
-            // gesto de conexão. 0,75 preserva 6px sem alterar os nós ou o
-            // CSS compartilhado do canvas.
-            minZoom={0.75}
             fitView
           >
             <Background />

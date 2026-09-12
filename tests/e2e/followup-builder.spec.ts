@@ -185,10 +185,48 @@ async function connectHandles(
   // Instrumentação de falha: o CI não tem vídeo interativo. Se o drop não
   // nascer como aresta, este retrato diz se o alvo estava sendo aceito pelo
   // React Flow no instante do mouseup e quais eram as caixas reais.
-  const alvoDuranteArrasto = await target.evaluate((el) => ({
-    className: el.className,
-    ariaDisabled: el.getAttribute("aria-disabled"),
-  }));
+  const alvoDuranteArrasto = await target.evaluate((el) => {
+    el.removeAttribute("data-e2e-drop");
+    // Captura no mouseup real, antes de o XYFlow encerrar a conexão. Não
+    // altera o gesto nem expõe a instância do React Flow no produto.
+    el.ownerDocument.addEventListener(
+      "mouseup",
+      (event) => {
+        const flow = el.closest(".react-flow");
+        const viewport = flow?.querySelector(".react-flow__viewport");
+        const transform = viewport ? getComputedStyle(viewport).transform : null;
+        const matrix = transform && transform !== "none" ? new DOMMatrixReadOnly(transform) : null;
+        const box = (element: Element | null | undefined) =>
+          element?.getBoundingClientRect().toJSON() ?? null;
+        const hit = el.ownerDocument.elementFromPoint(event.clientX, event.clientY);
+        const node = el.closest(".react-flow__node");
+        el.setAttribute(
+          "data-e2e-drop",
+          JSON.stringify({
+            // Mesmos campos de getViewport(), lidos da transformação
+            // renderizada no DOM, não de uma chamada à API da instância.
+            viewportDOM: matrix ? { zoom: matrix.a, x: matrix.e, y: matrix.f } : null,
+            transform,
+            canvasScreen: box(flow),
+            browserScreen: { width: window.innerWidth, height: window.innerHeight },
+            targetNodeId: node?.getAttribute("data-id"),
+            targetNodeScreen: box(node),
+            targetHandleScreen: box(el),
+            targetClassName: el.className,
+            dropScreen: { x: event.clientX, y: event.clientY },
+            hit: hit ? {
+              tag: hit.tagName,
+              className: hit.getAttribute("class"),
+              nodeId: hit.closest(".react-flow__node")?.getAttribute("data-id") ?? null,
+              isTargetHandle: hit === el,
+            } : null,
+          }),
+        );
+      },
+      { capture: true, once: true },
+    );
+    return { className: el.className, ariaDisabled: el.getAttribute("aria-disabled") };
+  });
   await page.mouse.up();
   await page.waitForTimeout(200);
   const edgesDepois = await page.locator(".react-flow__edge").count();
@@ -203,6 +241,7 @@ async function connectHandles(
           sourceComputedStyle: estiloComputado[0],
           targetComputedStyle: estiloComputado[1],
           alvoDuranteArrasto,
+          drop: JSON.parse((await target.getAttribute("data-e2e-drop")) ?? "null"),
         }),
     );
   }

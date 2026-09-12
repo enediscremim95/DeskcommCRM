@@ -17,7 +17,6 @@ import { describe, expect, it } from "vitest";
  */
 
 const CSS = readFileSync("app/globals.css", "utf8");
-const CANVAS = readFileSync("app/app/ai/followups/[id]/_components/FlowCanvas.tsx", "utf8");
 
 function bloco(seletor: string): string {
   const rx = new RegExp(`^${seletor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{`, "m");
@@ -46,11 +45,9 @@ describe("controles do canvas de follow-up seguem o tema", () => {
     expect(corpo).toMatch(/border:\s*1px solid var\(--color-border\)/);
   });
 
-  it("não deixa o zoom reduzir o handle abaixo da área confiável de conexão", () => {
-    // A folha final da XYFlow define 6px e o reset global usa border-box, logo
-    // a caixa inteira no zoom 0,75 era 4,5px. O canvas amplia a origem para
-    // 8px, preservando 6px reais no piso de zoom.
-    expect(CANVAS).toMatch(/minZoom=\{0\.75\}/);
+  it("mantém a dimensão de 8px dos handles antes da transformação do canvas", () => {
+    // Este gate mede o CSS, não a área clicável depois do zoom. A prova da
+    // conexão continua nas specs E2E, com o gesto real entre os handles.
     const corpo = bloco(".react-flow__handle");
     expect(corpo).toMatch(/width:\s*8px/);
     expect(corpo).toMatch(/height:\s*8px/);
