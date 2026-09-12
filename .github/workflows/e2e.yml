@@ -881,6 +881,15 @@ jobs:
           # ver o comentário do passo de build: vazio NÃO desliga.
           SENTRY_DSN: "off"
 
+      - name: Capturas das aparências verificadas
+        uses: actions/upload-artifact@v7
+        if: always() && matrix.parte == 3
+        with:
+          name: aparencias-crm
+          path: .superpowers/evidence/aparencias/*.png
+          include-hidden-files: true
+          retention-days: 7
+
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

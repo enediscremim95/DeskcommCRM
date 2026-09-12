@@ -154,6 +154,10 @@ test.describe("followup flows — lista + criação (Task 6.1)", () => {
 // Não é "Organizar": esse comando muda o grafo e é uma das asserções da suíte.
 async function enquadrarCanvas(page: Page): Promise<void> {
   await page.locator(".react-flow__controls-fitview").click();
+  await aguardarCanvasEstavel(page);
+}
+
+async function aguardarCanvasEstavel(page: Page): Promise<void> {
   await expect.poll(async () => page.locator(".react-flow__viewport").evaluate(async (el) => {
     const antes = getComputedStyle(el).transform;
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -179,8 +183,9 @@ async function pontoAcessivel(alvo: Locator): Promise<{ x: number; y: number }> 
 async function selecionarNo(page: Page, card: Locator): Promise<void> {
   // Abrir o painel lateral encolhe o canvas. Reenquadrar também nesse estado.
   await enquadrarCanvas(page);
-  await pontoAcessivel(card);
-  await card.click();
+  const header = card.locator(":scope > div.flex.items-center").first();
+  await pontoAcessivel(header);
+  await header.click();
 }
 
 async function connectHandles(
@@ -764,6 +769,64 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
    * is what a real user would do before wiring a non-trivial flow; this
    * mirrors that instead of fighting the demo grid.
    */
+  async function disporNos(page: Page, linhas: string[][]): Promise<void> {
+    await enquadrarCanvas(page);
+    const medir = async () => {
+      const canvas = await page.getByTestId("flow-canvas").boundingBox();
+      if (!canvas) throw new Error("canvas sem medidas para dispor os nós");
+      const alturaVisivel = Math.min(canvas.height, await page.evaluate(() => window.innerHeight) - canvas.y - 8);
+      const medidas = await Promise.all(linhas.map(async (ids) => Promise.all(ids.map(async (id) => {
+        const card = page.getByTestId(`node-card-${id}`);
+        const box = await card.boundingBox();
+        const header = await card.locator(":scope > div.flex.items-center").first().boundingBox();
+        if (!box || !header) throw new Error(`nó ${id} sem medidas`);
+        return { id, width: box.width, height: box.height, headerY: header.y + header.height / 2 - box.y };
+      }))));
+      const larguras = medidas.map((linha) => linha.reduce((soma, no) => soma + no.width, 0) + (linha.length - 1) * 48);
+      const alturas = medidas.map((linha) => Math.max(...linha.map((no) => no.height)));
+      const width = Math.max(...larguras);
+      const height = alturas.reduce((soma, altura) => soma + altura, 0) + (linhas.length - 1) * 48;
+      return { canvas, alturaVisivel, medidas, larguras, alturas, width, height };
+    };
+    let desenho = await medir();
+    // Não comprimir o desenho mantendo cartões do mesmo tamanho. Só diminuir
+    // pelo controle nativo quando as medidas mostram que não cabe, com piso real.
+    while (desenho.width > desenho.canvas.width - 100 || desenho.height > desenho.alturaVisivel - 100) {
+      const zoomOut = page.locator(".react-flow__controls-zoomout");
+      await expect(zoomOut, "o desenho precisa caber sem esconder cartões").toBeEnabled();
+      const antes = await page.locator(".react-flow__viewport").getAttribute("style");
+      await zoomOut.click();
+      await expect.poll(() => page.locator(".react-flow__viewport").getAttribute("style")).not.toBe(antes);
+      await aguardarCanvasEstavel(page);
+      desenho = await medir();
+    }
+    let y = desenho.canvas.y + (desenho.alturaVisivel - desenho.height) / 2;
+    const destinos: { id: string; x: number; y: number }[] = [];
+    for (const [i, linha] of desenho.medidas.entries()) {
+      let x = desenho.canvas.x + (desenho.canvas.width - desenho.larguras[i]!) / 2;
+      for (const no of linha) {
+        destinos.push({ id: no.id, x: x + no.width / 2, y: y + no.headerY });
+        x += no.width + 48;
+      }
+      y += desenho.alturas[i]! + 48;
+    }
+    // Os fins saem primeiro da grade original. Assim não ficam em cima dos
+    // cabeçalhos dos nós que ainda serão arrastados para as linhas superiores.
+    for (const destino of destinos.reverse()) {
+      await moveNodeTo(page, destino.id, destino.x, destino.y);
+    }
+    const caixas = await Promise.all(linhas.flat().map((id) => page.getByTestId(`node-card-${id}`).boundingBox()));
+    for (let i = 0; i < caixas.length; i++) {
+      for (let j = i + 1; j < caixas.length; j++) {
+        const a = caixas[i];
+        const b = caixas[j];
+        if (!a || !b) throw new Error("cartão desapareceu durante a disposição");
+        expect(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y,
+          "os cartões precisam ficar separados antes de conectar as bolinhas").toBe(true);
+      }
+    }
+  }
+
   async function moveNodeTo(
     page: Page,
     nodeId: string,
@@ -858,26 +921,12 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
       throw new Error("node ids ausentes");
     }
 
-    // Enquadrar depois de adicionar os nós e esperar a medição estabilizar
-    // antes de converter o desenho em coordenadas reais de tela.
-    await enquadrarCanvas(page);
-
-    // 1b. Spread the 6 nodes into a real branching layout (source above target, siblings
-    // apart on X) — see `moveNodeTo` for why the default add-grid can't be used here.
-    const canvasBox = await page.getByTestId("flow-canvas").boundingBox();
-    if (!canvasBox) throw new Error("flow-canvas sem bounding box");
-    // O desenho de referência mede 800 x 700, mas o canvas real pode ter
-    // só 501px de altura. Destinos fora dele ativavam pan em vez de posicionar.
-    const at = (dx: number, dy: number): [number, number] => [
-      canvasBox.x + 100 + (dx / 800) * (canvasBox.width - 200),
-      canvasBox.y + 50 + (dy / 700) * (canvasBox.height - 100),
-    ];
-    await moveNodeTo(page, triggerId, ...at(150, 60));
-    await moveNodeTo(page, classifyId, ...at(150, 220));
-    await moveNodeTo(page, action1Id, ...at(50, 420));
-    await moveNodeTo(page, action2Id, ...at(400, 420));
-    await moveNodeTo(page, end1Id, ...at(225, 620));
-    await moveNodeTo(page, end2Id, ...at(650, 220));
+    await disporNos(page, [
+      [triggerId],
+      [classifyId],
+      [action1Id, action2Id],
+      [end1Id, end2Id],
+    ]);
 
     // 2. Configure ai_classify classes = positivo, objecao (replacing the hot/cold default).
     await selecionarNo(page, page.locator(`[data-testid="node-card-${classifyId}"]`));
