@@ -24475,6 +24475,25 @@ create trigger trg_org_voice_calls_set_updated_at
 
 notify pgrst, 'reload schema';
 
+-- ---- ícone da aba parametrizado (migration 0243) ----
+-- Forma fechada, não SVG nem URL: o renderer desenha localmente com a cor já
+-- resolvida. O bloco fica antes da varredura de anon, que deve permanecer no fim.
+alter table public.platform_branding
+  add column if not exists icon_style text not null default 'letra';
+
+alter table public.platform_branding
+  drop constraint if exists platform_branding_icon_style;
+alter table public.platform_branding
+  add constraint platform_branding_icon_style check (icon_style in ('letra', 'atomo'));
+
+comment on column public.platform_branding.icon_style is
+  'Forma segura do ícone da aba: letra (fallback) ou atomo. O renderer desenha a forma localmente com accent_hex; nunca busca logo_url.';
+
+revoke all on public.platform_branding from anon, authenticated;
+grant select, insert, update on public.platform_branding to service_role;
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES

@@ -92,6 +92,7 @@ export async function updateBranding(
     // dois passa pelo banco. Normalizar aqui é o que faz "mudou?" ser uma
     // pergunta com resposta — duas grafias da mesma cor mentiriam.
     accent_hex: parsed.data.accent_hex === null ? null : normalizarHex(parsed.data.accent_hex),
+    icon_style: parsed.data.icon_style,
     show_powered_by: parsed.data.show_powered_by,
     // A linha passa a ser HUMANA. É o que impede a semeadura do `.env` de
     // reescrever a escolha no render seguinte — inclusive quando a escolha foi

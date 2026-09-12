@@ -168,6 +168,7 @@ describe("`fallback_at` pela tela — o caminho que não existe", () => {
         app_name: "Revenda XPTO",
         logo_url: null,
         accent_hex: valor,
+        icon_style: "letra",
         show_powered_by: true,
       });
       expect(lido.success, `accent_hex=${valor} deveria ser recusado`).toBe(false);
@@ -178,6 +179,7 @@ describe("`fallback_at` pela tela — o caminho que não existe", () => {
         app_name: "Revenda XPTO",
         logo_url: null,
         accent_hex: "#0b3d2e",
+        icon_style: "atomo",
         show_powered_by: true,
       }).success,
     ).toBe(true);

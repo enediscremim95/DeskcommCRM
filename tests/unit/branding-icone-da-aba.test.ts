@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { isPublicPath, PUBLIC_PATHS } from "@/lib/auth/public-paths";
 import { letraDoIcone } from "@/lib/branding/icone";
+import { estiloDoIconeDaAba } from "@/lib/branding/icone-da-aba";
 
 const RAIZ = process.cwd();
 
@@ -39,6 +40,21 @@ describe("letra do ícone da aba", () => {
 
   it("dígito conta como letra — marca que começa com número tem ícone", () => {
     expect(letraDoIcone("360 Vendas")).toBe("3");
+  });
+});
+
+describe("forma do ícone da aba", () => {
+  it("aceita somente a forma parametrizada e preserva a letra como fallback", () => {
+    expect(estiloDoIconeDaAba("atomo")).toBe("atomo");
+    expect(estiloDoIconeDaAba(null)).toBe("letra");
+    expect(estiloDoIconeDaAba("svg livre")).toBe("letra");
+  });
+
+  it("o renderer usa o átomo apenas quando a forma foi configurada", () => {
+    const icone = fs.readFileSync(path.join(RAIZ, "app/icon.tsx"), "utf8");
+    expect(icone).toMatch(/marca\.iconeDaAba\s*===\s*"atomo"/);
+    expect(icone).toMatch(/<ellipse rx="21" ry="7\.3" transform="rotate\(-45\)"/);
+    expect(icone).toMatch(/stroke=\{marca\.accent\}/);
   });
 });
 

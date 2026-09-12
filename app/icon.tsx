@@ -78,6 +78,22 @@ export const contentType = "image/png";
 export default async function Icon() {
   const marca = await marcaDaSaida(null);
 
+  if (marca.iconeDaAba === "atomo") {
+    return new ImageResponse(
+      (
+        <svg viewBox="0 0 64 64" width="64" height="64">
+          <rect width="64" height="64" rx="14" fill="#0A0A0A" />
+          <g transform="translate(32 32)" fill="none" stroke={marca.accent} strokeWidth="3.6">
+            <ellipse rx="21" ry="7.3" transform="rotate(-45)" />
+            <ellipse rx="21" ry="7.3" transform="rotate(45)" />
+          </g>
+          <circle cx="32" cy="32" r="4.4" fill={marca.accent} />
+        </svg>
+      ),
+      { ...size, headers: CACHE },
+    );
+  }
+
   if (marcaEhADoProduto({ name: marca.nome, logoUrl: marca.logoUrl })) {
     // 78% da aresta: o D ocupa ~75% do próprio viewBox, então sobra o mesmo
     // respiro que a letra tem no ramo de baixo.

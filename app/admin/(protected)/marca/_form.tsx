@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cssDaMarca } from "@/lib/branding/css";
+import { estiloDoIconeDaAba } from "@/lib/branding/icone-da-aba";
 import { ehHexValido, K, normalizarHex } from "@/lib/branding/rampa";
 import { REGUA_DO_PRODUTO } from "@/lib/branding/regua-do-produto";
 import { resolverMarca } from "@/lib/branding/resolve";
@@ -32,6 +33,7 @@ export interface MarcaGravada {
    */
   readonly logo_path: string | null;
   readonly accent_hex: string | null;
+  readonly icon_style: string | null;
   readonly show_powered_by: boolean;
 }
 
@@ -78,6 +80,7 @@ export function FormularioDaMarca({
   const router = useRouter();
   const [nome, setNome] = useState(gravada.app_name ?? "");
   const [hex, setHex] = useState(gravada.accent_hex ?? "");
+  const [estiloDoIcone, setEstiloDoIcone] = useState(estiloDoIconeDaAba(gravada.icon_style));
   const [erroTecnico, setErroTecnico] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -174,6 +177,7 @@ export function FormularioDaMarca({
       // apagá-lo.
       logo_url: gravada.logo_url,
       accent_hex: hexLimpo || null,
+      icon_style: estiloDoIcone,
       // `logo_path` NÃO entra aqui, e a ausência é a decisão: quem grava o
       // arquivo é `/api/v1/marca/logo`, e o `upsert` desta action não inclui a
       // coluna — então salvar o nome não pode apagar o logo. (Na camada da
@@ -327,6 +331,22 @@ export function FormularioDaMarca({
             {t("Sem cor definida, o sistema usa a cor padrão dele.")}
           </p>
         )}
+      </Card>
+
+      <Card className="space-y-2 p-6">
+        <Label htmlFor="icon_style">{t("Ícone da aba")}</Label>
+        <select
+          id="icon_style"
+          value={estiloDoIcone}
+          onChange={(e) => setEstiloDoIcone(estiloDoIconeDaAba(e.target.value))}
+          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+        >
+          <option value="letra">{t("Letra do nome")}</option>
+          <option value="atomo">{t("Símbolo orbital")}</option>
+        </select>
+        <p className="text-xs text-text-muted">
+          {t("O símbolo usa a cor da marca e é desenhado no servidor, sem buscar o logo pela internet.")}
+        </p>
       </Card>
 
       {/*

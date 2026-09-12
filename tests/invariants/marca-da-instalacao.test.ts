@@ -203,6 +203,21 @@ describe("o contrato do schema", () => {
     sql(`delete from public.${TABELA};`);
   });
 
+  it("`icon_style` só aceita as formas que o renderer conhece", () => {
+    sql(`delete from public.${TABELA};`);
+    sql(`insert into public.${TABELA} (id, icon_style) values (1, 'letra');`);
+    sql(`update public.${TABELA} set icon_style = 'atomo' where id = 1;`);
+
+    let erro: string | null = null;
+    try {
+      sql(`update public.${TABELA} set icon_style = 'svg_livre' where id = 1;`);
+    } catch (err) {
+      erro = motivoDoErro(err);
+    }
+    expect(erro).toContain("platform_branding_icon_style");
+    sql(`delete from public.${TABELA};`);
+  });
+
   it("o trigger de `updated_at` está no lugar, uma vez só", () => {
     // "Uma vez só" porque o apêndice do baseline é RE-APLICADO no `update.sh` de
     // todo clone: um bloco que criasse o trigger sem `drop trigger if exists`

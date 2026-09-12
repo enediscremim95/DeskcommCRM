@@ -9,6 +9,7 @@
 import { z } from "zod";
 
 import { ehHexValido } from "@/lib/branding/rampa";
+import { ESTILOS_DE_ICONE_DA_ABA } from "@/lib/branding/icone-da-aba";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
@@ -192,6 +193,8 @@ export const platformBrandingSchema = z.object({
     .trim()
     .refine(ehHexValido, { message: "Use uma cor no formato #rrggbb" })
     .nullable(),
+  // Forma fechada, nunca SVG ou URL livre: o `app/icon.tsx` desenha localmente.
+  icon_style: z.enum(ESTILOS_DE_ICONE_DA_ABA),
   show_powered_by: z.boolean(),
 });
 export type PlatformBrandingInput = z.infer<typeof platformBrandingSchema>;

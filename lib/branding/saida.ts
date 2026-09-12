@@ -49,6 +49,7 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { melhorFrenteSobre } from "./contraste";
+import { estiloDoIconeDaAba, type EstiloDoIconeDaAba } from "./icone-da-aba";
 import { marcaDaInstalacao } from "./instalacao";
 import { resolverMarcaDaOrganizacao } from "./organizacao";
 import { stop } from "./rampa";
@@ -65,6 +66,8 @@ export type MarcaDeSaida = {
    * (`app/(public)/layout.tsx`).
    */
   readonly logoUrl: string | null;
+  /** Forma escolhida pela instalação para a rota pública `/icon`. */
+  readonly iconeDaAba?: EstiloDoIconeDaAba;
   /** `#hex` sempre — o formato que cliente de e-mail e @react-pdf entendem. */
   readonly accent: string;
   /** Preto ou branco, já com o piso de contraste aplicado. */
@@ -117,6 +120,7 @@ function padraoDoProduto(): MarcaDeSaida {
   return {
     nome: DEFAULT_APP_NAME,
     logoUrl: null,
+    iconeDaAba: "letra",
     accent: ACCENT_DO_PRODUTO,
     accentFg: melhorFrenteSobre(ACCENT_DO_PRODUTO),
     origens: { nome: "padrao", cor: "padrao" },
@@ -197,6 +201,7 @@ export async function marcaDaSaida(organizationId: string | null): Promise<Marca
     return {
       nome: marca.name,
       logoUrl: marca.logoUrl,
+      iconeDaAba: estiloDoIconeDaAba(linha?.icon_style),
       accent,
       // Nunca `#ffffff` fixo: `melhorFrenteSobre` (`contraste.ts:79`) já
       // decide preto ou branco pelo contraste real. Uma marca amarela colada
