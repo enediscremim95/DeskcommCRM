@@ -335,3 +335,15 @@ html:root[data-appearance="chatgpt-dark"] .bg-error.text-white {
 html:root[data-appearance] .crm-sidebar :is(.hover\:bg-accent\/50, .hover\:bg-accent\/40):hover {
   background-color: var(--color-accent-soft);
 }
+
+/* Somente o desenho padrão usa estes marcadores; imagens de clientes mantêm
+   suas cores. A sidebar floresta é escura mesmo com o conteúdo em tema claro. */
+html:root[data-appearance="veritas"] .crm-sidebar [data-product-mark-part="symbol"] {
+  fill: var(--crm-sidebar-accent);
+}
+html:root[data-appearance="veritas"] .crm-sidebar [data-product-mark-part="name"] {
+  fill: var(--crm-sidebar-text);
+}
+html:root[data-appearance="veritas"] .crm-sidebar [data-product-mark-part="suffix"] {
+  fill: var(--crm-sidebar-muted);
+}
