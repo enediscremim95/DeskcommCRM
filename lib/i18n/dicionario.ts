@@ -356,6 +356,14 @@ export const DICIONARIO: Traducoes = {
   // O alternador de ordem dentro da Fila do inbox. "Por espera" é o padrão e é o
   // que a fila promete: quem chegou primeiro não afunda.
   "Ordem da Fila": { es: "Orden de la cola" },
+  // Administração › Marca: a forma do ícone da aba (migration 0243). "Símbolo
+  // orbital" é o átomo; "Letra do nome" é o padrão do produto.
+  "Ícone da aba": { es: "Icono de la pestaña" },
+  "Letra do nome": { es: "Letra del nombre" },
+  "Símbolo orbital": { es: "Símbolo orbital" },
+  "O símbolo usa a cor da marca e é desenhado no servidor, sem buscar o logo pela internet.": {
+    es: "El símbolo usa el color de la marca y se dibuja en el servidor, sin buscar el logo por internet.",
+  },
   "Por espera": { es: "Por espera" },
   Recentes: { es: "Recientes" },
   Contatos: { es: "Contactos" },
