@@ -317,7 +317,11 @@ async function moveNodeTo(page: Page, nodeId: string, targetX: number, targetY: 
 }
 
 async function clickEdge(page: Page, edgeId: string): Promise<void> {
-  await page.locator(`[data-testid="rf__edge-${edgeId}"] .react-flow__edge-textbg`).click();
+  await enquadrarCanvas(page);
+  const edge = page.getByTestId(`rf__edge-${edgeId}`);
+  await edge.press("Enter");
+  await expect(edge).toHaveClass(/(?:^|\s)selected(?:\s|$)/);
+  await edge.locator(".react-flow__edge-textbg").click();
 }
 
 async function setEdgeCondition(page: Page, edgeId: string, optionLabel: string): Promise<void> {
