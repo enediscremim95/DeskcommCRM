@@ -179,6 +179,28 @@ async function connectHandles(
     ),
   );
   await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
+  // O que está sob o mouse NO instante do mouse.down. Se não for o handle de
+  // origem, a conexão nunca começou (o arrasto vira pan do pane) — e o drop no
+  // alvo certo, medido abaixo, não cria aresta. A caixa atual do handle diz se
+  // ele se moveu desde a medição de sBox.
+  const noMouseDown = await source.evaluate(
+    (el, ponto) => {
+      const hit = el.ownerDocument.elementFromPoint(ponto.x, ponto.y);
+      return {
+        ponto,
+        sourceHandleAgora: el.getBoundingClientRect().toJSON(),
+        hit: hit
+          ? {
+              tag: hit.tagName,
+              className: hit.getAttribute("class"),
+              nodeId: hit.closest(".react-flow__node")?.getAttribute("data-id") ?? null,
+              isSourceHandle: hit === el,
+            }
+          : null,
+      };
+    },
+    { x: sBox.x + sBox.width / 2, y: sBox.y + sBox.height / 2 },
+  );
   await page.mouse.down();
   await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
   await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 12 });
@@ -240,6 +262,7 @@ async function connectHandles(
           target: tBox,
           sourceComputedStyle: estiloComputado[0],
           targetComputedStyle: estiloComputado[1],
+          noMouseDown,
           alvoDuranteArrasto,
           drop: JSON.parse((await target.getAttribute("data-e2e-drop")) ?? "null"),
         }),
