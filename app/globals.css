@@ -833,6 +833,16 @@
   --xy-handle-border-color: var(--color-surface);
 }
 
+/* A folha final da XYFlow declara 6px para cada handle. Como o reset global
+   usa `box-sizing: border-box`, essa já é a caixa inteira: no piso de zoom do
+   construtor (0,75) ela media 4,5px na tela e o drop do gesto podia não chegar
+   ao React Flow. O tamanho pertence ao canvas, não ao tema da instalação.
+   Com 8px na origem, o piso preserva 6px reais para conectar os nós. */
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+}
+
 .react-flow__controls {
   overflow: hidden;
   border: 1px solid var(--color-border);

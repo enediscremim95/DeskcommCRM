@@ -47,9 +47,12 @@ describe("controles do canvas de follow-up seguem o tema", () => {
   });
 
   it("não deixa o zoom reduzir o handle abaixo da área confiável de conexão", () => {
-    // A folha da XYFlow define 6px de conteúdo + 1px de borda em cada lado.
-    // Com o piso padrão 0,5, a caixa visual cai para 4px e o drop no handle
-    // pode não chegar ao onConnect. Este piso conserva pelo menos 6px.
+    // A folha final da XYFlow define 6px e o reset global usa border-box, logo
+    // a caixa inteira no zoom 0,75 era 4,5px. O canvas amplia a origem para
+    // 8px, preservando 6px reais no piso de zoom.
     expect(CANVAS).toMatch(/minZoom=\{0\.75\}/);
+    const corpo = bloco(".react-flow__handle");
+    expect(corpo).toMatch(/width:\s*8px/);
+    expect(corpo).toMatch(/height:\s*8px/);
   });
 });
