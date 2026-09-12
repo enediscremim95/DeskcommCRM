@@ -165,10 +165,9 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
           ...e,
           type: "smoothstep" as const,
           label: branch ? t(rotuloDoRamo(branch)) : t(conditionLabel(condition)),
-          selected: e.id === selectedEdgeId,
         };
       }),
-    [edges, nodes, selectedEdgeId, t],
+    [edges, nodes, t],
   );
 
   // Quais saídas do nó selecionado já têm aresta. Quem sabe isso é o canvas —
@@ -337,6 +336,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
             onPaneClick={onPaneClick}
             defaultEdgeOptions={{ type: "smoothstep" }}
             connectionLineType={ConnectionLineType.SmoothStep}
+            elevateEdgesOnSelect
             fitView
           >
             <Background />

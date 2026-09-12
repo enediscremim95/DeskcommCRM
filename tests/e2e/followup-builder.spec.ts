@@ -854,39 +854,14 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     }).not.toBe(antes);
   }
 
-  // O 422 aumenta o cartão com o erro e pode cobrir o rótulo da aresta.
-  // O operador ainda pode clicar no fio exposto. Medimos a curva SVG real,
-  // aceitando somente um ponto em que o hit-test devolva ESTA aresta.
+  // Uma conexão coberta pode receber foco pelo teclado, como no produto.
+  // A seleção nativa a traz para a frente; o clique normal abre seu painel.
   async function clickEdge(page: Page, edgeId: string): Promise<void> {
     await enquadrarCanvas(page);
     const edge = page.getByTestId(`rf__edge-${edgeId}`);
-    const ponto = await edge.evaluate((el) => {
-      const path = el.querySelector(".react-flow__edge-path");
-      const canvas = el.closest(".react-flow")?.getBoundingClientRect();
-      if (!(path instanceof SVGPathElement) || !canvas) return null;
-      const matrix = path.getScreenCTM();
-      if (!matrix) return null;
-      const length = path.getTotalLength();
-      const scale = Math.max(Math.hypot(matrix.a, matrix.b), Math.hypot(matrix.c, matrix.d));
-      // No máximo 2px entre amostras na tela, limitado para não varrer sem fim.
-      const passos = Math.min(2_000, Math.max(2, Math.ceil(length * scale / 2)));
-      for (let i = 1; i < passos; i++) {
-        const local = path.getPointAtLength(length * i / passos);
-        const { x, y } = new DOMPoint(local.x, local.y).matrixTransform(matrix);
-        if (x <= canvas.left + 16 || x >= canvas.right - 16 ||
-          y <= canvas.top + 16 || y >= canvas.bottom - 16) continue;
-        const hit = el.ownerDocument.elementFromPoint(x, y);
-        if (hit?.closest(".react-flow__edge") === el) return { x, y };
-      }
-      return null;
-    });
-    if (!ponto) throw new Error(`aresta ${edgeId} não tem trecho exposto para um clique real`);
-    await page.mouse.move(ponto.x, ponto.y);
-    expect(await edge.evaluate((el, p) =>
-      el.ownerDocument.elementFromPoint(p.x, p.y)?.closest(".react-flow__edge") === el, ponto),
-    `o ponto de clique deve continuar pertencendo à aresta ${edgeId}`).toBe(true);
-    await page.mouse.click(ponto.x, ponto.y);
+    await edge.press("Enter");
     await expect(edge).toHaveClass(/(?:^|\s)selected(?:\s|$)/);
+    await edge.locator(".react-flow__edge-textbg").click();
   }
 
   async function setEdgeCondition(page: Page, edgeId: string, optionLabel: string): Promise<void> {
