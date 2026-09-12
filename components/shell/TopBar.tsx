@@ -11,15 +11,15 @@ import { SearchTrigger } from "./SearchTrigger";
 export function TopBar() {
   const t = useT();
   return (
-    <header className="crm-topbar sticky top-0 z-20 flex min-h-14 flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-3 py-2 backdrop-blur md:h-14 md:flex-nowrap md:gap-4 md:px-6 md:py-0">
-      <div className="flex min-w-0 flex-1 items-center gap-2 md:flex-initial">
+    <header className="crm-topbar sticky top-0 z-20 flex min-h-14 flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-3 py-2 backdrop-blur lg:h-14 lg:flex-nowrap lg:gap-4 lg:px-6 lg:py-0">
+      <div className="flex min-w-0 flex-1 items-center gap-2 lg:flex-initial [&>button]:min-w-0 [&>button:first-child]:shrink-0">
         <MobileSidebar />
         <TenantSwitcher />
       </div>
-      <div className="order-3 flex min-w-0 basis-full justify-center sm:order-2 sm:flex-1 sm:basis-auto md:max-w-md">
+      <div className="flex shrink-0 items-center justify-end lg:min-w-0 lg:max-w-md lg:flex-1 lg:justify-center">
         <SearchTrigger />
       </div>
-      <div className="order-2 flex min-w-0 flex-wrap items-center justify-end gap-2 sm:order-3 sm:flex-nowrap">
+      <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 lg:w-auto lg:flex-nowrap">
         <Link
           href="/app/settings/aparencia"
           aria-label={t("Aparência")}
