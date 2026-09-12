@@ -61,7 +61,7 @@ export function NodeCard({
       data-testid={`node-card-${id}`}
       title={hasError ? errors!.join("; ") : undefined}
     >
-      {showTarget && <Handle type="target" position={Position.Top} />}
+      {showTarget && <Handle type="target" position={Position.Top} style={{ width: 8, height: 8 }} />}
       <div className="flex items-center gap-2 px-3 py-2">
         <span
           className={cn(
@@ -113,13 +113,15 @@ export function NodeCard({
                 // Uma bolinha por LINHA: a saída sai ao lado do seu próprio rótulo,
                 // que é o que torna "qual aresta sai de qual regra" visível. No
                 // rodapé elas ficariam lado a lado, sem espaço para nome nenhum.
-                style={{ top: "50%" }}
+                style={{ top: "50%", width: 8, height: 8 }}
               />
             </li>
           ))}
         </ul>
       )}
-      {showSource && branchRows === null && <Handle type="source" position={Position.Bottom} />}
+      {showSource && branchRows === null && (
+        <Handle type="source" position={Position.Bottom} style={{ width: 8, height: 8 }} />
+      )}
     </div>
   );
 }

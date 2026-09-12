@@ -170,6 +170,14 @@ async function connectHandles(
   const sBox = await source.boundingBox();
   const tBox = await target.boundingBox();
   if (!sBox || !tBox) throw new Error(`handle não encontrado: ${sourceNodeId} -> ${targetNodeId}`);
+  const estiloComputado = await Promise.all(
+    [source, target].map((handle) =>
+      handle.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return { width: style.width, height: style.height, boxSizing: style.boxSizing };
+      }),
+    ),
+  );
   await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
@@ -187,7 +195,15 @@ async function connectHandles(
   if (edgesDepois !== edgesAntes + 1) {
     throw new Error(
       `conexão não criada: ${sourceNodeId} → ${targetNodeId}; ` +
-        JSON.stringify({ edgesAntes, edgesDepois, source: sBox, target: tBox, alvoDuranteArrasto }),
+        JSON.stringify({
+          edgesAntes,
+          edgesDepois,
+          source: sBox,
+          target: tBox,
+          sourceComputedStyle: estiloComputado[0],
+          targetComputedStyle: estiloComputado[1],
+          alvoDuranteArrasto,
+        }),
     );
   }
 }
