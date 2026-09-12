@@ -324,3 +324,14 @@ html:root[data-appearance]
 html:root[data-appearance] :is(.hover\:text-primary, .hover\:text-accent):hover {
   color: var(--color-link);
 }
+
+/* O vermelho de status continua claro no escuro; o botão preenchido precisa
+   de outro fundo para conservar a leitura do texto branco. */
+html:root[data-appearance="chatgpt-dark"] .bg-error.text-white {
+  background-color: #b43b43;
+}
+
+/* O hover de navegação é suave; accent sólido fica reservado ao item ativo. */
+html:root[data-appearance] .crm-sidebar :is(.hover\:bg-accent\/50, .hover\:bg-accent\/40):hover {
+  background-color: var(--color-accent-soft);
+}

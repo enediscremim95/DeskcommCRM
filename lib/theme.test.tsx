@@ -192,10 +192,16 @@ describe("troca e persistência de aparência", () => {
       ),
     );
     expect(container.querySelector("output")?.textContent).toBe("veritas");
-    act(() => container.querySelectorAll("button")[0].click());
+    const chooseButton = container.querySelectorAll("button")[0];
+    expect(chooseButton).toBeDefined();
+    if (!chooseButton) throw new Error("Botão de aparência ausente");
+    act(() => chooseButton.click());
     expect(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBe("asaas");
     expect(document.documentElement.dataset.appearance).toBe("asaas");
-    act(() => container.querySelectorAll("button")[1].click());
+    const toggleButton = container.querySelectorAll("button")[1];
+    expect(toggleButton).toBeDefined();
+    if (!toggleButton) throw new Error("Botão de alternar ausente");
+    act(() => toggleButton.click());
     expect(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBeNull();
     expect(window.localStorage.getItem(CHAVE)).toBe("dark");
     expect(document.documentElement.dataset.appearance).toBe("chatgpt-dark");
