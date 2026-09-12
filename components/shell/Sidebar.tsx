@@ -215,7 +215,10 @@ export function SidebarContent({
                     type="button"
                     onClick={() => toggleGrupo(group.id)}
                     aria-expanded={aberto}
-                    className="flex w-full items-center justify-between rounded-md px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-md px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground",
+                      !showCollapseControl && "min-h-11 py-2.5",
+                    )}
                   >
                     {t(group.label)}
                     <CaretDown
@@ -248,6 +251,7 @@ export function SidebarContent({
                           onClick={onNavigate}
                           className={cn(
                             "relative flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-1 text-sm leading-[1.35] transition-colors",
+                            !showCollapseControl && "min-h-11 py-2",
                             isActive
                               ? "bg-accent text-accent-foreground"
                               : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -274,6 +278,7 @@ export function SidebarContent({
                         onClick={onNavigate}
                         className={cn(
                           "flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-1 text-sm leading-[1.35] transition-colors",
+                          !showCollapseControl && "min-h-11 py-2",
                           pathname === group.hub.href
                             ? "bg-accent text-accent-foreground"
                             : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -300,6 +305,7 @@ export function SidebarContent({
             onClick={onNavigate}
             className={cn(
               "mb-1 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+              !showCollapseControl && "min-h-11 py-2",
               pathname.startsWith(rodape.href)
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",

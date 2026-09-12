@@ -6539,6 +6539,8 @@ export const DICIONARIO: Traducoes = {
   // que é a que a spec de tela e o guarda de AST asseguram — as duas dizem a
   // mesma coisa em espanhol, então a escolha é de consistência, não de mérito.
   "Buscar…": { es: "Buscar…" },
+  "Atalhos principais": { es: "Accesos principales" },
+  "Pular para o conteúdo": { es: "Saltar al contenido" },
   "Sobre as demandas encerradas no período.": { es: "Sobre las demandas cerradas en el período." },
   "Quantas vezes o agente voltou ao cliente por conta própria. Medido sobre as": {
     es: "Cuántas veces el agente volvió al cliente por cuenta propia. Medido sobre las",

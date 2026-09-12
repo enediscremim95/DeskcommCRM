@@ -241,6 +241,47 @@ test.describe("navegação agrupada", () => {
   test.describe("mobile", () => {
     test.use({ viewport: { width: 390, height: 844 } });
 
+    test("mantém as telas diárias ao alcance do polegar", async ({ page }) => {
+      await loginAdmin(page);
+
+      const dock = page.getByRole("navigation", { name: "Atalhos principais" });
+      await expect(dock).toBeVisible();
+      await expect(dock.getByRole("link")).toHaveText([
+        "Caixa de entrada",
+        "Radar",
+        "Funis",
+        "Tarefas",
+        "Configurações",
+      ]);
+      await expect(dock.getByRole("link", { name: "Caixa de entrada" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+
+      const medidas = await dock.getByRole("link").evaluateAll((links) => ({
+        alturas: links.map((link) => link.getBoundingClientRect().height),
+        fundo: Math.round(Math.max(...links.map((link) => link.getBoundingClientRect().bottom))),
+        viewport: window.innerHeight,
+      }));
+      expect(Math.min(...medidas.alturas), "cada atalho precisa ter alvo de toque de 44px").toBeGreaterThanOrEqual(44);
+      expect(medidas.fundo, "o dock precisa terminar dentro da viewport").toBeLessThanOrEqual(
+        medidas.viewport + 1,
+      );
+      await expectSemOverflowHorizontal(page, "shell mobile com dock");
+
+      await dock.getByRole("link", { name: "Funis", exact: true }).click();
+      await page.waitForURL(/\/app\/kanban/);
+      await expect(dock.getByRole("link", { name: "Funis", exact: true })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+
+      await page.screenshot({
+        path: path.join(EVIDENCE, "nav-mobile-390-dock.png"),
+        fullPage: true,
+      });
+    });
+
     test("em 390px, o sidebar vira gaveta e não cria overflow horizontal", async ({ page }) => {
       await loginAdmin(page);
 

@@ -299,6 +299,13 @@ html:root[data-appearance] .crm-topbar {
   background: var(--color-surface);
   border-color: var(--color-border);
 }
+html:root[data-appearance] .crm-mobile-dock {
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  border-color: var(--color-border);
+  box-shadow: 0 -8px 24px rgb(0 0 0 / 7%);
+  backdrop-filter: blur(16px);
+}
 html:root[data-appearance] :focus-visible {
   outline-color: var(--color-focus-ring);
 }
@@ -312,7 +319,8 @@ html:root[data-appearance="veritas"] .crm-sidebar {
 }
 @media (prefers-reduced-motion: reduce) {
   .crm-sidebar,
-  .crm-topbar {
+  .crm-topbar,
+  .crm-mobile-dock {
     transition: none;
   }
 }

@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Navegação do aplicativo",
+    "subtitle": "Um registro de destinos projetado no desktop, celular, hubs e busca",
+    "output": "navegacao-do-app.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "source", "label": "Fonte" },
+    { "id": "projection", "label": "Projeções" },
+    { "id": "feedback", "label": "Retorno visual" }
+  ],
+  "mainPath": ["catalog", "permissions", "sidebar", "route-state"],
+  "nodes": [
+    {
+      "id": "catalog",
+      "lane": "source",
+      "col": 0,
+      "type": "config",
+      "label": "Catálogo de navegação",
+      "sublabel": "Destinos, grupos, jornada, descrições e papéis em lib/navigation"
+    },
+    {
+      "id": "permissions",
+      "lane": "source",
+      "col": 1,
+      "type": "service",
+      "label": "sidebarGroups + hubSections",
+      "sublabel": "Filtra por papel, suporte e configuração da interface"
+    },
+    {
+      "id": "sidebar",
+      "lane": "projection",
+      "col": 2,
+      "type": "frontend",
+      "label": "Sidebar e gaveta",
+      "sublabel": "Inventário completo no desktop e no menu móvel"
+    },
+    {
+      "id": "dock",
+      "lane": "projection",
+      "col": 2,
+      "type": "frontend",
+      "label": "MobileDock",
+      "sublabel": "Projeção curta das telas diárias, sem furar permissões"
+    },
+    {
+      "id": "hubs",
+      "lane": "projection",
+      "col": 3,
+      "type": "frontend",
+      "label": "NavHub",
+      "sublabel": "Inventário por jornada em CRM, IA, Análise e Organização"
+    },
+    {
+      "id": "search",
+      "lane": "projection",
+      "col": 3,
+      "type": "frontend",
+      "label": "Busca de comandos",
+      "sublabel": "Encontra destinos visíveis por nome e descrição"
+    },
+    {
+      "id": "route-state",
+      "lane": "feedback",
+      "col": 4,
+      "type": "frontend",
+      "label": "Rota e estado ativo",
+      "sublabel": "aria-current, destaque visual e breadcrumb fecham o ciclo"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "catalog", "to": "permissions", "label": "declara destinos" },
+    { "id": "e2", "from": "permissions", "to": "sidebar", "label": "projeta inventário" },
+    { "id": "e3", "from": "permissions", "to": "dock", "label": "projeta atalhos diários" },
+    { "id": "e4", "from": "permissions", "to": "hubs", "label": "projeta jornadas" },
+    { "id": "e5", "from": "permissions", "to": "search", "label": "projeta resultados" },
+    { "id": "e6", "from": "sidebar", "to": "route-state", "label": "navega" },
+    { "id": "e7", "from": "dock", "to": "route-state", "label": "navega" },
+    { "id": "e8", "from": "hubs", "to": "route-state", "label": "navega" },
+    { "id": "e9", "from": "search", "to": "route-state", "label": "navega" },
+    { "id": "e10", "from": "route-state", "to": "sidebar", "label": "marca ativo" },
+    { "id": "e11", "from": "route-state", "to": "dock", "label": "marca ativo" }
+  ]
+}

@@ -16,6 +16,7 @@ ser fonte sem ninguém decidir isso.
 
 | arquivo | escopo |
 |---|---|
+| `navegacao-do-app.architecture.json` | catálogo único projetado no sidebar, gaveta, dock móvel, hubs e busca, sempre filtrado por permissão e com estado ativo visível |
 | `aparencias.architecture.json` | Preferência pessoal de navegador, seleção acessível e aplicação de cores no shell e portais |
 | `pre-go-live-whatsapp.architecture.json` | modo de teste por canal (issue #573): configuração administrativa, gate compartilhado, releitura no envio e validação pelo Inbox |
 | `agenda-google-sync.architecture.json` | fontes/destino por dono, tupla estável, três vias, claim/CAS e cobertura de calendário; presença e LGPD integradas |

@@ -11,20 +11,20 @@ import { SearchTrigger } from "./SearchTrigger";
 export function TopBar() {
   const t = useT();
   return (
-    <header className="crm-topbar sticky top-0 z-20 flex min-h-14 flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-3 py-2 backdrop-blur lg:h-14 lg:flex-nowrap lg:gap-4 lg:px-6 lg:py-0">
-      <div className="flex min-w-0 flex-1 items-center gap-2 lg:flex-initial [&>button]:min-w-0 [&>button:first-child]:shrink-0">
+    <header className="crm-topbar sticky top-0 z-20 flex h-14 flex-nowrap items-center gap-2 border-b bg-background/95 px-2 backdrop-blur sm:px-4 lg:gap-4 lg:px-6">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2 lg:flex-initial [&>button]:min-w-0 [&>button:first-child]:shrink-0">
         <MobileSidebar />
         <TenantSwitcher />
       </div>
       <div className="flex shrink-0 items-center justify-end lg:min-w-0 lg:max-w-md lg:flex-1 lg:justify-center">
         <SearchTrigger />
       </div>
-      <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 lg:w-auto lg:flex-nowrap">
+      <div className="flex w-auto min-w-0 flex-nowrap items-center justify-end gap-1 sm:gap-2">
         <Link
           href="/app/settings/aparencia"
           aria-label={t("Aparência")}
           title={t("Aparência")}
-          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm font-medium transition-colors hover:bg-secondary"
+          className="hidden h-10 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm font-medium transition-colors hover:bg-secondary sm:inline-flex"
         >
           <Palette size={17} aria-hidden />
           <span className="hidden xl:inline">{t("Aparência")}</span>

@@ -810,6 +810,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Controles operacionais respondem no primeiro toque. O zoom da página segue
+   disponível; `manipulation` remove apenas o atraso de gesto nos controles. */
+:where(a, button, [role="button"], [role="tab"]) {
+  touch-action: manipulation;
+}
+
+/* Números em tabelas e indicadores não pulam de largura quando atualizam. */
+:where(table, [data-kpi], [role="meter"], [role="progressbar"]) {
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---- XYFlow · controles do canvas de follow-up --------------------------
    A lib pinta o botão de zoom com fundo `#fefefe` e `color: inherit`. O SVG
    usa `fill: currentColor`. No tema escuro o texto da página é claro, então
