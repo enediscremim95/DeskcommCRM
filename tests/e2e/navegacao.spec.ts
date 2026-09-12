@@ -247,13 +247,13 @@ test.describe("navegação agrupada", () => {
       const dock = page.getByRole("navigation", { name: "Atalhos principais" });
       await expect(dock).toBeVisible();
       await expect(dock.getByRole("link")).toHaveText([
-        "Caixa de entrada",
+        "Inbox",
         "Radar",
         "Funis",
         "Tarefas",
         "Configurações",
       ]);
-      await expect(dock.getByRole("link", { name: "Caixa de entrada" })).toHaveAttribute(
+      await expect(dock.getByRole("link", { name: "Inbox" })).toHaveAttribute(
         "aria-current",
         "page",
       );
