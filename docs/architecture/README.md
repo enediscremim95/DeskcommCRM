@@ -95,3 +95,5 @@ superfície do CRM atravessa essa aresta, e precisa responder três perguntas
 
 As três vezes o custo foi o mesmo: descobrir a aresta **durante** a
 implementação, com a peça já meio pronta.
+
+| `crm-cliente-uma-tela.architecture.json` | criação administrativa pronta, perfil editável e entrega de acesso recuperável |

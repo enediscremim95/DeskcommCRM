@@ -1,8 +1,12 @@
 import { z } from "zod";
+import { businessProfileSchema } from "@/lib/schemas/business-profile";
 import { interfaceSettingsSchema, interfaceTemDestino } from "@/lib/navigation/interface";
 
 /** Mesmo vocabulário no formulário e no limite HTTP. */
 export const tenantCreationFields = {
+  business_profile: businessProfileSchema.optional(),
+  timezone: z.string().max(64).refine((value) => { try { new Intl.DateTimeFormat(undefined, { timeZone: value }); return true; } catch { return false; } }, "Fuso horário inválido").optional(),
+  delivery_mode: z.enum(["credentials", "invite"]).default("invite"),
   display_name: z.string().trim().min(2).max(120),
   slug: z
     .string()

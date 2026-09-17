@@ -1,4 +1,5 @@
 "use client";
+import type { BusinessProfile } from "@/lib/schemas/business-profile";
 import type { InterfaceSettings } from "@/lib/navigation/interface";
 import { useRef } from "react";
 import { createTenantSchema } from "@/lib/schemas/tenant-creation";
@@ -17,8 +18,17 @@ export interface CreateTenantPayload {
   cnpj?: string;
   plan?: "standard" | "pro" | "enterprise";
   report_url?: string;
+  business_profile?: BusinessProfile;
+  timezone?: string;
+  delivery_mode?: "credentials" | "invite";
   owner_email: string;
   owner_interface_settings?: InterfaceSettings;
+}
+
+export interface OwnerAccess {
+  status: "sent" | "failed" | "existing_user" | "already_sent";
+  login_url: string;
+  retryable: boolean;
 }
 
 export interface CreateTenantResponse {
@@ -26,6 +36,7 @@ export interface CreateTenantResponse {
     id: string;
     slug: string;
     display_name: string;
+    owner_access?: OwnerAccess;
     owner_invitation: {
       accept_url: string;
       expires_at: string;
@@ -59,5 +70,14 @@ export function useCreateTenant() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "tenants"] });
     },
+  });
+}
+
+export function useRetryOwnerAccess() {
+  return useMutation({
+    mutationFn: (tenantId: string) =>
+      apiClient.post<{ data: { owner_access: OwnerAccess } }>(
+        `/api/v1/admin/tenants/${tenantId}/owner-access`, undefined,
+      ),
   });
 }

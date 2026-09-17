@@ -4,6 +4,8 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { businessProfileSchema } from "@/lib/schemas/business-profile";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -43,6 +45,8 @@ export function TenantForm({ initial }: Props) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  const businessProfile = form.business_profile ?? businessProfileSchema.parse({});
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const reasons = reasonsText
@@ -65,7 +69,7 @@ export function TenantForm({ initial }: Props) {
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl">
       <Card className="space-y-4 p-6">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="display_name">{t("Nome de exibição")}</Label>
             <Input
@@ -173,6 +177,29 @@ export function TenantForm({ initial }: Props) {
             />
           </div>
         </div>
+
+        <fieldset className="space-y-4">
+          <legend className="font-medium">{t("Dados do negócio")}</legend>
+          <div className="space-y-2">
+            <Label htmlFor="business_description">{t("O que a empresa faz")}</Label>
+            <Textarea id="business_description" value={businessProfile.description}
+              onChange={(e) => set("business_profile", { ...businessProfile, description: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {([
+              ["website", t("Site"), "url"],
+              ["phone", t("Telefone"), "tel"],
+              ["address", t("Endereço"), "text"],
+              ["business_hours", t("Horário de atendimento"), "text"],
+            ] as const).map(([key, label, type]) => (
+              <div key={key} className="space-y-2">
+                <Label htmlFor={`business_${key}`}>{label}</Label>
+                <Input id={`business_${key}`} type={type} value={businessProfile[key]}
+                  onChange={(e) => set("business_profile", { ...businessProfile, [key]: e.target.value })} />
+              </div>
+            ))}
+          </div>
+        </fieldset>
 
         <div className="space-y-2">
           <Label htmlFor="lost_reasons">{t("Motivos de perda extras (separados por vírgula)")}</Label>

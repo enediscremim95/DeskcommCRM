@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { businessProfileSchema } from "@/lib/schemas/business-profile";
 import { moedaServidaOu } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import { ZonaDePerigoDaOrganizacao } from "./_danger-zone";
@@ -58,6 +59,7 @@ export default async function TenantSettingsPage() {
       {row && (
         <TenantForm
           initial={{
+            business_profile: businessProfileSchema.catch(businessProfileSchema.parse({})).parse(row.settings?.business_profile ?? {}),
             display_name: row.display_name,
             legal_name: row.legal_name,
             cnpj: row.cnpj,

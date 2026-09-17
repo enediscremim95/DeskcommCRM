@@ -1,4 +1,5 @@
 "use client";
+import { OwnerAccessStatus } from "@/components/admin/tenants/OwnerAccessStatus";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTenantDetail } from "@/hooks/useTenantDetail";
 import { TenantOverview } from "@/components/admin/tenants/TenantOverview";
@@ -45,6 +46,7 @@ export function TenantOverviewClient({ id }: TenantOverviewClientProps) {
         <SuspendedBanner suspendedAt={organization.suspended_at} />
       )}
 
+      <OwnerAccessStatus tenantId={id} />
       <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
         <TenantOverview
           organization={organization}

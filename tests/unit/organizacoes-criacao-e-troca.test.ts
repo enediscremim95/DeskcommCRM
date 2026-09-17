@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 const h = vi.hoisted(() => ({
-  guard: vi.fn(), mfa: vi.fn(), rpc: vi.fn(), audit: vi.fn(), invite: vi.fn(),
+  provision: vi.fn(), guard: vi.fn(), mfa: vi.fn(), rpc: vi.fn(), audit: vi.fn(), invite: vi.fn(),
   user: vi.fn(), query: vi.fn(), cookie: vi.fn(), getCookie: vi.fn(),
 }));
 vi.mock("@/lib/auth/requirePlatformAdmin", () => ({ requirePlatformAdmin: h.guard }));
@@ -9,6 +9,7 @@ vi.mock("@/lib/auth/server", () => ({ mfaEmDivida: h.mfa, loadAuthUser: h.user }
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ rpc: h.rpc }) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from: h.query }) }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
+vi.mock("@/lib/auth/provision-owner-access", () => ({ provisionOwnerAccess: h.provision }));
 vi.mock("@/lib/auth/issue-invite", () => ({ issueInvite: h.invite }));
 vi.mock("@/lib/supabase/cookie-secure", () => ({ cookieSecure: () => false }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ set: h.cookie, get: h.getCookie }) }));
@@ -30,6 +31,23 @@ beforeEach(() => {
   h.invite.mockResolvedValue({ accept_url: "http://localhost/invite", email_dispatched: false });
 });
 describe("criação administrativa", () => {
+  it("criação pronta encaminha perfil e retoma acesso no replay sem convidar pelo fluxo legado", async () => {
+    h.provision.mockResolvedValue({ status: "failed", retryable: true, login_url: "https://crm.example.test/login" });
+    const response = await POST(new NextRequest("http://localhost/api/v1/admin/tenants", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: "Minha organização", slug: "minha-org", owner_email: "guest@example.test",
+        delivery_mode: "credentials", timezone: "America/Manaus", business_profile: { website: "https://example.test" } }),
+    }));
+    expect(response.status).toBe(201);
+    expect((await response.json()).data).toMatchObject({ owner_invitation: null, owner_access: { status: "failed", retryable: true } });
+    expect(h.rpc).toHaveBeenCalledWith("fn_create_tenant_with_owner", expect.objectContaining({
+      p_request: expect.objectContaining({ delivery_mode: "credentials", timezone: "America/Manaus",
+        business_profile: expect.objectContaining({ website: "https://example.test" }) }),
+    }));
+    expect(h.provision).toHaveBeenCalledWith({ organizationId: org, actorId: actor, requestId: expect.any(String) });
+    expect(h.invite).not.toHaveBeenCalled();
+  });
+
   it("não cria nem convida em suporte readonly, sem auth ou em dívida MFA", async () => {
     h.guard.mockRejectedValueOnce(new Error("forbidden"));
     expect((await POST(request())).status).toBe(403);
