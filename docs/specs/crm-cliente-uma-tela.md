@@ -86,9 +86,9 @@ Testes unitários não comprovam entrega real de e-mail nem aplicação da migra
 Build de produção concluído. Typecheck passou; lint sem erros (avisos existentes no repositório).
 47 testes direcionados de acesso/UI/traduções/compatibilidade/release passaram; mais 5 de locale
 e 11 de ordem do baseline/MANIFEST passaram após ajustes.
-A suíte ampla encontrou também 12 falhas em `leads-import-route` e
+Suíte completa: 796 arquivos, 792 aprovados e 4 com falha; 8.464 testes aprovados, 16 falhas e 1 falha esperada. Entre elas, 12 falhas em `leads-import-route` e
 `rascunho-superado-nao-e-regravado`, reproduzidas numa extração limpa da main `28965ae6`.
-Não são classificadas como corrigidas.
+Outras 4 falhas nos dois arquivos `lgpd-pdf-*.test.ts` também foram reproduzidas na mesma main: PDF.js rejeita o caminho Windows `standard_fonts\`. Não são classificadas como corrigidas.
 
 `test:db` não iniciou porque não existe Docker. Playwright recusou iniciar sem `.env.e2e`
 e Supabase local. Nenhuma senha/e-mail real foi usado como teste. Migration, isolamento em banco,
