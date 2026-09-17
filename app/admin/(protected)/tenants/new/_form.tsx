@@ -14,6 +14,7 @@ import { tenantCreationFields } from "@/lib/schemas/tenant-creation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -23,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { type CreateTenantResponse, useCreateTenant } from "@/hooks/useCreateTenant";
+import { type CreateTenantResponse, useCreateTenant, useRetryOwnerAccess } from "@/hooks/useCreateTenant";
 import { ApiError } from "@/lib/api/types";
 import { useT } from "@/hooks/i18n/useT";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
@@ -35,7 +36,8 @@ import { copyToClipboard } from "@/lib/clipboard";
 
 const formSchema = z.object(tenantCreationFields);
 
-type FormValues = z.infer<typeof formSchema>;
+type FormValues = z.input<typeof formSchema>;
+type ParsedFormValues = z.output<typeof formSchema>;
 
 // ---------------------------------------------------------------------------
 // Slug helper
@@ -74,11 +76,12 @@ export function NewTenantForm() {
   const idioma = useIdioma();
   const router = useRouter();
   const createTenant = useCreateTenant();
+  const retryOwnerAccess = useRetryOwnerAccess();
   const [ownerInterface, setOwnerInterface] = useState(INTERFACE_COMPLETA);
   const [slugLocked, setSlugLocked] = useState(false);
   const [created, setCreated] = useState<CreateTenantResponse["data"] | null>(null);
 
-  const form = useForm<FormValues>({
+  const form = useForm<FormValues, unknown, ParsedFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       display_name: "",
@@ -88,6 +91,9 @@ export function NewTenantForm() {
       plan: "standard",
       report_url: "",
       owner_email: "",
+      timezone: "America/Sao_Paulo",
+      delivery_mode: "credentials",
+      business_profile: { description: "", website: "", phone: "", address: "", business_hours: "" },
     },
   });
 
@@ -126,6 +132,9 @@ export function NewTenantForm() {
         plan: values.plan,
         report_url: values.report_url || undefined,
         owner_email: values.owner_email,
+        timezone: values.timezone,
+        delivery_mode: "credentials",
+        business_profile: values.business_profile,
         owner_interface_settings: ownerInterface,
       });
 
@@ -156,6 +165,31 @@ export function NewTenantForm() {
           <p>
             {t("Você já é administrador de")} {created.display_name}.
           </p>
+          {created.owner_access && (
+            <div className="space-y-3" role="status" aria-live="polite">
+              <p>
+                {created.owner_access.status === "sent" || created.owner_access.status === "already_sent"
+                  ? t("O serviço de e-mail aceitou o envio do acesso. Peça ao responsável para conferir a caixa de entrada e o spam.")
+                  : created.owner_access.status === "existing_user"
+                    ? t("O responsável já tem conta. Enviamos um convite por e-mail; ele mantém a senha atual.")
+                    : t("O CRM foi criado, mas o envio do acesso falhou. Tente enviar novamente sem criar outra organização.")}
+              </p>
+              <Label htmlFor="owner-login">{t("Endereço de acesso")}</Label>
+              <Input id="owner-login" readOnly value={created.owner_access.login_url} />
+              {created.owner_access.retryable && (
+                <Button disabled={retryOwnerAccess.isPending} onClick={async () => {
+                  try {
+                    const result = await retryOwnerAccess.mutateAsync(created.id);
+                    setCreated({ ...created, owner_access: result.data.owner_access });
+                  } catch {
+                    toast.error(t("Não foi possível enviar o acesso. Tente novamente."));
+                  }
+                }}>
+                  {retryOwnerAccess.isPending ? t("Enviando...") : t("Tentar enviar acesso novamente")}
+                </Button>
+              )}
+            </div>
+          )}
           {created.owner_invitation && (
             <div className="space-y-3">
               <p>
@@ -200,7 +234,7 @@ export function NewTenantForm() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{t("Nova organização")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t("Você terá acesso como administrador e poderá concluir a configuração inicial.")}
+          {t("Preencha os dados e entregue o CRM pronto, com funil inicial e acesso por e-mail.")}
         </p>
       </div>
 
@@ -325,6 +359,39 @@ export function NewTenantForm() {
               )}
             </div>
 
+            <fieldset className="space-y-4">
+              <legend className="text-base font-medium">{t("Dados do negócio")}</legend>
+              <div className="space-y-1.5">
+                <Label htmlFor="business_description">{t("O que a empresa faz")}</Label>
+                <Textarea id="business_description" {...register("business_profile.description")}
+                  aria-invalid={!!errors.business_profile?.description} />
+                {errors.business_profile?.description && <p className="text-xs text-error-fg">{t(errors.business_profile.description.message ?? "")}</p>}
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {([
+                  ["website", t("Site"), "url"],
+                  ["phone", t("Telefone"), "tel"],
+                  ["address", t("Endereço"), "text"],
+                  ["business_hours", t("Horário de atendimento"), "text"],
+                ] as const).map(([key, label, type]) => (
+                  <div key={key} className="space-y-1.5">
+                    <Label htmlFor={`business_${key}`}>{label}</Label>
+                    <Input id={`business_${key}`} type={type} {...register(`business_profile.${key}`)}
+                      aria-invalid={!!errors.business_profile?.[key]} />
+                    {errors.business_profile?.[key] && <p className="text-xs text-error-fg">{t(errors.business_profile[key]?.message ?? "")}</p>}
+                  </div>
+                ))}
+                <div className="space-y-1.5">
+                  <Label htmlFor="timezone">{t("Fuso horário")}</Label>
+                  <Input id="timezone" {...register("timezone")} aria-invalid={!!errors.timezone} />
+                  {errors.timezone && <p className="text-xs text-error-fg">{t(errors.timezone.message ?? "")}</p>}
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {t("O cliente entra direto no CRM, sem configuração inicial. Novas contas recebem login e senha por e-mail. Quem já tem conta mantém a senha atual.")}
+              </p>
+            </fieldset>
+
             <InterfaceEditor
               value={ownerInterface}
               onChange={setOwnerInterface}
@@ -332,7 +399,7 @@ export function NewTenantForm() {
               disabled={isSubmitting}
             />
             {/* Actions */}
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex flex-wrap items-center gap-3 pt-2">
               <Button
                 type="submit"
                 disabled={

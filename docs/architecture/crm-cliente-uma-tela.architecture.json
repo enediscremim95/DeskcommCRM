@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "CRM pronto do cliente",
+    "subtitle": "Uma tela, provisionamento recuperável e perfil editável",
+    "output": "crm-cliente-uma-tela.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Telas"
+    },
+    {
+      "id": "server",
+      "label": "Servidor"
+    },
+    {
+      "id": "data",
+      "label": "Dados e saída"
+    }
+  ],
+  "mainPath": [
+    "create",
+    "api",
+    "provision",
+    "email"
+  ],
+  "nodes": [
+    {
+      "id": "create",
+      "lane": "ui",
+      "col": 0,
+      "type": "service",
+      "label": "NewTenantForm"
+    },
+    {
+      "id": "api",
+      "lane": "server",
+      "col": 1,
+      "type": "service",
+      "label": "POST admin/tenants"
+    },
+    {
+      "id": "provision",
+      "lane": "server",
+      "col": 2,
+      "type": "service",
+      "label": "provisionOwnerAccess"
+    },
+    {
+      "id": "state",
+      "lane": "data",
+      "col": 3,
+      "type": "service",
+      "label": "tenant_owner_access + lease"
+    },
+    {
+      "id": "email",
+      "lane": "data",
+      "col": 4,
+      "type": "service",
+      "label": "Auth + e-mail do responsável"
+    },
+    {
+      "id": "retry",
+      "lane": "ui",
+      "col": 4,
+      "type": "service",
+      "label": "OwnerAccessStatus"
+    },
+    {
+      "id": "profile",
+      "lane": "data",
+      "col": 2,
+      "type": "service",
+      "label": "organizations.settings.business_profile"
+    },
+    {
+      "id": "settings",
+      "lane": "ui",
+      "col": 3,
+      "type": "service",
+      "label": "TenantForm"
+    },
+    {
+      "id": "audit",
+      "lane": "data",
+      "col": 3,
+      "type": "service",
+      "label": "api_audit_log"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "create",
+      "to": "api"
+    },
+    {
+      "id": "e1",
+      "from": "api",
+      "to": "provision"
+    },
+    {
+      "id": "e2",
+      "from": "provision",
+      "to": "state"
+    },
+    {
+      "id": "e3",
+      "from": "state",
+      "to": "retry"
+    },
+    {
+      "id": "e4",
+      "from": "retry",
+      "to": "provision"
+    },
+    {
+      "id": "e5",
+      "from": "provision",
+      "to": "email"
+    },
+    {
+      "id": "e6",
+      "from": "api",
+      "to": "profile"
+    },
+    {
+      "id": "e7",
+      "from": "profile",
+      "to": "settings"
+    },
+    {
+      "id": "e8",
+      "from": "settings",
+      "to": "profile"
+    },
+    {
+      "id": "e9",
+      "from": "provision",
+      "to": "audit"
+    }
+  ]
+}

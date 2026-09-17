@@ -1,5 +1,6 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createTenantSchema } from "@/lib/schemas/tenant-creation";
+import { provisionOwnerAccess } from "@/lib/auth/provision-owner-access";
 import { issueInvite } from "@/lib/auth/issue-invite";
 import { mfaEmDivida } from "@/lib/auth/server";
 import { type NextRequest } from "next/server";
@@ -224,6 +225,15 @@ export async function POST(req: NextRequest) {
         creator_role: "admin",
       },
     });
+  }
+  if (request.delivery_mode === "credentials") {
+    const ownerAccess = await provisionOwnerAccess({
+      organizationId: org.id, actorId: adminCtx.user.id, requestId,
+    });
+    return ok({
+      id: org.id, slug: org.slug, display_name: org.display_name,
+      owner_invitation: null, owner_access: ownerAccess,
+    }, { status: 201, requestId });
   }
   const ownerInvitation =
     request.owner_email === adminCtx.user.email?.trim().toLowerCase()

@@ -5,7 +5,6 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { audit } from "@/lib/audit";
 import { tenantSchema, type TenantInput } from "@/lib/schemas/settings";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
@@ -67,6 +66,7 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
   const nextSettings = {
     ...currentSettings,
     lost_reasons_extra: parsed.data.lost_reasons_extra,
+    ...(parsed.data.business_profile ? { business_profile: parsed.data.business_profile } : {}),
   };
 
   const { error } = await supabase

@@ -92,18 +92,7 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
   const from = fromAddress(args.fromName);
 
   if (!client || !from) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn(
-        "[email] envio desligado — falta RESEND_API_KEY ou RESEND_FROM_EMAIL. Payload:",
-        {
-          to: args.to,
-          subject: args.subject,
-          preview: args.text?.slice(0, 200) ?? args.html.slice(0, 200),
-          tem_chave: client !== null,
-          tem_remetente: from !== null,
-        },
-      );
-    }
+    // Conteúdo de e-mail pode incluir credenciais; nunca imprimir payload, nem em dev.
     return { ok: false, error: "not_configured" };
   }
 

@@ -29,7 +29,7 @@ async function conversation(org: string, name: string) {
     last_message_preview: `Mensagem de ${name}` });
 }
 
-test("org única oferece criação, responsável aceita e A→B→A não mistura inbox", async ({ page, browser }) => {
+test("compatibilidade convite: org única oferece criação, responsável aceita e A→B→A não mistura inbox", async ({ page, browser }) => {
   test.setTimeout(240_000);
   const suffix = randomUUID().slice(0, 8);
   const ownerEmail = `owner-${suffix}@invariant.test`;
@@ -63,18 +63,20 @@ test("org única oferece criação, responsável aceita e A→B→A não mistura
     const keys: string[] = [];
     await page.route("**/api/v1/admin/tenants", async route => {
       if (route.request().method() !== "POST") return route.continue();
+      // Compatibilidade explícita da API legada; a UI usa credentials por padrão.
+      const postData = JSON.stringify({ ...route.request().postDataJSON(), delivery_mode: "invite" });
       keys.push(route.request().headers()["idempotency-key"]!);
       if (keys.length === 1) {
         // Simula recibo legado adulterado antes da 0219: mesmo ator, chave e hash.
         const forged = await db.from("idempotency_keys").insert({ organization_id: orgA,
           key: keys[0], endpoint: `/api/v1/admin/tenants:${users[0]}`,
-          request_hash: `\\x${createHash("sha256").update(route.request().postData()!).digest("hex")}`,
+          request_hash: `\\x${createHash("sha256").update(postData).digest("hex")}`,
           status_code: 201, response_body: { id: forgedTarget, slug: `alvo-${suffix}`,
             display_name: "Alvo", invite_id: randomUUID(), issued_at: 9999999999 } });
         if (forged.error) throw forged.error;
       }
-      if (!loseResponse) return route.continue();
-      const committed = await route.fetch();
+      if (!loseResponse) return route.continue({ postData });
+      const committed = await route.fetch({ postData });
       expect(committed.status()).toBe(201);
       const data = (await committed.json()).data;
       lost.push(data);
@@ -177,6 +179,72 @@ test("org única oferece criação, responsável aceita e A→B→A não mistura
     await guest.screenshot({ path: ".superpowers/evidence/comunidade-360/aceite-na-org-b.png" });
   } finally {
     await guestContext?.close();
+    for (const org of orgs) await db.from("organizations").delete().eq("id", org);
+    for (const user of users) await db.auth.admin.deleteUser(user);
+  }
+});
+
+
+test("uma tela prepara o CRM e mantém a falha de envio recuperável", async ({ page }) => {
+  test.setTimeout(180_000);
+  const suffix = randomUUID().slice(0, 8);
+  const adminEmail = `admin-ready-${suffix}@invariant.test`;
+  const clientEmail = `client-ready-${suffix}@invariant.test`;
+  const users: string[] = [];
+  const orgs: string[] = [];
+  try {
+    const admin = await db.auth.admin.createUser({ email: adminEmail, password, email_confirm: true });
+    if (admin.error || !admin.data.user) throw admin.error ?? new Error("user missing");
+    users.push(admin.data.user.id);
+    const orgA = await insert("organizations", { display_name: "Agencia E2E", legal_name: "Agencia E2E", slug: `agency-${suffix}`, onboarded_at: new Date().toISOString() });
+    orgs.push(orgA);
+    await insert("user_organizations", { organization_id: orgA, user_id: users[0], role: "admin", accepted_at: new Date().toISOString() });
+    const pa = await db.from("platform_admins").insert({ user_id: users[0], granted_by: users[0], scope: "full", mfa_required: false, reason: "Local E2E fixture" });
+    if (pa.error) throw pa.error;
+    await login(page, adminEmail);
+    await page.goto("/admin/tenants/new");
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.getByLabel("Nome de exibição").fill(`Cliente pronto ${suffix}`);
+    await page.getByLabel("E-mail do responsável").fill(clientEmail);
+    await page.getByLabel("O que a empresa faz").fill("Servicos locais");
+    await page.getByLabel("Site", { exact: true }).fill("https://example.com");
+    await page.getByLabel("Telefone", { exact: true }).fill("11999999999");
+    await page.getByLabel("Endereço", { exact: true }).fill("Rua Exemplo, 123");
+    await page.getByLabel("Horário de atendimento").fill("Segunda a sexta, 9h-18h");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const response = page.waitForResponse(r => r.url().endsWith("/api/v1/admin/tenants") && r.request().method() === "POST");
+    await page.getByRole("button", { name: "Criar organização", exact: true }).click();
+    const createdResponse = await response;
+    expect(createdResponse.request().postDataJSON().delivery_mode).toBe("credentials");
+    expect(createdResponse.status()).toBe(201);
+    const created = (await createdResponse.json()).data;
+    orgs.push(created.id);
+    // Ambiente E2E sem SMTP: falha real, nunca simular entrega de e-mail.
+    expect(created.owner_access.status).toBe("failed");
+    await expect(page.getByText(/O CRM foi criado, mas o envio do acesso falhou/)).toBeVisible();
+    const org = await db.from("organizations").select("onboarded_at,settings,timezone").eq("id", created.id).single();
+    expect(org.error).toBeNull();
+    expect(org.data?.onboarded_at).toBeTruthy();
+    expect(org.data?.timezone).toBe("America/Sao_Paulo");
+    expect(org.data?.settings.business_profile).toEqual({ description: "Servicos locais", website: "https://example.com", phone: "11999999999", address: "Rua Exemplo, 123", business_hours: "Segunda a sexta, 9h-18h" });
+    const pipeline = await db.from("crm_pipelines").select("id").eq("organization_id", created.id);
+    expect(pipeline.error).toBeNull();
+    expect(pipeline.data).toHaveLength(1);
+    const membership = await db.from("user_organizations").select("user_id").eq("organization_id", created.id);
+    for (const member of membership.data ?? []) if (!users.includes(member.user_id)) users.push(member.user_id);
+    await page.getByRole("link", { name: "Ver organização", exact: true }).click();
+    await page.reload();
+    const retry = page.getByRole("button", { name: "Tentar enviar acesso novamente" });
+    await expect(retry).toBeVisible();
+    const retried = page.waitForResponse(r => r.url().endsWith(`/tenants/${created.id}/owner-access`) && r.request().method() === "POST");
+    await retry.click();
+    expect((await retried).status()).toBe(200);
+    await expect(retry).toBeEnabled();
+    const duplicates = await db.from("organizations").select("id").eq("slug", created.slug);
+    expect(duplicates.data).toEqual([{ id: created.id }]);
+    mkdirSync(".superpowers/evidence/comunidade-360", { recursive: true });
+    await page.screenshot({ path: ".superpowers/evidence/comunidade-360/crm-pronto-envio-pendente-mobile.png", fullPage: true });
+  } finally {
     for (const org of orgs) await db.from("organizations").delete().eq("id", org);
     for (const user of users) await db.auth.admin.deleteUser(user);
   }

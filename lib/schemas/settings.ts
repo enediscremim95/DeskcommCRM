@@ -13,6 +13,7 @@ import { ESTILOS_DE_ICONE_DA_ABA } from "@/lib/branding/icone-da-aba";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
+import { businessProfileSchema } from "./business-profile";
 import { conversationTagSchema } from "./messaging";
 
 /**
@@ -83,6 +84,7 @@ export type ProfileInput = z.infer<typeof profileSchema>;
 const MOEDAS = MOEDAS_SERVIDAS;
 
 export const tenantSchema = z.object({
+  business_profile: businessProfileSchema.optional(),
   display_name: z.string().min(1).max(120),
   legal_name: z.string().min(1).max(200),
   cnpj: z
