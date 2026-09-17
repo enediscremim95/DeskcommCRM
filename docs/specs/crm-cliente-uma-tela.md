@@ -61,3 +61,36 @@ Mapa: `docs/architecture/crm-cliente-uma-tela.architecture.json`.
 Prova automatizada em banco/navegador depende de Docker e Supabase local. A spec existente
 `organizacoes-criacao-convite-e-cache.spec.ts` cobre perfil, falta de SMTP, retentativa e legado.
 Testes unitários não comprovam entrega real de e-mail nem aplicação da migration.
+
+## Arquivos da implementação
+
+- Criação: `app/admin/(protected)/tenants/new/_form.tsx`, `hooks/useCreateTenant.ts`,
+  `lib/schemas/tenant-creation.ts`, `app/api/v1/admin/tenants/route.ts`.
+- Retentativa: `app/api/v1/admin/tenants/[id]/owner-access/route.ts`,
+  `components/admin/tenants/OwnerAccessStatus.tsx`, `app/admin/(protected)/tenants/[id]/_client.tsx`.
+- Provisionamento/e-mail: `lib/auth/provision-owner-access.ts`, `lib/auth/owner-access-secret.ts`,
+  `lib/email/templates/owner-access.ts`, `lib/email/resend.ts`, `lib/audit/actions.ts`.
+- Perfil: `lib/schemas/business-profile.ts`, `lib/schemas/settings.ts`,
+  `app/actions/settings/updateTenant.ts`, `app/app/settings/tenant/{page,_form}.tsx`.
+- Tradução: `lib/i18n/dicionario.ts`.
+- Banco: `supabase/migrations/20260917120000_0244_entrega_acesso_dono.sql`,
+  `supabase/baseline.sql`, `supabase/migrations/MANIFEST.md`.
+- Testes: `tests/unit/{provision-owner-access,owner-access-route,owner-access-secret-and-profile,organizacoes-criacao-e-troca}.test.ts`,
+  `components/admin/tenants/OwnerAccessStatus.test.tsx`, `tests/invariants/tenant-owner-access.test.ts`,
+  `tests/e2e/organizacoes-criacao-convite-e-cache.spec.ts`.
+- Documentação: este contrato, mapa de arquitetura e índice, mapa de jornadas e
+  `.changes/crm-cliente-uma-tela.md`.
+
+## Evidência local
+
+Build de produção concluído. Typecheck passou; lint sem erros (avisos existentes no repositório).
+47 testes direcionados de acesso/UI/traduções/compatibilidade/release passaram; mais 5 de locale
+e 11 de ordem do baseline/MANIFEST passaram após ajustes.
+A suíte ampla encontrou também 12 falhas em `leads-import-route` e
+`rascunho-superado-nao-e-regravado`, reproduzidas numa extração limpa da main `28965ae6`.
+Não são classificadas como corrigidas.
+
+`test:db` não iniciou porque não existe Docker. Playwright recusou iniciar sem `.env.e2e`
+e Supabase local. Nenhuma senha/e-mail real foi usado como teste. Migration, isolamento em banco,
+login real com credenciais recebidas e regeneração de tipos a partir do schema real permanecem
+sem prova local; não houve aplicação em produção.

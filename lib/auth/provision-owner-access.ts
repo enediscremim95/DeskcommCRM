@@ -36,7 +36,8 @@ export async function provisionOwnerAccess(input: {
   try {
     // Não cria uma conta sem ter sequer um remetente configurado.
     if (!isEmailConfigured()) return result("failed", true);
-    const password = randomBytes(24).toString("base64url");
+    // Atende também instalações que exigem as quatro classes de caracteres.
+    const password = "Aa1!" + randomBytes(24).toString("base64url");
     const { data: access, error } = await admin.rpc("fn_claim_tenant_owner_access", {
       p_organization_id: input.organizationId, p_actor: input.actorId, p_lease: lease,
       p_encrypted_password: sealOwnerPassword(password, env.INTERNAL_SECRET, input.organizationId),
