@@ -67,8 +67,11 @@ export interface NavMetadata {
  */
 export const NAV_GROUPS: NavGroup[] = [
   { id: "atendimento", label: "Atendimento" },
-  { id: "crm", label: "CRM", hub: { href: "/app/crm", label: "Ver tudo em CRM" } },
-  { id: "ia", label: "Agente de IA", hub: { href: "/app/ai", label: "Ver tudo em IA" } },
+  // Sem hub por decisão do dono (17/09/2026): o grupo mostra Funis, Contatos e
+  // Tarefas, e nada mais.
+  { id: "crm", label: "CRM" },
+  // Sem hub por decisão do dono (17/09/2026).
+  { id: "ia", label: "Agente de IA" },
   { id: "canais", label: "Canais" },
   { id: "analise", label: "Análise", hub: { href: "/app/analise", label: "Ver tudo em Análise" } },
   {
@@ -110,7 +113,9 @@ export const NAV_CATALOG = [
     description: "As conversas de WhatsApp, com você e a IA atendendo lado a lado.",
     icon: "Inbox",
     group: "atendimento",
-    sidebar: true,
+    // Fora do menu por decisão do dono (17/09/2026). A tela continua existindo
+    // porque é o destino de quem clica no Radar e o pouso de todo login.
+    sidebar: false,
   },
   {
     href: "/app/radar",
@@ -149,7 +154,8 @@ export const NAV_CATALOG = [
     description: "Scripts salvos para responder mais rápido, seus ou da equipe.",
     icon: "FileText",
     group: "atendimento",
-    sidebar: true,
+    // Fora do menu por decisão do dono (17/09/2026).
+    sidebar: false,
   },
 
   // ---- CRM — o funil ----
@@ -277,7 +283,9 @@ export const NAV_CATALOG = [
   // ---- Agente de IA — montar, ensinar, acompanhar ----
   {
     href: "/app/ai/agents",
-    label: "Agentes",
+    // Renomeado de "Agentes" por decisão do dono (17/09/2026): o agente que
+    // atende mora no N8N, fora deste sistema.
+    label: "N8N",
     description: "Quem atende por você: instruções, modelo, ferramentas e publicação.",
     icon: "Robot",
     group: "ia",
@@ -303,7 +311,8 @@ export const NAV_CATALOG = [
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
-    sidebar: true,
+    // Fora do menu por decisão do dono (17/09/2026).
+    sidebar: false,
   },
   {
     href: "/app/ai/credentials",
@@ -486,7 +495,8 @@ export const NAV_CATALOG = [
     icon: "ChartBar",
     group: "analise",
     section: "Os números do período",
-    sidebar: true,
+    // Fora do menu por decisão do dono (17/09/2026).
+    sidebar: false,
   },
   {
     // Logo abaixo de Desempenho porque responde a metade da MESMA pergunta: lá
