@@ -48,4 +48,20 @@ describe("relatório de tráfego", () => {
     });
     expect(group?.campaigns).toHaveLength(2);
   });
+
+  it("usa o nível de conjunto nos KPIs sem duplicar os anúncios do drill", () => {
+    const summary = fact({ ad_id: null, ad_name: "", spend: 101.11, impressions: 1010 });
+    const detail = fact({ spend: 100, impressions: 1000 });
+    const [group] = buildTrafficReport({
+      model: "leads", conversionFields: ["actions_lead"],
+      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      facts: [summary, detail],
+    });
+
+    expect(group?.summary.spend).toBe(101.11);
+    expect(group?.campaigns[0]?.spend).toBe(101.11);
+    expect(group?.campaigns[0]?.adsets[0]?.spend).toBe(101.11);
+    expect(group?.campaigns[0]?.adsets[0]?.ads).toHaveLength(1);
+    expect(group?.campaigns[0]?.adsets[0]?.ads[0]?.spend).toBe(100);
+  });
 });

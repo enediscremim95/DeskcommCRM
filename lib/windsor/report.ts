@@ -88,6 +88,17 @@ export function buildTrafficReport(args: {
   facts: StoredFact[];
 }) {
   const accountById = new Map(args.accounts.map((account) => [account.account_id, account]));
+  const rollupKey = (fact: StoredFact) => JSON.stringify([
+    fact.account_id,
+    fact.occurred_on,
+    fact.campaign_id ?? fact.campaign_name,
+    fact.adset_id ?? fact.adset_name,
+  ]);
+  const metaSummaryKeys = new Set(
+    args.facts
+      .filter((fact) => fact.platform === "meta_ads" && !fact.ad_id && !fact.ad_name)
+      .map(rollupKey),
+  );
   const byCurrency = new Map<string, {
     total: Bucket;
     daily: Map<string, { total: Bucket; meta: Bucket; google: Bucket }>;
@@ -104,18 +115,22 @@ export function buildTrafficReport(args: {
       group = { total: empty(), daily: new Map(), platforms: new Map(), campaigns: new Map() };
       byCurrency.set(currency, group);
     }
-    add(group.total, fact, args.conversionFields);
+    const isMetaDetail = fact.platform === "meta_ads" && Boolean(fact.ad_id || fact.ad_name);
+    const contributesToRollup = !(isMetaDetail && metaSummaryKeys.has(rollupKey(fact)));
+    if (contributesToRollup) add(group.total, fact, args.conversionFields);
     let daily = group.daily.get(fact.occurred_on);
     if (!daily) {
       daily = { total: empty(), meta: empty(), google: empty() };
       group.daily.set(fact.occurred_on, daily);
     }
-    add(daily.total, fact, args.conversionFields);
-    add(fact.platform === "meta_ads" ? daily.meta : daily.google, fact, args.conversionFields);
+    if (contributesToRollup) {
+      add(daily.total, fact, args.conversionFields);
+      add(fact.platform === "meta_ads" ? daily.meta : daily.google, fact, args.conversionFields);
+    }
 
     let platform = group.platforms.get(fact.platform);
     if (!platform) { platform = empty(); group.platforms.set(fact.platform, platform); }
-    add(platform, fact, args.conversionFields);
+    if (contributesToRollup) add(platform, fact, args.conversionFields);
 
     const campaignKey = `${fact.platform}:${(fact.campaign_id ?? fact.campaign_name) || "Sem campanha"}`;
     let campaign = group.campaigns.get(campaignKey);
@@ -123,12 +138,13 @@ export function buildTrafficReport(args: {
       campaign = { name: fact.campaign_name || "Sem campanha", platform: fact.platform, total: empty(), adsets: new Map() };
       group.campaigns.set(campaignKey, campaign);
     }
-    add(campaign.total, fact, args.conversionFields);
+    if (contributesToRollup) add(campaign.total, fact, args.conversionFields);
     const adsetName = fact.adset_name || "Sem conjunto";
     const adsetKey = fact.adset_id ?? adsetName;
     let adset = campaign.adsets.get(adsetKey);
     if (!adset) { adset = { name: adsetName, total: empty(), ads: new Map() }; campaign.adsets.set(adsetKey, adset); }
-    add(adset.total, fact, args.conversionFields);
+    if (contributesToRollup) add(adset.total, fact, args.conversionFields);
+    if (fact.platform === "meta_ads" && !isMetaDetail) continue;
     const adName = fact.ad_name || "Sem anúncio";
     const adKey = fact.ad_id ?? adName;
     let ad = adset.ads.get(adKey);
