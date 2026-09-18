@@ -28,7 +28,11 @@ export const dynamic = "force-dynamic";
  * atalho de platform admin, que as rotas não concedem por padrão): mostrar um
  * botão que o servidor recusaria seria prometer o que não se cumpre.
  */
-export default async function KanbanPickerPage() {
+export default async function KanbanPickerPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
@@ -42,6 +46,13 @@ export default async function KanbanPickerPage() {
     .order("position");
 
   const funis = (data ?? []) as FunilDaLista[];
+
+  // Decisão do dono (18/09/2026): "Funis" abre direto o quadro do funil padrão.
+  // A lista no meio era um clique a mais para quem só tem um funil, que é o caso
+  // de todo cliente da agência. Ela continua acessível em /app/kanban?lista=1.
+  const { lista } = await searchParams;
+  const padrao = funis.find((f) => f.is_default) ?? funis[0];
+  if (padrao && lista !== "1") redirect(`/app/pipelines/${padrao.id}`);
   const podeGerenciar = ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
   // Importar planilha é ESCRITA DE OPERAÇÃO, não configuração: quem atende
   // sobe a lista que recebeu. Espelha o `requireRole("agent")` da rota.
