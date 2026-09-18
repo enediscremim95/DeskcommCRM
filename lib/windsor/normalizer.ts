@@ -77,14 +77,14 @@ export function assertHealthyCampaignNames(rows: WindsorRow[]): void {
   const unnamed = material.filter((row) => !text(row, "campaign_name", "campaign")).length;
   if (unnamed / material.length > 0.5) throw new Error("windsor_campaign_names_degraded");
 }
-export function normalizeFacts(rows: WindsorRow[]): NormalizedFact[] {
+export function normalizeFacts(rows: WindsorRow[], configuredPlatform: AdPlatform): NormalizedFact[] {
   assertHealthyCampaignNames(rows);
   const facts: NormalizedFact[] = [];
   for (const row of rows) {
     const id = accountId(row);
-    const platform = platformOf(row);
+    const platform = configuredPlatform;
     const occurredOn = text(row, "date").slice(0, 10);
-    if (!id || !platform || !/^\d{4}-\d{2}-\d{2}$/.test(occurredOn)) continue;
+    if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(occurredOn)) continue;
     const campaignName = text(row, "campaign_name", "campaign");
     const adsetName = text(row, "adset_name");
     const adName = text(row, "ad_name");
@@ -122,4 +122,12 @@ export function normalizeFacts(rows: WindsorRow[]): NormalizedFact[] {
     });
   }
   return facts;
+}
+
+export function normalizeFactsForAccount(
+  rows: WindsorRow[],
+  account: { account_id: string; platform: AdPlatform },
+): NormalizedFact[] {
+  return normalizeFacts(rows, account.platform)
+    .filter((fact) => fact.account_id === account.account_id);
 }

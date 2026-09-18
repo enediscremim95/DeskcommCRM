@@ -33,7 +33,7 @@ describe("normalizador Windsor", () => {
       date: "2026-09-18", data_source: "google", account_id: "123",
       campaign_name: "Pesquisa", cost: "20.5", spend: "999",
       actions_lead: 1, conversions: 2,
-    }]);
+    }], "google_ads");
     expect(fact).toBeDefined();
     expect(fact!.spend).toBe(20.5);
     expect(fact!.conversions).toMatchObject({ actions_lead: 1, conversions: 2 });
@@ -44,7 +44,7 @@ describe("normalizador Windsor", () => {
       { date: "2026-09-18", account_id: "act_1", spend: 10 },
       { date: "2026-09-18", account_id: "act_1", spend: 5 },
       { date: "2026-09-18", account_id: "act_1", spend: 1, campaign_name: "Válida" },
-    ])).toThrow("windsor_campaign_names_degraded");
+    ], "meta_ads")).toThrow("windsor_campaign_names_degraded");
   });
 
   it("repara mojibake sem corromper texto válido", () => {

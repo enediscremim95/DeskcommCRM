@@ -13,7 +13,7 @@ import {
   type AccountRow,
 } from "./account-fetch";
 import { fetchWindsorAccountRows } from "./client";
-import { deduplicateRows, normalizeFacts } from "./normalizer";
+import { deduplicateRows, normalizeFactsForAccount } from "./normalizer";
 import type { WindsorRow } from "./types";
 
 interface ConfigRow {
@@ -127,7 +127,7 @@ export async function syncTrafficDashboards(options: SyncOptions): Promise<SyncS
         received += rows.length;
         const deduplicated = deduplicateRows(rows);
         removed += deduplicated.removed;
-        const facts = normalizeFacts(deduplicated.rows).filter((fact) => fact.account_id === account.account_id);
+        const facts = normalizeFactsForAccount(deduplicated.rows, account);
         const payload = facts.map((fact) => ({
           ...fact,
           organization_id: config.organization_id,

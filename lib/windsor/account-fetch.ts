@@ -38,7 +38,7 @@ export const WINDSOR_SUMMARY_FIELDS_BY_PLATFORM: Record<AdPlatform, readonly str
   google_ads: WINDSOR_FIELDS_BY_PLATFORM.google_ads,
 };
 
-const ACCOUNT_FETCH_CONCURRENCY = 6;
+const ACCOUNT_FETCH_CONCURRENCY = 3;
 export const WINDSOR_FETCH_DEADLINE_MS = 450_000;
 
 export interface AccountRow {
@@ -126,33 +126,36 @@ export async function fetchSelectedAccountRows(
   deadlineAt = Date.now() + WINDSOR_FETCH_DEADLINE_MS,
 ): Promise<Map<string, AccountFetchResult>> {
   const unique = [...new Map(accounts.map((account) => [accountKey(account), account])).values()];
-  const tasks = unique.flatMap((account) => account.platform === "meta_ads"
-    ? [
-        { account, kind: "summary" as const, fields: WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads },
-        { account, kind: "core" as const, fields: META_DETAIL_FIELDS.core },
-        { account, kind: "conversions" as const, fields: META_DETAIL_FIELDS.conversions },
-        { account, kind: "video" as const, fields: META_DETAIL_FIELDS.video },
-        { account, kind: "media" as const, fields: META_DETAIL_FIELDS.media },
-      ]
-    : [{ account, kind: "summary" as const, fields: WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.google_ads }]);
   const partial = new Map<string, Partial<Record<"summary" | "core" | "conversions" | "video" | "media", WindsorRow[]>> & { error?: unknown }>();
 
-  await mapWithConcurrency(tasks, ACCOUNT_FETCH_CONCURRENCY, async ({ account, kind, fields }) => {
+  await mapWithConcurrency(unique, ACCOUNT_FETCH_CONCURRENCY, async (account) => {
     const key = accountKey(account);
-    const current = partial.get(key) ?? {};
+    const current: Partial<Record<"summary" | "core" | "conversions" | "video" | "media", WindsorRow[]>> & { error?: unknown } = {};
     partial.set(key, current);
-    if (current.error) return;
-    if (Date.now() >= deadlineAt) {
-      current.error = new Error("windsor_sync_deadline");
-      return;
-    }
-    try {
-      current[kind] = filterRowsForAccount(
-        await fetcher(fields, account.account_id, account.platform),
-        account,
-      );
-    } catch (error) {
-      current.error = error;
+    const requests = account.platform === "meta_ads"
+      ? [
+          { kind: "summary" as const, fields: WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads },
+          { kind: "core" as const, fields: META_DETAIL_FIELDS.core },
+          { kind: "conversions" as const, fields: META_DETAIL_FIELDS.conversions },
+          { kind: "video" as const, fields: META_DETAIL_FIELDS.video },
+          { kind: "media" as const, fields: META_DETAIL_FIELDS.media },
+        ]
+      : [{ kind: "summary" as const, fields: WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.google_ads }];
+
+    for (const { kind, fields } of requests) {
+      if (Date.now() >= deadlineAt) {
+        current.error = new Error("windsor_sync_deadline");
+        return;
+      }
+      try {
+        current[kind] = filterRowsForAccount(
+          await fetcher(fields, account.account_id, account.platform),
+          account,
+        );
+      } catch (error) {
+        current.error = error;
+        return;
+      }
     }
   });
 
