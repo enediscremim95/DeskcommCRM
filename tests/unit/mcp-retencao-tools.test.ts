@@ -1003,6 +1003,7 @@ describe("crm_list_at_risk_leads", () => {
       (m) => m[1] as string,
     );
     const doPayload = new Set(Object.keys(r));
+    expect(r).not.toHaveProperty("tasks");
     const camposDeTopo = prometidos.filter((p) => !p.startsWith("crm_"));
 
     expect(camposDeTopo.length).toBeGreaterThan(0); // guarda de vacuidade

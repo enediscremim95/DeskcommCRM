@@ -2,7 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { RiskRadarList } from "@/app/app/radar/_components/RiskRadarList";
+import {
+  prazoDaTarefa,
+  RiskRadarList,
+} from "@/app/app/radar/_components/RiskRadarList";
 
 vi.mock("@/hooks/inbox/useClaimConversation", () => ({
   useClaimConversation: () => ({ mutate: vi.fn(), isPending: false }),
@@ -16,6 +19,17 @@ vi.mock("@/hooks/leads/useAtRiskLeads", () => ({
       total: 1,
       sem_proximo_passo: [],
       total_sem_proximo_passo: 0,
+      tasks: [
+        {
+          id: "task-generic-1",
+          title: "Enviar relatório mensal",
+          description: "Tarefa criada sem lead nem contato",
+          due_date: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+          status: "pending",
+          lead_id: null,
+          contact_id: null,
+        },
+      ],
       items: [
         {
           id: "lead-1",
@@ -59,9 +73,20 @@ describe("Radar com follow-up humano", () => {
     expect(screen.getByText("Ligar para confirmar a proposta")).toBeInTheDocument();
     expect(screen.getByText("Perguntar sobre a forma de pagamento")).toBeInTheDocument();
     expect(screen.getByTestId("radar-followup-manual")).toBeInTheDocument();
+    expect(screen.getByTestId("radar-tarefas")).toBeInTheDocument();
+    expect(screen.getByText("Enviar relatório mensal")).toBeInTheDocument();
+    expect(screen.getByText("Tarefa criada sem lead nem contato")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ver todas" })).toHaveAttribute("href", "/app/tasks");
     expect(screen.getByText("Proposta da Maria").closest("a")).toHaveAttribute(
       "href",
       "/app/pipelines/pipeline-1?lead=lead-1",
     );
+  });
+
+  it("explica prazo futuro e atraso em linguagem direta", () => {
+    const agora = new Date("2026-09-18T12:00:00.000Z");
+    expect(prazoDaTarefa("2026-09-18T14:00:00.000Z", agora)).toBe("vence em 2 h");
+    expect(prazoDaTarefa("2026-09-19T14:00:00.000Z", agora)).toBe("vence amanhã");
+    expect(prazoDaTarefa("2026-09-17T12:00:00.000Z", agora)).toBe("atrasada há 1 dia");
   });
 });

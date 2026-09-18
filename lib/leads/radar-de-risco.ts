@@ -80,6 +80,16 @@ export interface DemandaSemProximoPasso {
   origem: string;
 }
 
+export interface TarefaDoRadar {
+  id: string;
+  title: string;
+  description: string | null;
+  due_date: string;
+  status: "pending" | "in_progress";
+  lead_id: string | null;
+  contact_id: string | null;
+}
+
 export interface RadarDeRisco {
   items: AtRiskLead[];
   counts: { critico: number; em_risco: number; em_voo: number };
@@ -91,6 +101,8 @@ export interface RadarDeRisco {
    */
   sem_proximo_passo: DemandaSemProximoPasso[];
   total_sem_proximo_passo: number;
+  /** Exclusivo da tela humana. A ferramenta MCP continua recebendo apenas leads. */
+  tasks?: TarefaDoRadar[];
 }
 
 export interface OpcoesDoRadar {
@@ -100,6 +112,8 @@ export interface OpcoesDoRadar {
   now?: Date;
   /** Apenas a rota humana passa o papel efetivo; as consultas usam seu client RLS. */
   humanRole?: Role;
+  /** A lista operacional de tarefas não faz parte do contrato MCP de retenção. */
+  includeTasks?: boolean;
 }
 
 export async function carregaRadarDeRisco(
@@ -111,6 +125,25 @@ export async function carregaRadarDeRisco(
   const minHours = opts.minHours ?? RADAR_MIN_HOURS_PADRAO;
   const now = opts.now ?? new Date();
   const nowIso = now.toISOString();
+
+  let tarefasDoRadar: TarefaDoRadar[] | undefined;
+  if (opts.includeTasks) {
+    const { data: tarefas, error } = await admin
+      .from("crm_tasks")
+      .select("id, title, description, due_date, status, lead_id, contact_id")
+      .eq("organization_id", organizationId)
+      .in("status", ["pending", "in_progress"])
+      .not("due_date", "is", null)
+      .order("due_date", { ascending: true })
+      .limit(SCAN_CAP);
+    if (error) throw new Error(`radar_tasks_failed: ${error.message}`);
+    tarefasDoRadar = (tarefas ?? [])
+      .filter(
+        (t): t is TarefaDoRadar =>
+          Boolean(t.due_date) && (t.status === "pending" || t.status === "in_progress"),
+      )
+      .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
+  }
 
   const { data: leads, error: leadsErr } = await admin
     .from("crm_leads")
@@ -377,5 +410,6 @@ export async function carregaRadarDeRisco(
     total: radar.length,
     sem_proximo_passo: semProximoPasso.slice(0, limit),
     total_sem_proximo_passo: semProximoPasso.length,
+    ...(tarefasDoRadar ? { tasks: tarefasDoRadar } : {}),
   };
 }

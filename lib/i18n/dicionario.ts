@@ -7650,6 +7650,11 @@ export const DICIONARIO: Traducoes = {
 
   // ─── Tarefas (extraídas do PR #418) ───
   "Tarefas": { es: "Tareas" },
+  "O que precisa ser feito, pela urgência.": { es: "Lo que hay que hacer, por urgencia." },
+  "Ver todas": { es: "Ver todas" },
+  "atrasada há": { es: "atrasada desde hace" },
+  "vence amanhã": { es: "vence mañana" },
+  "vence em": { es: "vence en" },
   "O que ficou combinado, com prazo. Tarefa presa a um negócio aparece na linha do tempo dele.": {
     es: "Lo que quedó acordado, con plazo. Una tarea ligada a un negocio aparece en la línea de tiempo de él.",
   },

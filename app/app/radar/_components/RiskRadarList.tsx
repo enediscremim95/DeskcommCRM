@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useAtRiskLeads, type AtRiskLead } from "@/hooks/leads/useAtRiskLeads";
+import type { TarefaDoRadar } from "@/lib/leads/radar-de-risco";
 import type { RiskBucket } from "@/lib/leads/risk-radar";
 import {
   ArrowRight,
@@ -52,6 +53,33 @@ function manualFollowupWhen(iso: string, t: (texto: string) => string): string {
   return followupWhen(iso, t);
 }
 
+export function prazoDaTarefa(
+  iso: string,
+  agora = new Date(),
+  t: (texto: string) => string = (texto) => texto,
+): string {
+  const prazo = new Date(iso);
+  const diffMs = prazo.getTime() - agora.getTime();
+  const horas = Math.max(1, Math.round(Math.abs(diffMs) / 3_600_000));
+  if (diffMs <= 0) {
+    if (horas < 24) return `${t("atrasada há")} ${horas} h`;
+    const dias = Math.max(1, Math.round(horas / 24));
+    return `${t("atrasada há")} ${dias} ${t(dias === 1 ? "dia" : "dias")}`;
+  }
+  const amanha = new Date(agora);
+  amanha.setDate(amanha.getDate() + 1);
+  if (
+    prazo.getFullYear() === amanha.getFullYear() &&
+    prazo.getMonth() === amanha.getMonth() &&
+    prazo.getDate() === amanha.getDate()
+  ) {
+    return t("vence amanhã");
+  }
+  if (horas < 24) return `${t("vence em")} ${horas} h`;
+  const dias = Math.max(1, Math.round(horas / 24));
+  return `${t("vence em")} ${dias} ${t(dias === 1 ? "dia" : "dias")}`;
+}
+
 export function RiskRadarList() {
   const t = useT();
   const { data, isLoading } = useAtRiskLeads();
@@ -71,7 +99,8 @@ export function RiskRadarList() {
   // "Nenhuma demanda em risco" — escondendo exatamente o vazamento que o
   // invariante 4 existe para denunciar.
   const semPasso = data?.sem_proximo_passo ?? [];
-  if (!data || (data.total === 0 && semPasso.length === 0)) {
+  const tarefas = data?.tasks ?? [];
+  if (!data || (data.total === 0 && semPasso.length === 0 && tarefas.length === 0)) {
     return (
       <div
         className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center"
@@ -88,6 +117,7 @@ export function RiskRadarList() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
+      {tarefas.length > 0 ? <TarefasDoRadar tarefas={tarefas} /> : null}
       {/* INVARIANTE 4 em forma acionável: o índice de atrito publica a CONTAGEM
           ("N demandas abertas sem próximo passo"); contagem sem lugar para agir
           viola o invariante 5. Esta é a lista que responde "e daí?". */}
@@ -138,6 +168,43 @@ export function RiskRadarList() {
         ))}
       </ul>
     </div>
+  );
+}
+
+function TarefasDoRadar({ tarefas }: { tarefas: TarefaDoRadar[] }) {
+  const t = useT();
+  return (
+    <section className="rounded-lg border border-border p-3" data-testid="radar-tarefas">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">{t("Tarefas")}</p>
+          <p className="text-xs text-muted-foreground">
+            {t("O que precisa ser feito, pela urgência.")}
+          </p>
+        </div>
+        <Link href="/app/tasks" className="shrink-0 text-xs underline">
+          {t("Ver todas")}
+        </Link>
+      </div>
+      <ul className="flex flex-col divide-y divide-border">
+        {tarefas.map((tarefa) => (
+          <li
+            key={tarefa.id}
+            className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{tarefa.title}</p>
+              {tarefa.description ? (
+                <p className="truncate text-xs text-muted-foreground">{tarefa.description}</p>
+              ) : null}
+            </div>
+            <span className="shrink-0 text-xs tabular-nums text-warning-fg">
+              {prazoDaTarefa(tarefa.due_date, new Date(), t)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
