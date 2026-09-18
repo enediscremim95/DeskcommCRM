@@ -86,6 +86,9 @@ CRONS="
 0 12 * * *|60|api/v1/cron/lgpd-sla-watcher
 30 3 * * *|120|api/v1/cron/kb-conversations-batch
 15 4 * * *|60|api/v1/cron/sync-model-catalog
+# Atualiza os dashboards sem bloquear a abertura da tela. A janela de 10 min
+# comporta o bulk de 90 dias e os fallbacks das contas que o Windsor omitir.
+13 */3 * * *|600|api/v1/cron/windsor-dashboard-sync
 40 4 * * *|120|api/v1/cron/data-retention
 "
 

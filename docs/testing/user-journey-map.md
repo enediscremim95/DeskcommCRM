@@ -2000,3 +2000,21 @@ Validação integral do mesmo produto: 733 arquivos unitários / 7.911 casos apr
 ## CRM do cliente em uma tela [P0]
 
 A spec `organizacoes-criacao-convite-e-cache.spec.ts` cobre criação padrão com perfil, organização pronta, ausência de SMTP e retentativa após recarregar. A compatibilidade com convite é exercitada explicitamente no caso legado. Execução local desta implementação bloqueada por falta de Docker/Supabase; envio real e entrada com senha recebida permanecem por validar.
+
+## Dashboard nativo de tráfego via Windsor [P0]
+
+| # | Caso | Resultado exigido |
+| --- | --- | --- |
+| W1 | Platform admin escolhe contas para uma organização | Só `account_id` selecionado fica associado ao tenant; a chave Windsor nunca chega ao browser nem ao banco |
+| W2 | Primeira sincronização manual | Estado passa por `syncing` e termina em `ready`, com data visível e fatos locais deduplicados |
+| W3 | Bulk não contém uma conta ou volta com gasto zero | Executor tenta a conta isolada e volta a aplicar filtro exato por `account_id` |
+| W4 | Windsor falha ou degrada nomes de campanha | Run e organização ficam em `failed`; último conjunto confirmado permanece consultável |
+| W5 | Organização com BRL e USD | A tela cria seções separadas; nenhum total soma moedas diferentes |
+| W6 | Tenant tenta ler outro tenant | Handler resolve a organização da sessão e ignora qualquer `organization_id` do cliente |
+| W7 | Período, plataforma e drill | 7/14/30/90 dias e intervalo manual atualizam KPI, gráfico e campanha > conjunto > anúncio sem overflow em 375 px |
+| W8 | Organização ainda não configurada | `/app/relatorio` mantém o `report_url` legado; sem os dois, mantém o estado vazio anterior |
+
+Prova atual: normalizador e agregador têm testes unitários focados; migration segue a
+tripla migration + baseline + MANIFEST. A execução Playwright com Windsor real não é
+alegada por esta entrega e precisa ser feita pelo operador depois de configurar uma
+conta de teste e rodar a primeira sincronização.

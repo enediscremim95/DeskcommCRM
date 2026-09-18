@@ -492,6 +492,9 @@ export const AUDIT_ACTIONS = [
   "voice.opt_in_changed",
   "voice.session_unpaired",
   "tenant.owner_access_dispatched",
+  "traffic_dashboard.configuration_updated",
+  "traffic_dashboard.sync_succeeded",
+  "traffic_dashboard.sync_failed",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
