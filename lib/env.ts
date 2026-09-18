@@ -75,6 +75,11 @@ const schema = z.object({
   /** Optional dedicated secret for cron endpoints (S-06.07 onwards). */
   INTERNAL_CRON_SECRET: z.string().optional().default(""),
 
+  // Dashboard nativo de mídia. Opcional para não quebrar instalações que não
+  // usam Windsor; sem a chave, a configuração mostra a ausência e o cron
+  // encerra sem chamar a origem. Nunca é NEXT_PUBLIC e nunca vai ao banco.
+  WINDSOR_API_KEY: z.string().optional().default(""),
+
   /**
    * Retenção do arquivo do corpo cru dos webhooks (`webhook_events_log`).
    *

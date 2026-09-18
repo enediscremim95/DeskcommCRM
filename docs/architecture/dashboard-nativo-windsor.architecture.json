@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Dashboard nativo Windsor",
+    "subtitle": "Uma credencial da instalação, recortes explícitos por organização e leitura local",
+    "output": "dashboard-nativo-windsor.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "admin", "label": "admin da plataforma" },
+    { "id": "execucao", "label": "execução" },
+    { "id": "banco", "label": "banco" },
+    { "id": "tenant", "label": "organização" },
+    { "id": "externo", "label": "externo" }
+  ],
+  "mainPath": ["config", "cron", "windsor", "normalizer", "facts", "report", "screen"],
+  "nodes": [
+    { "id": "config", "lane": "admin", "col": 0, "type": "service", "label": "Contas, modelo e conversões por organização" },
+    { "id": "manual", "lane": "admin", "col": 1, "type": "service", "label": "Primeira sincronização e estado visível" },
+    { "id": "cron", "lane": "execucao", "col": 2, "type": "service", "label": "Cron global a cada 3 horas" },
+    { "id": "normalizer", "lane": "execucao", "col": 3, "type": "service", "label": "Filtro exato, deduplicação, reparo e validação" },
+    { "id": "windsor", "lane": "externo", "col": 2, "type": "service", "label": "Windsor API com chave somente no servidor" },
+    { "id": "configdb", "lane": "banco", "col": 0, "type": "service", "label": "Config e contas server-side only" },
+    { "id": "facts", "lane": "banco", "col": 4, "type": "service", "label": "Fatos diários por tenant, conta e moeda" },
+    { "id": "runs", "lane": "banco", "col": 3, "type": "service", "label": "Runs, erro sanitizado e último dado bom" },
+    { "id": "report", "lane": "execucao", "col": 5, "type": "service", "label": "API autenticada agrega sem misturar moedas" },
+    { "id": "screen", "lane": "tenant", "col": 6, "type": "service", "label": "Relatório responsivo e drill campanha > conjunto > anúncio" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "config", "to": "configdb", "label": "RPC atômica e auditada" },
+    { "id": "e2", "from": "manual", "to": "normalizer", "label": "execução explícita" },
+    { "id": "e3", "from": "cron", "to": "windsor", "label": "bulk uma vez por rodada" },
+    { "id": "e4", "from": "windsor", "to": "normalizer", "label": "linhas brutas; fallback por conta" },
+    { "id": "e5", "from": "configdb", "to": "normalizer", "label": "account_id autorizado" },
+    { "id": "e6", "from": "normalizer", "to": "facts", "label": "upsert por geração" },
+    { "id": "e7", "from": "normalizer", "to": "runs", "label": "sucesso ou falha visível" },
+    { "id": "e8", "from": "facts", "to": "report", "label": "leitura local tenant-scoped" },
+    { "id": "e9", "from": "report", "to": "screen", "label": "métricas por moeda" },
+    { "id": "e10", "from": "runs", "to": "screen", "label": "frescor e falha sem apagar dado bom" }
+  ]
+}

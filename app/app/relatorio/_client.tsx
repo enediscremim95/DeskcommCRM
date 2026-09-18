@@ -11,13 +11,17 @@
  * A divisão é a do resto do produto: o servidor busca, o cliente desenha.
  */
 import { useT } from "@/hooks/i18n/useT";
+import { TrafficDashboard } from "./_components/TrafficDashboard";
 
 interface RelatorioClientProps {
   reportUrl: string | null;
+  nativeConfigured: boolean;
 }
 
-export function RelatorioClient({ reportUrl }: RelatorioClientProps) {
+export function RelatorioClient({ reportUrl, nativeConfigured }: RelatorioClientProps) {
   const t = useT();
+
+  if (nativeConfigured) return <TrafficDashboard />;
 
   return (
     <div className="flex h-full flex-col gap-5 p-6">
