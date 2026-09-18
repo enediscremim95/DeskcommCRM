@@ -60,6 +60,10 @@ export interface AtRiskLead {
   } | null;
   conversation_id: string | null;
   pipeline_id: string;
+  /** Nome da etapa, anexado somente para a tela humana do Radar. */
+  stage_name?: string | null;
+  /** Evita alertar um lead que já tem uma tarefa aberta, mesmo sem prazo. */
+  has_open_task?: boolean;
   agenda?: ProtecaoAgenda;
 }
 
@@ -88,6 +92,9 @@ export interface TarefaDoRadar {
   status: "pending" | "in_progress";
   lead_id: string | null;
   contact_id: string | null;
+  /** Contexto anexado somente para a tela humana. */
+  lead_title?: string | null;
+  contact_name?: string | null;
 }
 
 export interface RadarDeRisco {
@@ -143,6 +150,53 @@ export async function carregaRadarDeRisco(
           Boolean(t.due_date) && (t.status === "pending" || t.status === "in_progress"),
       )
       .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
+
+    const leadIds = [...new Set(tarefasDoRadar.flatMap((t) => (t.lead_id ? [t.lead_id] : [])))];
+    const leadsById = new Map<string, { title: string; contact_id: string | null }>();
+    if (leadIds.length > 0) {
+      const { data: taskLeads, error: taskLeadsError } = await admin
+        .from("crm_leads")
+        .select("id, title, contact_id")
+        .eq("organization_id", organizationId)
+        .in("id", leadIds);
+      if (taskLeadsError) throw new Error(`radar_task_leads_failed: ${taskLeadsError.message}`);
+      for (const lead of taskLeads ?? []) {
+        leadsById.set(lead.id, { title: lead.title, contact_id: lead.contact_id });
+      }
+    }
+
+    const contactIds = [
+      ...new Set(
+        tarefasDoRadar.flatMap((t) => {
+          const contactId = t.contact_id ?? (t.lead_id ? leadsById.get(t.lead_id)?.contact_id : null);
+          return contactId ? [contactId] : [];
+        }),
+      ),
+    ];
+    const contactNameById = new Map<string, string | null>();
+    if (contactIds.length > 0) {
+      const { data: taskContacts, error: taskContactsError } = await admin
+        .from("contacts")
+        .select("id, name, display_name")
+        .eq("organization_id", organizationId)
+        .in("id", contactIds);
+      if (taskContactsError) {
+        throw new Error(`radar_task_contacts_failed: ${taskContactsError.message}`);
+      }
+      for (const contact of taskContacts ?? []) {
+        contactNameById.set(contact.id, contact.display_name ?? contact.name ?? null);
+      }
+    }
+
+    tarefasDoRadar = tarefasDoRadar.map((tarefa) => {
+      const lead = tarefa.lead_id ? leadsById.get(tarefa.lead_id) : undefined;
+      const contactId = tarefa.contact_id ?? lead?.contact_id ?? null;
+      return {
+        ...tarefa,
+        lead_title: lead?.title ?? null,
+        contact_name: contactId ? (contactNameById.get(contactId) ?? null) : null,
+      };
+    });
   }
 
   const { data: leads, error: leadsErr } = await admin
@@ -181,6 +235,7 @@ export async function carregaRadarDeRisco(
   }
 
   const tarefasPorLead = new Map<string, Array<{ id: string; title: string; description: string | null; due_date: string; status: string }>>();
+  const leadIdsComTarefaAberta = new Set<string>();
   const leadIdsDoRadar = rows.map(l => l.id);
   if (leadIdsDoRadar.length > 0) {
     const { data: tarefas, error } = await admin
@@ -193,8 +248,10 @@ export async function carregaRadarDeRisco(
       .limit(SCAN_CAP);
     if (error) throw new Error(`radar_tasks_failed: ${error.message}`);
     for (const tarefa of tarefas ?? []) {
-      if (!tarefa.lead_id || !tarefa.due_date) continue;
+      if (!tarefa.lead_id) continue;
       if (tarefa.status !== "pending" && tarefa.status !== "in_progress") continue;
+      leadIdsComTarefaAberta.add(tarefa.lead_id);
+      if (!tarefa.due_date) continue;
       const lista = tarefasPorLead.get(tarefa.lead_id) ?? [];
       lista.push({ id: tarefa.id, title: tarefa.title, description: tarefa.description, due_date: tarefa.due_date, status: tarefa.status });
       tarefasPorLead.set(tarefa.lead_id, lista);
@@ -226,17 +283,20 @@ export async function carregaRadarDeRisco(
   // resolveStageWindow — para o radar e o card nunca discordarem do mesmo lead.
   const stageIds = [...new Set(rows.map((l) => l.stage_id).filter(Boolean))];
   const windowByStage = new Map<string, ReturnType<typeof resolveStageWindow>>();
+  const stageNameById = new Map<string, string>();
   if (stageIds.length > 0) {
     const { data: stages } = await admin
       .from("crm_stages")
-      .select("id, expected_duration_hours")
+      .select("id, name, expected_duration_hours")
       .eq("organization_id", organizationId)
       .in("id", stageIds);
     for (const s of (stages ?? []) as Array<{
       id: string;
+      name: string;
       expected_duration_hours: number | null;
     }>) {
       windowByStage.set(s.id, resolveStageWindow(s));
+      stageNameById.set(s.id, s.name);
     }
   }
   const contactIds = [
@@ -336,6 +396,12 @@ export async function carregaRadarDeRisco(
       } : null,
       conversation_id: conv?.id ?? null,
       pipeline_id: l.pipeline_id,
+      ...(opts.includeTasks
+        ? {
+            stage_name: stageNameById.get(l.stage_id) ?? null,
+            has_open_task: leadIdsComTarefaAberta.has(l.id),
+          }
+        : {}),
       agenda: protection,
     });
   }

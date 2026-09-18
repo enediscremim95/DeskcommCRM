@@ -6681,6 +6681,16 @@ export const DICIONARIO: Traducoes = {
   "Sem dono": { es: "Sin dueño" },
   "Você assumiu a demanda": { es: "Asumiste la demanda" },
   "Assistente retorna": { es: "El asistente vuelve" },
+  "Tarefa concluída": { es: "Tarea completada" },
+  "Não foi possível concluir a tarefa.": { es: "No fue posible completar la tarea." },
+  "Follow-up marcado": { es: "Seguimiento programado" },
+  "Nada pedindo atenção agora.": { es: "Nada requiere atención ahora." },
+  "Concluindo…": { es: "Completando…" },
+  "Marcar como feita": { es: "Marcar como hecha" },
+  "Lead sem próximo passo": { es: "Lead sin próximo paso" },
+  "Etapa sem nome": { es: "Etapa sin nombre" },
+  "Abrir lead": { es: "Abrir lead" },
+  "Marcar follow-up": { es: "Programar seguimiento" },
 
   // ─── Merge PR #365 (Web Push, relógio HTTP e follow-up reativo) — i18n ───
   "Automação (Webhooks)": { es: "Automatización (Webhooks)" },

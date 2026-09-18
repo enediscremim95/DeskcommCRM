@@ -1,12 +1,8 @@
 /**
  * Radar de Risco (C1 — desilhamento da doutrina do sistema vivo). Prova, na
- * perspectiva do usuário real: (1) o atendente entra no Radar e VÊ a demanda
- * aberta que esfriou (5 dias sem atividade, sem próximo passo) — o que antes
- * morria invisível no engine; (2) ele ASSUME a demanda direto da linha e a
- * responsabilidade passa a ser dele. Login como manager (sem MFA).
- *
- * O seed do radar roda a cada execução (reseta a conversa para "sem dono"), então
- * o teste de assumir é repetível.
+ * perspectiva do usuário real: (1) o atendente entra no Radar e VÊ somente o
+ * alerta da demanda aberta sem próximo passo; (2) ele abre o formulário para
+ * marcar o follow-up sem sair da tela. Login como manager (sem MFA).
  */
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -63,21 +59,18 @@ test("o atendente vê no Radar a demanda aberta que esfriou sem próximo passo",
   const item = radarItem(page);
   await expect(item).toBeVisible();
   await expect(item).toHaveAttribute("data-risk", "critico");
-  await expect(item.getByText("Crítico")).toBeVisible();
-  await expect(item.getByText(/Sem próximo passo/)).toBeVisible();
+  await expect(item.getByText("Lead sem próximo passo")).toBeVisible();
+  await expect(page.getByTestId("radar-counts")).toHaveCount(0);
 });
 
-test("o atendente assume a demanda direto do Radar e vira o responsável", async ({ page }) => {
+test("o atendente marca o próximo follow-up sem sair do Radar", async ({ page }) => {
   await login(page, creds.users.manager!.email);
   await gotoRadar(page);
 
   const item = radarItem(page);
   await expect(item).toBeVisible();
-  await expect(item.getByTestId("radar-assignee")).toHaveText("Sem dono");
-
-  await item.getByTestId("radar-claim").click();
-
-  // Após assumir, o radar recarrega: a demanda passa a ter atendente e o botão some.
-  await expect(radarItem(page).getByTestId("radar-assignee")).toHaveText("Com atendente");
-  await expect(radarItem(page).getByTestId("radar-claim")).toHaveCount(0);
+  await item.getByRole("button", { name: "Marcar follow-up" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Marcar follow-up" })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/radar/);
 });
