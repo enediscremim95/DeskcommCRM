@@ -56,6 +56,7 @@ export const ApiErrorCodes = {
   next_action_absent: "next_action_absent", // decisão sobre proposta que não existe (mais) [wave 4]
   next_action_changed: "next_action_changed", // o agente reescreveu a proposta entre o render e o clique
   channel_archived: "channel_archived", // ação sobre canal que o usuário excluiu (a linha só sobrevive como âncora das FKs)
+  channel_connector_conflict: "channel_connector_conflict",
   knowledge_source_type_in_use: "knowledge_source_type_in_use", // já existe fonte ATIVA daquele tipo para o agente (índice ai_knowledge_sources_unique_per_agent)
 
   // 422 — semântica
@@ -78,6 +79,8 @@ export const ApiErrorCodes = {
 
   // 429
   rate_limited: "rate_limited",
+  managed_connector_qr_rate_limited: "managed_connector_qr_rate_limited",
+  managed_connector_qr_attempts_exhausted: "managed_connector_qr_attempts_exhausted",
 
   // ─── ANÚNCIOS, eixo de LEITURA (0214) ───
   //
@@ -118,6 +121,18 @@ export const ApiErrorCodes = {
   // 500 / upstream
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",
+  managed_connector_key_required: "managed_connector_key_required",
+  managed_connector_waha_conflict: "managed_connector_waha_conflict",
+  managed_connector_encryption_unavailable: "managed_connector_encryption_unavailable",
+  managed_connector_lookup_failed: "managed_connector_lookup_failed",
+  managed_connector_save_failed: "managed_connector_save_failed",
+  managed_connector_not_found: "managed_connector_not_found",
+  managed_connector_key_unavailable: "managed_connector_key_unavailable",
+  managed_connector_state_failed: "managed_connector_state_failed",
+  managed_connector_invalid_state: "managed_connector_invalid_state",
+  managed_connector_state_persist_failed: "managed_connector_state_persist_failed",
+  managed_connector_qr_reservation_failed: "managed_connector_qr_reservation_failed",
+  managed_connector_qr_failed: "managed_connector_qr_failed",
   unavailable: "unavailable", // 503: dependência de config ausente (ex.: pool do engine sem SUPABASE_DB_URL)
   waha_error: "waha_error",
   wacalls_error: "wacalls_error", // 502: o serviço de chamada de voz recusou ou não respondeu

@@ -49,6 +49,12 @@
  */
 const SEPARADO = /(?<![a-zA-Z0-9])(waha|meta_cloud|zernio|graph\.facebook\.com)(?![a-zA-Z0-9])/i;
 
+// `evolution` também é o nome de uma feature legítima de melhoria da IA no
+// produto. A grafia nua geraria falsos positivos nessa árvore inteira. Para o
+// provider, a fronteira confiável é o slug literal ou um identificador que o
+// qualifica como API/conector.
+const EVOLUTION_PROVIDER = /(["'`])evolution\1|Evolution(?:Api|Connector)(?![a-z0-9])/;
+
 /**
  * Grafia PascalCase dentro de identificador: `WahaClient`,
  * `WahaChannelAdapter`, `createWahaSession`.
@@ -61,8 +67,8 @@ const PASCAL = /(Waha|Zernio)(?![a-z0-9])/;
 
 /** Um trecho de código/prosa nomeia um provider de canal? */
 export function nomeiaProvider(texto: string): boolean {
-  return SEPARADO.test(texto) || PASCAL.test(texto);
+  return SEPARADO.test(texto) || PASCAL.test(texto) || EVOLUTION_PROVIDER.test(texto);
 }
 
 /** Exportadas para o teste de fronteira poder vigiar cada uma isoladamente. */
-export const PADROES = { SEPARADO, PASCAL } as const;
+export const PADROES = { SEPARADO, PASCAL, EVOLUTION_PROVIDER } as const;

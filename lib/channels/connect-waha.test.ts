@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { connectWahaChannel } from "./connect-waha";
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
+const managed = vi.hoisted(() => ({ exists: false }));
+vi.mock("./managed-qr", () => ({
+  hasManagedConnector: vi.fn(async () => managed.exists),
+}));
 const org = "20000000-0000-4000-8000-000000000001";
 const key = "20000000-0000-4000-8000-000000000002";
 const channel = { id: key, organization_id: org, waha_session_name: "owned", status: "STARTING", archived_at: null };
@@ -18,6 +22,16 @@ function fixture() {
   return { db, transport, finishes, input: { organizationId: org, idempotencyKey: key, userId: key, requestId: key } };
 }
 describe("conexão recuperável", () => {
+  it("recusa WAHA antes de tocar no transporte quando a organização usa outro conector", async () => {
+    const f = fixture();
+    managed.exists = true;
+    await expect(connectWahaChannel(f.db, f.db, f.transport, f.input)).rejects.toThrow(
+      "channel_connector_conflict",
+    );
+    expect(f.db.rpc).not.toHaveBeenCalled();
+    expect(f.transport.createSession).not.toHaveBeenCalled();
+    managed.exists = false;
+  });
   it("publica somente o status confirmado pelo transporte e pelo DB", async () => {
     const f = fixture(); const result = await connectWahaChannel(f.db, f.db, f.transport, f.input);
     expect(result.channel.status).toBe("SCAN_QR_CODE");
