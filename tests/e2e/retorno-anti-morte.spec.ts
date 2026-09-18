@@ -6,8 +6,8 @@
  *
  *   1. um negócio esfria (5 dias sem movimento);
  *   2. o AGENTE marca o retorno — pela capacidade real, não por INSERT à mão;
- *   3. o retorno aparece no RADAR ("em voo": o sistema mantém a demanda viva) e
- *      na TIMELINE do negócio ("Retorno agendado");
+ *   3. o retorno tira o negócio do RADAR (ali ficam só alertas acionáveis) e
+ *      aparece na TIMELINE do negócio ("Retorno agendado");
  *   4. uma PESSOA desmarca pela fila — a porta que não existia antes desta wave;
  *   5. o AGENTE descobre o cancelamento ao consultar, e não reagenda.
  *
@@ -72,18 +72,17 @@ function captura(page: Page, nome: string) {
   return page.screenshot({ path: path.join(EVIDENCIA, nome), fullPage: true });
 }
 
-test("o retorno marcado pelo agente aparece no Radar e na linha do tempo", async ({ page }) => {
+test("o retorno marcado pelo agente protege o Radar e aparece na linha do tempo", async ({ page }) => {
   await login(page, creds.users.manager!.email);
 
   await page.goto("/app/radar");
   await expect(page.getByRole("heading", { name: "Radar de risco" })).toBeVisible();
 
   const linha = page.locator('[data-testid="radar-item"]', { hasText: creds.retorno.lead_title });
-  await expect(linha).toBeVisible();
-  // "Em voo" é a afirmação de que a demanda NÃO está morrendo: alguém prometeu
-  // voltar. Sem o retorno, este mesmo negócio apareceria como crítico.
-  await expect(linha).toContainText(/voo/i);
-  await captura(page, "w2-retorno-no-radar.png");
+  // Retorno futuro é proteção, não alerta. Sem ele, este mesmo negócio apareceria
+  // como crítico e pediria uma ação humana.
+  await expect(linha).toHaveCount(0);
+  await captura(page, "w2-radar-protegido-por-retorno.png");
 
   // A timeline do NEGÓCIO — o acontecimento tem de ser legível por quem opera,
   // não só existir em cron_jobs.
