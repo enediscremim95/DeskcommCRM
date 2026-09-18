@@ -33,6 +33,7 @@ import {
 import { copyToClipboard } from "@/lib/clipboard";
 import { Copy, Trash, CaretDown } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { gerarSnippetDaLandingPage } from "@/lib/webhooks/snippet-da-lp";
 import {
   useDeleteWebhookSource,
   useUpdateWebhookSource,
@@ -59,7 +60,7 @@ function publicUrl(pathToken: string): string {
 }
 
 function formSnippet(url: string, t: (texto: string) => string): string {
-  return `<form action="${url}" method="POST">
+  return `<form action="${url}" method="POST" data-crm-lead>
   <input name="nome" placeholder="${t("Seu nome")}" required />
   <input name="telefone" placeholder="${t("Seu WhatsApp")}" required />
   <input name="email" type="email" placeholder="${t("Seu e-mail")}" />
@@ -93,6 +94,7 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
   const [testOk, setTestOk] = React.useState(false);
 
   const url = publicUrl(source.path_token);
+  const snippetDaLandingPage = gerarSnippetDaLandingPage(url);
   const events = eventsRes?.data ?? [];
 
   const sendTestLead = async () => {
@@ -158,6 +160,31 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
                 <Copy />
               </Button>
             </div>
+          </section>
+
+          <section className="space-y-2">
+            <p className="text-sm font-medium text-text">
+              {t("Conectar uma landing page direto ao CRM")}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Adicione data-crm-lead ao formulário existente e cole o script depois dele. Ele confirma a entrada, repete uma vez se a conexão falhar e depois libera o fluxo normal da página.",
+              )}
+            </p>
+            <Textarea
+              aria-label={t("Script para landing page")}
+              readOnly
+              rows={10}
+              value={snippetDaLandingPage}
+              className="font-mono text-xs"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => copy(snippetDaLandingPage, t("Script da landing page copiado."), t)}
+            >
+              <Copy /> {t("Copiar script da landing page")}
+            </Button>
           </section>
 
           <section className="space-y-2">

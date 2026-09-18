@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { POST } from "@/app/api/v1/webhooks/in/[token]/route";
+import { OPTIONS, POST } from "@/app/api/v1/webhooks/in/[token]/route";
 import { GOV_ORG, GOV_PIPELINE, GOV_STAGE, seedGov, sql } from "./gov-helpers";
 
 /**
@@ -392,10 +392,22 @@ beforeAll(() => {
 });
 
 describe("POST /api/v1/webhooks/in/[token] (Task 6)", () => {
+  it("preflight libera somente o contrato público de captação", () => {
+    const res = OPTIONS();
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-methods")).toBe("POST, OPTIONS");
+    expect(res.headers.get("access-control-allow-headers")).toBe(
+      "Content-Type, x-deskcomm-signature",
+    );
+    expect(res.headers.get("access-control-expose-headers")).toBe("X-Request-Id");
+  });
+
   it("caso 1 — JSON feliz: cria contato + lead, loga evento, atualiza last_received_at", async () => {
     const body = { nome: "Ana", telefone: "11998765432", utm_source: "ig", empresa: "ACME" };
     const res = await POST(jsonReq(TOKEN_JSON, body), reqCtx(TOKEN_JSON));
     expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
     const json = (await res.json()) as { data: { lead_id: string } };
     const leadId = json.data.lead_id;
     expect(leadId).toBeTruthy();
@@ -437,6 +449,7 @@ describe("POST /api/v1/webhooks/in/[token] (Task 6)", () => {
     const res = await POST(formReq(TOKEN_FORM, "nome=Bia&telefone=11912345678"), reqCtx(TOKEN_FORM));
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe(REDIRECT_TO);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
 
     const leadRows = rows(
       `select * from public.crm_leads where organization_id = '${GOV_ORG}' and title = 'Bia'`,
@@ -447,6 +460,7 @@ describe("POST /api/v1/webhooks/in/[token] (Task 6)", () => {
   it("caso 3 — token inexistente e fonte inativa devolvem 404 idêntico", async () => {
     const resUnknown = await POST(jsonReq(TOKEN_UNKNOWN, { nome: "X" }), reqCtx(TOKEN_UNKNOWN));
     expect(resUnknown.status).toBe(404);
+    expect(resUnknown.headers.get("access-control-allow-origin")).toBe("*");
     const bodyUnknown = (await resUnknown.json()) as { error: { code: string } };
 
     const resInactive = await POST(jsonReq(TOKEN_INACTIVE, { nome: "X" }), reqCtx(TOKEN_INACTIVE));
