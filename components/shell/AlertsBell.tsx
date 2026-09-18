@@ -18,6 +18,7 @@ export function AlertsBell() {
       activeOrg?.interface_settings,
       user.is_platform_admin && !user.support,
       activeOrg?.role ?? null,
+      activeOrg?.integration_access,
     ).some((d) => d.href === "/app/ai/inbox")
   )
     return null;

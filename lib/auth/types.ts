@@ -1,5 +1,6 @@
 import type { InterfaceSettings } from "@/lib/navigation/interface";
 import type { Idioma } from "@/lib/i18n/idiomas";
+import type { IntegrationAccessMap } from "@/lib/integrations/types";
 
 /**
  * Papéis dentro do tenant.
@@ -138,6 +139,7 @@ export interface AuthUser {
 
 export interface ActiveOrg {
   interface_settings?: InterfaceSettings;
+  integration_access?: IntegrationAccessMap;
   orgId: string;
   name: string;
   role: Role;

@@ -4,6 +4,8 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { ConexoesShell } from "@/components/connections/ConexoesShell";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { clientCanViewIntegration } from "@/lib/integrations/access";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +16,10 @@ export default async function ConnectionsPage() {
   if (!(user.is_platform_admin && !user.support) && ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
     redirect("/403");
   }
+  if (
+    !(user.is_platform_admin && !user.support) &&
+    !(await clientCanViewIntegration(createAdminClient(), activeOrg.orgId, "whatsapp"))
+  ) redirect("/403");
   const idioma = user.idioma;
 
   const key = process.env.WAHA_API_KEY;

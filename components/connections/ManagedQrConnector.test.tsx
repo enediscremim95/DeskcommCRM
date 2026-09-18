@@ -11,6 +11,7 @@ const connector = {
   display_name: "WhatsApp comercial",
   remote_state: "close" as const,
   qr_attempts: 0,
+  client_can_reconnect: true,
   hook_last_status: null,
   hook_last_error: null,
 };

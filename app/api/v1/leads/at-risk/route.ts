@@ -20,6 +20,8 @@ import { requireRole } from "@/lib/auth/require-role";
 import { carregaRadarDeRisco, RADAR_MIN_HOURS_PADRAO } from "@/lib/leads/radar-de-risco";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { clientCanViewIntegration } from "@/lib/integrations/access";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,13 @@ const querySchema = z.object({
 });
 
 export type { AtRiskLead, TarefaDoRadar } from "@/lib/leads/radar-de-risco";
+export interface ChannelAlert {
+  id: string;
+  severity: "warn" | "critical";
+  title: string;
+  body: string | null;
+  created_at: string;
+}
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -56,7 +65,21 @@ export async function GET(req: NextRequest): Promise<Response> {
       minHours: min_hours,
       includeTasks: true,
     });
-    return ok(radar, { requestId });
+    const admin = createAdminClient();
+    let channelAlerts: ChannelAlert[] = [];
+    if (await clientCanViewIntegration(admin, org.orgId, "whatsapp")) {
+      const { data: alerts, error: alertsError } = await admin
+        .from("agent_inbox_items")
+        .select("id,severity,title,body,created_at")
+        .eq("organization_id", org.orgId)
+        .eq("status", "open")
+        .eq("ref_kind", "channel_session")
+        .in("kind", ["qr_rescan", "channel_number_alert"])
+        .order("created_at", { ascending: false });
+      if (alertsError) throw alertsError;
+      channelAlerts = (alerts ?? []) as ChannelAlert[];
+    }
+    return ok({ ...radar, channel_alerts: channelAlerts }, { requestId });
   } catch {
     return fail("internal_error", t("Falha ao carregar o radar."), 500, { requestId });
   }

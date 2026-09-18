@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { clientCanViewIntegration } from "@/lib/integrations/access";
 
 import { RelatorioClient } from "./_client";
 
@@ -14,6 +15,10 @@ export default async function RelatorioPage() {
   if (!activeOrg) redirect("/app");
 
   const admin = createAdminClient();
+  if (
+    !(user.is_platform_admin && !user.support) &&
+    !(await clientCanViewIntegration(admin, activeOrg.orgId, "windsor"))
+  ) redirect("/403");
   const [{ data: organization }, { data: nativeConfig }] = await Promise.all([admin
     .from("organizations")
     .select("report_url")

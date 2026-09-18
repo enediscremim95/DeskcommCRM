@@ -80,6 +80,11 @@ const schema = z.object({
   // encerra sem chamar a origem. Nunca é NEXT_PUBLIC e nunca vai ao banco.
   WINDSOR_API_KEY: z.string().optional().default(""),
 
+  // n8n compartilhado da instalação. O CRM só usa a API em leitura para
+  // projetar workflows já vinculados a uma organização. Nunca vai ao browser.
+  N8N_BASE_URL: z.string().optional().default(""),
+  N8N_API_KEY: z.string().optional().default(""),
+
   /**
    * Retenção do arquivo do corpo cru dos webhooks (`webhook_events_log`).
    *

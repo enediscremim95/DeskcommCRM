@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildTrafficReport, type StoredAccount, type StoredFact } from "@/lib/windsor/report";
 import type { DashboardModel } from "@/lib/windsor/types";
+import { clientCanViewIntegration } from "@/lib/integrations/access";
 
 export const dynamic = "force-dynamic";
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -30,6 +31,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
   const admin = createAdminClient();
   const organizationId = authz.org.orgId;
+  if (
+    !(authz.user.is_platform_admin && !authz.user.support) &&
+    !(await clientCanViewIntegration(admin, organizationId, "windsor"))
+  ) return fail("forbidden", "Relatório não liberado para esta organização.", 403, { requestId });
   const { data: config, error: configError } = await admin.from("traffic_dashboard_configs" as never)
     .select("model,conversion_fields,sync_status,last_sync_succeeded_at,last_sync_error,published_generation")
     .eq("organization_id", organizationId).eq("enabled", true).maybeSingle();

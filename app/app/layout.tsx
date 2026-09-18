@@ -20,6 +20,7 @@ import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { listarConexoesCaidas, type ConexaoCaida } from "@/lib/channels/health";
 import { VoiceCallProvider } from "@/components/voice/VoiceCallContext";
 import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
+import { integrationAccessForOrganization } from "@/lib/integrations/access";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await loadAuthUser();
@@ -61,6 +62,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       .select("onboarded_at, status, settings")
       .eq("id", activeOrg.orgId)
       .maybeSingle();
+    activeOrg = {
+      ...activeOrg,
+      integration_access: await integrationAccessForOrganization(admin, activeOrg.orgId),
+    };
     if (orgRow && !orgRow.onboarded_at && !user.support) redirect("/onboarding");
     if (orgRow?.status === "suspended") redirect("/account-suspended");
     // G4-02: expõe visibility_mode ao client (inbox decide visões visíveis).
@@ -126,7 +131,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // seletores oferecendo canal arquivado, e o invariante `canais-selecionaveis`
   // existe por causa disso. De quebra, o filtro de estados fica LITERALMENTE o
   // mesmo que decide o aviso da Central — duas listas divergiriam com o tempo.
-  const conexoesCaidas: ConexaoCaida[] = activeOrg
+  const podeVerWhatsApp = Boolean(
+    (user.is_platform_admin && !user.support) || activeOrg?.integration_access?.whatsapp.client_visible,
+  );
+  const conexoesCaidas: ConexaoCaida[] = activeOrg && podeVerWhatsApp
     ? await listarConexoesCaidas(createAdminClient(), activeOrg.orgId)
     : [];
 
