@@ -8,6 +8,7 @@ import {
   WINDSOR_FIELDS_BY_PLATFORM,
   WINDSOR_SUMMARY_FIELDS_BY_PLATFORM,
 } from "./account-fetch";
+import { normalizeFactsForAccount } from "./normalizer";
 
 const account = (
   account_id: string,
@@ -29,7 +30,7 @@ describe("sincronização Windsor por conta", () => {
     ]);
   });
 
-  it("limita a seis pedidos, busca conta repetida uma vez e isola falha parcial", async () => {
+  it("limita a três contas, serializa pedidos da mesma conta e isola falha parcial", async () => {
     const accounts = [
       account("act_1", "meta_ads", "org-a"),
       account("act_1", "meta_ads", "org-b"),
@@ -41,11 +42,17 @@ describe("sincronização Windsor por conta", () => {
     ];
     let active = 0;
     let peak = 0;
+    const activeByAccount = new Map<string, number>();
+    let peakForSameAccount = 0;
     const fetcher = vi.fn(async (fields: readonly string[], accountId: string) => {
       active += 1;
       peak = Math.max(peak, active);
+      const accountActive = (activeByAccount.get(accountId) ?? 0) + 1;
+      activeByAccount.set(accountId, accountActive);
+      peakForSameAccount = Math.max(peakForSameAccount, accountActive);
       await new Promise((resolve) => setTimeout(resolve, 5));
       active -= 1;
+      activeByAccount.set(accountId, accountActive - 1);
       if (accountId === "act_3" && !fields.includes("ad_id")) throw new Error("timeout controlado");
       return [{
         account_id: accountId,
@@ -57,11 +64,39 @@ describe("sincronização Windsor por conta", () => {
 
     const results = await fetchSelectedAccountRows(accounts, fetcher);
 
-    expect(fetcher).toHaveBeenCalledTimes(26);
-    expect(peak).toBeLessThanOrEqual(6);
+    expect(fetcher).toHaveBeenCalledTimes(22);
+    expect(peak).toBeLessThanOrEqual(3);
+    expect(peakForSameAccount).toBe(1);
     expect(results.get("meta_ads:act_1")?.rows).toHaveLength(2);
     expect(results.get("meta_ads:act_3")?.error).toBeInstanceOf(Error);
     expect(results.get("google_ads:123-456-7890")?.rows).toHaveLength(1);
+  });
+
+  it("grava Meta e Google pela plataforma configurada no mesmo ciclo", () => {
+    const accounts = [
+      account("1694716038241588", "meta_ads", "org-mista"),
+      account("530-665-6052", "google_ads", "org-mista"),
+    ];
+    const rows: WindsorRow[] = [
+      {
+        account_id: "1694716038241588", date: "2026-09-18",
+        campaign_name: "Meta", spend: 6089.27, cost: 0,
+      },
+      {
+        account_id: "530-665-6052", date: "2026-09-18",
+        campaign_name: "Google", spend: 0, cost: 901,
+      },
+    ];
+
+    const facts = accounts.flatMap((selected) => normalizeFactsForAccount(
+      filterRowsForAccount(rows, selected),
+      selected,
+    ));
+
+    expect(facts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ account_id: "1694716038241588", platform: "meta_ads", spend: 6089.27 }),
+      expect.objectContaining({ account_id: "530-665-6052", platform: "google_ads", spend: 901 }),
+    ]));
   });
 
   it("não inicia pedido novo depois do prazo global da coleta", async () => {
