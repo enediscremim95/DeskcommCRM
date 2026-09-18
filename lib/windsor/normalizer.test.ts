@@ -39,6 +39,19 @@ describe("normalizador Windsor", () => {
     expect(fact!.conversions).toMatchObject({ actions_lead: 1, conversions: 2 });
   });
 
+  it("preserva ações novas e orçamento Meta no json de métricas", () => {
+    const [fact] = normalizeFacts([{
+      date: "2026-09-18", account_id: "act_1", campaign_name: "Meta",
+      actions_landing_page_view: 8, actions_add_to_cart: 3,
+      campaign_daily_budget: 12500,
+    }], "meta_ads");
+    expect(fact?.conversions).toMatchObject({
+      actions_landing_page_view: 8,
+      actions_add_to_cart: 3,
+      campaign_daily_budget: 12500,
+    });
+  });
+
   it("interrompe carga material degradada sem nome de campanha", () => {
     expect(() => normalizeFacts([
       { date: "2026-09-18", account_id: "act_1", spend: 10 },

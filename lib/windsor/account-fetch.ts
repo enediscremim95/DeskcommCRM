@@ -1,5 +1,5 @@
 import { accountId, platformOf } from "./normalizer";
-import { CONVERSION_FIELDS, type AdPlatform, type WindsorRow } from "./types";
+import { BUDGET_FIELDS, CONVERSION_FIELDS, type AdPlatform, type WindsorRow } from "./types";
 
 const COMMON_FIELDS = [
   "date", "account_id", "account_name", "account_currency", "currency", "campaign_id",
@@ -10,7 +10,7 @@ const META_DIMENSION_FIELDS = [
 ] as const;
 
 const META_DETAIL_FIELDS = {
-  core: [...META_DIMENSION_FIELDS, "spend", "impressions", "reach", "clicks"],
+  core: [...META_DIMENSION_FIELDS, "spend", "impressions", "reach", "clicks", ...BUDGET_FIELDS],
   conversions: [...META_DIMENSION_FIELDS, ...META_CONVERSION_FIELDS, "action_values_purchase"],
   video: [
     ...META_DIMENSION_FIELDS, "video_view", "actions_video_view",

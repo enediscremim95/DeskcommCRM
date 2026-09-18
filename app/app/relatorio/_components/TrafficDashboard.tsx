@@ -23,16 +23,34 @@ import {
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
+import {
+  CAMPAIGN_METRIC_COLUMNS,
+  type CampaignMetricColumn,
+} from "@/lib/windsor/types";
 
 interface Metrics {
+  budget: number | null;
+  budget_type: "daily" | "lifetime" | null;
   spend: number;
   conversions: number;
+  leads: number;
+  landing_page_views: number;
+  cost_per_landing_page_view: number | null;
+  add_to_cart: number;
+  cost_per_add_to_cart: number | null;
+  initiate_checkout: number;
+  cost_per_initiate_checkout: number | null;
+  purchases: number;
+  cost_per_purchase: number | null;
+  messaging_conversations: number;
+  cost_per_messaging_conversation: number | null;
   revenue: number;
   impressions: number;
-  reach: number;
+  reach: number | null;
   clicks: number;
   link_clicks: number;
   cost_per_conversion: number | null;
+  cost_per_lead: number | null;
   cpm: number | null;
   ctr: number | null;
   cpc: number | null;
@@ -77,6 +95,10 @@ interface CurrencyGroup {
 interface ReportResponse {
   data: {
     model: "leads" | "messages" | "ecommerce";
+    organization_key: string;
+    viewer_key: string;
+    default_columns: CampaignMetricColumn[];
+    can_manage_defaults: boolean;
     sync: { status: string; last_succeeded_at: string | null; error: string | null };
     currencies: CurrencyGroup[];
   };
@@ -104,6 +126,79 @@ function number(value: number): string {
 }
 function percent(value: number | null): string {
   return value == null ? "—" : `${number(value)}%`;
+}
+
+const MONEY_COLUMNS = new Set<CampaignMetricColumn>([
+  "spend", "cpm", "cpc", "cost_per_landing_page_view", "cost_per_lead",
+  "cost_per_add_to_cart", "cost_per_initiate_checkout", "cost_per_purchase",
+  "revenue", "cost_per_messaging_conversation",
+]);
+const META_ONLY_COLUMNS = new Set<CampaignMetricColumn>([
+  "budget", "reach", "landing_page_views", "cost_per_landing_page_view",
+  "add_to_cart", "cost_per_add_to_cart", "initiate_checkout",
+  "cost_per_initiate_checkout", "purchases", "cost_per_purchase",
+  "messaging_conversations", "cost_per_messaging_conversation",
+]);
+
+function localText(idioma: string, pt: string, es: string): string {
+  return idioma === "es" ? es : pt;
+}
+
+function columnLabel(column: CampaignMetricColumn, idioma: string): string {
+  const labels: Record<CampaignMetricColumn, [pt: string, es: string]> = {
+    budget: ["Orçamento", "Presupuesto"], spend: ["Valor gasto", "Importe gastado"],
+    reach: ["Alcance", "Alcance"], impressions: ["Impressões", "Impresiones"],
+    cpm: ["CPM", "CPM"], ctr: ["CTR", "CTR"],
+    link_clicks: ["Cliques no link", "Clics en el enlace"], cpc: ["CPC", "CPC"],
+    landing_page_views: ["Visualizações da página", "Visitas a la página"],
+    cost_per_landing_page_view: ["Custo por visualização", "Costo por visita"],
+    leads: ["Leads", "Leads"], cost_per_lead: ["Custo por lead", "Costo por lead"],
+    add_to_cart: ["Carrinhos", "Añadidos al carrito"],
+    cost_per_add_to_cart: ["Custo por carrinho", "Costo por carrito"],
+    initiate_checkout: ["Finalizações", "Inicios de pago"],
+    cost_per_initiate_checkout: ["Custo por finalização", "Costo por inicio de pago"],
+    purchases: ["Vendas", "Ventas"], cost_per_purchase: ["Custo por venda", "Costo por venta"],
+    revenue: ["Valor de conversão", "Valor de conversión"], roas: ["ROAS", "ROAS"],
+    messaging_conversations: ["Conversas iniciadas", "Conversaciones iniciadas"],
+    cost_per_messaging_conversation: ["Custo por conversa", "Costo por conversación"],
+  };
+  return idioma === "es" ? labels[column][1] : labels[column][0];
+}
+
+function metricValue(
+  metrics: Metrics,
+  column: CampaignMetricColumn,
+  currency: string,
+  platform: "meta_ads" | "google_ads",
+): string {
+  if (platform === "google_ads" && META_ONLY_COLUMNS.has(column)) return "—";
+  if (column === "budget") {
+    if (metrics.budget == null) return "—";
+    return `${money(metrics.budget, currency)}${metrics.budget_type === "daily" ? "/dia" : " total"}`;
+  }
+  const value = metrics[column];
+  if (typeof value !== "number") return "—";
+  if (MONEY_COLUMNS.has(column)) return money(value, currency);
+  if (column === "ctr") return percent(value);
+  if (column === "roas") return `${number(value)}x`;
+  return number(value);
+}
+
+function savedColumns(report: ReportResponse["data"]): CampaignMetricColumn[] {
+  const key = `traffic-campaign-columns:${report.organization_key}:${report.viewer_key}:${report.model}`;
+  try {
+    const stored = JSON.parse(localStorage.getItem(key) ?? "null") as unknown;
+    if (Array.isArray(stored)) {
+      const allowed = new Set<string>(CAMPAIGN_METRIC_COLUMNS);
+      const valid = stored.filter(
+        (column): column is CampaignMetricColumn => typeof column === "string" && allowed.has(column),
+      );
+      if (valid.length > 0) return valid;
+    }
+  } catch {
+    // Preferência local inválida volta ao padrão da organização.
+  }
+  return report.default_columns;
 }
 
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -149,60 +244,64 @@ function CampaignTable({
   total,
   platform,
   labels,
+  columns,
+  idioma,
 }: {
   campaigns: Campaign[];
   currency: string;
   total: Metrics;
   platform: "meta_ads" | "google_ads";
+  columns: CampaignMetricColumn[];
+  idioma: string;
   labels: {
     campaign: string;
     total: string;
-    investment: string;
-    conversions: string;
-    cpa: string;
     openMedia: string;
+    conversions: string;
   };
 }) {
   const isMeta = platform === "meta_ads";
+  const gridTemplateColumns = `minmax(240px, 1fr) repeat(${columns.length}, minmax(120px, auto))`;
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[620px] text-sm">
+        <table className="w-full min-w-max text-sm">
           <thead className="border-b bg-muted/35 text-left text-xs tracking-[0.08em] text-muted-foreground uppercase">
             <tr>
-              <th className="px-4 py-3 font-semibold">{labels.campaign}</th>
-              <th className="px-4 py-3 text-right font-semibold">{labels.investment}</th>
-              <th className="px-4 py-3 text-right font-semibold">{labels.conversions}</th>
-              <th className="px-4 py-3 text-right font-semibold">{labels.cpa}</th>
+              <th className="min-w-60 px-4 py-3 font-semibold">{labels.campaign}</th>
+              {columns.map((column) => (
+                <th key={column} className="min-w-30 px-4 py-3 text-right font-semibold">
+                  {columnLabel(column, idioma)}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y">
             <tr className="bg-muted/45 font-semibold">
               <td className="px-4 py-3">{labels.total}</td>
-              <td className="px-4 py-3 text-right">{money(total.spend, currency)}</td>
-              <td className="px-4 py-3 text-right">{number(total.conversions)}</td>
-              <td className="px-4 py-3 text-right">
-                {total.cost_per_conversion == null
-                  ? "—"
-                  : money(total.cost_per_conversion, currency)}
-              </td>
+              {columns.map((column) => (
+                <td key={column} className="px-4 py-3 text-right">
+                  {metricValue(total, column, currency, platform)}
+                </td>
+              ))}
             </tr>
             {campaigns.map((campaign) => (
               <tr key={`${campaign.platform}:${campaign.name}`} className="align-top">
-                <td colSpan={4} className="p-0">
+                <td colSpan={columns.length + 1} className="p-0">
                   {isMeta ? (
                     <details className="group">
-                      <summary className="grid cursor-pointer grid-cols-[minmax(240px,1fr)_120px_100px_120px] items-center gap-3 px-4 py-3 hover:bg-muted/35">
+                      <summary
+                        className="grid cursor-pointer items-center gap-3 px-4 py-3 hover:bg-muted/35"
+                        style={{ gridTemplateColumns }}
+                      >
                         <span className="font-medium group-open:text-[#1877F2]">
                           {campaign.name}
                         </span>
-                        <span className="text-right">{money(campaign.spend, currency)}</span>
-                        <span className="text-right">{number(campaign.conversions)}</span>
-                        <span className="text-right text-muted-foreground">
-                          {campaign.cost_per_conversion == null
-                            ? "—"
-                            : money(campaign.cost_per_conversion, currency)}
-                        </span>
+                        {columns.map((column) => (
+                          <span key={column} className="text-right text-muted-foreground">
+                            {metricValue(campaign, column, currency, platform)}
+                          </span>
+                        ))}
                       </summary>
                       <div className="border-t bg-muted/15 px-4 py-2">
                         {campaign.adsets.map((adset) => (
@@ -250,15 +349,16 @@ function CampaignTable({
                       </div>
                     </details>
                   ) : (
-                    <div className="grid grid-cols-[minmax(240px,1fr)_120px_100px_120px] items-center gap-3 px-4 py-3 hover:bg-muted/35">
+                    <div
+                      className="grid items-center gap-3 px-4 py-3 hover:bg-muted/35"
+                      style={{ gridTemplateColumns }}
+                    >
                       <span className="font-medium">{campaign.name}</span>
-                      <span className="text-right">{money(campaign.spend, currency)}</span>
-                      <span className="text-right">{number(campaign.conversions)}</span>
-                      <span className="text-right text-muted-foreground">
-                        {campaign.cost_per_conversion == null
-                          ? "—"
-                          : money(campaign.cost_per_conversion, currency)}
-                      </span>
+                      {columns.map((column) => (
+                        <span key={column} className="text-right text-muted-foreground">
+                          {metricValue(campaign, column, currency, platform)}
+                        </span>
+                      ))}
                     </div>
                   )}
                 </td>
@@ -279,6 +379,9 @@ export function TrafficDashboard() {
   const [report, setReport] = useState<ReportResponse["data"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedColumns, setSelectedColumns] = useState<CampaignMetricColumn[]>([]);
+  const [savingDefaults, setSavingDefaults] = useState(false);
+  const [columnMessage, setColumnMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -291,6 +394,7 @@ export function TrafficDashboard() {
         if (!response.ok)
           throw new Error(body.error?.message ?? t("Não foi possível carregar o relatório."));
         setReport(body.data);
+        setSelectedColumns(savedColumns(body.data));
       })
       .catch((cause: unknown) => {
         if ((cause as { name?: string }).name !== "AbortError") {
@@ -326,6 +430,57 @@ export function TrafficDashboard() {
     setError(null);
     setWindow(next);
   }
+
+  function toggleColumn(column: CampaignMetricColumn) {
+    if (!report) return;
+    setColumnMessage(null);
+    setSelectedColumns((current) => {
+      const next = current.includes(column)
+        ? current.filter((item) => item !== column)
+        : CAMPAIGN_METRIC_COLUMNS.filter((item) => current.includes(item) || item === column);
+      if (next.length === 0) return current;
+      localStorage.setItem(
+        `traffic-campaign-columns:${report.organization_key}:${report.viewer_key}:${report.model}`,
+        JSON.stringify(next),
+      );
+      return next;
+    });
+  }
+
+  async function saveDefaultColumns() {
+    if (!report || selectedColumns.length === 0) return;
+    setSavingDefaults(true);
+    setColumnMessage(null);
+    try {
+      const response = await fetch("/api/v1/reports/traffic", {
+        method: "PATCH",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ columns: selectedColumns }),
+      });
+      const body = (await response.json()) as ReportResponse;
+      if (!response.ok) throw new Error(body.error?.message ?? localText(idioma, "Não foi possível salvar o padrão.", "No fue posible guardar el valor predeterminado."));
+      setReport((current) => current ? { ...current, default_columns: selectedColumns } : current);
+      setColumnMessage(localText(idioma, "Padrão salvo para esta organização.", "Valor predeterminado guardado para esta organización."));
+    } catch (cause) {
+      setColumnMessage(cause instanceof Error ? cause.message : localText(idioma, "Não foi possível salvar o padrão.", "No fue posible guardar el valor predeterminado."));
+    } finally {
+      setSavingDefaults(false);
+    }
+  }
+
+  const columnUi = {
+    title: localText(idioma, "Métricas da tabela", "Métricas de la tabla"),
+    localHint: localText(
+      idioma,
+      "Sua escolha fica somente neste navegador.",
+      "Tu selección queda solamente en este navegador.",
+    ),
+    saveDefault: localText(
+      idioma,
+      "Salvar como padrão da organização",
+      "Guardar como predeterminado de la organización",
+    ),
+  };
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-6">
@@ -382,6 +537,45 @@ export function TrafficDashboard() {
               </div>
             </>
           )}
+          {report && (
+            <details className="relative">
+              <summary className="cursor-pointer rounded-md border px-3 py-2 text-sm font-medium">
+                {localText(idioma, "Colunas", "Columnas")} ({selectedColumns.length || report.default_columns.length})
+              </summary>
+              <div className="absolute right-0 z-20 mt-2 w-[min(92vw,32rem)] rounded-xl border bg-card p-4 shadow-xl">
+                <p className="text-sm font-semibold">{columnUi.title}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {columnUi.localHint}
+                </p>
+                <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2">
+                  {CAMPAIGN_METRIC_COLUMNS.map((column) => (
+                    <label key={column} className="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 size-4 accent-primary"
+                        checked={(selectedColumns.length ? selectedColumns : report.default_columns).includes(column)}
+                        onChange={() => toggleColumn(column)}
+                      />
+                      <span>{columnLabel(column, idioma)}</span>
+                    </label>
+                  ))}
+                </div>
+                {report.can_manage_defaults && (
+                  <button
+                    type="button"
+                    className="mt-4 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+                    disabled={savingDefaults}
+                    onClick={saveDefaultColumns}
+                  >
+                    {savingDefaults
+                      ? localText(idioma, "Salvando…", "Guardando…")
+                      : columnUi.saveDefault}
+                  </button>
+                )}
+                {columnMessage && <p className="mt-2 text-xs text-muted-foreground">{columnMessage}</p>}
+              </div>
+            </details>
+          )}
         </div>
       </header>
 
@@ -427,11 +621,10 @@ export function TrafficDashboard() {
         const campaignLabels = {
           campaign: t("Campanha"),
           total: t("Total"),
-          investment: t("Investimento"),
           conversions: conversionLabel,
-          cpa: t("Custo por conversão"),
           openMedia: t("Abrir mídia"),
         };
+        const visibleColumns = selectedColumns.length ? selectedColumns : report.default_columns;
         return (
           <section key={group.currency} className="space-y-6">
             {report.currencies.length > 1 && (
@@ -535,11 +728,11 @@ export function TrafficDashboard() {
                 </div>
                 <div className="space-y-5 p-4 sm:p-5">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                    <Kpi label={t("Alcance")} value={number(meta.reach)} />
+                    <Kpi label={t("Alcance")} value={meta.reach == null ? "—" : number(meta.reach)} />
                     <Kpi label={t("Impressões")} value={number(meta.impressions)} />
                     <Kpi
                       label={t("Frequência")}
-                      value={meta.reach > 0 ? `${number(meta.impressions / meta.reach)}x` : "—"}
+                      value={meta.reach != null && meta.reach > 0 ? `${number(meta.impressions / meta.reach)}x` : "—"}
                     />
                     <Kpi
                       label="CPM"
@@ -600,7 +793,9 @@ export function TrafficDashboard() {
                         ].map(([label, value]) => (
                           <div key={String(label)}>
                             <p className="text-muted-foreground">{label}</p>
-                            <p className="font-semibold">{number(Number(value))}</p>
+                            <p className="font-semibold">
+                              {value == null ? "—" : number(Number(value))}
+                            </p>
                           </div>
                         ))}
                       </div>
@@ -613,6 +808,8 @@ export function TrafficDashboard() {
                     total={meta}
                     platform="meta_ads"
                     labels={campaignLabels}
+                    columns={visibleColumns}
+                    idioma={idioma}
                   />
                 </div>
               </section>
@@ -673,6 +870,8 @@ export function TrafficDashboard() {
                     total={google}
                     platform="google_ads"
                     labels={campaignLabels}
+                    columns={visibleColumns}
+                    idioma={idioma}
                   />
                 </div>
               </section>

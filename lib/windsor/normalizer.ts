@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { CONVERSION_FIELDS, type AdPlatform, type NormalizedFact, type WindsorAccount, type WindsorRow } from "./types";
+import {
+  BUDGET_FIELDS,
+  CONVERSION_FIELDS,
+  type AdPlatform,
+  type NormalizedFact,
+  type WindsorAccount,
+  type WindsorRow,
+} from "./types";
 
 const MOJIBAKE = /Ã.|Â.|â[\u0080-\u00bf]/;
 export function repairMojibake(value: string): string {
@@ -90,7 +97,7 @@ export function normalizeFacts(rows: WindsorRow[], configuredPlatform: AdPlatfor
     const adName = text(row, "ad_name");
     const spend = platform === "google_ads" ? numeric(row, "cost") : numeric(row, "spend");
     const conversions = Object.fromEntries(
-      CONVERSION_FIELDS
+      [...CONVERSION_FIELDS, ...BUDGET_FIELDS]
         .map((field): [string, number] => [field, numeric(row, field)])
         .filter((entry) => entry[1] > 0),
     );

@@ -28,4 +28,19 @@ describe("cliente Windsor por conta", () => {
     expect(WINDSOR_REQUEST_TIMEOUT_MS).toBe(75_000);
     expect(WINDSOR_FETCH_DEADLINE_MS + WINDSOR_REQUEST_TIMEOUT_MS).toBeLessThan(600_000);
   });
+
+  it("consulta alcance agregado no intervalo sem dimensão diária", () => {
+    const url = buildWindsorUrl(
+      "chave-de-teste",
+      ["account_id", "campaign_id", "campaign", "reach"],
+      undefined,
+      undefined,
+      { accountId: "act_123", platform: "meta_ads" },
+      { from: "2026-09-01", to: "2026-09-18" },
+    );
+    expect(url.searchParams.get("date_preset")).toBeNull();
+    expect(url.searchParams.get("date_from")).toBe("2026-09-01");
+    expect(url.searchParams.get("date_to")).toBe("2026-09-18");
+    expect(url.searchParams.get("fields")).not.toContain("date");
+  });
 });

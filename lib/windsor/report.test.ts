@@ -64,4 +64,48 @@ describe("relatório de tráfego", () => {
     expect(group?.campaigns[0]?.adsets[0]?.ads).toHaveLength(1);
     expect(group?.campaigns[0]?.adsets[0]?.ads[0]?.spend).toBe(100);
   });
+
+  it("não soma orçamento por dia e não publica alcance diário como alcance do período", () => {
+    const [group] = buildTrafficReport({
+      model: "ecommerce", conversionFields: ["actions_purchase"],
+      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      facts: [
+        fact({
+          occurred_on: "2026-09-17", reach: 800,
+          conversions: {
+            actions_purchase: 1, actions_landing_page_view: 10, actions_add_to_cart: 4,
+            actions_initiate_checkout: 2, campaign_daily_budget: 12500,
+          },
+        }),
+        fact({
+          occurred_on: "2026-09-18", reach: 900,
+          conversions: {
+            actions_purchase: 1, actions_landing_page_view: 15, actions_add_to_cart: 6,
+            actions_initiate_checkout: 3, campaign_daily_budget: 12500,
+          },
+        }),
+      ],
+    });
+    const campaign = group?.campaigns[0];
+    expect(campaign?.budget).toBe(125);
+    expect(campaign?.budget_type).toBe("daily");
+    expect(campaign?.reach).toBeNull();
+    expect(campaign?.landing_page_views).toBe(25);
+    expect(campaign?.add_to_cart).toBe(10);
+    expect(campaign?.initiate_checkout).toBe(5);
+    expect(campaign?.purchases).toBe(2);
+    expect(campaign?.cost_per_add_to_cart).toBe(20);
+  });
+
+  it("usa alcance agregado do período na campanha", () => {
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      facts: [fact({ campaign_id: "camp-1", reach: 900 })],
+      campaignReach: new Map([["meta_ads:camp-1", 750]]),
+    });
+    expect(group?.campaigns[0]?.reach).toBe(750);
+    expect(group?.summary.reach).toBeNull();
+  });
 });
