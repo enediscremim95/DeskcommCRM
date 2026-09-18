@@ -70,9 +70,9 @@ describe("entrega de acesso do dono", () => {
     exception when insufficient_privilege then null; end;
   `));
 
-  it("convite legado continua pendente e não cria entrega de credenciais", () => prove(`
+  it("convite não cria entrega de credenciais, mas a organização já nasce pronta", () => prove(`
     again := public.fn_create_tenant_with_owner('${actor}',gen_random_uuid(),${request}::jsonb-'delivery_mode'||'{"slug":"legacy244"}'::jsonb,'abcd');
     if exists(select 1 from public.tenant_owner_access where organization_id=(again->>'id')::uuid) then raise exception 'legacy delivery'; end if;
-    if exists(select 1 from public.organizations where id=(again->>'id')::uuid and onboarded_at is not null) then raise exception 'legacy onboarded'; end if;
+    if not exists(select 1 from public.organizations where id=(again->>'id')::uuid and onboarded_at is not null) then raise exception 'invite entered onboarding'; end if;
   `));
 });

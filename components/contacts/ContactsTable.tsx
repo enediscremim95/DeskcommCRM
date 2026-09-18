@@ -192,7 +192,24 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
       </TableHeader>
       <TableBody>
         {contacts.map((c) => (
-          <TableRow key={c.id} className="cursor-pointer">
+          <TableRow
+            key={c.id}
+            className="cursor-pointer hover:bg-surface-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            tabIndex={0}
+            role="link"
+            aria-label={`${t("Abrir ficha de")} ${displayName(c, t)}`}
+            onClick={(event) => {
+              if ((event.target as HTMLElement).closest("a,button,input,select,textarea")) return;
+              router.push(`/app/contacts/${c.id}`);
+            }}
+            onKeyDown={(event) => {
+              if (event.currentTarget !== event.target) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                router.push(`/app/contacts/${c.id}`);
+              }
+            }}
+          >
             <TableCell className="font-medium">
               <Link href={`/app/contacts/${c.id}`} className="hover:underline">
                 {displayName(c)}
