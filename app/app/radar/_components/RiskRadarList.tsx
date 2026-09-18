@@ -12,6 +12,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useAtRiskLeads, type AtRiskData, type AtRiskLead } from "@/hooks/leads/useAtRiskLeads";
 import { apiClient } from "@/lib/api/client";
 import type { TarefaDoRadar } from "@/lib/leads/radar-de-risco";
+import type { ChannelAlert } from "@/app/api/v1/leads/at-risk/route";
 import type { NovaTarefa, Tarefa } from "@/lib/tarefas/tipos";
 import { ArrowRight, CheckCircle, ClockCountdown, Warning } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
 const VINTE_E_QUATRO_HORAS_MS = 24 * 3_600_000;
 
 type AlertaDoRadar =
+  | { tipo: "conexao"; alerta: ChannelAlert; ordem: number }
   | { tipo: "tarefa"; tarefa: TarefaDoRadar; faixa: "atrasada" | "proxima"; ordem: number }
   | { tipo: "lead"; lead: AtRiskLead; ordem: number };
 
@@ -49,6 +51,11 @@ export function montaAlertasDoRadar(
 ): AlertaDoRadar[] {
   const agoraMs = agora.getTime();
   const limiteMs = agoraMs + VINTE_E_QUATRO_HORAS_MS;
+  const conexoes: AlertaDoRadar[] = (data.channel_alerts ?? []).map((alerta) => ({
+    tipo: "conexao",
+    alerta,
+    ordem: new Date(alerta.created_at).getTime(),
+  }));
 
   const tarefas: AlertaDoRadar[] = (data.tasks ?? []).flatMap((tarefa) => {
     const prazo = new Date(tarefa.due_date).getTime();
@@ -75,14 +82,16 @@ export function montaAlertasDoRadar(
     .map((lead) => ({ tipo: "lead", lead, ordem: lead.hours_since_activity }));
 
   const prioridade = (alerta: AlertaDoRadar): number => {
-    if (alerta.tipo === "tarefa") return alerta.faixa === "atrasada" ? 0 : 2;
-    return alerta.lead.risk === "critico" ? 1 : 3;
+    if (alerta.tipo === "conexao") return 0;
+    if (alerta.tipo === "tarefa") return alerta.faixa === "atrasada" ? 1 : 3;
+    return alerta.lead.risk === "critico" ? 2 : 4;
   };
 
-  return [...tarefas, ...leads].sort((a, b) => {
+  return [...conexoes, ...tarefas, ...leads].sort((a, b) => {
     const porPrioridade = prioridade(a) - prioridade(b);
     if (porPrioridade !== 0) return porPrioridade;
     if (a.tipo === "tarefa" && b.tipo === "tarefa") return a.ordem - b.ordem;
+    if (a.tipo === "conexao" && b.tipo === "conexao") return b.ordem - a.ordem;
     return b.ordem - a.ordem;
   });
 }
@@ -145,7 +154,9 @@ export function RiskRadarList() {
     <>
       <ul className="grid gap-3" data-testid="radar-alertas">
         {alertas.map((alerta) =>
-          alerta.tipo === "tarefa" ? (
+          alerta.tipo === "conexao" ? (
+            <ConexaoAlerta key={`conexao-${alerta.alerta.id}`} alerta={alerta.alerta} />
+          ) : alerta.tipo === "tarefa" ? (
             <TarefaAlerta
               key={`tarefa-${alerta.tarefa.id}`}
               tarefa={alerta.tarefa}
@@ -181,6 +192,25 @@ export function RiskRadarList() {
       ) : null}
     </>
   );
+}
+
+function ConexaoAlerta({ alerta }: { alerta: ChannelAlert }) {
+  const t = useT();
+  return <li
+    data-testid="radar-item"
+    data-alert-kind="conexao-caida"
+    className="flex flex-col gap-3 rounded-xl border border-destructive/40 bg-destructive/5 p-4 sm:flex-row sm:items-center"
+  >
+    <div className="flex min-w-0 flex-1 items-start gap-3">
+      <Warning size={20} className="mt-0.5 shrink-0 text-destructive" aria-hidden />
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-wide text-destructive">{t("Conexão do WhatsApp fora do ar")}</p>
+        <p className="text-sm font-semibold">{alerta.title}</p>
+        {alerta.body ? <p className="mt-1 text-xs text-muted-foreground">{alerta.body}</p> : null}
+      </div>
+    </div>
+    <Button asChild size="sm"><Link href="/app/connections">{t("Reconectar WhatsApp")}</Link></Button>
+  </li>;
 }
 
 function TarefaAlerta({

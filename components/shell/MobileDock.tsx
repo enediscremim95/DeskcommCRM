@@ -27,6 +27,7 @@ export function MobileDock() {
     user.is_platform_admin && !user.support,
     activeOrg?.role ?? null,
     activeOrg?.interface_settings,
+    activeOrg?.integration_access,
   ).flatMap((grupo) => grupo.items);
 
   const atalhos = DESTINOS_DIARIOS.flatMap((href) => {

@@ -1,4 +1,5 @@
 import type { Role } from "@/lib/auth/types";
+import type { IntegrationSlug } from "@/lib/integrations/types";
 
 /**
  * Registro de navegação — a ÚNICA lista de destinos do app do tenant.
@@ -43,6 +44,8 @@ export interface NavMetadata {
   /** Ausente = só no hub. `true` = uso diário, sobe para o sidebar. */
   sidebar?: boolean;
   healthDot?: boolean;
+  /** Ferramenta que o dono da instalação precisa liberar para esta organização. */
+  integration?: IntegrationSlug;
 }
 
 /**
@@ -283,16 +286,26 @@ export const NAV_CATALOG = [
 
   // ---- Agente de IA — montar, ensinar, acompanhar ----
   {
-    href: "/app/ai/agents",
+    href: "/app/ai/workflows",
     // Renomeado de "Agentes" por decisão do dono (17/09/2026): o agente que
     // atende mora no N8N, fora deste sistema.
     label: "N8N",
-    description: "Quem atende por você: instruções, modelo, ferramentas e publicação.",
+    description: "Os fluxos de automação liberados pelo administrador, em modo somente leitura.",
     icon: "Robot",
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
     sidebar: true,
+    integration: "n8n",
+  },
+  {
+    href: "/app/ai/agents",
+    label: "Agentes nativos",
+    description: "Configuração técnica dos agentes internos mantidos pelo CRM.",
+    icon: "Robot",
+    group: "ia",
+    section: "Montar o agente",
+    minRole: "manager",
   },
   {
     href: "/app/ai/followups",
@@ -435,6 +448,7 @@ export const NAV_CATALOG = [
     minRole: "admin",
     sidebar: true,
     healthDot: true,
+    integration: "whatsapp",
   },
   {
     // Não tinha link nenhum no app inteiro: só se chegava digitando a URL.
@@ -513,6 +527,7 @@ export const NAV_CATALOG = [
     // pessoa — orçamento e criativo são da empresa inteira. Mesmo grau dos
     // outros dois vizinhos do grupo.
     sidebar: true,
+    integration: "windsor",
   },
   {
     // O Relatório responde à visão recorrente de custo por resultado. Meta Ads

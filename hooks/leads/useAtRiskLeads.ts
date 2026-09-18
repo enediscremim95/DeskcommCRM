@@ -11,7 +11,7 @@ import { apiClient } from "@/lib/api/client";
  * diverge em silêncio.
  */
 export type { AtRiskLead } from "@/app/api/v1/leads/at-risk/route";
-import type { AtRiskLead, TarefaDoRadar } from "@/app/api/v1/leads/at-risk/route";
+import type { AtRiskLead, ChannelAlert, TarefaDoRadar } from "@/app/api/v1/leads/at-risk/route";
 import type { DemandaSemProximoPasso } from "@/lib/leads/radar-de-risco";
 
 export interface AtRiskData {
@@ -22,6 +22,7 @@ export interface AtRiskData {
   sem_proximo_passo: DemandaSemProximoPasso[];
   total_sem_proximo_passo: number;
   tasks?: TarefaDoRadar[];
+  channel_alerts?: ChannelAlert[];
 }
 
 /** Radar de risco (C1). Polling 60s — a atividade dos leads muda no worker/inbox. */

@@ -44,6 +44,7 @@ const TABS: TabItem[] = [
   { label: "Visão Geral", href: "", disabled: false },
   { label: "Saúde", href: "/health", disabled: false },
   { label: "WhatsApp", href: "/whatsapp", disabled: false },
+  { label: "Integrações", href: "/integrations", disabled: false },
   { label: "Equipe", href: "/team", disabled: true },
   { label: "Tráfego", href: "/traffic", disabled: false },
   { label: "Uso", href: "/usage", disabled: true },

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Integrações liberadas por organização",
+    "subtitle": "O dono configura; o cliente recebe somente leitura quando liberado",
+    "output": "integracoes-por-organizacao.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "admin", "label": "Admin da instalação" },
+    { "id": "crm", "label": "CRM" },
+    { "id": "externo", "label": "Serviços externos" },
+    { "id": "cliente", "label": "Cliente" }
+  ],
+  "mainPath": ["configuracao", "permissoes", "projecao", "cliente"],
+  "nodes": [
+    { "id": "configuracao", "lane": "admin", "col": 0, "type": "ui", "label": "Aba Integrações: libera ferramenta, QR e workflows" },
+    { "id": "permissoes", "lane": "crm", "col": 1, "type": "database", "label": "Permissões e vínculos por organization_id, RLS fechada" },
+    { "id": "origens", "lane": "externo", "col": 2, "type": "service", "label": "n8n GET-only, Windsor nativo e conector de WhatsApp existente" },
+    { "id": "projecao", "lane": "crm", "col": 3, "type": "service", "label": "APIs filtram org e removem segredos, parâmetros e payloads" },
+    { "id": "cliente", "lane": "cliente", "col": 4, "type": "ui", "label": "Menu e páginas somente quando client_visible=true" },
+    { "id": "radar", "lane": "cliente", "col": 5, "type": "ui", "label": "Radar mostra alerta aberto; saúde restabelecida o remove" }
+  ],
+  "edges": [
+    { "from": "configuracao", "to": "permissoes", "label": "RPC atômica + auditoria" },
+    { "from": "origens", "to": "projecao", "label": "leitura server-side" },
+    { "from": "permissoes", "to": "projecao", "label": "nega por ausência" },
+    { "from": "projecao", "to": "cliente", "label": "DTO sanitizado" },
+    { "from": "permissoes", "to": "cliente", "label": "menu, página e API" },
+    { "from": "cliente", "to": "radar", "label": "conexão visível" }
+  ]
+}

@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import { NAV_CATALOG, type NavMetadata, type NavDestinationId } from "./catalogo";
+import type { IntegrationAccessMap } from "@/lib/integrations/types";
 
 const ids = NAV_CATALOG.map((d) => d.href);
 export const interfaceSettingsSchema = z
@@ -41,14 +42,24 @@ export function essencial(d: NavMetadata, role: Role | null, platform = false): 
   );
 }
 export function canSee(
-  d: Pick<NavMetadata, "href" | "minRole">,
+  d: Pick<NavMetadata, "href" | "minRole" | "integration">,
   platform: boolean,
   role: Role | null,
+  integrations?: IntegrationAccessMap,
 ): boolean {
-  return platform || (!!role && ROLE_RANK[role] >= ROLE_RANK[d.minRole ?? "viewer"]);
+  if (platform) return true;
+  if (!role || ROLE_RANK[role] < ROLE_RANK[d.minRole ?? "viewer"]) return false;
+  // O layout real sempre injeta o mapa, inclusive fechado quando a consulta
+  // falha. `undefined` preserva consumidores puros/legados que só projetam o
+  // catálogo e não são fronteira de autorização.
+  return !d.integration || integrations === undefined || integrations[d.integration].client_visible;
 }
-export function permitidos(platform: boolean, role: Role | null): NavMetadata[] {
-  return NAV_CATALOG.filter((d) => canSee(d, platform, role));
+export function permitidos(
+  platform: boolean,
+  role: Role | null,
+  integrations?: IntegrationAccessMap,
+): NavMetadata[] {
+  return NAV_CATALOG.filter((d) => canSee(d, platform, role, integrations));
 }
 /** Leitura tolera versões antigas/removidas sem lançar no layout. */
 export function lerInterface(raw: unknown): {
@@ -75,9 +86,10 @@ export function destinosDaInterface(
   raw: unknown,
   platform: boolean,
   role: Role | null,
+  integrations?: IntegrationAccessMap,
 ): NavMetadata[] {
   const { settings } = lerInterface(raw);
-  const allowed = permitidos(platform, role);
+  const allowed = permitidos(platform, role, integrations);
   const chosen =
     settings.destinos ?? (settings.preset === "simplificada" ? SIMPLIFICADA : undefined);
   return allowed.filter(

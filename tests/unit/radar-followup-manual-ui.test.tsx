@@ -132,9 +132,27 @@ describe("Radar somente com alertas acionáveis", () => {
     const alertas = montaAlertasDoRadar(data, AGORA);
     expect(
       alertas.map((alerta) =>
-        alerta.tipo === "tarefa" ? alerta.tarefa.id : alerta.lead.id,
+        alerta.tipo === "tarefa"
+          ? alerta.tarefa.id
+          : alerta.tipo === "lead"
+            ? alerta.lead.id
+            : alerta.alerta.id,
       ),
     ).toEqual(["task-overdue", "lead-stalled", "task-soon"]);
+  });
+
+  it("coloca conexão caída no topo do Radar", () => {
+    const alertas = montaAlertasDoRadar({
+      ...data,
+      channel_alerts: [{
+        id: "channel-alert",
+        severity: "critical",
+        title: "WhatsApp fora do ar",
+        body: "Nenhuma mensagem entra nem sai.",
+        created_at: "2026-09-18T11:00:00.000Z",
+      }],
+    }, AGORA);
+    expect(alertas[0]?.tipo).toBe("conexao");
   });
 
   it("renderiza cards compactos e abre o formulário de follow-up sem sair do Radar", () => {

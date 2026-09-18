@@ -7,9 +7,11 @@ import type { Role } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { hubSections, NAV_GROUPS, type NavGroupId } from "@/lib/navigation/registry";
+import type { IntegrationAccessMap } from "@/lib/integrations/types";
 
 interface NavHubProps {
   interfaceSettings?: InterfaceSettings;
+  integrationAccess?: IntegrationAccessMap;
   group: NavGroupId;
   isPlatformAdmin: boolean;
   role: Role | null;
@@ -57,9 +59,10 @@ export function NavHub({
   title,
   subtitle,
   interfaceSettings,
+  integrationAccess,
   locale = IDIOMA_PADRAO,
 }: NavHubProps) {
-  const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings);
+  const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings, integrationAccess);
   const nomeDoGrupo = NAV_GROUPS.find((item) => item.id === group)?.label ?? title;
 
   return (

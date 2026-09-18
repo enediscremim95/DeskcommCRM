@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useT } from "@/hooks/i18n/useT";
 
 interface Connector {
+  client_can_reconnect?: boolean;
   id: string;
   provider_label: string;
   instance_name: string;
@@ -31,6 +32,7 @@ export function ManagedQrConnector({ fallback }: { fallback: ReactNode }) {
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [expiresIn, setExpiresIn] = useState(0);
   const [retryIn, setRetryIn] = useState(0);
+  const [canReconnect, setCanReconnect] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +42,7 @@ export function ManagedQrConnector({ fallback }: { fallback: ReactNode }) {
         if (cancelled) return;
         if (!res.ok) throw new Error(body.error?.message ?? t("Falha ao carregar o conector."));
         setConnector(body.data ?? null);
+        setCanReconnect(body.data?.client_can_reconnect === true);
       })
       .catch((cause: unknown) => {
         if (!cancelled) setError(cause instanceof Error ? cause.message : t("Falha ao carregar o conector."));
@@ -152,7 +155,9 @@ export function ManagedQrConnector({ fallback }: { fallback: ReactNode }) {
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
             <p className="font-medium text-destructive">{t("WhatsApp desconectado")}</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {t("Gere um QR somente quando estiver com o celular em mãos. Cada tentativa conta para o limite de segurança.")}
+              {canReconnect
+                ? t("Gere um QR somente quando estiver com o celular em mãos. Cada tentativa conta para o limite de segurança.")
+                : t("A reconexão é feita pelo administrador da instalação.")}
             </p>
           </div>
         )}
@@ -182,7 +187,7 @@ export function ManagedQrConnector({ fallback }: { fallback: ReactNode }) {
         )}
 
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => void requestQr()} disabled={connected || requestingQr || retryIn > 0 || connector.qr_attempts >= 3}>
+          <Button hidden={!canReconnect} onClick={() => void requestQr()} disabled={connected || requestingQr || retryIn > 0 || connector.qr_attempts >= 3}>
             {requestingQr ? t("Gerando…") : retryIn > 0 ? `${t("Aguarde")} ${retryIn}s` : t("Gerar QR para reconectar")}
           </Button>
           <Button variant="outline" onClick={() => void checkState()} disabled={checking}>
@@ -190,7 +195,9 @@ export function ManagedQrConnector({ fallback }: { fallback: ReactNode }) {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          {t("Limite: uma geração por minuto e três tentativas até a reconexão ser confirmada. A instância e o webhook atual não são alterados.")}
+          {canReconnect
+            ? t("Limite: uma geração por minuto e três tentativas até a reconexão ser confirmada. A instância e o webhook atual não são alterados.")
+            : t("Solicite a reconexão ao administrador da instalação.")}
         </p>
       </CardContent>
     </Card>

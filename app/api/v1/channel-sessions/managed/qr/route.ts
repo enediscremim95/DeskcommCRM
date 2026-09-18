@@ -6,6 +6,7 @@ import { mfaEmDivida } from "@/lib/auth/server";
 import { ManagedConnectorError, requestManagedConnectorQr } from "@/lib/channels/managed-qr";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { clientCanReconnectWhatsapp } from "@/lib/integrations/access";
 
 export const dynamic = "force-dynamic";
 export async function POST() {
@@ -14,9 +15,13 @@ export async function POST() {
   const requestId = randomUUID();
   const auth = await requireRole("admin", { requestId, resource: "channel_sessions", allowPlatformAdmin: true });
   if (!auth.ok) return auth.response;
+  const admin = createAdminClient();
+  if (!(auth.user.is_platform_admin && !auth.user.support) && !(await clientCanReconnectWhatsapp(admin, auth.org.orgId))) {
+    return fail("forbidden", "Reconexão por QR não liberada para esta organização.", 403, { requestId });
+  }
   if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
   try {
-    const data = await requestManagedConnectorQr(createAdminClient(), auth.org.orgId);
+    const data = await requestManagedConnectorQr(admin, auth.org.orgId);
     await audit({ action: "channel.managed_qr_requested", actorUserId: auth.user.id,
       organizationId: auth.org.orgId, resourceType: "channel_session", requestId,
       metadata: { attempt: data.attempts } });

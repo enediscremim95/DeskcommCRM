@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { ManagedConnectorError, notifyManagedConnectorRecovered, readManagedConnectorState } from "@/lib/channels/managed-qr";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { clientCanViewIntegration } from "@/lib/integrations/access";
 
 export const dynamic = "force-dynamic";
 export async function POST() {
@@ -14,6 +15,9 @@ export async function POST() {
   const auth = await requireRole("admin", { requestId, resource: "channel_sessions", allowPlatformAdmin: true });
   if (!auth.ok) return auth.response;
   const admin = createAdminClient();
+  if (!(auth.user.is_platform_admin && !auth.user.support) && !(await clientCanViewIntegration(admin, auth.org.orgId, "whatsapp"))) {
+    return fail("forbidden", "Integração não liberada para esta organização.", 403, { requestId });
+  }
   try {
     const result = await readManagedConnectorState(admin, auth.org.orgId);
     let hook: { status: "skipped" | "success" | "failed"; error: string | null } = { status: "skipped", error: null };
