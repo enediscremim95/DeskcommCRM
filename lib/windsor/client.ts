@@ -2,9 +2,16 @@ import "server-only";
 
 import { z } from "zod";
 import { env } from "@/lib/env";
-import type { WindsorRow } from "./types";
+import {
+  buildWindsorUrl,
+  isTimeoutError,
+  WINDSOR_REQUEST_TIMEOUT_MS,
+  type AccountSelection,
+} from "./request";
+import type { AdPlatform, WindsorRow } from "./types";
 
-const ENDPOINT = "https://connectors.windsor.ai/all";
+export { WINDSOR_REQUEST_TIMEOUT_MS } from "./request";
+const WINDSOR_LEGACY_REQUEST_TIMEOUT_MS = 180_000;
 const responseSchema = z.object({
   data: z.array(z.record(z.string(), z.unknown())).optional(),
   result: z.array(z.record(z.string(), z.unknown())).optional(),
@@ -13,7 +20,7 @@ const responseSchema = z.object({
 
 export class WindsorUnavailableError extends Error {
   constructor(
-    public readonly code: "windsor_not_configured" | "windsor_incomplete" | "windsor_http_error" | "windsor_invalid_response",
+    public readonly code: "windsor_not_configured" | "windsor_incomplete" | "windsor_http_error" | "windsor_invalid_response" | "windsor_timeout",
     message: string,
   ) {
     super(message);
@@ -30,21 +37,34 @@ function errorText(value: unknown): string {
   return raw.replace(/api_key=[^&\s]+/gi, "api_key=[REDACTED]");
 }
 
-async function request(fields: readonly string[], preset: string, accountId?: string): Promise<WindsorRow[]> {
+async function request(
+  fields: readonly string[],
+  preset: string,
+  legacyAccountId?: string,
+  selection?: AccountSelection,
+): Promise<WindsorRow[]> {
   if (!env.WINDSOR_API_KEY) {
     throw new WindsorUnavailableError("windsor_not_configured", "WINDSOR_API_KEY não está configurada nesta instalação.");
   }
-  const url = new URL(ENDPOINT);
-  url.searchParams.set("api_key", env.WINDSOR_API_KEY);
-  url.searchParams.set("date_preset", preset);
-  url.searchParams.set("fields", fields.join(","));
-  if (accountId) url.searchParams.set("account_id", accountId);
+  const url = buildWindsorUrl(env.WINDSOR_API_KEY, fields, preset, legacyAccountId, selection);
+  const timeoutMs = selection ? WINDSOR_REQUEST_TIMEOUT_MS : WINDSOR_LEGACY_REQUEST_TIMEOUT_MS;
 
-  const response = await fetch(url, {
-    cache: "no-store",
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(180_000),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      cache: "no-store",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    if (isTimeoutError(error)) {
+      throw new WindsorUnavailableError(
+        "windsor_timeout",
+        `Windsor não respondeu em ${timeoutMs / 1000} segundos.`,
+      );
+    }
+    throw error;
+  }
   if (!response.ok) {
     throw new WindsorUnavailableError("windsor_http_error", `Windsor respondeu HTTP ${response.status}.`);
   }
@@ -62,12 +82,17 @@ async function request(fields: readonly string[], preset: string, accountId?: st
   return parsed.data.data ?? parsed.data.result ?? [];
 }
 
-async function withTodayFallback(fields: readonly string[], days: 30 | 90, accountId?: string) {
+async function withTodayFallback(
+  fields: readonly string[],
+  days: 30 | 90,
+  legacyAccountId?: string,
+  selection?: AccountSelection,
+) {
   try {
-    return await request(fields, `last_${days}dT`, accountId);
+    return await request(fields, `last_${days}dT`, legacyAccountId, selection);
   } catch (error) {
     if (error instanceof WindsorUnavailableError && error.code === "windsor_incomplete") {
-      return request(fields, `last_${days}d`, accountId);
+      return request(fields, `last_${days}d`, legacyAccountId, selection);
     }
     throw error;
   }
@@ -77,3 +102,9 @@ export const fetchWindsorRows = (fields: readonly string[], accountId?: string) 
   withTodayFallback(fields, 90, accountId);
 export const fetchWindsorRows30d = (fields: readonly string[], accountId?: string) =>
   withTodayFallback(fields, 30, accountId);
+
+export const fetchWindsorAccountRows = (
+  fields: readonly string[],
+  accountId: string,
+  platform: AdPlatform,
+) => withTodayFallback(fields, 90, undefined, { accountId, platform });

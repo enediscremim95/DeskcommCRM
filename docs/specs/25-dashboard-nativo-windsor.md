@@ -4,13 +4,13 @@
 
 O Windsor é uma integração da instalação, configurada somente por `WINDSOR_API_KEY` no ambiente. Cada organização recebe uma configuração própria, uma lista explícita de contas por `account_id` e um modelo de dashboard. A página do cliente lê apenas fatos persistidos no Postgres e nunca chama o Windsor.
 
-O armazenamento usa quatro peças: configuração por organização, contas autorizadas, fatos diários granulares e execuções de sincronização. O cron busca o conjunto compartilhado uma vez por rodada, deduplica, valida e só então separa as linhas por `account_id`. Contas ausentes ou com gasto zerado no lote recebem uma busca de recuperação, ainda filtrada localmente pelo ID. Cada rodada grava uma geração isolada; a configuração só aponta para essa geração depois que todas as contas terminam. Uma falha parcial, portanto, nunca aparece misturada ao último conjunto confirmado.
+O armazenamento usa quatro peças: configuração por organização, contas autorizadas, fatos diários granulares e execuções de sincronização. O cron busca cada conta no conector da sua plataforma com `select_accounts`, no máximo seis pedidos simultâneos, timeout de 75 segundos por pedido e prazo global de 450 segundos para iniciar novas consultas. Meta é lida em dois níveis: conjunto para KPIs exatos e anúncio para o drill com miniatura; o relatório usa o primeiro nos totais e o segundo somente na lista de anúncios, sem somar os dois. Cada resposta ainda é filtrada localmente pelo `account_id` e plataforma antes de deduplicar e normalizar. Cada rodada grava uma geração isolada; a configuração só aponta para essa geração depois que todas as contas da organização terminam. Uma falha parcial, portanto, nunca aparece misturada ao último conjunto confirmado.
 
 ## Fluxo
 
 1. O platform admin abre a aba Tráfego da organização, carrega o catálogo do Windsor e escolhe contas, modelo e até dois campos de conversão.
 2. Salvar a configuração emite auditoria e deixa o dashboard aguardando a primeira sincronização.
-3. O cron da VPS busca até 90 dias, normaliza Meta e Google, rejeita respostas degradadas, persiste fatos e registra sucesso ou falha por organização.
+3. O cron da VPS busca até 90 dias por conta e plataforma, normaliza Meta e Google, rejeita respostas degradadas, persiste fatos e registra sucesso ou falha por organização.
 4. A aba Relatório lê somente o banco. Sem configuração nativa, mantém o `report_url` atual.
 5. O filtro de período consulta o banco no escopo da organização e devolve métricas separadas por moeda.
 

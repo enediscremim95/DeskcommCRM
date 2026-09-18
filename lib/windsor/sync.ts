@@ -5,21 +5,16 @@ import { randomUUID } from "node:crypto";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchWindsorRows } from "./client";
-import { accountId, deduplicateRows, normalizeFacts } from "./normalizer";
-import { CONVERSION_FIELDS, type AdPlatform, type WindsorRow } from "./types";
-
-export const WINDSOR_FIELDS = [
-  "date", "data_source", "account_id", "account_name", "account_currency", "currency",
-  "campaign_id", "campaign_name", "campaign", "campaign_objective",
-  "adset_id", "adset_name", "ad_id", "ad_name", "spend", "cost",
-  "impressions", "reach", "clicks", "actions_link_click",
-  ...CONVERSION_FIELDS,
-  "action_values_purchase", "conversion_value", "video_view", "actions_video_view",
-  "video_p25_watched_actions_video_view", "video_p50_watched_actions_video_view",
-  "video_p75_watched_actions_video_view", "video_p95_watched_actions_video_view",
-  "thumbnail_url", "image_url", "effective_object_story_id",
-] as const;
+import {
+  accountKey,
+  fetchSelectedAccountRows,
+  filterRowsForAccount,
+  type AccountFetchResult,
+  type AccountRow,
+} from "./account-fetch";
+import { fetchWindsorAccountRows } from "./client";
+import { deduplicateRows, normalizeFacts } from "./normalizer";
+import type { WindsorRow } from "./types";
 
 interface ConfigRow {
   organization_id: string;
@@ -27,13 +22,6 @@ interface ConfigRow {
   conversion_fields: string[];
   revenue_field: string | null;
   enabled: boolean;
-}
-interface AccountRow {
-  organization_id: string;
-  account_id: string;
-  platform: AdPlatform;
-  account_name: string;
-  currency: string;
 }
 interface SyncOptions {
   trigger: "cron" | "manual";
@@ -59,23 +47,15 @@ function sanitizeError(error: unknown): { code: string; message: string } {
     message: clean.slice(0, 500),
   };
 }
-function numeric(row: WindsorRow, ...keys: string[]): number {
-  for (const key of keys) {
-    const value = row[key];
-    const parsed = typeof value === "number" ? value : Number(value ?? 0);
-    if (Number.isFinite(parsed)) return Math.max(0, parsed);
-  }
-  return 0;
-}
 function chunks<T>(items: T[], size: number): T[][] {
   const result: T[][] = [];
   for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
   return result;
 }
+
 /**
- * Uma rodada busca o bulk uma vez e o reaproveita para todas as organizações.
- * O filtro por account_id é repetido mesmo nas buscas individuais porque o
- * Windsor ignora esse parâmetro em alguns conectores.
+ * Cada conta é buscada uma vez no conector da sua plataforma, com concorrência
+ * limitada. O filtro local permanece obrigatório antes de qualquer gravação.
  */
 export async function syncTrafficDashboards(options: SyncOptions): Promise<SyncSummary> {
   const admin = createAdminClient();
@@ -99,13 +79,14 @@ export async function syncTrafficDashboards(options: SyncOptions): Promise<SyncS
   if (accountError) throw new Error(`traffic_accounts_read_failed: ${accountError.message}`);
   const accounts = (accountData ?? []) as unknown as AccountRow[];
 
-  let bulk: WindsorRow[] = [];
-  let bulkFailure: unknown = null;
-  try {
-    bulk = options.preloadedRows ?? (await fetchWindsorRows(WINDSOR_FIELDS));
-  } catch (error) {
-    bulkFailure = error;
-  }
+  const fetched = options.preloadedRows
+    ? new Map(
+        accounts.map((account) => [
+          accountKey(account),
+          { rows: filterRowsForAccount(options.preloadedRows ?? [], account) } as AccountFetchResult,
+        ]),
+      )
+    : await fetchSelectedAccountRows(accounts, fetchWindsorAccountRows);
   const summary: SyncSummary = {
     configured: true,
     organizations: enabled.length,
@@ -132,20 +113,16 @@ export async function syncTrafficDashboards(options: SyncOptions): Promise<SyncS
       .eq("organization_id", config.organization_id);
 
     try {
-      if (bulkFailure) throw bulkFailure;
       if (selected.length === 0) throw new Error("windsor_no_accounts_selected");
       let received = 0;
       let removed = 0;
       let written = 0;
 
       for (const account of selected) {
-        let rows = bulk.filter((row) => accountId(row) === account.account_id);
-        const spend = rows.reduce((total, row) => total + numeric(row, "spend", "cost"), 0);
-        if (rows.length === 0 || spend === 0) {
-          const fallback = await fetchWindsorRows(WINDSOR_FIELDS, account.account_id);
-          const strictlyFiltered = fallback.filter((row) => accountId(row) === account.account_id);
-          if (strictlyFiltered.length > 0) rows = strictlyFiltered;
-        }
+        const result = fetched.get(accountKey(account));
+        if (!result) throw new Error("windsor_account_not_fetched");
+        if ("error" in result) throw result.error;
+        const rows = result.rows;
 
         received += rows.length;
         const deduplicated = deduplicateRows(rows);

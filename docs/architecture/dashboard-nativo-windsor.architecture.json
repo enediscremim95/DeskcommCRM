@@ -30,8 +30,8 @@
   "edges": [
     { "id": "e1", "from": "config", "to": "configdb", "label": "RPC atômica e auditada" },
     { "id": "e2", "from": "manual", "to": "normalizer", "label": "execução explícita" },
-    { "id": "e3", "from": "cron", "to": "windsor", "label": "bulk uma vez por rodada" },
-    { "id": "e4", "from": "windsor", "to": "normalizer", "label": "linhas brutas; fallback por conta" },
+    { "id": "e3", "from": "cron", "to": "windsor", "label": "por conta e plataforma; concorrência limitada" },
+    { "id": "e4", "from": "windsor", "to": "normalizer", "label": "Meta: conjunto + anúncio; filtro local exato" },
     { "id": "e5", "from": "configdb", "to": "normalizer", "label": "account_id autorizado" },
     { "id": "e6", "from": "normalizer", "to": "facts", "label": "upsert por geração" },
     { "id": "e7", "from": "normalizer", "to": "runs", "label": "sucesso ou falha visível" },
