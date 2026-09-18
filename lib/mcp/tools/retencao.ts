@@ -391,7 +391,8 @@ export const crmListAtRiskLeads: McpToolDefinition<typeof radarShape> = {
   description:
     "Radar de risco: as oportunidades ABERTAS que passaram da janela de esfriamento do próprio " +
     "estágio. Cada item traz risk='critico'|'em_risco'|'em_voo' (em_voo = já há retorno agendado, " +
-    "o sistema mantém viva), horas sem movimento, dono e a conversa. Ordenado por urgência. " +
+    "o sistema mantém viva), horas sem movimento, dono e a conversa. Um manual_followup vencido " +
+    "também leva o negócio ao Radar, mesmo recente, com título, descrição e prazo. Ordenado por urgência. " +
     "Traz TAMBÉM `sem_proximo_passo`: demandas abertas para as quais nada está marcado para " +
     "acontecer — cada uma é alguém esperando sem previsão. Campos: contact_id, contact_name, " +
     "horas_aberta e origem. Essas NÃO saem sozinhas: resolva cada uma agendando um retorno " +

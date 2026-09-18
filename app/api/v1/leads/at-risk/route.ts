@@ -28,7 +28,7 @@ const querySchema = z.object({
   min_hours: z.coerce.number().int().min(0).max(2000).default(RADAR_MIN_HOURS_PADRAO),
 });
 
-export type { AtRiskLead } from "@/lib/leads/radar-de-risco";
+export type { AtRiskLead, TarefaDoRadar } from "@/lib/leads/radar-de-risco";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -54,6 +54,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       humanRole: org.role,
       limit,
       minHours: min_hours,
+      includeTasks: true,
     });
     return ok(radar, { requestId });
   } catch {

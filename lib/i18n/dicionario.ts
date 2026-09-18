@@ -502,6 +502,16 @@ export const DICIONARIO: Traducoes = {
   Automação: { es: "Automatización" },
   Agentes: { es: "Agentes" },
   "Follow-ups": { es: "Seguimientos" },
+  "Próximos contatos deste negócio. Quando vencem, aparecem no Radar.": { es: "Próximos contactos de este negocio. Cuando vencen, aparecen en el Radar." },
+  "Não foi possível carregar os follow-ups.": { es: "No fue posible cargar los seguimientos." },
+  "Nenhum follow-up marcado para este negócio.": { es: "No hay ningún seguimiento marcado para este negocio." },
+  "Marcar follow-up como feito": { es: "Marcar seguimiento como hecho" },
+  "Escolha quando este follow-up deve acontecer.": { es: "Elige cuándo debe ocurrir este seguimiento." },
+  "Novo follow-up": { es: "Nuevo seguimiento" },
+  Feito: { es: "Hecho" },
+  "vence agora": { es: "vence ahora" },
+  "venceu há": { es: "venció hace" },
+  pendentes: { es: "pendientes" },
   Roteadores: { es: "Enrutadores" },
   "Ver tudo em IA": { es: "Ver todo en IA" },
   "Ver tudo em CRM": { es: "Ver todo en CRM" },
@@ -7640,6 +7650,11 @@ export const DICIONARIO: Traducoes = {
 
   // ─── Tarefas (extraídas do PR #418) ───
   "Tarefas": { es: "Tareas" },
+  "O que precisa ser feito, pela urgência.": { es: "Lo que hay que hacer, por urgencia." },
+  "Ver todas": { es: "Ver todas" },
+  "atrasada há": { es: "atrasada desde hace" },
+  "vence amanhã": { es: "vence mañana" },
+  "vence em": { es: "vence en" },
   "O que ficou combinado, com prazo. Tarefa presa a um negócio aparece na linha do tempo dele.": {
     es: "Lo que quedó acordado, con plazo. Una tarea ligada a un negocio aparece en la línea de tiempo de él.",
   },

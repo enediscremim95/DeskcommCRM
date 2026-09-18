@@ -91,10 +91,11 @@ function fakeSupabase(resolve: Resolver, cap: Capturas) {
         c.filtros[col] = val;
         return chain;
       },
-      in: () => chain,
+      in: (col: string, val: unknown) => { c.filtros[col] = val; return chain; },
       is: () => chain,
       gt: () => chain,
       lt: () => chain,
+      lte: (col: string, val: unknown) => { c.filtros[`${col}_lte`] = val; return chain; },
       order: () => chain,
       limit: () => chain,
       maybeSingle: () => Promise.resolve(resolve({ ...c, terminal: "maybeSingle" })),
@@ -862,6 +863,7 @@ describe("crm_list_at_risk_leads", () => {
       "demandas",
       "organizations",
       "calendar_appointments",
+      "crm_tasks",
     ]) {
       // Guarda de vacuidade por tabela: uma leitura que deixe de acontecer não
       // pode passar como "leitura sem vazamento".
@@ -870,6 +872,50 @@ describe("crm_list_at_risk_leads", () => {
     for (const leitura of filtros) {
       expect(leitura.table === "organizations" ? leitura.id : leitura.organization_id, `leitura de "${leitura.table}" sem filtro de org`).toBe(ORG);
     }
+  });
+
+  it("põe no Radar o lead recente cujo follow-up humano venceu", async () => {
+    const cap = novasCapturas();
+    const vencida = new Date(Date.now() - 3_600_000).toISOString();
+    const recente = new Date(Date.now() - 2 * 3_600_000).toISOString();
+    const tarefa = { id: "t-vencida", lead_id: LEAD, title: "Ligar e confirmar a proposta", description: "Confirmar pagamento", due_date: vencida, status: "pending" };
+    const lead = { id: LEAD, title: "Negócio recente", contact_id: CONTATO, owner_user_id: null, owner_kind: null, owner_agent_id: null, stage_id: STAGE, last_activity_at: recente, created_at: recente, pipeline_id: "pipe-1" };
+    const resolver: Resolver = c => {
+      if (c.table === "crm_tasks") return { data: [tarefa], error: null };
+      if (c.table === "crm_leads") return Array.isArray(c.filtros.id) ? { data: [lead], error: null } : { data: [], error: null };
+      if (c.table === "crm_stages") return { data: [{ id: STAGE, expected_duration_hours: 24 }], error: null };
+      return { data: [], error: null };
+    };
+    const r = await crmListAtRiskLeads.handler({ limit: 50, min_hours: 24 }, ctxDe(resolver, cap)) as { items: Array<Record<string, unknown>> };
+    expect(r.items).toHaveLength(1);
+    expect(r.items[0]).toMatchObject({ id: LEAD, risk: "em_risco", manual_followup: { title: "Ligar e confirmar a proposta", due_date: vencida } });
+  });
+
+  it("trata follow-up humano futuro como próximo passo do lead frio", async () => {
+    const cap = novasCapturas();
+    const futura = new Date(Date.now() + 24 * 3_600_000).toISOString();
+    const fria = new Date(Date.now() - 100 * 3_600_000).toISOString();
+    const resolver: Resolver = c => {
+      if (c.table === "crm_tasks") return c.filtros.due_date_lte ? { data: [], error: null } : { data: [{ id: "t-futura", lead_id: LEAD, title: "Enviar proposta", description: null, due_date: futura, status: "in_progress" }], error: null };
+      if (c.table === "crm_leads") return { data: [{ id: LEAD, title: "Negócio frio", contact_id: CONTATO, owner_user_id: null, owner_kind: null, owner_agent_id: null, stage_id: STAGE, last_activity_at: fria, created_at: fria, pipeline_id: "pipe-1" }], error: null };
+      if (c.table === "crm_stages") return { data: [{ id: STAGE, expected_duration_hours: 24 }], error: null };
+      return { data: [], error: null };
+    };
+    const r = await crmListAtRiskLeads.handler({ limit: 50, min_hours: 24 }, ctxDe(resolver, cap)) as { items: Array<Record<string, unknown>> };
+    expect(r.items[0]).toMatchObject({ id: LEAD, risk: "em_voo", in_flight: true, next_followup_at: futura });
+  });
+
+  it("ignora tarefa encerrada mesmo se o adapter a devolver", async () => {
+    const cap = novasCapturas();
+    const fria = new Date(Date.now() - 100 * 3_600_000).toISOString();
+    const resolver: Resolver = c => {
+      if (c.table === "crm_tasks") return c.filtros.due_date_lte ? { data: [], error: null } : { data: [{ id: "t-feita", lead_id: LEAD, title: "Feita", description: null, due_date: fria, status: "done" }], error: null };
+      if (c.table === "crm_leads") return { data: [{ id: LEAD, title: "Negócio frio", contact_id: null, owner_user_id: null, owner_kind: null, owner_agent_id: null, stage_id: STAGE, last_activity_at: fria, created_at: fria, pipeline_id: "pipe-1" }], error: null };
+      if (c.table === "crm_stages") return { data: [{ id: STAGE, expected_duration_hours: 24 }], error: null };
+      return { data: [], error: null };
+    };
+    const r = await crmListAtRiskLeads.handler({ limit: 50, min_hours: 24 }, ctxDe(resolver, cap)) as { items: Array<Record<string, unknown>> };
+    expect(r.items[0]).toMatchObject({ manual_followup: null, in_flight: false, risk: "critico" });
   });
 
   it("entrega ao modelo as demandas abertas sem próximo passo", async () => {
@@ -957,6 +1003,7 @@ describe("crm_list_at_risk_leads", () => {
       (m) => m[1] as string,
     );
     const doPayload = new Set(Object.keys(r));
+    expect(r).not.toHaveProperty("tasks");
     const camposDeTopo = prometidos.filter((p) => !p.startsWith("crm_"));
 
     expect(camposDeTopo.length).toBeGreaterThan(0); // guarda de vacuidade

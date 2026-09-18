@@ -51,6 +51,13 @@ export interface AtRiskLead {
   risk: RiskBucket;
   in_flight: boolean;
   next_followup_at: string | null;
+  manual_followup: {
+    id: string;
+    title: string;
+    description: string | null;
+    due_date: string;
+    open_count: number;
+  } | null;
   conversation_id: string | null;
   pipeline_id: string;
   agenda?: ProtecaoAgenda;
@@ -73,6 +80,16 @@ export interface DemandaSemProximoPasso {
   origem: string;
 }
 
+export interface TarefaDoRadar {
+  id: string;
+  title: string;
+  description: string | null;
+  due_date: string;
+  status: "pending" | "in_progress";
+  lead_id: string | null;
+  contact_id: string | null;
+}
+
 export interface RadarDeRisco {
   items: AtRiskLead[];
   counts: { critico: number; em_risco: number; em_voo: number };
@@ -84,6 +101,8 @@ export interface RadarDeRisco {
    */
   sem_proximo_passo: DemandaSemProximoPasso[];
   total_sem_proximo_passo: number;
+  /** Exclusivo da tela humana. A ferramenta MCP continua recebendo apenas leads. */
+  tasks?: TarefaDoRadar[];
 }
 
 export interface OpcoesDoRadar {
@@ -93,6 +112,8 @@ export interface OpcoesDoRadar {
   now?: Date;
   /** Apenas a rota humana passa o papel efetivo; as consultas usam seu client RLS. */
   humanRole?: Role;
+  /** A lista operacional de tarefas não faz parte do contrato MCP de retenção. */
+  includeTasks?: boolean;
 }
 
 export async function carregaRadarDeRisco(
@@ -105,6 +126,25 @@ export async function carregaRadarDeRisco(
   const now = opts.now ?? new Date();
   const nowIso = now.toISOString();
 
+  let tarefasDoRadar: TarefaDoRadar[] | undefined;
+  if (opts.includeTasks) {
+    const { data: tarefas, error } = await admin
+      .from("crm_tasks")
+      .select("id, title, description, due_date, status, lead_id, contact_id")
+      .eq("organization_id", organizationId)
+      .in("status", ["pending", "in_progress"])
+      .not("due_date", "is", null)
+      .order("due_date", { ascending: true })
+      .limit(SCAN_CAP);
+    if (error) throw new Error(`radar_tasks_failed: ${error.message}`);
+    tarefasDoRadar = (tarefas ?? [])
+      .filter(
+        (t): t is TarefaDoRadar =>
+          Boolean(t.due_date) && (t.status === "pending" || t.status === "in_progress"),
+      )
+      .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
+  }
+
   const { data: leads, error: leadsErr } = await admin
     .from("crm_leads")
     .select(
@@ -116,7 +156,50 @@ export async function carregaRadarDeRisco(
     .limit(SCAN_CAP);
   if (leadsErr) throw new Error(`radar_query_failed: ${leadsErr.message}`);
 
-  const rows = leads ?? [];
+  const { data: tarefasVencidas, error: tarefasVencidasError } = await admin
+    .from("crm_tasks")
+    .select("id, lead_id, title, description, due_date, status")
+    .eq("organization_id", organizationId)
+    .in("status", ["pending", "in_progress"])
+    .lte("due_date", nowIso)
+    .order("due_date", { ascending: true })
+    .limit(SCAN_CAP);
+  if (tarefasVencidasError) throw new Error(`radar_tasks_failed: ${tarefasVencidasError.message}`);
+
+  let rows = leads ?? [];
+  const idsNoPool = new Set(rows.map(l => l.id));
+  const idsVencidosForaDoPool = [...new Set((tarefasVencidas ?? []).filter(t => t.lead_id && t.due_date).map(t => t.lead_id as string).filter(id => !idsNoPool.has(id)))];
+  if (idsVencidosForaDoPool.length > 0) {
+    const { data: extras, error } = await admin
+      .from("crm_leads")
+      .select("id, title, contact_id, owner_user_id, owner_kind, owner_agent_id, stage_id, last_activity_at, created_at, pipeline_id")
+      .eq("organization_id", organizationId)
+      .eq("status", "open")
+      .in("id", idsVencidosForaDoPool);
+    if (error) throw new Error(`radar_task_leads_failed: ${error.message}`);
+    rows = [...rows, ...(extras ?? [])];
+  }
+
+  const tarefasPorLead = new Map<string, Array<{ id: string; title: string; description: string | null; due_date: string; status: string }>>();
+  const leadIdsDoRadar = rows.map(l => l.id);
+  if (leadIdsDoRadar.length > 0) {
+    const { data: tarefas, error } = await admin
+      .from("crm_tasks")
+      .select("id, lead_id, title, description, due_date, status")
+      .eq("organization_id", organizationId)
+      .in("status", ["pending", "in_progress"])
+      .in("lead_id", leadIdsDoRadar)
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .limit(SCAN_CAP);
+    if (error) throw new Error(`radar_tasks_failed: ${error.message}`);
+    for (const tarefa of tarefas ?? []) {
+      if (!tarefa.lead_id || !tarefa.due_date) continue;
+      if (tarefa.status !== "pending" && tarefa.status !== "in_progress") continue;
+      const lista = tarefasPorLead.get(tarefa.lead_id) ?? [];
+      lista.push({ id: tarefa.id, title: tarefa.title, description: tarefa.description, due_date: tarefa.due_date, status: tarefa.status });
+      tarefasPorLead.set(tarefa.lead_id, lista);
+    }
+  }
 
   // Dono AGENTE (0070). Sem isto, um lead que a IA trabalha há dezenas de turnos
   // aparece no radar como "Sem dono" e um humano vai resgatar o que já está sendo
@@ -210,16 +293,23 @@ export async function carregaRadarDeRisco(
   for (const l of rows) {
     const lastActivity = l.last_activity_at ?? l.created_at;
     if (!lastActivity) continue;
-    const nextFollowupAt = l.contact_id ? (followupByContact.get(l.contact_id) ?? null) : null;
-    const { bucket, hoursSinceActivity, onRadar } = classifyRisk({
+    const tarefaManual = tarefasPorLead.get(l.id)?.[0] ?? null;
+    const tarefaManualVencida = Boolean(tarefaManual && new Date(tarefaManual.due_date).getTime() <= now.getTime());
+    const retornoDaIa = l.contact_id ? (followupByContact.get(l.contact_id) ?? null) : null;
+    const retornoHumanoFuturo = tarefaManual && !tarefaManualVencida ? tarefaManual.due_date : null;
+    const nextFollowupAt = [retornoDaIa, retornoHumanoFuturo].filter((v): v is string => Boolean(v)).sort()[0] ?? null;
+    const classificado = classifyRisk({
       lastActivityAt: new Date(lastActivity),
       now,
       inFlight: nextFollowupAt !== null,
       agenda: l.contact_id ? agenda.get(l.contact_id) : undefined,
       window: windowByStage.get(l.stage_id) ?? resolveStageWindow(null),
     });
+    const bucket: RiskBucket = tarefaManualVencida && (classificado.bucket === "em_dia" || classificado.bucket === "em_voo") ? "em_risco" : classificado.bucket;
+    const hoursSinceActivity = classificado.hoursSinceActivity;
+    const onRadar = classificado.onRadar || tarefaManualVencida;
     const protection = l.contact_id ? agenda.get(l.contact_id) : undefined;
-    if (!onRadar || (hoursSinceActivity < minHours && (!protection || protection.motivo === "sem_compromisso"))) continue;
+    if (!onRadar || (!tarefaManualVencida && hoursSinceActivity < minHours && (!protection || protection.motivo === "sem_compromisso"))) continue;
     const conv = l.contact_id ? (convByContact.get(l.contact_id) ?? null) : null;
     counts[bucket] += 1;
     radar.push({
@@ -237,6 +327,13 @@ export async function carregaRadarDeRisco(
       risk: bucket,
       in_flight: nextFollowupAt !== null,
       next_followup_at: nextFollowupAt,
+      manual_followup: tarefaManual ? {
+        id: tarefaManual.id,
+        title: tarefaManual.title,
+        description: tarefaManual.description,
+        due_date: tarefaManual.due_date,
+        open_count: tarefasPorLead.get(l.id)?.length ?? 1,
+      } : null,
       conversation_id: conv?.id ?? null,
       pipeline_id: l.pipeline_id,
       agenda: protection,
@@ -313,5 +410,6 @@ export async function carregaRadarDeRisco(
     total: radar.length,
     sem_proximo_passo: semProximoPasso.slice(0, limit),
     total_sem_proximo_passo: semProximoPasso.length,
+    ...(tarefasDoRadar ? { tasks: tarefasDoRadar } : {}),
   };
 }
