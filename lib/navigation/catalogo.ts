@@ -73,7 +73,8 @@ export const NAV_GROUPS: NavGroup[] = [
   // Sem hub por decisão do dono (17/09/2026).
   { id: "ia", label: "Agente de IA" },
   { id: "canais", label: "Canais" },
-  { id: "analise", label: "Análise", hub: { href: "/app/analise", label: "Ver tudo em Análise" } },
+  // Sem hub por decisão do dono (18/09/2026): o grupo mostra só o Relatório.
+  { id: "analise", label: "Análise" },
   {
     id: "organizacao",
     label: "Organização",
@@ -538,7 +539,8 @@ export const NAV_CATALOG = [
     icon: "ClockCounterClockwise",
     group: "analise",
     section: "Os números do período",
-    sidebar: true,
+    // Fora do menu por decisão do dono (18/09/2026).
+    sidebar: false,
   },
   {
     // Observabilidade, não configuração: por isso não fica junto dos agentes.
