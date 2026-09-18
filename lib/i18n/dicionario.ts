@@ -3408,6 +3408,15 @@ export const DICIONARIO: Traducoes = {
   "Formulário pronto para colar no seu site": { es: "Formulario listo para pegar en tu sitio" },
   "Formulário copiado.": { es: "Formulario copiado." },
   "Copiar formulário": { es: "Copiar formulario" },
+  "Conectar uma landing page direto ao CRM": {
+    es: "Conectar una landing page directamente al CRM",
+  },
+  "Adicione data-crm-lead ao formulário existente e cole o script depois dele. Ele confirma a entrada, repete uma vez se a conexão falhar e depois libera o fluxo normal da página.": {
+    es: "Añade data-crm-lead al formulario existente y pega el script después. Confirma la entrada, repite una vez si falla la conexión y luego libera el flujo normal de la página.",
+  },
+  "Script para landing page": { es: "Script para landing page" },
+  "Script da landing page copiado.": { es: "Script de la landing page copiado." },
+  "Copiar script da landing page": { es: "Copiar script de la landing page" },
   "Como conectar no seu caso": { es: "Cómo conectarlo en tu caso" },
   "Formulário próprio": { es: "Formulario propio" },
   "Use o HTML pronto logo acima — já aponta para o endereço certo.": {

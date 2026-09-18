@@ -48,6 +48,24 @@ interface RouteCtx {
 }
 
 const RATE_LIMIT_PER_MIN = 60;
+const SIGNATURE_HEADER = "x-deskcomm-signature";
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": `Content-Type, ${SIGNATURE_HEADER}`,
+  "Access-Control-Expose-Headers": "X-Request-Id",
+  "Access-Control-Max-Age": "86400",
+} as const;
+
+function withCors(response: NextResponse): NextResponse {
+  for (const [name, value] of Object.entries(CORS_HEADERS)) response.headers.set(name, value);
+  return response;
+}
+
+export function OPTIONS(): NextResponse {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
 
 // ponytail: mirrors the default phone aliases in lib/webhooks/inbound.ts —
 // duplicated (not exported there) only so the route can flag a phone-looking
@@ -68,7 +86,7 @@ function findRawPhoneIfUnnormalized(payload: Record<string, unknown>, fieldMap: 
   return null;
 }
 
-export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
+async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
   const requestId = randomUUID();
   const { token } = await ctx.params;
   if (!token || token.length < 8) {
@@ -124,7 +142,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     sourceName: (source.name as string) ?? "Fonte sem nome",
   };
 
-  const sigHeader = req.headers.get("x-deskcomm-signature");
+  const sigHeader = req.headers.get(SIGNATURE_HEADER);
   // secret cifrado at-rest (migration 0041). Decrypt falhou (chave da GUC
   // ausente/trocada)? Precedente WAHA: pula a validação em vez de derrubar a
   // captação — secret aqui é defesa opcional, não gate de disponibilidade.
@@ -681,4 +699,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   );
 
   return respondWithLead(String(lead.id));
+}
+
+export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
+  try {
+    return withCors(await postWithoutCors(req, ctx));
+  } catch (error) {
+    const requestId = randomUUID();
+    logger.error("[webhooks.inbound] unhandled request failure", {
+      requestId,
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
+    return withCors(fail("internal_error", "internal_error", 500, { requestId }));
+  }
 }

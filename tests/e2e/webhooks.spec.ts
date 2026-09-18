@@ -59,6 +59,7 @@ const ts = Date.now();
 const SOURCE_NAME = `E2E Landing ${ts}`;
 const RULE_NAME = `E2E Automação ${ts}`;
 const LEAD_NAME = `Ana E2E ${ts}`;
+const LP_LEAD_NAME = `Lead LP E2E ${ts}`;
 const TAG = "e2e-tag";
 
 // Card do design system (Card/CardHeader) — mesmas classes em toda a app.
@@ -164,6 +165,48 @@ test.describe("webhooks & automações — fluxo completo", () => {
       // --- Step 3: sheet da fonte abre sozinho; URL visível + lead de teste ---
       const sheet = page.getByRole("dialog").filter({ hasText: SOURCE_NAME });
       await expect(sheet.locator("code", { hasText: "/api/v1/webhooks/in/" }).first()).toBeVisible();
+      const snippetField = sheet.getByLabel("Script para landing page");
+      await expect(snippetField).toBeVisible();
+      const snippet = await snippetField.inputValue();
+      expect(snippet).toContain(sourceUrl);
+
+      // Página estática, em outra origem, cola o snippet e lê o retorno real.
+      // O segundo listener representa o fluxo que a LP já tinha e que precisa
+      // continuar depois da tentativa de captação.
+      const lp = await browser.newPage();
+      try {
+        await lp.setContent(`<form data-crm-lead>
+          <input name="nome" value="${LP_LEAD_NAME}" />
+          <input name="telefone" value="11911112222" />
+          <button type="submit">Enviar</button>
+        </form>
+        <script>
+          window.__crmResultado = null;
+          window.__fluxoOriginalSeguiu = false;
+          const form = document.querySelector("form");
+          form.addEventListener("crm:lead", (event) => { window.__crmResultado = event.detail; });
+          form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            window.__fluxoOriginalSeguiu = true;
+          });
+        </script>
+        ${snippet}`);
+        await lp.getByRole("button", { name: "Enviar" }).click();
+        await expect
+          .poll(() =>
+            lp.evaluate(() => {
+              const state = window as unknown as {
+                __crmResultado: { ok: boolean; lead_id?: string } | null;
+                __fluxoOriginalSeguiu: boolean;
+              };
+              return { resultado: state.__crmResultado, fluxo: state.__fluxoOriginalSeguiu };
+            }),
+          )
+          .toMatchObject({ resultado: { ok: true, lead_id: expect.any(String) }, fluxo: true });
+      } finally {
+        await lp.close();
+      }
+
       await sheet.getByRole("button", { name: "Enviar lead de teste" }).click();
       await expectToast(page, "Funcionou! Um lead de teste entrou no seu funil.");
       await page.keyboard.press("Escape");
@@ -333,6 +376,7 @@ test.describe("webhooks & automações — fluxo completo", () => {
       await page.goto(`${APP_URL}/app/pipelines/${pipelineId}`);
       const leadHeading = page.getByRole("heading", { name: LEAD_NAME });
       await expect(leadHeading).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("heading", { name: LP_LEAD_NAME })).toBeVisible();
       // A TAG VIVE NO `title` DO CARD, não como texto visível.
       //
       // `KanbanCard.tsx` publica `title={`Tags: ...`}` com um comentário que
