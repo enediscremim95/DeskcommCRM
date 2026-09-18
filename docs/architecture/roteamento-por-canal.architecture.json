@@ -91,6 +91,41 @@
       "col": 3,
       "type": "database",
       "label": "Confirmar ou preservar FAILED para retry da mesma identidade"
+    },
+    {
+      "id": "managed-config",
+      "lane": "humano",
+      "col": 0,
+      "type": "ui",
+      "label": "Admin vincula instância existente; segredo write-only"
+    },
+    {
+      "id": "managed-guard",
+      "lane": "db",
+      "col": 1,
+      "type": "database",
+      "label": "Exclusão WAHA × Evolution; QR 1/min e máximo 3"
+    },
+    {
+      "id": "managed-state",
+      "lane": "app",
+      "col": 2,
+      "type": "service",
+      "label": "Estado e connect na mesma instância; sem webhook/create/delete"
+    },
+    {
+      "id": "managed-open",
+      "lane": "db",
+      "col": 3,
+      "type": "database",
+      "label": "Transição atômica para open, audit e reset de tentativas"
+    },
+    {
+      "id": "managed-hook",
+      "lane": "app",
+      "col": 4,
+      "type": "service",
+      "label": "Hook opcional de reconexão; falha visível"
     }
   ],
   "edges": [
@@ -143,6 +178,31 @@
       "from": "finish",
       "to": "connect",
       "label": "Estado visível ou reparo"
+    },
+    {
+      "from": "managed-config",
+      "to": "managed-guard",
+      "label": "Configuração cifrada por organização"
+    },
+    {
+      "from": "managed-guard",
+      "to": "managed-state",
+      "label": "Reserva autorizada antes do efeito externo"
+    },
+    {
+      "from": "managed-state",
+      "to": "managed-open",
+      "label": "Estado remoto validado"
+    },
+    {
+      "from": "managed-open",
+      "to": "managed-hook",
+      "label": "Somente na transição para open"
+    },
+    {
+      "from": "managed-hook",
+      "to": "managed-config",
+      "label": "Falha persistida pede correção do operador"
     }
   ]
 }

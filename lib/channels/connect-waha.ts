@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
 import type { WahaClient } from "@/lib/waha/client";
 import { WahaSessionError } from "@/lib/waha/client";
+import { hasManagedConnector } from "./managed-qr";
 
 const channelSchema = z.object({
   id: z.string().uuid(), organization_id: z.string().uuid(), waha_session_name: z.string(),
@@ -29,6 +30,12 @@ export interface ConnectChannelInput {
  */
 export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: SupabaseClient, waha: Transport, input: ConnectChannelInput): Promise<{ channel: z.infer<typeof channelSchema>; replay: boolean }> {
   if (!z.string().uuid().safeParse(input.idempotencyKey).success) throw new ChannelConnectionError("idempotency_key_required", 422);
+  // A organização que entrega este número por um conector externo não pode
+  // abrir uma segunda sessão automatizada. A guarda vive no seam e portanto
+  // cobre Conexões e onboarding, além da trava equivalente no banco.
+  if (await hasManagedConnector(serviceDb, input.organizationId)) {
+    throw new ChannelConnectionError("channel_connector_conflict", 409);
+  }
   const hash = createHash("sha256").update(JSON.stringify({ display_name: input.displayName ?? null, onboarding: input.onboarding ?? false, restart: input.restart ?? false })).digest("hex");
   const { data, error } = await authDb.rpc("fn_reserve_channel_connection", {
     p_org: input.organizationId, p_key: input.idempotencyKey, p_hash: hash,

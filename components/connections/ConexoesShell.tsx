@@ -7,6 +7,7 @@ import { CanalOficialClient } from "./CanalOficialClient";
 import { CanalParceiroClient } from "./CanalParceiroClient";
 import { CanalVozClient } from "./CanalVozClient";
 import { ConnectionsClient } from "./ConnectionsClient";
+import { ManagedQrConnector } from "./ManagedQrConnector";
 import { TemplatesClient } from "./TemplatesClient";
 import { TemplatesParceiroClient } from "./TemplatesParceiroClient";
 import { useT } from "@/hooks/i18n/useT";
@@ -89,7 +90,7 @@ export function ConexoesShell({
       </TabsList>
 
       <TabsContent value="numeros" className="mt-0">
-        <ConnectionsClient wahaConfigured={wahaConfigured} />
+        <ManagedQrConnector fallback={<ConnectionsClient wahaConfigured={wahaConfigured} />} />
       </TabsContent>
 
       <TabsContent value="voz" className="mt-0">

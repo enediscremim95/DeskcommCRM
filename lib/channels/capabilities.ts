@@ -99,6 +99,8 @@ export const CHANNEL_PROVIDER_META: ChannelProvider = "meta_cloud";
 export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
+/** Instância externa mantida por outro agente. O CRM só observa e reconecta. */
+export const CHANNEL_PROVIDER_EVOLUTION: ChannelProvider = "evolution";
 
 /**
  * Os providers por onde MENSAGEM entra e sai — a única lista que responde
@@ -153,7 +155,7 @@ export function transportaMensagem(provider: string | null | undefined): boolean
  * hora de escolher por onde mandar recado, o desconhecido é tão inútil quanto a
  * voz. Aqui a pergunta é outra.
  */
-export const PROVIDERS_SEM_MENSAGEM = ["wacalls"] as const;
+export const PROVIDERS_SEM_MENSAGEM = ["wacalls", "evolution"] as const;
 
 /**
  * Erro de COMPILAÇÃO enquanto sobrar provider fora das duas listas. Provider

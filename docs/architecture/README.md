@@ -20,6 +20,7 @@ ser fonte sem ninguém decidir isso.
 | `navegacao-do-app.architecture.json` | catálogo único projetado no sidebar, gaveta, dock móvel, hubs e busca, sempre filtrado por permissão e com estado ativo visível |
 | `aparencias.architecture.json` | Preferência pessoal de navegador, seleção acessível e aplicação de cores no shell e portais |
 | `pre-go-live-whatsapp.architecture.json` | modo de teste por canal (issue #573): configuração administrativa, gate compartilhado, releitura no envio e validação pelo Inbox |
+| `roteamento-por-canal.architecture.json` | responsáveis por canal, conexão WAHA recuperável e conector Evolution gerenciado com QR limitado, segredo write-only e hook pós-reconexão |
 | `agenda-google-sync.architecture.json` | fontes/destino por dono, tupla estável, três vias, claim/CAS e cobertura de calendário; presença e LGPD integradas |
 | `encerramento-atendimento.architecture.json` | conversa/demanda independentes, mutex no inbound, origem imutável dos jobs, memória vigente e guardas antes dos efeitos |
 | `agent-turn.workflow.json` | Conversador e Operador, entregas determinísticas de Meet e respostas aprovadas; revisão humana ligada ao mesmo core e à cadeia de envio. O JSON é a fonte atual; o HTML é um render anterior |

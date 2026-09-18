@@ -4,7 +4,8 @@ import { test, expect } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { metadataInicialDoCanal } from "../../lib/ai/elegibilidade/pre-go-live";
 
-// Banco e auth reais, sem interceptar a API da feature. Não envia WhatsApp real.
+// O primeiro caso usa banco e auth reais, sem interceptar a API da feature.
+// O segundo intercepta somente o transporte externo para nunca tentar pareamento real.
 test.use({ locale: "pt-BR" });
 test("admin configura testes, remove número, confirma abertura e volta a restringir", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
@@ -89,4 +90,67 @@ test("admin configura testes, remove número, confirma abertura e volta a restri
   await page.getByRole("button", { name: "Salvar lista de teste" }).click();
   await expect(input).not.toBeVisible();
   expect((await read()).ai_test_phone_numbers).toEqual([]);
+});
+
+test("conector gerenciado mostra queda e só gera QR depois do clique", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  if (!["localhost", "127.0.0.1"].includes(new URL(url).hostname)) throw new Error("Somente Supabase local");
+  const admin = createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const suffix = randomUUID().slice(0, 8);
+  const email = `managed-qr-${suffix}@example.test`;
+  const password = `E2e-${randomUUID()}!`;
+  const orgName = `managed-qr-${suffix}`;
+  execFileSync("pnpm", ["exec", "tsx", "scripts/bootstrap-owner.ts"], {
+    env: { ...process.env, OWNER_EMAIL: email, OWNER_PASSWORD: password, OWNER_ORG_NAME: orgName },
+    stdio: "pipe",
+  });
+  const { data: org, error } = await admin.from("organizations").select("id").eq("slug", orgName).single();
+  expect(error).toBeNull();
+  expect((await admin.from("organizations").update({ onboarded_at: new Date().toISOString() }).eq("id", org!.id)).error).toBeNull();
+
+  const connector = {
+    id: randomUUID(), provider_label: "Conector externo", instance_name: "existing-instance",
+    phone_number: "5541999999999", display_name: "WhatsApp comercial", remote_state: "close",
+    qr_attempts: 0, hook_last_status: null, hook_last_error: null,
+  };
+  let qrCalls = 0;
+  await page.route("**/api/v1/channel-sessions/managed**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname.endsWith("/qr")) {
+      qrCalls += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        data: { qr_base64: "iVBORw0KGgo=", pairing_code: "12345678", expires_in: 60, attempts: 1 },
+      }) });
+      return;
+    }
+    if (pathname.endsWith("/state")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        data: { ...connector, remote_state: qrCalls > 0 ? "open" : "close" },
+      }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: connector }) });
+  });
+
+  await page.goto("/login");
+  await page.locator("#email").fill(email);
+  await page.locator("#password").fill(password);
+  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.waitForURL(/\/app/);
+  await page.goto("/app/connections");
+  await expect(page.getByText("WhatsApp desconectado", { exact: true })).toBeVisible();
+  expect(qrCalls).toBe(0);
+
+  await page.getByRole("button", { name: "Gerar QR para reconectar" }).click();
+  await expect(page.getByAltText("QR temporário para reconectar o WhatsApp")).toBeVisible();
+  await expect(page.getByText("12345678", { exact: true })).toBeVisible();
+  expect(qrCalls).toBe(1);
+
+  await page.getByRole("button", { name: "Conferir estado" }).click();
+  await expect(page.getByText("Conectado", { exact: true })).toBeVisible();
+  await expect(page.getByAltText("QR temporário para reconectar o WhatsApp")).not.toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.locator("main").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("managed-qr-mobile.png"), fullPage: true });
 });

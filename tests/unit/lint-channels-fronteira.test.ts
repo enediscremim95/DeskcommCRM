@@ -51,6 +51,8 @@ describe("fronteira do padrão de nome de provider", () => {
     ["import { x } from '@/lib/waha/client'", "caminho de import"],
     ["meta_cloud", "outro provider do vocabulário"],
     ["graph.facebook.com", "host de provider"],
+    ["'evolution'", "slug literal do provider gerenciado"],
+    ["EvolutionApiClient", "provider gerenciado em identificador qualificado"],
   ])("reconhece %s (%s)", (texto) => {
     expect(nomeiaProvider(texto)).toBe(true);
   });
@@ -62,6 +64,8 @@ describe("fronteira do padrão de nome de provider", () => {
     ["Wahalla", "idem, em PascalCase — `Waha` seguido de minúscula não é segmento"],
     ["metacloud", "sem o separador, não é o termo do vocabulário"],
     ["graphxfacebookxcom", "o ponto do host é literal, não coringa"],
+    ["EvolutionGaps", "feature de evolução da IA, não provider"],
+    ["/app/ai/evolution", "rota da feature de evolução da IA"],
   ])("NÃO reconhece %s (%s)", (texto) => {
     expect(nomeiaProvider(texto)).toBe(false);
   });
