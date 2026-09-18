@@ -114,9 +114,10 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(link);
     mkdirSync(".superpowers/evidence/comunidade-360", { recursive: true });
     await page.screenshot({ path: ".superpowers/evidence/comunidade-360/criacao-convite.png" });
-    // Precondição do teste de cache: o wizard é coberto pela spec de retorno.
-    const update = await db.from("organizations").update({ onboarded_at: new Date().toISOString() }).eq("id", orgB);
-    if (update.error) throw update.error;
+    // Organização criada pela agência já nasce pronta, inclusive no modo convite.
+    const pronta = await db.from("organizations").select("onboarded_at").eq("id", orgB).single();
+    expect(pronta.error).toBeNull();
+    expect(pronta.data?.onboarded_at).toBeTruthy();
     await conversation(orgB, `Cliente B ${suffix}`);
     await page.getByRole("link", { name: "Voltar ao aplicativo" }).click();
     await page.waitForURL("**/app/inbox", { waitUntil: "load" });

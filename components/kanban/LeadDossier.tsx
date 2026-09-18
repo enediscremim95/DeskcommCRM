@@ -14,12 +14,14 @@ import { LeadTimeline } from "./LeadTimeline";
 import { OwnerBadge } from "./OwnerBadge";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
 import type { CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
+import { DadosCompletosDoLead } from "@/components/leads/DadosCompletosDoLead";
 
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   lead: Lead;
   pipelineId: string;
+  pipelineName: string;
   fieldDefs?: CustomFieldDef[];
   stageName: string;
   ownerNames?: Map<string, string | null>;
@@ -56,6 +58,7 @@ export function LeadDossier({
   onOpenChange,
   lead,
   pipelineId,
+  pipelineName,
   fieldDefs = [],
   stageName,
   ownerNames,
@@ -131,6 +134,18 @@ export function LeadDossier({
         )}
 
         <ConversaNoDossie conversa={lead.conversa} />
+
+        <section className="border-b border-border py-3">
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
+            {t("Ficha completa")}
+          </h3>
+          <DadosCompletosDoLead
+            lead={lead}
+            pipelineName={pipelineName}
+            stageName={stageName}
+            fieldDefs={fieldDefs}
+          />
+        </section>
 
         {/* ② timeline */}
         <section className="flex-1 py-3">

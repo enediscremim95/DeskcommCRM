@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useContact } from "@/hooks/contacts/useContact";
+import { useContactLeads } from "@/hooks/contacts/useContactLeads";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
@@ -24,6 +25,7 @@ import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { DialButton } from "@/components/voice/DialButton";
+import { DadosCompletosDoLead } from "@/components/leads/DadosCompletosDoLead";
 
 interface Props {
   contactId: string;
@@ -33,6 +35,7 @@ export function ContactDetailClient({ contactId }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useContact(contactId);
+  const leadsQuery = useContactLeads(contactId);
   const { user, activeOrg } = useAuth();
   // As DEFINIÇÕES continuam no funil (`crm_pipelines.settings.fields[]`) — só o
   // VALOR mora no contato. `camposDoFunil` é o mesmo leitor que o Kanban usa.
@@ -191,6 +194,59 @@ export function ContactDetailClient({ contactId }: Props) {
               </div>
             </dl>
           </Card>
+
+          <section className="mt-4 space-y-3" aria-labelledby="negocios-do-contato">
+            <div>
+              <h2 id="negocios-do-contato" className="text-lg font-semibold">
+                {t("Negócios e dados informados")}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {t("Tudo que chegou por formulário, importação ou atendimento, em qualquer funil.")}
+              </p>
+            </div>
+            {leadsQuery.isLoading ? (
+              <Skeleton className="h-32 w-full" />
+            ) : leadsQuery.isError ? (
+              <Card className="p-4 text-sm text-error-fg">
+                {t("Não foi possível carregar os negócios deste contato.")}
+              </Card>
+            ) : leadsQuery.data && leadsQuery.data.length > 0 ? (
+              leadsQuery.data.map((lead, indice) => (
+                <details
+                  key={lead.id}
+                  open={indice === 0}
+                  className="group rounded-lg border border-border bg-surface"
+                >
+                  <summary className="cursor-pointer list-none px-4 py-3 marker:content-none">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="break-words font-medium">{lead.title}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {lead.pipeline_name} · {lead.stage_name}
+                        </div>
+                      </div>
+                      <span className="text-xs text-muted-foreground group-open:hidden">
+                        {t("Ver tudo")}
+                      </span>
+                    </div>
+                  </summary>
+                  <div className="border-t border-border p-4">
+                    <DadosCompletosDoLead
+                      lead={lead}
+                      pipelineName={lead.pipeline_name}
+                      stageName={lead.stage_name}
+                      fieldDefs={lead.field_defs}
+                      conversationId={contact.conversa?.id}
+                    />
+                  </div>
+                </details>
+              ))
+            ) : (
+              <Card className="p-4 text-sm text-muted-foreground">
+                {t("Este contato ainda não tem negócio vinculado.")}
+              </Card>
+            )}
+          </section>
         </TabsContent>
 
         <TabsContent value="timeline" className="mt-4">

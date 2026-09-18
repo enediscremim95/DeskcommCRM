@@ -23,12 +23,14 @@
     { "id": "filtro", "lane": "humano", "col": 3, "type": "frontend", "label": "Filtro Responsável", "sublabel": "user: e agent: no mesmo eixo" },
     { "id": "chat", "lane": "humano", "col": 5, "type": "frontend", "label": "ChatThread ?msg=", "sublabel": "o destino da âncora" },
     { "id": "decisao", "lane": "humano", "col": 3, "type": "frontend", "label": "Aprovar · Editar · Ignorar", "sublabel": "a recusa é sinal" },
+    { "id": "fichacontato", "lane": "humano", "col": 5, "type": "frontend", "label": "Ficha 360 do contato", "sublabel": "todos os negócios · campos · origem · datas" },
 
     { "id": "atividades", "lane": "barramento", "col": 2, "type": "database", "label": "crm_lead_activities", "sublabel": "actor_kind · reason · evidence" },
     { "id": "emissor", "lane": "barramento", "col": 1, "type": "service", "label": "emitLeadActivity", "sublabel": "estado e obrigação, não trabalho de máquina" },
     { "id": "vocab", "lane": "barramento", "col": 3, "type": "service", "label": "activity-vocabulary", "sublabel": "forma = gente/agente/máquina · texto = o resto" },
     { "id": "timelineapi", "lane": "barramento", "col": 3, "type": "api", "label": "GET /leads/:id/timeline", "sublabel": "por NEGÓCIO — lead sem contato existe" },
     { "id": "resolver", "lane": "barramento", "col": 1, "type": "service", "label": "resolveActiveLeadForContact", "sublabel": "ambíguo ⇒ não adivinha" },
+    { "id": "contactleadsapi", "lane": "barramento", "col": 4, "type": "api", "label": "GET /contacts/:id/leads", "sublabel": "org ativa · todos os funis · sem lista fixa de campos" },
 
     { "id": "leads", "lane": "negocio", "col": 4, "type": "database", "label": "crm_leads", "sublabel": "owner_kind · stage_id · last_activity_at" },
     { "id": "stages", "lane": "negocio", "col": 5, "type": "database", "label": "crm_stages", "sublabel": "expected_duration_hours · agent_stage_hint" },
@@ -91,7 +93,11 @@
     { "id": "e41", "from": "atividades", "to": "chat", "label": "âncora {conversation_id, message_id}" },
     { "id": "e42", "from": "dossie", "to": "chat", "label": "clique leva ao momento" },
     { "id": "e43", "from": "dossie", "to": "atividades", "label": "editar campo deixa rastro humano" },
-    { "id": "e44", "from": "filtro", "to": "card", "label": "applyFilters decide o que aparece" }
+    { "id": "e44", "from": "filtro", "to": "card", "label": "applyFilters decide o que aparece" },
+    { "id": "e45", "from": "leads", "to": "contactleadsapi", "label": "contact_id + organization_id" },
+    { "id": "e46", "from": "stages", "to": "contactleadsapi", "label": "nome da etapa e do funil" },
+    { "id": "e47", "from": "contactleadsapi", "to": "fichacontato", "label": "todos os negócios do contato" },
+    { "id": "e48", "from": "fichacontato", "to": "dossie", "label": "DadosCompletosDoLead é a apresentação única" }
   ],
   "cards": [
     {

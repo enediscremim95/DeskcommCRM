@@ -1,4 +1,5 @@
 import type { ScoreBand } from "@/lib/kanban/score-band";
+import type { CustomFieldDef } from "@/lib/schemas/settings";
 
 /**
  * Canonical Lead shape returned by the `/api/v1/leads/*` endpoints.
@@ -100,4 +101,14 @@ export interface Lead {
   created_at: string;
   updated_at: string;
   created_by_user_id: string | null;
+}
+
+/**
+ * Lead enriquecido para a ficha do contato. Os nomes e definições são joins de
+ * leitura, nunca cópias persistidas no negócio.
+ */
+export interface LeadComContexto extends Lead {
+  pipeline_name: string;
+  stage_name: string;
+  field_defs: CustomFieldDef[];
 }

@@ -25,6 +25,7 @@ export function useWinLead(pipelineId: string) {
     onSettled: (_data, _err, { leadId }) => {
       liberarEcoLocal(leadId);
       qc.invalidateQueries({ queryKey: ["board", pipelineId] });
+      qc.invalidateQueries({ queryKey: ["contact-leads"] });
     },
   });
 }
@@ -42,6 +43,7 @@ export function useLoseLead(pipelineId: string) {
     onSettled: (_data, _err, { leadId }) => {
       liberarEcoLocal(leadId);
       qc.invalidateQueries({ queryKey: ["board", pipelineId] });
+      qc.invalidateQueries({ queryKey: ["contact-leads"] });
     },
   });
 }
@@ -63,6 +65,7 @@ export function useEditLead(pipelineId: string) {
     onSettled: (_data, _err, { leadId }) => {
       liberarEcoLocal(leadId);
       qc.invalidateQueries({ queryKey: ["board", pipelineId] });
+      qc.invalidateQueries({ queryKey: ["contact-leads"] });
     },
   });
 }
