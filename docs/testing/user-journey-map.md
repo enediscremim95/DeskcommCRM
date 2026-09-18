@@ -205,12 +205,17 @@ desmarcar, e o agente descobre que desmarcaram. Spec: `tests/e2e/retorno-anti-mo
 | J8.4 | Humano desmarca pela fila | diálogo diz o que acontece; status vira **Cancelada** (não "Concluída") | PASS |
 | J8.5 | O agente consulta os retornos depois do cancelamento | vê `situacao: cancelado` **com o motivo** — é o que o impede de reagendar | PASS |
 | J8.6 | Repetir a jornada | seed reseta o retorno; o teste roda de novo sem intervenção | PASS |
+| J8.7 | Humano marca follow-up no dossiê ou na ficha do contato | a mesma `crm_task`, presa ao negócio, aparece nas duas superfícies e pode ser concluída | UNIT (`followups-do-lead.test.tsx`) |
+| J8.8 | Follow-up humano vence num lead ainda recente | o lead entra no Radar mesmo antes da janela de esfriamento, com o texto do que fazer | UNIT (`mcp-retencao-tools.test.ts`) |
+| J8.9 | Clicar no follow-up humano no Radar | abre `/app/pipelines/:pipeline?lead=:lead`, direto no dossiê do negócio | UNIT (`radar-followup-manual-ui.test.tsx`) |
 
 Evidência: `.superpowers/evidence/w2-retorno-{no-radar,na-fila-agendada,dialogo-de-cancelamento,na-fila-cancelada}.png`.
 
 **Sabotagem que confirma que o caso não passa por acaso:** devolvendo `podeCancelar` ao
 estado anterior à wave (promessa não cancelável), J8.4 reprova com timeout no clique —
 1 failed / 1 passed. Restaurado, 2 passed.
+
+A prova E2E pela tela da jornada humana J8.7–J8.9 ainda precisa rodar no ambiente fresco com `baseline.sql`; os testes acima guardam o contrato e o agregador, mas não substituem a evidência visual.
 ## J8 — Passar o atendimento para uma pessoa, e receber de volta `[P1]`
 
 Contexto do código: o agente abre um chamado (`agent_cases`) quando esbarra num

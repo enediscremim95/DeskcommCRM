@@ -38,6 +38,8 @@ interface Props {
   aoSalvar: (entrada: NovaTarefa) => Promise<unknown>;
   leadId?: string | null;
   contactId?: string | null;
+  exigirPrazo?: boolean;
+  tituloDaCriacao?: string;
 }
 
 /**
@@ -65,6 +67,8 @@ export function FormularioDeTarefa({
   aoSalvar,
   leadId,
   contactId,
+  exigirPrazo = false,
+  tituloDaCriacao,
 }: Props) {
   const t = useT();
   const editando = Boolean(tarefa);
@@ -89,6 +93,10 @@ export function FormularioDeTarefa({
     e.preventDefault();
     if (!titulo.trim()) {
       setErro(t("Escreva um título para a tarefa."));
+      return;
+    }
+    if (exigirPrazo && !dia) {
+      setErro(t("Escolha quando este follow-up deve acontecer."));
       return;
     }
     // Prazo é OPCIONAL — a coluna é nullable de propósito (migration 0210).
@@ -121,7 +129,7 @@ export function FormularioDeTarefa({
     <Dialog open={aberto} onOpenChange={aoMudarAbertura}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{editando ? t("Editar tarefa") : t("Nova tarefa")}</DialogTitle>
+          <DialogTitle>{editando ? t("Editar tarefa") : t(tituloDaCriacao ?? "Nova tarefa")}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={enviar} className="space-y-4">

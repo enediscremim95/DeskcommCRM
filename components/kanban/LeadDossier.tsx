@@ -15,6 +15,9 @@ import { OwnerBadge } from "./OwnerBadge";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
 import type { CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import { DadosCompletosDoLead } from "@/components/leads/DadosCompletosDoLead";
+import { FollowupsDoLead } from "@/components/leads/FollowupsDoLead";
+import { useAuth } from "@/hooks/auth/AuthProvider";
+import { ROLE_RANK } from "@/lib/auth/types";
 
 interface Props {
   open: boolean;
@@ -67,8 +70,10 @@ export function LeadDossier({
   const t = useT();
   const campos = useRef<HTMLDivElement | null>(null);
   const timeline = useLeadTimeline(open ? lead.id : null, lead.contact_id);
+  const { user, activeOrg } = useAuth();
   const owner = resolveLeadOwner(lead, ownerNames);
   const score = lead.score ?? null;
+  const podeEditarFollowup = Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && user.support?.access_mode !== "support_readonly");
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -145,6 +150,10 @@ export function LeadDossier({
             stageName={stageName}
             fieldDefs={fieldDefs}
           />
+        </section>
+
+        <section className="border-b border-border py-3">
+          <FollowupsDoLead leadId={lead.id} contactId={lead.contact_id} podeEditar={podeEditarFollowup} />
         </section>
 
         {/* ② timeline */}

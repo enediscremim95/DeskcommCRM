@@ -20,6 +20,7 @@
     { "id": "card", "lane": "humano", "col": 3, "type": "frontend", "label": "Card do Kanban", "sublabel": "5 elementos · altura constante" },
     { "id": "slot", "lane": "humano", "col": 2, "type": "frontend", "label": "O slot (faixa ③)", "sublabel": "aguardando > esfriando > normal" },
     { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Dossiê (Sheet)", "sublabel": "cabeçalho > timeline > campos" },
+    { "id": "radar", "lane": "humano", "col": 5, "type": "frontend", "label": "Radar de Risco", "sublabel": "obrigação vencida > ação > dossiê" },
     { "id": "filtro", "lane": "humano", "col": 3, "type": "frontend", "label": "Filtro Responsável", "sublabel": "user: e agent: no mesmo eixo" },
     { "id": "chat", "lane": "humano", "col": 5, "type": "frontend", "label": "ChatThread ?msg=", "sublabel": "o destino da âncora" },
     { "id": "decisao", "lane": "humano", "col": 3, "type": "frontend", "label": "Aprovar · Editar · Ignorar", "sublabel": "a recusa é sinal" },
@@ -35,6 +36,7 @@
     { "id": "leads", "lane": "negocio", "col": 4, "type": "database", "label": "crm_leads", "sublabel": "owner_kind · stage_id · last_activity_at" },
     { "id": "stages", "lane": "negocio", "col": 5, "type": "database", "label": "crm_stages", "sublabel": "expected_duration_hours · agent_stage_hint" },
     { "id": "scores", "lane": "negocio", "col": 3, "type": "database", "label": "crm_lead_scores", "sublabel": "tabela à parte, FORA do realtime" },
+    { "id": "tarefas", "lane": "negocio", "col": 5, "type": "database", "label": "crm_tasks", "sublabel": "follow-up humano · lead_id · due_date" },
 
     { "id": "leadstate", "lane": "agente", "col": 0, "type": "database", "label": "lead_state", "sublabel": "estágio cognitivo · next_action · crm_lead_id" },
     { "id": "checkpoints", "lane": "agente", "col": 0, "type": "database", "label": "lead_checkpoints", "sublabel": "objeções e compromissos (por DIFF)" },
@@ -97,7 +99,12 @@
     { "id": "e45", "from": "leads", "to": "contactleadsapi", "label": "contact_id + organization_id" },
     { "id": "e46", "from": "stages", "to": "contactleadsapi", "label": "nome da etapa e do funil" },
     { "id": "e47", "from": "contactleadsapi", "to": "fichacontato", "label": "todos os negócios do contato" },
-    { "id": "e48", "from": "fichacontato", "to": "dossie", "label": "DadosCompletosDoLead é a apresentação única" }
+    { "id": "e48", "from": "fichacontato", "to": "dossie", "label": "DadosCompletosDoLead é a apresentação única" },
+    { "id": "e49", "from": "dossie", "to": "tarefas", "label": "marca e conclui follow-up do negócio" },
+    { "id": "e50", "from": "tarefas", "to": "fichacontato", "label": "mesma obrigação, separada por lead" },
+    { "id": "e51", "from": "tarefas", "to": "risco", "label": "futuro protege · vencido exige ação" },
+    { "id": "e52", "from": "risco", "to": "radar", "label": "texto e prazo do próximo contato" },
+    { "id": "e53", "from": "radar", "to": "dossie", "label": "deep link ?lead=<id>" }
   ],
   "cards": [
     {

@@ -12,6 +12,7 @@ import { useAtRiskLeads, type AtRiskLead } from "@/hooks/leads/useAtRiskLeads";
 import type { RiskBucket } from "@/lib/leads/risk-radar";
 import {
   ArrowRight,
+  CalendarBlank,
   CheckCircle,
   ClockCountdown,
   PaperPlaneTilt,
@@ -38,6 +39,17 @@ function followupWhen(iso: string, t: (texto: string) => string): string {
   const hours = Math.round(diffMs / 3_600_000);
   if (hours < 48) return `${t("em")} ${Math.max(1, hours)}h`;
   return `${t("em")} ${Math.round(hours / 24)}d`;
+}
+
+function manualFollowupWhen(iso: string, t: (texto: string) => string): string {
+  const diffMs = new Date(iso).getTime() - Date.now();
+  const hours = Math.round(Math.abs(diffMs) / 3_600_000);
+  if (diffMs <= 0) {
+    if (hours < 1) return t("vence agora");
+    if (hours < 48) return `${t("venceu há")} ${hours}h`;
+    return `${t("venceu há")} ${Math.round(hours / 24)}d`;
+  }
+  return followupWhen(iso, t);
 }
 
 export function RiskRadarList() {
@@ -132,9 +144,7 @@ export function RiskRadarList() {
 function RadarRow({ lead }: { lead: AtRiskLead }) {
   const t = useT();
   const meta = RISK_META[lead.risk as Exclude<RiskBucket, "em_dia">] ?? RISK_META.em_risco;
-  const href = lead.conversation_id
-    ? `/app/inbox?id=${lead.conversation_id}`
-    : `/app/pipelines/${lead.pipeline_id}`;
+  const href = `/app/pipelines/${lead.pipeline_id}?lead=${lead.id}`;
 
   const claim = useClaimConversation();
   const qc = useQueryClient();
@@ -193,7 +203,19 @@ function RadarRow({ lead }: { lead: AtRiskLead }) {
               {dono}
             </span>
           </p>
-          {lead.agenda?.appointment_id ? (
+          {lead.manual_followup ? (
+            <div className="mt-1 rounded-md border border-warning-border bg-warning-bg/50 p-2 text-xs" data-testid="radar-followup-manual">
+              <p className="inline-flex items-center gap-1 font-medium text-warning-fg">
+                <CalendarBlank size={13} aria-hidden />
+                {lead.manual_followup.title}
+              </p>
+              {lead.manual_followup.description ? <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{lead.manual_followup.description}</p> : null}
+              <p className="mt-0.5 tabular-nums text-muted-foreground">
+                {manualFollowupWhen(lead.manual_followup.due_date, t)}
+                {lead.manual_followup.open_count > 1 ? ` · +${lead.manual_followup.open_count - 1} ${t(lead.manual_followup.open_count === 2 ? "pendente" : "pendentes")}` : ""}
+              </p>
+            </div>
+          ) : lead.agenda?.appointment_id ? (
             <p className="mt-1 text-xs text-info-fg">{t(lead.agenda.motivo === "presenca_vencida" ? "Presença não confirmada · revise o compromisso" : lead.agenda.motivo === "presenca_pendente" ? "Confirme a presença · cobrança aguardando" : "Compromisso agendado · cobrança aguardando")}</p>
           ) : lead.in_flight && lead.next_followup_at ? (
             <p className="mt-1 inline-flex items-center gap-1 text-xs text-info-fg">

@@ -26,6 +26,7 @@ import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { DialButton } from "@/components/voice/DialButton";
 import { DadosCompletosDoLead } from "@/components/leads/DadosCompletosDoLead";
+import { FollowupsDoLead } from "@/components/leads/FollowupsDoLead";
 
 interface Props {
   contactId: string;
@@ -63,6 +64,7 @@ export function ContactDetailClient({ contactId }: Props) {
   const contact = q.data.data;
   const isAdmin =
     (user.is_platform_admin && !user.support) || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
+  const podeEditarFollowup = Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && user.support?.access_mode !== "support_readonly");
 
   // Uma decisão, um lugar (lib/contacts/rotulo-do-contato.ts). Esta tela era
   // uma das DUAS que ignoravam o telefone: contato com número e sem nome
@@ -230,7 +232,8 @@ export function ContactDetailClient({ contactId }: Props) {
                       </span>
                     </div>
                   </summary>
-                  <div className="border-t border-border p-4">
+                  <div className="space-y-4 border-t border-border p-4">
+                    <FollowupsDoLead leadId={lead.id} contactId={contactId} podeEditar={podeEditarFollowup} />
                     <DadosCompletosDoLead
                       lead={lead}
                       pipelineName={lead.pipeline_name}
