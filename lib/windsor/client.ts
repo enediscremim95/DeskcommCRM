@@ -116,7 +116,8 @@ export const fetchWindsorAccountRows = (
   fields: readonly string[],
   accountId: string,
   platform: AdPlatform,
-) => withTodayFallback(fields, 90, undefined, { accountId, platform });
+  days: 30 | 90 = 90,
+) => withTodayFallback(fields, days, undefined, { accountId, platform });
 
 export const fetchWindsorCampaignReach = (
   accountId: string,

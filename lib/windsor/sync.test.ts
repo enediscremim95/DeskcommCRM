@@ -72,6 +72,31 @@ describe("sincronização Windsor por conta", () => {
     expect(results.get("google_ads:123-456-7890")?.rows).toHaveLength(1);
   });
 
+  it("mantém 90 dias no resumo e limita o detalhe Meta a 30 dias", async () => {
+    const fetcher = vi.fn(async (
+      _fields: readonly string[],
+      _accountId: string,
+      _platform: AccountRow["platform"],
+      _days?: 30 | 90,
+    ) => []);
+
+    await fetchSelectedAccountRows([
+      account("act_1", "meta_ads"),
+      account("123-456-7890", "google_ads"),
+    ], fetcher);
+
+    const metaCalls = fetcher.mock.calls.filter((call) => call[1] === "act_1");
+    expect(metaCalls).toHaveLength(5);
+    expect(metaCalls[0]?.[3]).toBe(90);
+    expect(metaCalls.slice(1).map((call) => call[3])).toEqual([30, 30, 30, 30]);
+    expect(fetcher).toHaveBeenCalledWith(
+      WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.google_ads,
+      "123-456-7890",
+      "google_ads",
+      90,
+    );
+  });
+
   it("grava Meta e Google pela plataforma configurada no mesmo ciclo", () => {
     const accounts = [
       account("1694716038241588", "meta_ads", "org-mista"),

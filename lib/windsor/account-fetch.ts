@@ -54,6 +54,7 @@ export type WindsorAccountFetcher = (
   fields: readonly string[],
   accountId: string,
   platform: AdPlatform,
+  days?: 30 | 90,
 ) => Promise<WindsorRow[]>;
 
 export function accountKey(account: Pick<AccountRow, "platform" | "account_id">): string {
@@ -134,22 +135,26 @@ export async function fetchSelectedAccountRows(
     partial.set(key, current);
     const requests = account.platform === "meta_ads"
       ? [
-          { kind: "summary" as const, fields: WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads },
-          { kind: "core" as const, fields: META_DETAIL_FIELDS.core },
-          { kind: "conversions" as const, fields: META_DETAIL_FIELDS.conversions },
-          { kind: "video" as const, fields: META_DETAIL_FIELDS.video },
-          { kind: "media" as const, fields: META_DETAIL_FIELDS.media },
+          { kind: "summary" as const, fields: WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads, days: 90 as const },
+          { kind: "core" as const, fields: META_DETAIL_FIELDS.core, days: 30 as const },
+          { kind: "conversions" as const, fields: META_DETAIL_FIELDS.conversions, days: 30 as const },
+          { kind: "video" as const, fields: META_DETAIL_FIELDS.video, days: 30 as const },
+          { kind: "media" as const, fields: META_DETAIL_FIELDS.media, days: 30 as const },
         ]
-      : [{ kind: "summary" as const, fields: WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.google_ads }];
+      : [{
+          kind: "summary" as const,
+          fields: WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.google_ads,
+          days: 90 as const,
+        }];
 
-    for (const { kind, fields } of requests) {
+    for (const { kind, fields, days } of requests) {
       if (Date.now() >= deadlineAt) {
         current.error = new Error("windsor_sync_deadline");
         return;
       }
       try {
         current[kind] = filterRowsForAccount(
-          await fetcher(fields, account.account_id, account.platform),
+          await fetcher(fields, account.account_id, account.platform, days),
           account,
         );
       } catch (error) {
