@@ -43,7 +43,16 @@ export function NextActionSlot({
       <span className="min-w-0 flex-1 truncate text-accent" title={label}>
         {t("Propõe:")} {label}
       </span>
-      <span className="flex shrink-0 items-center gap-1">
+      {/* As decisões aparecem ao passar o mouse ou ao focar (teclado), e ficam
+          sempre visíveis onde não há ponteiro fino (toque). Fixas em todo card
+          elas viravam ruído; escondidas sem saída pelo teclado viravam
+          armadilha. O `group` é o card. */}
+      <span
+        className={cn(
+          "flex shrink-0 items-center gap-1 transition-opacity",
+          "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
+        )}
+      >
         <button
           type="button"
           disabled={decidir.isPending}

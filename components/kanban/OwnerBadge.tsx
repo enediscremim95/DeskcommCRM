@@ -26,6 +26,7 @@ export function OwnerBadge({
   ownerName,
   agentVersion,
   compacto = false,
+  noCard = false,
 }: {
   ownerKind: OwnerKind;
   ownerName: string | null;
@@ -40,20 +41,34 @@ export function OwnerBadge({
    * segundo arquivo é como duas telas passam a dizer a mesma coisa de dois jeitos.
    */
   compacto?: boolean;
+  /**
+   * A linha de cima do card do quadro (formato Kommo): disco de 16px e nome
+   * discreto. Sem dono, fica SÓ o disco tracejado com o rótulo acessível: a
+   * frase "Sem responsável" escrita em todo card era o espaço morto que o
+   * dono do produto apontou, e a coluna inteira repetindo-a não informa nada.
+   */
+  noCard?: boolean;
 }) {
   const t = useT();
+  const pequeno = compacto || noCard;
   if (!ownerKind) {
-    // Mesma geometria dos outros dois estados (disco de 24px + rótulo), para o
-    // rodapé do card não mudar de altura conforme o lead tem dono ou não.
+    // Mesma geometria dos outros dois estados (disco + rótulo), para a linha
+    // não mudar de altura conforme o lead tem dono ou não.
     return (
-      <div className="flex items-center gap-1.5" aria-label={t("Sem responsável")}>
+      <div
+        className="flex min-w-0 items-center gap-1.5"
+        aria-label={t("Sem responsável")}
+        title={noCard ? t("Sem responsável") : undefined}
+      >
         <span
-          className={`${compacto ? "h-4 w-4" : "h-6 w-6"} shrink-0 rounded-full border border-dashed border-border-strong`}
+          className={`${pequeno ? "h-4 w-4" : "h-6 w-6"} shrink-0 rounded-full border border-dashed border-border-strong`}
           aria-hidden
         />
-        <span className={`truncate text-text-muted ${compacto ? "text-[10px]" : "text-xs"}`}>
-          {t("Sem responsável")}
-        </span>
+        {!noCard && (
+          <span className={`truncate text-text-muted ${compacto ? "text-[10px]" : "text-xs"}`}>
+            {t("Sem responsável")}
+          </span>
+        )}
       </div>
     );
   }
@@ -62,10 +77,11 @@ export function OwnerBadge({
   const label = ownerName ?? t(isAgent ? "Agente" : "Responsável");
   const versionSuffix = isAgent && agentVersion != null ? ` · v${agentVersion}` : "";
   const fullLabel = `${label}${versionSuffix}`;
+  const disco = pequeno ? "h-4 w-4 text-[8px]" : "h-6 w-6 text-[10px]";
 
   return (
     <div
-      className="flex items-center gap-1.5"
+      className="flex min-w-0 items-center gap-1.5"
       aria-label={`${t("Responsável")}: ${fullLabel}`}
       title={fullLabel}
     >
@@ -73,18 +89,24 @@ export function OwnerBadge({
         className={
           isAgent
             ? // Vazado com anel: o fundo do card atravessa o disco.
-              `flex ${compacto ? "h-4 w-4 text-[8px]" : "h-6 w-6 text-[10px]"} shrink-0 items-center justify-center rounded-full border border-accent bg-surface font-mono font-semibold text-accent ring-1 ring-inset ring-accent/40`
+              `flex ${disco} shrink-0 items-center justify-center rounded-full border border-accent bg-surface font-mono font-semibold text-accent ring-1 ring-inset ring-accent/40`
             : // Preenchido SÓLIDO: a um metro, o humano é uma mancha escura e o
               // agente é um anel claro. Contraste que não depende da borda —
               // fundo suave fazia os dois lerem como "círculo claro".
-              `flex ${compacto ? "h-4 w-4 text-[8px]" : "h-6 w-6 text-[10px]"} shrink-0 items-center justify-center rounded-full bg-accent font-semibold text-accent-foreground`
+              `flex ${disco} shrink-0 items-center justify-center rounded-full bg-accent font-semibold text-accent-foreground`
         }
         aria-hidden
       >
         {ownerName ? ownerInitials(ownerName) : "?"}
       </span>
       <span
-        className={`truncate text-text-muted ${compacto ? "max-w-[7rem] text-[10px]" : "max-w-[9rem] text-xs"}`}
+        className={`truncate text-text-muted ${
+          noCard
+            ? "text-[11px] leading-4"
+            : compacto
+              ? "max-w-[7rem] text-[10px]"
+              : "max-w-[9rem] text-xs"
+        }`}
       >
         {label}
       </span>

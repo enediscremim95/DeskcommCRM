@@ -38,35 +38,35 @@ describe("a porta para a conversa", () => {
   it("aponta para a conversa CERTA, não para o inbox genérico", () => {
     // `/app/inbox` sozinho devolveria o usuário à lista para procurar de novo —
     // que é exatamente o trabalho que este bloco existe para evitar.
-    render(<ConversaNoDossie conversa={conversa} />);
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/app/inbox?id=conv-1");
+    render(<ConversaNoDossie conversa={conversa} leadId="lead-1" />);
+    expect(screen.getByRole("link")).toHaveAttribute("href", "/app/leads/lead-1");
   });
 
   it("mostra a última mensagem — senão o clique é uma aposta", () => {
-    render(<ConversaNoDossie conversa={conversa} />);
+    render(<ConversaNoDossie conversa={conversa} leadId="lead-1" />);
     expect(screen.getByText("Gracias 🤝")).toBeInTheDocument();
   });
 
   it("mostra o NÚMERO de não lidas, não um ponto", () => {
     // "3 sem ler" e "12 sem ler" pedem urgências diferentes.
-    render(<ConversaNoDossie conversa={conversa} />);
+    render(<ConversaNoDossie conversa={conversa} leadId="lead-1" />);
     expect(screen.getByLabelText("3 sem ler")).toHaveTextContent("3");
   });
 
   it("sem não lidas não inventa um zero", () => {
-    render(<ConversaNoDossie conversa={{ ...conversa, unread: 0 }} />);
+    render(<ConversaNoDossie conversa={{ ...conversa, unread: 0 }} leadId="lead-1" />);
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
   it("conversa sem prévia ainda abre — o texto é extra, o destino é o ponto", () => {
-    render(<ConversaNoDossie conversa={{ ...conversa, preview: null }} />);
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/app/inbox?id=conv-1");
+    render(<ConversaNoDossie conversa={{ ...conversa, preview: null }} leadId="lead-1" />);
+    expect(screen.getByRole("link")).toHaveAttribute("href", "/app/leads/lead-1");
   });
 
   it("negócio SEM conversa não renderiza nada", () => {
     // Criado à mão ou por webhook: estado normal, não erro. Um "sem conversa"
     // cinza ocuparia o mesmo espaço para não dizer nada.
-    const { container } = render(<ConversaNoDossie conversa={null} />);
+    const { container } = render(<ConversaNoDossie conversa={null} leadId="lead-1" />);
     expect(container).toBeEmptyDOMElement();
   });
 });
@@ -78,7 +78,7 @@ describe("o elo que some sem barulho", () => {
     // a tela exatamente como o usuário a encontrou.
     const fonte = readFileSync("components/kanban/LeadDossier.tsx", "utf8");
     expect(fonte, "o dossiê não monta o bloco da conversa").toMatch(
-      /<ConversaNoDossie\s+conversa=\{lead\.conversa\}/,
+      /<ConversaNoDossie\s+conversa=\{lead\.conversa\}\s+leadId=\{lead\.id\}/,
     );
   });
 

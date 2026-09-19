@@ -1,50 +1,86 @@
-/**
- * A URL ESTÁVEL DE UM LEAD.
- *
- * O dossiê do lead só abria por clique dentro do quadro, o que significa que
- * nenhuma outra tela do produto conseguia apontar para um lead: o histórico de
- * captação tem o id na mão e não tinha para onde levá-lo, e um link colado num
- * grupo do time não abria nada.
- *
- * O funil NÃO entra na URL de propósito. Ele é o lugar onde o lead está AGORA,
- * e leads mudam de funil — um link com o funil dentro apontaria para o quadro
- * errado no dia seguinte. Aqui a resolução é feita na hora e o redirecionamento
- * leva ao quadro certo com `?lead=`, que o board abre na montagem.
- *
- * Sem `notFound()` para lead inexistente: a RLS já garante que a consulta só
- * enxerga leads da organização de quem pediu, e cair no 404 do app é a resposta
- * certa tanto para "não existe" quanto para "não é seu" — sem revelar a
- * diferença entre os dois.
- */
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
+import { LeadPageClient } from "@/components/leads/LeadPageClient";
+import { Voltar } from "@/components/navigation/Voltar";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { listSelectableChannels } from "@/lib/channels/selectable";
+import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { createClient } from "@/lib/supabase/server";
+import type { Lead } from "@/lib/types/leads";
 
 export const dynamic = "force-dynamic";
 
-export default async function LeadPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function LeadPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) notFound();
 
   const { id } = await params;
-
   const supabase = await createClient();
-  // A RLS enxerga TODAS as organizações do usuário (`fn_user_org_ids()`), então
-  // sem este filtro um link para lead de outra org redirecionava para o funil de
-  // lá — trocando a organização ativa por baixo do usuário sem ele pedir.
   const { data: lead } = await supabase
     .from("crm_leads")
-    .select("id, pipeline_id")
+    .select("*")
     .eq("organization_id", activeOrg.orgId)
     .eq("id", id)
     .maybeSingle();
 
   if (!lead?.pipeline_id) notFound();
-  redirect(`/app/pipelines/${lead.pipeline_id}?lead=${lead.id}`);
+
+  const [pipelineResult, stageResult, contactResult, conversationResult, channelResult] =
+    await Promise.all([
+      supabase
+        .from("crm_pipelines")
+        .select("id, name, settings")
+        .eq("organization_id", activeOrg.orgId)
+        .eq("id", lead.pipeline_id)
+        .maybeSingle(),
+      supabase
+        .from("crm_stages")
+        .select("id, name")
+        .eq("organization_id", activeOrg.orgId)
+        .eq("id", lead.stage_id)
+        .maybeSingle(),
+      lead.contact_id
+        ? supabase
+            .from("contacts")
+            .select("id, display_name, name, phone_number, email")
+            .eq("organization_id", activeOrg.orgId)
+            .eq("id", lead.contact_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      lead.contact_id
+        ? supabase
+            .from("conversations")
+            .select("id, channel_session_id")
+            .eq("organization_id", activeOrg.orgId)
+            .eq("contact_id", lead.contact_id)
+            .order("last_message_at", { ascending: false, nullsFirst: false })
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      listSelectableChannels(supabase, activeOrg.orgId),
+    ]);
+
+  const pipeline = pipelineResult.data;
+  if (!pipeline) notFound();
+
+  return (
+    <div className="flex min-h-0 flex-col gap-4">
+      <Voltar href={`/app/pipelines/${lead.pipeline_id}`}>Voltar ao funil</Voltar>
+      <LeadPageClient
+        lead={lead as Lead}
+        pipelineName={pipeline.name}
+        stageName={stageResult.data?.name ?? "Etapa não informada"}
+        fieldDefs={camposDoFunil(pipeline.settings ?? null)}
+        contact={contactResult.data}
+        conversationId={conversationResult.data?.id ?? null}
+        hasConnectedChannel={channelResult.some((channel) => channel.status === "WORKING")}
+        canReplyInConversation={channelResult.some(
+          (channel) =>
+            channel.status === "WORKING" &&
+            channel.id === conversationResult.data?.channel_session_id,
+        )}
+      />
+    </div>
+  );
 }

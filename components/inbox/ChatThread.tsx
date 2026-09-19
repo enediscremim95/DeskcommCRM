@@ -20,34 +20,51 @@ import type { Message, Note } from "@/lib/types/messaging";
 
 interface Props {
   conversationId: string | null;
-  /** Escolher uma mensagem para responder. Sobe até o composer. */
   onResponder?: (m: Message) => void;
+  contextItems?: ThreadContextItem[];
+}
+
+export interface ThreadContextItem {
+  id: string;
+  ts: string;
+  label: string;
+  detail?: string | null;
 }
 
 /** Onda 5.2: union de item do thread — mensagem real ou nota interna (nunca vai ao cliente). */
 export type ThreadItem =
   | { kind: "message"; ts: string; data: Message }
-  | { kind: "note"; ts: string; data: Note };
+  | { kind: "note"; ts: string; data: Note }
+  | { kind: "context"; ts: string; data: ThreadContextItem };
 
-/** Intercala mensagens e notas por timestamp asc (puro, sem I/O — testado em thread-merge.test.ts). */
-export function mergeThreadItems(messages: Message[], notes: Note[]): ThreadItem[] {
+/** Intercala mensagens, notas e contexto por timestamp asc (puro, sem I/O). */
+export function mergeThreadItems(
+  messages: Message[],
+  notes: Note[],
+  contextItems: ThreadContextItem[] = [],
+): ThreadItem[] {
   const items: ThreadItem[] = [
     ...messages.map((data): ThreadItem => ({ kind: "message", ts: data.sent_at, data })),
     ...notes.map((data): ThreadItem => ({ kind: "note", ts: data.created_at, data })),
+    ...contextItems.map((data): ThreadItem => ({ kind: "context", ts: data.ts, data })),
   ];
   // Sort estável (Array#sort é estável no V8/Node): empate mantém a ordem de
-  // inserção acima — mensagens antes de notas no mesmo instante.
+  // inserção acima: mensagens, notas e contexto quando compartilham o instante.
   items.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
   return items;
 }
 
-function dayLabel(d: Date, t: (texto: string) => string = (texto) => texto, locale: Locale): string {
+function dayLabel(
+  d: Date,
+  t: (texto: string) => string = (texto) => texto,
+  locale: Locale,
+): string {
   if (isToday(d)) return t("Hoje");
   if (isYesterday(d)) return t("Ontem");
   return format(d, "dd/MM/yyyy", { locale: locale });
 }
 
-export function ChatThread({ conversationId, onResponder }: Props) {
+export function ChatThread({ conversationId, onResponder, contextItems = [] }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useMessagesRealtime(conversationId);
@@ -61,10 +78,7 @@ export function ChatThread({ conversationId, onResponder }: Props) {
   const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
 
-  const messages: Message[] = useMemo(
-    () => q.data?.pages.flatMap((p) => p.data) ?? [],
-    [q.data],
-  );
+  const messages: Message[] = useMemo(() => q.data?.pages.flatMap((p) => p.data) ?? [], [q.data]);
 
   /**
    * As mensagens por id, para resolver a CITADA sem ir ao servidor.
@@ -77,8 +91,8 @@ export function ChatThread({ conversationId, onResponder }: Props) {
   const porId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
 
   const items: ThreadItem[] = useMemo(
-    () => mergeThreadItems(messages, notes),
-    [messages, notes],
+    () => mergeThreadItems(messages, notes, contextItems),
+    [messages, notes, contextItems],
   );
 
   const paginas = q.data?.pages.length ?? 0;
@@ -224,7 +238,18 @@ export function ChatThread({ conversationId, onResponder }: Props) {
               </span>
             </div>
             {g.items.map((item) =>
-              item.kind === "note" ? (
+              item.kind === "context" ? (
+                <div
+                  key={`context-${item.data.id}`}
+                  className="bg-surface-muted/60 mx-auto my-2 max-w-[min(34rem,calc(100%-2rem))] rounded-md border border-border px-3 py-2 text-center"
+                  data-testid="lead-context-event"
+                >
+                  <p className="text-xs font-medium text-text">{item.data.label}</p>
+                  {item.data.detail ? (
+                    <p className="mt-0.5 text-[11px] text-text-muted">{item.data.detail}</p>
+                  ) : null}
+                </div>
+              ) : item.kind === "note" ? (
                 <NoteCard
                   key={`note-${item.data.id}`}
                   note={item.data}

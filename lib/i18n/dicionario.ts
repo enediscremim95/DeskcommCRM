@@ -653,6 +653,11 @@ export const DICIONARIO: Traducoes = {
   // ─── Kanban ───
   "Apenas atrasados": { es: "Solo atrasados" },
   "Sem responsável": { es: "Sin responsable" },
+  // Quadro no formato Kommo: cabeçalho da coluna e card compacto.
+  "lead": { es: "lead" },
+  "leads": { es: "leads" },
+  "Sem valor": { es: "Sin valor" },
+  "Atrasado": { es: "Atrasado" },
   "Editar campos": { es: "Editar campos" },
   "Linha do tempo": { es: "Línea de tiempo" },
   "DADOS DO NEGÓCIO": { es: "DATOS DEL NEGOCIO" },
@@ -663,6 +668,20 @@ export const DICIONARIO: Traducoes = {
   Salvar: { es: "Guardar" },
   vazio: { es: "vacío" },
   "Abrir conversa no Inbox": { es: "Abrir conversación en el Inbox" },
+  "Abrir lead e responder": { es: "Abrir lead y responder" },
+  "Abrir o lead e responder no WhatsApp": { es: "Abrir el lead y responder por WhatsApp" },
+  "WhatsApp": { es: "WhatsApp" },
+  "WhatsApp não conectado — envio de mensagens desabilitado.": { es: "WhatsApp no conectado — envío de mensajes deshabilitado." },
+  "Carregando conversa…": { es: "Cargando conversación…" },
+  "WhatsApp não conectado. O histórico continua disponível, mas o envio está bloqueado.": { es: "WhatsApp no conectado. El historial sigue disponible, pero el envío está bloqueado." },
+  "Conectar WhatsApp": { es: "Conectar WhatsApp" },
+  "Não foi possível carregar os acontecimentos do negócio. As mensagens continuam disponíveis.": { es: "No se pudieron cargar los acontecimientos del negocio. Los mensajes siguen disponibles." },
+  "Acompanhamento somente leitura": { es: "Seguimiento de solo lectura" },
+  "Conversa não encontrada ou fora do seu acesso": { es: "Conversación no encontrada o fuera de tu acceso" },
+  "Este lead ainda não tem conversa no WhatsApp": { es: "Este lead todavía no tiene conversación en WhatsApp" },
+  "WhatsApp não conectado": { es: "WhatsApp no conectado" },
+  "Quando este contato conversar pelo canal conectado, as mensagens aparecerão aqui.": { es: "Cuando este contacto escriba por el canal conectado, los mensajes aparecerán aquí." },
+  "Conecte um número para receber e responder mensagens dentro do lead.": { es: "Conecta un número para recibir y responder mensajes dentro del lead." },
 
   // ─── Contatos ───
   "Buscar contatos…": { es: "Buscar contactos…" },
