@@ -9,6 +9,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { historicoEstruturado, rotuloDoCampo, valorLegivel } from "@/lib/leads/dados-completos";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import type { Lead } from "@/lib/types/leads";
+import { cn } from "@/lib/utils";
 
 interface Props {
   lead: Lead;
@@ -44,18 +45,26 @@ function dinheiroLegivel(centavos: number | null, moeda: string | null, locale: 
   }
 }
 
+/**
+ * Uma linha rótulo → valor, como a ficha do Kommo: rótulo discreto à esquerda,
+ * valor à direita, um fio fino entre as linhas. Vazio fica apagado, não some:
+ * na ficha, saber que o campo EXISTE e está em branco é informação.
+ */
 function Campo({ rotulo, valor }: { rotulo: string; valor: unknown }) {
   const texto = valorLegivel(valor);
   const multilinha = typeof valor === "object" && valor !== null;
+  const vazio = texto === "-" || texto === "";
   return (
-    <div className="bg-surface-muted/20 min-w-0 rounded-md border border-border p-2.5">
-      <dt className="text-[11px] font-medium tracking-wide text-text-muted uppercase">{rotulo}</dt>
+    <div className="grid min-w-0 grid-cols-[6.5rem_minmax(0,1fr)] items-baseline gap-x-3 border-b border-border/60 py-1.5">
+      <dt className="truncate text-xs text-text-muted" title={rotulo}>
+        {rotulo}
+      </dt>
       <dd
-        className={
-          multilinha
-            ? "mt-1 font-mono text-xs break-words whitespace-pre-wrap"
-            : "mt-1 text-sm break-words"
-        }
+        className={cn(
+          "min-w-0 break-words",
+          multilinha ? "font-mono text-xs whitespace-pre-wrap" : "text-[13px] leading-5",
+          vazio ? "text-text-subtle" : "text-text",
+        )}
       >
         {texto}
       </dd>
@@ -148,7 +157,7 @@ export function DadosCompletosDoLead({
         </div>
       </div>
 
-      <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
         <Campo rotulo={t("Título")} valor={lead.title} />
         <Campo rotulo={t("Funil")} valor={pipelineName ?? t("Não informado")} />
         <Campo rotulo={t("Etapa")} valor={stageName ?? t("Não informado")} />
@@ -173,11 +182,11 @@ export function DadosCompletosDoLead({
       </dl>
 
       <section>
-        <h4 className="mb-2 text-xs font-medium tracking-wide text-text-muted uppercase">
+        <h4 className="mb-1.5 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
           {t("Dados informados")}
         </h4>
         {campos.length > 0 ? (
-          <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
             {campos.map(([chave, valor]) => (
               <Campo key={chave} rotulo={rotuloDoCampo(chave, fieldDefs)} valor={valor} />
             ))}
@@ -188,11 +197,11 @@ export function DadosCompletosDoLead({
       </section>
 
       <section>
-        <h4 className="mb-2 text-xs font-medium tracking-wide text-text-muted uppercase">
+        <h4 className="mb-1.5 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
           {t("Origem, campanha e anúncio")}
         </h4>
         {origem.length > 0 ? (
-          <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
             {origem.map(([chave, valor]) => (
               <Campo key={chave} rotulo={rotuloDoCampo(chave)} valor={valor} />
             ))}
@@ -204,7 +213,7 @@ export function DadosCompletosDoLead({
 
       {lead.custom_fields && Object.hasOwn(lead.custom_fields, "historico") && (
         <section>
-          <h4 className="mb-2 text-xs font-medium tracking-wide text-text-muted uppercase">
+          <h4 className="mb-1.5 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
             {t("Histórico de atendimento")}
           </h4>
           {historico ? (

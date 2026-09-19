@@ -47,6 +47,12 @@ function formatBRL(cents: number): string {
   }
 }
 
+/**
+ * A coluna do quadro, com o cabeçalho no formato do Kommo: o nome da etapa em
+ * caixa alta, "7 leads: R$ 19.700" logo abaixo e uma linha na cor da etapa
+ * fechando o cabeçalho. A soma dos valores sai da própria lista que a coluna
+ * recebe — nenhuma consulta nova.
+ */
 export function StageColumn({
   stage,
   leads,
@@ -87,60 +93,67 @@ export function StageColumn({
     ancora.current = null;
     onSelectMany?.(idsVisiveis, !todosSelecionados);
   };
-  const accentStyle: CSSProperties | undefined = stage.color
-    ? { backgroundColor: stage.color }
-    : undefined;
+  // Sem cor configurada a linha fica neutra — nunca some, porque é ela que
+  // separa o cabeçalho dos cards.
+  const linhaDaEtapa: CSSProperties = {
+    backgroundColor: stage.color ?? "var(--color-border-strong)",
+  };
 
   return (
-    <div className="flex w-80 shrink-0 flex-col rounded-lg border border-border bg-surface-muted/40">
-      <div className="group/etapa flex items-center gap-2 border-b border-border px-3 py-2.5">
-        {/* "Selecionar a etapa inteira" é o gesto que faz a ação em lote valer a
-            pena: sem ele, mover trinta cards deixa de ser trinta arrastes e vira
-            trinta cliques com modificador. Fica no cabeçalho porque é ali que a
-            etapa é um objeto — o mesmo lugar onde já se lê a contagem dela.
-            Indeterminado quando a seleção é parcial: "alguns" e "nenhum" não
-            podem ter a mesma aparência num controle que o próximo clique
-            inverte. */}
-        <input
-          type="checkbox"
-          checked={todosSelecionados}
-          ref={(el) => {
-            if (el) el.indeterminate = selecionadosAqui > 0 && !todosSelecionados;
-          }}
-          disabled={idsVisiveis.length === 0}
-          onChange={alternarEtapa}
-          aria-label={
-            todosSelecionados
-              ? `${t("Desmarcar todos em")} ${stage.name}`
-              : `${t("Selecionar todos em")} ${stage.name}`
-          }
-          className={cn(
-            "h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
-            "focus:opacity-100 disabled:cursor-default",
-            selecionadosAqui > 0 ? "opacity-100" : "opacity-0 group-hover/etapa:opacity-100",
+    <div className="flex w-72 shrink-0 flex-col rounded-lg bg-surface-elevated/70">
+      <div className="group/etapa px-2.5 pt-2.5 pb-2">
+        <div className="flex items-center gap-1.5">
+          {/* "Selecionar a etapa inteira" é o gesto que faz a ação em lote valer a
+              pena: sem ele, mover trinta cards deixa de ser trinta arrastes e vira
+              trinta cliques com modificador. Fica no cabeçalho porque é ali que a
+              etapa é um objeto — o mesmo lugar onde já se lê a contagem dela.
+              Indeterminado quando a seleção é parcial: "alguns" e "nenhum" não
+              podem ter a mesma aparência num controle que o próximo clique
+              inverte. */}
+          <input
+            type="checkbox"
+            checked={todosSelecionados}
+            ref={(el) => {
+              if (el) el.indeterminate = selecionadosAqui > 0 && !todosSelecionados;
+            }}
+            disabled={idsVisiveis.length === 0}
+            onChange={alternarEtapa}
+            aria-label={
+              todosSelecionados
+                ? `${t("Desmarcar todos em")} ${stage.name}`
+                : `${t("Selecionar todos em")} ${stage.name}`
+            }
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent transition-opacity",
+              "focus:opacity-100 disabled:cursor-default",
+              selecionadosAqui > 0 ? "opacity-100" : "opacity-0 group-hover/etapa:opacity-100",
+            )}
+          />
+          <h2
+            className="min-w-0 flex-1 truncate text-[11px] font-semibold tracking-[0.08em] text-text uppercase"
+            title={stage.name}
+          >
+            {stage.name}
+          </h2>
+          {selecionadosAqui > 0 && (
+            <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[10px] font-semibold leading-4 text-accent tabular-nums">
+              {selecionadosAqui}/{leads.length}
+            </span>
           )}
-        />
-        <span
-          className={cn(
-            "h-2 w-2 rounded-full",
-            !stage.color && "bg-text-muted/40",
-          )}
-          style={accentStyle}
-          aria-hidden
-        />
-        <h2 className="flex-1 truncate text-sm font-semibold text-text">
-          {stage.name}
-        </h2>
-        <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium tabular-nums text-text-muted">
-          {selecionadosAqui > 0 ? `${selecionadosAqui}/${leads.length}` : leads.length}
-        </span>
-      </div>
-
-      {totalCents > 0 && (
-        <div className="border-b border-border px-3 py-1.5 text-[11px] tabular-nums text-text-muted">
-          {formatBRL(totalCents)}
         </div>
-      )}
+        {/* "7 leads: R$ 19.700" — a contagem e a soma, uma linha, como no Kommo.
+            Sem valor nenhum na coluna fica só a contagem: um "R$ 0" seria
+            informação falsa com cara de número. */}
+        <p className="mt-0.5 truncate pl-5 text-[11px] leading-4 text-text-muted tabular-nums">
+          {leads.length} {leads.length === 1 ? t("lead") : t("leads")}
+          {totalCents > 0 && (
+            <>
+              : <span className="font-medium text-text">{formatBRL(totalCents)}</span>
+            </>
+          )}
+        </p>
+        <div aria-hidden className="mt-2 h-[3px] rounded-full" style={linhaDaEtapa} />
+      </div>
 
       <Droppable droppableId={stage.id} type="LEAD">
         {(provided, snapshot) => (
@@ -148,7 +161,7 @@ export function StageColumn({
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={cn(
-              "flex flex-1 flex-col gap-2 p-2 transition-colors",
+              "flex flex-1 flex-col gap-1.5 px-1.5 pb-1.5 transition-colors",
               snapshot.isDraggingOver && "bg-accent/5",
             )}
           >
@@ -174,7 +187,7 @@ export function StageColumn({
             ))}
             {provided.placeholder}
             {leads.length === 0 && !snapshot.isDraggingOver && (
-              <div className="flex h-20 items-center justify-center text-[11px] text-text-muted">
+              <div className="flex h-16 items-center justify-center rounded-md border border-dashed border-border text-[11px] text-text-subtle">
                 {t("vazio")}
               </div>
             )}

@@ -56,11 +56,11 @@ function BoardSkeleton() {
       {[0, 1, 2].map((c) => (
         <div
           key={c}
-          className="bg-surface-muted/40 flex w-80 shrink-0 flex-col gap-2 rounded-lg border border-border p-3"
+          className="flex w-72 shrink-0 flex-col gap-1.5 rounded-lg bg-surface-elevated/70 p-2"
         >
-          <Skeleton className="h-5 w-32" />
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-24 w-full animate-pulse" />
+          <Skeleton className="mb-1 h-4 w-28" />
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} className="h-16 w-full animate-pulse" />
           ))}
         </div>
       ))}

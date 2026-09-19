@@ -60,15 +60,26 @@ function formatBRL(cents: number | null, currency: string | null): string | null
 }
 
 /**
- * O card do Kanban — orçamento FIXO: 5 elementos, 3 faixas, altura constante.
+ * O card do quadro, no formato do Kommo: compacto, cada canto com função.
  *
- * As alturas são reservadas em vez de derivadas do conteúdo: título sempre
- * ocupa 2 linhas, valor sempre ocupa a sua linha (com "—" quando não há valor),
- * e a faixa do agente existe mesmo vazia. É isso que faz o board continuar
- * legível quando score, próxima ação e alerta chegarem — o card não cresce com
- * dados, ele TROCA de estado.
+ *   linha 1  dono (disco + nome discreto)            idade · ações (hover)
+ *   linha 2  TÍTULO DO NEGÓCIO, na cor de destaque
+ *   linha 3  valor                                    sinal (score ou esfriando)
+ *   linha 4  proposta do agente / retomada  — só quando existe, com as decisões
+ *   linha 5  última mensagem do WhatsApp    — só quando há conversa
  *
- * Cor só aparece na borda esquerda, e só quando o estado pede (Lei C).
+ * O que saiu, e por quê: o "—" sozinho quando não há valor, a frase
+ * "Sem responsável" escrita, o "em <etapa>" (a coluna já diz a etapa) e os
+ * botões fixos em todo card. Cada um deles custava uma linha em cards que não
+ * tinham nada a dizer ali — e o quadro mostrava 3 cards por coluna. A meta é
+ * 6 a 8, legíveis de relance.
+ *
+ * A precedência do que ocupa a faixa de sinal continua sendo a de
+ * `resolveCardState` (lib/kanban/card-state.ts) — aqui só se desenha.
+ *
+ * Cor só aparece na borda esquerda, e só quando o estado pede (Lei C). O título
+ * usa a cor de destaque porque é o que o olho procura primeiro numa coluna com
+ * oito cards, e é o mesmo destaque do Kommo.
  */
 export function KanbanCard({
   card,
@@ -85,6 +96,8 @@ export function KanbanCard({
   const value = formatBRL(card.valueCents, card.currency);
   const state = resolveCardState(card, t);
   const age = stageAgeLabel(card.hoursInStage, t);
+  const mostraIdade = state.showStageAge && age !== "";
+  const temSinalNaLinha3 = state.slot.type === "meter" || state.slot.type === "cooling";
 
   // Clique ABRE o lead; ctrl/cmd+clique SELECIONA; shift+clique estende até a
   // âncora. "Clicar abre" é a convenção mais forte, e seleção múltipla é recurso
@@ -141,11 +154,13 @@ export function KanbanCard({
           // Tags saem do card (Lei A): ficam a um hover, sem ocupar altura.
           title={card.tags.length > 0 ? `Tags: ${card.tags.join(", ")}` : undefined}
           className={cn(
-            "group relative overflow-hidden rounded-md border border-border bg-surface",
-            "py-2.5 pl-3 pr-3 shadow-xs transition-colors",
-            "hover:border-border-strong",
-            snapshot.isDragging && "rotate-1 shadow-md ring-1 ring-accent/40",
-            isSelected && "ring-2 ring-accent",
+            "group relative overflow-hidden rounded-lg border border-border bg-surface",
+            "px-2.5 pt-1.5 pb-2 shadow-xs",
+            "transition-[border-color,box-shadow,transform] duration-150 ease-out",
+            "hover:border-border-strong hover:shadow-sm",
+            "focus-within:border-border-strong",
+            snapshot.isDragging && "rotate-1 shadow-lg ring-1 ring-accent/40",
+            isSelected && "border-accent ring-1 ring-accent",
           )}
         >
           {/* key = contador: cada evento remoto monta um overlay NOVO, e é isso
@@ -162,152 +177,168 @@ export function KanbanCard({
               className="card-pulse pointer-events-none absolute inset-0"
             />
           )}
-          {/* Borda de estado — 2px, a única cor do card. */}
+          {/* Borda de estado — 3px, a única cor do card fora do título. */}
           <span
             aria-hidden
             className={cn(
-              "absolute inset-y-0 left-0 w-0.5",
+              "absolute inset-y-0 left-0 w-[3px]",
               state.border === "accent" && "bg-accent",
               state.border === "warning" && "bg-warning",
               state.border === "neutral" && "bg-transparent",
             )}
           />
 
-          {/* ① identidade — altura FIXA de 2 linhas, com ou sem texto longo. */}
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex min-w-0 flex-1 items-start gap-1.5">
-              {/* A largura é SEMPRE reservada (`h-4 w-4` num wrapper que não
-                  some), só a tinta é condicional: o card tem orçamento fixo de
-                  altura e largura, e uma caixa que aparece no hover EMPURRANDO
-                  o título faria o quadro inteiro tremer com o mouse. Some por
-                  opacidade, nunca por `hidden`. `focus:opacity-100` no próprio
-                  input: uma caixa invisível e tabulável seria armadilha de
-                  teclado. */}
-              <input
-                type="checkbox"
-                checked={Boolean(isSelected)}
-                aria-label={`${t("Selecionar")}: ${card.title}`}
-                onClick={(e) => {
-                  // O card inteiro tem onClick (abre o lead): sem parar a
-                  // propagação, marcar a caixa abriria o lead por cima.
-                  e.stopPropagation();
-                  onSelect?.(card.id, e.shiftKey ? "intervalo" : "alterna");
-                }}
-                onChange={() => {
-                  /* estado vem de `isSelected`; quem decide é o onClick acima */
-                }}
-                className={cn(
-                  "mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
-                  "focus:opacity-100 focus-visible:outline-2 focus-visible:outline-accent",
-                  isSelected || isSelecting
-                    ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100",
-                )}
-              />
-              {card.canonicalTag && (
-                <span
-                  className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                  title={card.canonicalTag}
-                  // role="img": um span nu não aceita aria-label (aria-prohibited-attr).
-                  role="img"
-                  aria-label={`${t("Tag")}: ${card.canonicalTag}`}
-                />
+          {/* ① dono · idade · ações — a linha discreta de cima, como no Kommo. */}
+          <div className="flex h-6 items-center gap-1.5">
+            {/* A largura é SEMPRE reservada (`h-3.5 w-3.5` num wrapper que não
+                some), só a tinta é condicional: o card tem orçamento fixo de
+                altura e largura, e uma caixa que aparece no hover EMPURRANDO
+                o dono faria o quadro inteiro tremer com o mouse. Some por
+                opacidade, nunca por `hidden`. `focus:opacity-100` no próprio
+                input: uma caixa invisível e tabulável seria armadilha de
+                teclado. */}
+            <input
+              type="checkbox"
+              checked={Boolean(isSelected)}
+              aria-label={`${t("Selecionar")}: ${card.title}`}
+              onClick={(e) => {
+                // O card inteiro tem onClick (abre o lead): sem parar a
+                // propagação, marcar a caixa abriria o lead por cima.
+                e.stopPropagation();
+                onSelect?.(card.id, e.shiftKey ? "intervalo" : "alterna");
+              }}
+              onChange={() => {
+                /* estado vem de `isSelected`; quem decide é o onClick acima */
+              }}
+              className={cn(
+                "h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent transition-opacity",
+                "focus:opacity-100 focus-visible:outline-2 focus-visible:outline-accent",
+                isSelected || isSelecting
+                  ? "opacity-100"
+                  : "opacity-0 group-hover:opacity-100",
               )}
-              {/* O TÍTULO é o elemento ativável, não o card inteiro.
-                  `role="group"` no card foi decisão da wave 2 (o dnd marca o
-                  handle como button, e com o menu de ações dentro isso vira
-                  nested-interactive no axe). Voltar o card para `button`
-                  reintroduziria aquele defeito com cara de melhoria de
-                  acessibilidade; deixar só onKeyDown daria uma ação que existe
-                  e NÃO É DESCOBERTA por leitor de tela. O título como button
-                  atende mouse, teclado e leitor sem desfazer a decisão antiga. */}
-              <h3 className="line-clamp-2 h-10 text-sm font-medium leading-5 text-text">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    // `stopPropagation` continua: sem ele o handler do card
-                    // rodaria de novo e o gesto seria contado duas vezes (um
-                    // ctrl+clique marcaria e desmarcaria no mesmo instante).
-                    // Por isso a DECISÃO tem de ser tomada aqui também.
-                    e.stopPropagation();
-                    decidirClique(e);
-                  }}
-                  className="text-left hover:underline"
-                >
-                  {card.title}
-                </button>
-              </h3>
+            />
+            <div className="min-w-0 flex-1">
+              <OwnerBadge
+                noCard
+                ownerKind={card.owner.kind}
+                ownerName={card.owner.name}
+                agentVersion={card.owner.agentVersion}
+              />
             </div>
+            {card.canonicalTag && (
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                title={card.canonicalTag}
+                // role="img": um span nu não aceita aria-label (aria-prohibited-attr).
+                role="img"
+                aria-label={`${t("Tag")}: ${card.canonicalTag}`}
+              />
+            )}
+            {/* "3d" / "5h" / "agora": quando o card já conta o tempo na faixa
+                de sinal (esfriando, retomada), a idade some daqui — um relógio
+                por card, nunca o mesmo número duas vezes. */}
+            {mostraIdade && (
+              <span
+                className="shrink-0 whitespace-nowrap text-[11px] leading-4 tabular-nums text-text-subtle"
+                title={`${t("Última atividade")}: ${age}`}
+              >
+                {age}
+              </span>
+            )}
             <KanbanCardActions lead={lead} pipelineId={pipelineId} />
           </div>
 
-          {/* ② valor — altura reservada mesmo sem valor, senão o card encolhe. */}
-          <p
-            className={cn(
-              "mt-1 h-5 text-xs font-medium leading-5 tabular-nums",
-              value ? "text-text" : "text-text-muted",
-            )}
-          >
-            {value ?? "—"}
-          </p>
+          {/* ② título — o elemento ativável, em destaque. Duas linhas no máximo;
+              sem altura fixa, porque a maioria dos títulos cabe em uma e a
+              linha vazia era metade do espaço morto do card antigo. */}
+          <h3 className="line-clamp-2 text-[13px] font-semibold leading-[1.15rem] text-accent">
+            {/* O TÍTULO é o elemento ativável, não o card inteiro.
+                `role="group"` no card foi decisão da wave 2 (o dnd marca o
+                handle como button, e com o menu de ações dentro isso vira
+                nested-interactive no axe). Voltar o card para `button`
+                reintroduziria aquele defeito com cara de melhoria de
+                acessibilidade; deixar só onKeyDown daria uma ação que existe
+                e NÃO É DESCOBERTA por leitor de tela. O título como button
+                atende mouse, teclado e leitor sem desfazer a decisão antiga. */}
+            <button
+              type="button"
+              onClick={(e) => {
+                // `stopPropagation` continua: sem ele o handler do card
+                // rodaria de novo e o gesto seria contado duas vezes (um
+                // ctrl+clique marcaria e desmarcaria no mesmo instante).
+                // Por isso a DECISÃO tem de ser tomada aqui também.
+                e.stopPropagation();
+                decidirClique(e);
+              }}
+              className="text-left decoration-accent/50 underline-offset-2 hover:underline"
+            >
+              {card.title}
+            </button>
+          </h3>
 
-          {/* ③ a linha do agente — um slot, três estados, nunca três blocos. */}
-          <div className="mt-1.5 flex h-6 items-center gap-2 text-xs">
-            {state.slot.type === "awaiting" && (
-              // A proposta do agente é a ÚNICA linha do card com ação: é o
-              // ponto onde a decisão do humano entra. Sem os botões aqui, o
-              // texto seria só mais um aviso — e a wave existe porque avisar
-              // sem poder decidir é o que já acontecia (o dado ficava no banco).
+          {/* ③ valor · sinal — só existe quando há algo a mostrar. */}
+          {(value || temSinalNaLinha3) && (
+            <div className="mt-1 flex h-5 items-center justify-between gap-2">
+              <span
+                className={cn(
+                  "min-w-0 truncate text-xs leading-4 tabular-nums",
+                  value ? "font-medium text-text" : "text-text-subtle",
+                )}
+              >
+                {value ?? ""}
+              </span>
+              {state.slot.type === "meter" && (
+                <ScoreSlot
+                  compacto
+                  probability={state.slot.probability}
+                  band={state.slot.band}
+                  reason={state.slot.reason}
+                  factors={state.slot.factors}
+                />
+              )}
+              {state.slot.type === "cooling" && (
+                // -fg é a variante de TEXTO do token (o -warning puro dá 3.7:1 em
+                // 12px); a cor cheia fica na borda de estado, que é gráfica.
+                <span className="flex min-w-0 items-center gap-1 text-[11px] leading-4 text-warning-fg">
+                  <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+                  <span className="truncate">{state.slot.label}</span>
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* ④ a decisão do humano — uma faixa própria, só quando há proposta. */}
+          {state.slot.type === "awaiting" && (
+            // A proposta do agente é a ÚNICA linha do card com ação: é o
+            // ponto onde a decisão do humano entra. Sem os botões aqui, o
+            // texto seria só mais um aviso — e a wave existe porque avisar
+            // sem poder decidir é o que já acontecia (o dado ficava no banco).
+            <div className="mt-1.5 flex h-6 items-center gap-2 rounded-md bg-accent-soft/60 px-1.5 text-[11px]">
               <NextActionSlot
                 label={state.slot.label}
                 leadId={card.id}
                 approvedSeq={lead.next_action?.seq ?? -1}
                 pipelineId={pipelineId}
               />
-            )}
-            {state.slot.type === "reactivation" && (
-              // O negócio parou E aqui está o que fazer. Mesma faixa, mesma
-              // altura: o card não cresce quando o sistema tem algo a propor.
+            </div>
+          )}
+          {state.slot.type === "reactivation" && (
+            // O negócio parou E aqui está o que fazer. O prazo aparece no
+            // próprio slot; a idade da linha 1 some para não contar duas vezes.
+            <div className="mt-1.5 flex h-6 items-center gap-2 rounded-md bg-warning-bg px-1.5 text-[11px]">
               <ReactivationSlot
                 leadId={card.id}
                 proposalId={state.slot.proposalId}
                 expiresAt={state.slot.expiresAt}
                 pipelineId={pipelineId}
               />
-            )}
-            {state.slot.type === "cooling" && (
-              // -fg é a variante de TEXTO do token (o -warning puro dá 3.7:1 em
-              // 12px); a cor cheia fica na borda de estado, que é gráfica.
-              <span className="truncate text-warning-fg">{state.slot.label}</span>
-            )}
-            {state.slot.type === "meter" && (
-              <ScoreSlot
-                probability={state.slot.probability}
-                band={state.slot.band}
-                reason={state.slot.reason}
-                factors={state.slot.factors}
-              />
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* A última mensagem, com atalho para a tela do lead. Fica ANTES do rodapé
-              de dono/tempo porque é conteúdo do negócio, não metadado do card —
-              e some por inteiro quando não há conversa. */}
+          {/* ⑤ a última mensagem, com atalho para a tela do lead. Some por
+              inteiro quando não há conversa. */}
           <ConversaSlot conversa={lead.conversa} leadId={lead.id} />
-
-          {/* ④ dono · ⑤ tempo no estágio */}
-          <div className="mt-1 flex h-6 items-center justify-between gap-2">
-            <OwnerBadge
-              ownerKind={card.owner.kind}
-              ownerName={card.owner.name}
-              agentVersion={card.owner.agentVersion}
-            />
-            <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-text-muted">
-              {state.showStageAge && age
-                ? `${age} ${t("em")} ${card.stageName}`
-                : `${t("em")} ${card.stageName}`}
-            </span>
-          </div>
         </div>
       )}
     </Draggable>

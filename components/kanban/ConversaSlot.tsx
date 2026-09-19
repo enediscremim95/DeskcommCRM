@@ -29,6 +29,12 @@ import { cn } from "@/lib/utils";
  * Lead criado à mão ou por webhook não tem contato; contato pode não ter
  * conversa. Nesses casos o slot não aparece — e NÃO aparece um "sem mensagens"
  * cinza, que ocuparia a mesma linha em metade dos cards para não dizer nada.
+ *
+ * ─── Desenho (formato Kommo) ────────────────────────────────────────────────
+ *
+ * O canal é o ícone verde, como no Kommo; a palavra "WhatsApp" fica só para o
+ * leitor de tela. A linha é a última do card e a mais discreta: quem lê o
+ * quadro de relance quer o título e o valor, e só depois o que a pessoa disse.
  */
 export function ConversaSlot({
   conversa,
@@ -52,24 +58,22 @@ export function ConversaSlot({
       onClick={(e: MouseEvent) => e.stopPropagation()}
       onPointerDown={(e: MouseEvent) => e.stopPropagation()}
       className={cn(
-        "group/conversa mt-1 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px]",
-        "text-text-muted transition-colors hover:bg-muted hover:text-foreground",
+        "group/conversa mt-1.5 flex h-6 items-center gap-1.5 rounded-md border border-border/70 bg-surface-elevated/70 px-1.5 text-[11px]",
+        "text-text-muted transition-colors hover:border-border-strong hover:bg-surface-elevated hover:text-text",
+        temNaoLidas && "border-accent/30 bg-accent-soft/40",
       )}
       title={t("Abrir o lead e responder no WhatsApp")}
     >
-      <ChatCircle size={12} weight="regular" className="shrink-0" aria-hidden />
-      <span className="shrink-0 font-medium text-text">{t("WhatsApp")}</span>
-      <span aria-hidden className="shrink-0">
-        ·
-      </span>
-      <span className="min-w-0 truncate">
+      <ChatCircle size={13} weight="fill" className="shrink-0 text-success" aria-hidden />
+      <span className="sr-only">{t("WhatsApp")}</span>
+      <span className={cn("min-w-0 truncate", temNaoLidas && "font-medium text-text")}>
         {preview || <span className="italic">{t("conversa sem mensagens")}</span>}
       </span>
       {temNaoLidas && (
         // O número, não um ponto: "3 sem ler" e "12 sem ler" pedem urgências
         // diferentes, e um ponto colapsa as duas.
         <span
-          className="ml-auto shrink-0 rounded-full bg-primary px-1.5 text-[10px] font-medium text-primary-foreground tabular-nums"
+          className="ml-auto shrink-0 rounded-full bg-accent px-1.5 text-[10px] font-semibold leading-4 text-accent-foreground tabular-nums"
           aria-label={`${conversa.unread} ${t("sem ler")}`}
         >
           {conversa.unread}

@@ -19,6 +19,8 @@ interface ScoreSlotProps {
   reason: string;
   /** Até três, as que existem. */
   factors: Fator[];
+  /** No card compacto (formato Kommo) a barra encolhe para caber ao lado do valor. */
+  compacto?: boolean;
 }
 
 /**
@@ -33,7 +35,13 @@ interface ScoreSlotProps {
  * traria de volta o card piscando na fronteira, no único lugar onde o CHECK de
  * coerência não alcança.
  */
-export function ScoreSlot({ probability, band, reason, factors }: ScoreSlotProps) {
+export function ScoreSlot({
+  probability,
+  band,
+  reason,
+  factors,
+  compacto = false,
+}: ScoreSlotProps) {
   const t = useT();
   const [aberto, setAberto] = useState(false);
 
@@ -56,10 +64,16 @@ export function ScoreSlot({ probability, band, reason, factors }: ScoreSlotProps
           // O rótulo acessível carrega o número E a faixa: "72%" lido sozinho
           // não diz se é bom ou ruim para quem não vê a barra.
           aria-label={`${t("Probabilidade")} ${probability}%, ${bandLabel(band, t)}. ${t("Ver o porquê.")}`}
-          className="flex min-w-0 items-center gap-2 rounded-md text-left"
+          className={cn(
+            "flex min-w-0 items-center rounded-md text-left",
+            compacto ? "gap-1.5" : "gap-2",
+          )}
         >
           <span
-            className="h-[3px] w-16 shrink-0 overflow-hidden rounded-full bg-border"
+            className={cn(
+              "h-[3px] shrink-0 overflow-hidden rounded-full bg-border",
+              compacto ? "w-9" : "w-16",
+            )}
             aria-hidden
           >
             <span
@@ -72,7 +86,11 @@ export function ScoreSlot({ probability, band, reason, factors }: ScoreSlotProps
               style={{ width: `${probability}%` }}
             />
           </span>
-          <span className="tabular-nums text-text-muted">{probability}%</span>
+          <span
+            className={cn("tabular-nums text-text-muted", compacto && "text-[11px] leading-4")}
+          >
+            {probability}%
+          </span>
         </button>
       </PopoverTrigger>
 

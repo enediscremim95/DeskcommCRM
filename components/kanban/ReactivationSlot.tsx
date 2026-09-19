@@ -67,7 +67,14 @@ export function ReactivationSlot({
           · {resta}
         </span>
       </span>
-      <span className="flex shrink-0 items-center gap-1">
+      {/* Retomar/Encerrar só ao passar o mouse ou ao focar; sempre visíveis no
+          toque. Fixos em todo card eram o "botão em tudo" que o dono apontou. */}
+      <span
+        className={cn(
+          "flex shrink-0 items-center gap-1 transition-opacity",
+          "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
+        )}
+      >
         <button
           type="button"
           disabled={decidir.isPending}

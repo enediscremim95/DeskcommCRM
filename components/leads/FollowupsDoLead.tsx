@@ -10,7 +10,8 @@ import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useTasks } from "@/hooks/tasks/useTasks";
 import { CalendarBlank, CheckCircle, Plus } from "@/lib/ui/icons";
-import type { NovaTarefa, Tarefa } from "@/lib/tarefas/tipos";
+import { estaAtrasada, type NovaTarefa, type Tarefa } from "@/lib/tarefas/tipos";
+import { cn } from "@/lib/utils";
 
 interface Props {
   leadId: string;
@@ -51,7 +52,7 @@ export function FollowupsDoLead({ leadId, contactId, podeEditar }: Props) {
     <section className="space-y-2" data-testid="followups-do-lead">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-xs font-medium tracking-wide text-text-muted uppercase">
+          <h3 className="text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
             {t("Follow-ups")}
           </h3>
           <p className="text-xs text-muted-foreground">
@@ -79,16 +80,26 @@ export function FollowupsDoLead({ leadId, contactId, podeEditar }: Props) {
       ) : null}
 
       {followups.length > 0 ? (
-        <ul className="divide-y divide-border rounded-md border border-border">
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
           {followups.map((tarefa: Tarefa) => {
             const encerrada = tarefa.status === "done" || tarefa.status === "cancelled";
+            // Atrasado pede ação AGORA; a cor entra só aí (e some quando encerra).
+            const atrasada = estaAtrasada(tarefa);
             return (
               <li key={tarefa.id} className="flex items-start gap-3 p-3">
-                <CalendarBlank
-                  size={16}
-                  className="mt-0.5 shrink-0 text-muted-foreground"
+                <span
+                  className={cn(
+                    "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
+                    encerrada
+                      ? "bg-surface-elevated text-text-subtle"
+                      : atrasada
+                        ? "bg-error-bg text-error-fg"
+                        : "bg-accent-soft text-accent",
+                  )}
                   aria-hidden
-                />
+                >
+                  <CalendarBlank size={13} weight={encerrada ? "regular" : "fill"} />
+                </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p
@@ -102,6 +113,8 @@ export function FollowupsDoLead({ leadId, contactId, podeEditar }: Props) {
                       <Badge variant="neutral">
                         {tarefa.status === "cancelled" ? t("Cancelado") : t("Feito")}
                       </Badge>
+                    ) : atrasada ? (
+                      <Badge variant="error">{t("Atrasado")}</Badge>
                     ) : null}
                   </div>
                   {tarefa.description ? (
@@ -109,7 +122,12 @@ export function FollowupsDoLead({ leadId, contactId, podeEditar }: Props) {
                       {tarefa.description}
                     </p>
                   ) : null}
-                  <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                  <p
+                    className={cn(
+                      "mt-1 text-xs tabular-nums",
+                      atrasada ? "font-medium text-error-fg" : "text-muted-foreground",
+                    )}
+                  >
                     {prazoLegivel(tarefa.due_date, tag, t("Sem prazo"))}
                   </p>
                 </div>

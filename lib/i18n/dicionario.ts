@@ -653,6 +653,11 @@ export const DICIONARIO: Traducoes = {
   // ─── Kanban ───
   "Apenas atrasados": { es: "Solo atrasados" },
   "Sem responsável": { es: "Sin responsable" },
+  // Quadro no formato Kommo: cabeçalho da coluna e card compacto.
+  "lead": { es: "lead" },
+  "leads": { es: "leads" },
+  "Sem valor": { es: "Sin valor" },
+  "Atrasado": { es: "Atrasado" },
   "Editar campos": { es: "Editar campos" },
   "Linha do tempo": { es: "Línea de tiempo" },
   "DADOS DO NEGÓCIO": { es: "DATOS DEL NEGOCIO" },
