@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function InboxPage({
   searchParams,
 }: {
-  searchParams: Promise<{ id?: string }>;
+  searchParams: Promise<{ id?: string; conversation?: string; message?: string }>;
 }) {
   const user = await loadAuthUser();
   if (!user) redirect("/login");
@@ -34,6 +34,11 @@ export default async function InboxPage({
       </div>
     );
   }
-  const { id } = await searchParams;
-  return <InboxLayout initialSelectedId={id ?? null} />;
+  const { id, conversation, message } = await searchParams;
+  // Decisão do dono (19/09/2026): o Inbox saiu do menu e deixa de ser a tela
+  // inicial. Todo pouso que caía aqui (login, troca de organização, fim do
+  // onboarding, fim do acompanhamento) vai para o quadro dos Funis. O Inbox
+  // só abre por link direto a uma conversa (Radar, execução de agente).
+  if (!id && !conversation && !message) redirect("/app/kanban");
+  return <InboxLayout initialSelectedId={id ?? conversation ?? null} />;
 }
