@@ -46,6 +46,11 @@ export interface NavMetadata {
   healthDot?: boolean;
   /** Ferramenta que o dono da instalação precisa liberar para esta organização. */
   integration?: IntegrationSlug;
+  /**
+   * Fora do hub e da busca por decisão do dono (a página continua existindo e
+   * abre pelo endereço). Esconder em vez de apagar: volta com uma linha.
+   */
+  oculto?: boolean;
 }
 
 /**
@@ -534,6 +539,8 @@ export const NAV_CATALOG = [
     // preserva o detalhe por campanha para uma análise deliberada, acessível no
     // hub e na paleta sem voltar a ocupar o menu lateral.
     href: "/app/ads/meta",
+    // Fora da tela de Configurações e da busca por decisão do dono (19/09/2026).
+    oculto: true,
     label: "Meta Ads",
     description: "O desempenho detalhado das campanhas que trazem gente para cá.",
     icon: "Megaphone",
@@ -616,6 +623,8 @@ export const NAV_CATALOG = [
     // visibilidade existiam inteiros no backend e não tinham NENHUMA tela — só
     // dava para ligar com UPDATE à mão no banco.
     href: "/app/settings/atendimento",
+    // Fora da tela de Configurações e da busca por decisão do dono (19/09/2026).
+    oculto: true,
     label: "Distribuição de atendimento",
     description: "Quem recebe cada cliente novo, e o que cada atendente enxerga.",
     icon: "UsersThree",
@@ -659,6 +668,8 @@ export const NAV_CATALOG = [
     // Uma tela só, com dois campos de token parecidos, é como se cola o token
     // errado no campo errado e se perde uma semana achando que quebrou.
     href: "/app/settings/meta-ads",
+    // Fora da tela de Configurações e da busca por decisão do dono (19/09/2026).
+    oculto: true,
     label: "Meta Ads",
     description: "Conectar a conta de anúncios para ler o desempenho das campanhas.",
     icon: "Megaphone",
@@ -686,6 +697,8 @@ export const NAV_CATALOG = [
   },
   {
     href: "/app/settings/billing",
+    // Fora da tela de Configurações e da busca por decisão do dono (19/09/2026).
+    oculto: true,
     label: "Billing",
     description: "Plano e cobrança.",
     icon: "Receipt",
