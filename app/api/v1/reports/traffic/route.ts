@@ -21,6 +21,7 @@ import {
   type CampaignMetricColumn,
   type DashboardModel,
 } from "@/lib/windsor/types";
+import { serializeTrafficColumnPresets } from "@/lib/windsor/column-presets";
 import { clientCanViewIntegration } from "@/lib/integrations/access";
 
 export const dynamic = "force-dynamic";
@@ -107,7 +108,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { data: config, error: configError } = await admin
     .from("traffic_dashboard_configs" as never)
     .select(
-      "model,conversion_fields,sync_status,last_sync_succeeded_at,last_sync_error,published_generation,campaign_metric_columns",
+      "model,conversion_fields,sync_status,last_sync_succeeded_at,last_sync_error,published_generation,campaign_metric_columns,default_column_preset_id",
     )
     .eq("organization_id", organizationId)
     .eq("enabled", true)
@@ -124,6 +125,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     last_sync_error: string | null;
     published_generation: string | null;
     campaign_metric_columns: unknown;
+    default_column_preset_id: string | null;
   };
   const fromCreatedAt = `${parsed.data.from}T00:00:00.000Z`;
   const exclusiveTo = new Date(`${parsed.data.to}T00:00:00.000Z`);
@@ -145,6 +147,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     { data: wonStages, error: wonStagesError },
     { count: crmLeadsEntered, error: crmLeadsError },
     { count: previousCrmLeadsEntered, error: previousCrmLeadsError },
+    { data: presetRows, error: presetError },
   ] = await Promise.all([
     admin
       .from("traffic_dashboard_accounts" as never)
@@ -191,6 +194,11 @@ export async function GET(request: NextRequest): Promise<Response> {
       .eq("organization_id", organizationId)
       .gte("created_at", previousFrom.toISOString())
       .lt("created_at", previousExclusiveTo.toISOString()),
+    admin
+      .from("traffic_dashboard_column_presets" as never)
+      .select("id,name,metric_columns")
+      .eq("organization_id", organizationId)
+      .order("name"),
   ]);
   const factError = factsResult.error;
   const previousFactError = previousFactsResult.error;
@@ -200,7 +208,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     previousFactError ||
     wonStagesError ||
     crmLeadsError ||
-    previousCrmLeadsError
+    previousCrmLeadsError ||
+    presetError
   ) {
     return fail("internal_error", "Não foi possível ler o relatório.", 500, { requestId });
   }
@@ -292,12 +301,21 @@ export async function GET(request: NextRequest): Promise<Response> {
   const previousByCurrency = new Map(
     previousCurrencies.map((group) => [group.currency, group] as const),
   );
+  const columnPresets = serializeTrafficColumnPresets(
+    presetRows as unknown as Array<{ id: string; name: string; metric_columns: unknown }>,
+    typedConfig.default_column_preset_id,
+  );
+  const defaultPreset = columnPresets.find((preset) => preset.is_default) ?? null;
   return ok(
     {
       model: typedConfig.model,
       organization_key: organizationId,
       viewer_key: authz.user.id,
-      default_columns: validColumns(typedConfig.campaign_metric_columns, typedConfig.model),
+      default_columns:
+        defaultPreset?.columns ??
+        validColumns(typedConfig.campaign_metric_columns, typedConfig.model),
+      default_preset_id: defaultPreset?.id ?? null,
+      column_presets: columnPresets,
       can_manage_defaults: authz.user.is_platform_admin && !authz.user.support,
       sync: {
         status: typedConfig.sync_status,

@@ -23,7 +23,9 @@ import {
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
-import { CAMPAIGN_METRIC_COLUMNS, type CampaignMetricColumn } from "@/lib/windsor/types";
+import type { CampaignMetricColumn } from "@/lib/windsor/types";
+import type { TrafficColumnPreset } from "@/lib/windsor/column-presets";
+import { ColumnPresetMenu } from "./ColumnPresetMenu";
 import { buildTrafficFunnelStages, ConversionFunnel, type FunnelStage } from "./ConversionFunnel";
 
 interface Metrics {
@@ -103,6 +105,8 @@ interface ReportResponse {
     organization_key: string;
     viewer_key: string;
     default_columns: CampaignMetricColumn[];
+    default_preset_id: string | null;
+    column_presets: TrafficColumnPreset[];
     can_manage_defaults: boolean;
     sync: { status: string; last_succeeded_at: string | null; error: string | null };
     crm: {
@@ -344,24 +348,6 @@ function metricValue(
   return number(value);
 }
 
-function savedColumns(report: ReportResponse["data"]): CampaignMetricColumn[] {
-  const key = `traffic-campaign-columns:${report.organization_key}:${report.viewer_key}:${report.model}`;
-  try {
-    const stored = JSON.parse(localStorage.getItem(key) ?? "null") as unknown;
-    if (Array.isArray(stored)) {
-      const allowed = new Set<string>(CAMPAIGN_METRIC_COLUMNS);
-      const valid = stored.filter(
-        (column): column is CampaignMetricColumn =>
-          typeof column === "string" && allowed.has(column),
-      );
-      if (valid.length > 0) return valid;
-    }
-  } catch {
-    // Preferência local inválida volta ao padrão da organização.
-  }
-  return report.default_columns;
-}
-
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-xl border bg-card p-4 shadow-sm">
@@ -541,8 +527,6 @@ export function TrafficDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedColumns, setSelectedColumns] = useState<CampaignMetricColumn[]>([]);
-  const [savingDefaults, setSavingDefaults] = useState(false);
-  const [columnMessage, setColumnMessage] = useState<string | null>(null);
   const [activeMetric, setActiveMetric] = useState<"spend" | "conversions" | "revenue">(
     "conversions",
   );
@@ -558,7 +542,6 @@ export function TrafficDashboard() {
         if (!response.ok)
           throw new Error(body.error?.message ?? t("Não foi possível carregar o relatório."));
         setReport(body.data);
-        setSelectedColumns(savedColumns(body.data));
       })
       .catch((cause: unknown) => {
         if ((cause as { name?: string }).name !== "AbortError") {
@@ -594,81 +577,6 @@ export function TrafficDashboard() {
     setError(null);
     setWindow(next);
   }
-
-  function toggleColumn(column: CampaignMetricColumn) {
-    if (!report) return;
-    setColumnMessage(null);
-    setSelectedColumns((current) => {
-      const next = current.includes(column)
-        ? current.filter((item) => item !== column)
-        : CAMPAIGN_METRIC_COLUMNS.filter((item) => current.includes(item) || item === column);
-      if (next.length === 0) return current;
-      localStorage.setItem(
-        `traffic-campaign-columns:${report.organization_key}:${report.viewer_key}:${report.model}`,
-        JSON.stringify(next),
-      );
-      return next;
-    });
-  }
-
-  async function saveDefaultColumns() {
-    if (!report || selectedColumns.length === 0) return;
-    setSavingDefaults(true);
-    setColumnMessage(null);
-    try {
-      const response = await fetch("/api/v1/reports/traffic", {
-        method: "PATCH",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ columns: selectedColumns }),
-      });
-      const body = (await response.json()) as ReportResponse;
-      if (!response.ok)
-        throw new Error(
-          body.error?.message ??
-            localText(
-              idioma,
-              "Não foi possível salvar o padrão.",
-              "No fue posible guardar el valor predeterminado.",
-            ),
-        );
-      setReport((current) =>
-        current ? { ...current, default_columns: selectedColumns } : current,
-      );
-      setColumnMessage(
-        localText(
-          idioma,
-          "Padrão salvo para esta organização.",
-          "Valor predeterminado guardado para esta organización.",
-        ),
-      );
-    } catch (cause) {
-      setColumnMessage(
-        cause instanceof Error
-          ? cause.message
-          : localText(
-              idioma,
-              "Não foi possível salvar o padrão.",
-              "No fue posible guardar el valor predeterminado.",
-            ),
-      );
-    } finally {
-      setSavingDefaults(false);
-    }
-  }
-
-  const columnUi = {
-    title: localText(idioma, "Métricas da tabela", "Métricas de la tabla"),
-    localHint: localText(
-      idioma,
-      "Sua escolha fica somente neste navegador.",
-      "Tu selección queda solamente en este navegador.",
-    ),
-    saveDefault: localText(
-      idioma,
-      "Salvar como padrão da organização",
-      "Guardar como predeterminado de la organización",
-    ),
-  };
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-6">
@@ -726,47 +634,17 @@ export function TrafficDashboard() {
             </>
           )}
           {report && (
-            <details className="relative">
-              <summary className="cursor-pointer rounded-md border px-3 py-2 text-sm font-medium">
-                {localText(idioma, "Colunas", "Columnas")} (
-                {selectedColumns.length || report.default_columns.length})
-              </summary>
-              <div className="absolute right-0 z-20 mt-2 w-[min(92vw,32rem)] rounded-xl border bg-card p-4 shadow-xl">
-                <p className="text-sm font-semibold">{columnUi.title}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{columnUi.localHint}</p>
-                <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2">
-                  {CAMPAIGN_METRIC_COLUMNS.map((column) => (
-                    <label key={column} className="flex items-start gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="mt-0.5 size-4 accent-primary"
-                        checked={(selectedColumns.length
-                          ? selectedColumns
-                          : report.default_columns
-                        ).includes(column)}
-                        onChange={() => toggleColumn(column)}
-                      />
-                      <span>{columnLabel(column, idioma)}</span>
-                    </label>
-                  ))}
-                </div>
-                {report.can_manage_defaults && (
-                  <button
-                    type="button"
-                    className="mt-4 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
-                    disabled={savingDefaults}
-                    onClick={saveDefaultColumns}
-                  >
-                    {savingDefaults
-                      ? localText(idioma, "Salvando…", "Guardando…")
-                      : columnUi.saveDefault}
-                  </button>
-                )}
-                {columnMessage && (
-                  <p className="mt-2 text-xs text-muted-foreground">{columnMessage}</p>
-                )}
-              </div>
-            </details>
+            <ColumnPresetMenu
+              organizationKey={report.organization_key}
+              viewerKey={report.viewer_key}
+              model={report.model}
+              initialPresets={report.column_presets}
+              defaultPresetId={report.default_preset_id}
+              defaultColumns={report.default_columns}
+              canManage={report.can_manage_defaults}
+              columnLabel={columnLabel}
+              onColumnsChange={setSelectedColumns}
+            />
           )}
         </div>
       </header>

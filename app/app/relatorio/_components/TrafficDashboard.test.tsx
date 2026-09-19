@@ -44,6 +44,13 @@ vi.mock("recharts", () => ({
   XAxis: () => null,
   YAxis: () => null,
 }));
+vi.mock("@hello-pangea/dnd", () => ({
+  DragDropContext: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Droppable: ({ children }: { children: (provided: unknown) => React.ReactNode }) =>
+    children({ innerRef: () => undefined, droppableProps: {}, placeholder: null }),
+  Draggable: ({ children }: { children: (provided: unknown) => React.ReactNode }) =>
+    children({ innerRef: () => undefined, draggableProps: {}, dragHandleProps: {} }),
+}));
 
 const metrics = {
   budget: 100,
@@ -93,11 +100,20 @@ describe("colunas da tabela de campanhas", () => {
     vi.restoreAllMocks();
   });
 
-  it("isola a preferência no navegador e permite ao admin salvar o padrão", async () => {
+  it("carrega o preset padrão e permite ao admin salvar as colunas na ordem escolhida", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
       if (init?.method === "PATCH") {
         return new Response(
-          JSON.stringify({ data: { columns: ["spend", "impressions", "leads"] } }),
+          JSON.stringify({
+            data: {
+              preset: {
+                id: "11111111-1111-4111-8111-111111111111",
+                name: "Captação",
+                columns: ["spend", "leads", "impressions"],
+                is_default: false,
+              },
+            },
+          }),
           { status: 200 },
         );
       }
@@ -108,6 +124,15 @@ describe("colunas da tabela de campanhas", () => {
             organization_key: "org-1",
             viewer_key: "user-1",
             default_columns: ["spend", "leads"],
+            default_preset_id: "11111111-1111-4111-8111-111111111111",
+            column_presets: [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                name: "Captação",
+                columns: ["spend", "leads"],
+                is_default: true,
+              },
+            ],
             can_manage_defaults: true,
             sync: { status: "ready", last_succeeded_at: "2026-09-18T20:00:00Z", error: null },
             crm: { leads_entered: 8, in_service: 5, closed_won: 3 },
@@ -131,19 +156,24 @@ describe("colunas da tabela de campanhas", () => {
     expect(await screen.findByText("Campanha A")).toBeInTheDocument();
 
     await user.click(screen.getByText("Colunas (2)"));
-    await user.click(screen.getByRole("checkbox", { name: "Impressões" }));
+    expect(screen.getByText("Captação")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Renomear predefinição" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "+ Impressões" }));
     expect(
       JSON.parse(localStorage.getItem("traffic-campaign-columns:org-1:user-1:leads") ?? "[]"),
-    ).toEqual(["spend", "impressions", "leads"]);
+    ).toEqual(["spend", "leads", "impressions"]);
 
-    await user.click(screen.getByRole("button", { name: "Salvar como padrão da organização" }));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
     await waitFor(() =>
       expect(fetchMock.mock.calls.some((call) => call[1]?.method === "PATCH")).toBe(true),
     );
     const patchCall = fetchMock.mock.calls.find((call) => call[1]?.method === "PATCH");
+    expect(String(patchCall?.[0])).toContain(
+      "/api/v1/reports/traffic/column-presets/11111111-1111-4111-8111-111111111111",
+    );
     expect(patchCall?.[1]).toMatchObject({
       method: "PATCH",
-      body: JSON.stringify({ columns: ["spend", "impressions", "leads"] }),
+      body: JSON.stringify({ columns: ["spend", "leads", "impressions"] }),
     });
   });
 
@@ -156,6 +186,21 @@ describe("colunas da tabela de campanhas", () => {
             organization_key: "org-1",
             viewer_key: "user-1",
             default_columns: ["spend", "leads"],
+            default_preset_id: "11111111-1111-4111-8111-111111111111",
+            column_presets: [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                name: "Captação",
+                columns: ["spend", "leads"],
+                is_default: true,
+              },
+              {
+                id: "22222222-2222-4222-8222-222222222222",
+                name: "Diretoria",
+                columns: ["roas"],
+                is_default: false,
+              },
+            ],
             can_manage_defaults: false,
             sync: { status: "ready", last_succeeded_at: null, error: null },
             crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
@@ -178,9 +223,20 @@ describe("colunas da tabela de campanhas", () => {
     render(<TrafficDashboard />);
     expect(await screen.findByText("Do alcance à venda fechada")).toBeInTheDocument();
     expect(screen.getAllByRole("region", { name: "Do alcance à venda fechada" })).toHaveLength(1);
+    await user.click(screen.getByText("Colunas (2)"));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Predefinição de colunas" }),
+      "22222222-2222-4222-8222-222222222222",
+    );
+    expect(localStorage.getItem("traffic-campaign-preset:org-1:user-1:leads")).toBe(
+      "22222222-2222-4222-8222-222222222222",
+    );
+    expect(screen.queryByRole("button", { name: /^Salvar$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Excluir" })).not.toBeInTheDocument();
     await user.selectOptions(screen.getByRole("combobox", { name: "Período" }), "7");
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Colunas (1)")).toBeInTheDocument();
     const secondUrl = String(fetchMock.mock.calls[1]?.[0]);
     expect(secondUrl).toContain("/api/v1/reports/traffic?from=");
     expect(secondUrl).toContain("&to=");

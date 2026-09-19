@@ -501,6 +501,10 @@ export const AUDIT_ACTIONS = [
   "integrations.configuration_updated",
   "traffic_dashboard.sync_succeeded",
   "traffic_dashboard.sync_failed",
+  "traffic_dashboard.column_preset_created",
+  "traffic_dashboard.column_preset_updated",
+  "traffic_dashboard.column_preset_defaulted",
+  "traffic_dashboard.column_preset_deleted",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
