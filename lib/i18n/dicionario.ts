@@ -8564,7 +8564,6 @@ export const DICIONARIO: Traducoes = {
   "Faturamento": { es: "Facturación" },
   "Funil de desempenho": { es: "Embudo de rendimiento" },
   "Investimento": { es: "Inversión" },
-  "Mídia e vendas": { es: "Medios y ventas" },
   "Não foi possível carregar o relatório.": { es: "No se pudo cargar el informe." },
   "O último dado confirmado foi preservado. Avise quem administra a plataforma.": { es: "Se conservaron los últimos datos confirmados. Avisa a quien administra la plataforma." },
   "Pessoas alcançadas": { es: "Personas alcanzadas" },

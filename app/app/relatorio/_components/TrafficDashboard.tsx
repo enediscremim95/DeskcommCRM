@@ -365,22 +365,44 @@ function PlatformMark({ platform }: { platform: "meta_ads" | "google_ads" }) {
     return (
       <span
         aria-hidden="true"
-        className="grid size-10 place-items-center rounded-xl bg-[#1877F2] text-lg font-bold text-white shadow-sm"
+        className="grid size-10 shrink-0 place-items-center rounded-xl bg-white shadow-sm ring-1 ring-border"
       >
-        M
+        <svg viewBox="0 0 48 32" className="h-5 w-8">
+          <path
+            fill="none"
+            stroke="#0081FB"
+            strokeWidth="5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M5 22c0-8 4-17 9-17 7 0 13 22 20 22 5 0 9-6 9-12S40 5 35 5c-6 0-13 22-21 22-6 0-9-2-9-5z"
+          />
+        </svg>
       </span>
     );
   }
   return (
     <span
       aria-hidden="true"
-      className="relative grid size-10 place-items-center overflow-hidden rounded-xl bg-card shadow-sm ring-1 ring-border"
+      className="grid size-10 shrink-0 place-items-center rounded-xl bg-white shadow-sm ring-1 ring-border"
     >
-      <span className="absolute inset-x-0 top-0 h-1 bg-[#4285F4]" />
-      <span className="absolute inset-y-0 right-0 w-1 bg-[#34A853]" />
-      <span className="absolute inset-x-0 bottom-0 h-1 bg-[#FBBC05]" />
-      <span className="absolute inset-y-0 left-0 w-1 bg-[#EA4335]" />
-      <span className="font-semibold text-foreground">G</span>
+      <svg viewBox="0 0 48 48" className="size-6">
+        <path
+          fill="#EA4335"
+          d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.6 13.3l7.9 6.1C12.4 13.7 17.7 9.5 24 9.5z"
+        />
+        <path
+          fill="#4285F4"
+          d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.2 5.6c4.2-3.9 7.1-9.6 7.1-17z"
+        />
+        <path
+          fill="#FBBC05"
+          d="M10.5 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C.9 16.6 0 20.2 0 24s.9 7.4 2.6 10.7l7.9-6.1z"
+        />
+        <path
+          fill="#34A853"
+          d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.2-5.6c-2.2 1.5-5 2.4-8.7 2.4-6.3 0-11.6-4.2-13.5-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"
+        />
+      </svg>
     </span>
   );
 }
@@ -582,9 +604,6 @@ export function TrafficDashboard() {
     <div className="flex flex-col gap-5 p-4 sm:p-6">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-xs font-semibold tracking-[0.18em] text-primary uppercase">
-            {t("Mídia e vendas")}
-          </p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">
             {t("Relatório de desempenho")}
           </h1>
@@ -845,9 +864,6 @@ export function TrafficDashboard() {
               <div className="pointer-events-none absolute -top-24 right-0 size-64 rounded-full bg-primary/10 blur-3xl" />
               <div className="relative mb-4 flex items-center justify-between gap-3 px-1">
                 <div>
-                  <p className="text-[11px] font-semibold tracking-[0.18em] text-primary uppercase">
-                    {t("Mídia e vendas")}
-                  </p>
                   <h2 className="mt-1 text-xl font-semibold tracking-tight">
                     {report.currencies.length > 1
                       ? group.currency
@@ -992,9 +1008,6 @@ export function TrafficDashboard() {
                 <summary className="flex cursor-pointer list-none items-center gap-3 border-b border-[#1877F2]/20 bg-[#1877F2]/[0.06] px-4 py-4 sm:px-5">
                   <PlatformMark platform="meta_ads" />
                   <div>
-                    <p className="text-xs font-semibold tracking-[0.14em] text-[#1877F2] uppercase">
-                      {t("Mídia e vendas")}
-                    </p>
                     <h3 id={`meta-${group.currency}`} className="text-xl font-semibold">
                       Meta Ads
                     </h3>
@@ -1076,9 +1089,6 @@ export function TrafficDashboard() {
                 <summary className="flex cursor-pointer list-none items-center gap-3 border-b px-4 py-4 sm:px-5">
                   <PlatformMark platform="google_ads" />
                   <div>
-                    <p className="text-xs font-semibold tracking-[0.14em] text-[#4285F4] uppercase">
-                      {t("Mídia e vendas")}
-                    </p>
                     <h3 id={`google-${group.currency}`} className="text-xl font-semibold">
                       Google Ads
                     </h3>
