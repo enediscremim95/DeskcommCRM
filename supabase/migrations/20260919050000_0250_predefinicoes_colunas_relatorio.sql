@@ -56,8 +56,8 @@ drop policy if exists tenant_isolation_traffic_dashboard_column_presets_all on p
 create policy tenant_isolation_traffic_dashboard_column_presets_all
   on public.traffic_dashboard_column_presets
   for all to authenticated
-  using (organization_id = any(public.fn_user_org_ids()))
-  with check (organization_id = any(public.fn_user_org_ids()));
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
 
 revoke all on public.traffic_dashboard_column_presets from anon, authenticated;
 grant select on public.traffic_dashboard_column_presets to authenticated;
