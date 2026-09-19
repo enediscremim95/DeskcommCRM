@@ -306,3 +306,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260917120000` | `0244_entrega_acesso_dono` | Perfil do negócio e entrega pronta do acesso; lease retomável, ciphertext temporário e replay confiável. |
 | `20260918111500` | `0245_tenant_criado_por_admin_ja_pronto` | Toda organização criada por admin da plataforma nasce com onboarding concluído, tanto por convite quanto por credenciais. |
 | `20260918190000` | `0247_conector_whatsapp_gerenciado` | Adiciona conector Evolution por organização, chave cifrada e write-only, exclusão mútua com WAHA ativo, reserva atômica de QR (1/minuto, máximo 3 até confirmar reconexão) e transição atômica para o hook, sem criar, apagar ou reconfigurar instância externa. |
+| `20260918230000` | `0249_colunas_metricas_dashboard` | Persiste por organização o padrão de colunas da tabela de campanhas; preferência individual continua isolada no navegador. |

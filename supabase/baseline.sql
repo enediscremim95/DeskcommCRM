@@ -25081,6 +25081,13 @@ $$;
 revoke execute on function public.fn_configure_organization_integrations(uuid, uuid, jsonb, text[]) from public, anon, authenticated;
 grant execute on function public.fn_configure_organization_integrations(uuid, uuid, jsonb, text[]) to service_role;
 
+-- ---- Colunas de métricas do dashboard (migration 0249) ----
+alter table public.traffic_dashboard_configs
+  add column if not exists campaign_metric_columns text[];
+
+comment on column public.traffic_dashboard_configs.campaign_metric_columns is
+  'Colunas padrão da tabela de campanhas definidas pelo admin da plataforma; null usa o preset do modelo.';
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

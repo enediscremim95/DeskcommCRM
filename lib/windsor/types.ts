@@ -12,8 +12,43 @@ export const CONVERSION_FIELDS = [
   "actions_link_click",
   "actions_initiate_checkout",
   "actions_purchase",
+  "actions_landing_page_view",
+  "actions_add_to_cart",
   "conversions",
 ] as const;
+
+export const BUDGET_FIELDS = [
+  "campaign_daily_budget",
+  "campaign_lifetime_budget",
+  "adset_daily_budget",
+  "adset_lifetime_budget",
+] as const;
+
+export const CAMPAIGN_METRIC_COLUMNS = [
+  "budget", "spend", "reach", "impressions", "cpm", "ctr", "link_clicks", "cpc",
+  "landing_page_views", "cost_per_landing_page_view", "leads", "cost_per_lead",
+  "add_to_cart", "cost_per_add_to_cart", "initiate_checkout", "cost_per_initiate_checkout",
+  "purchases", "cost_per_purchase", "revenue", "roas", "messaging_conversations",
+  "cost_per_messaging_conversation",
+] as const;
+export type CampaignMetricColumn = (typeof CAMPAIGN_METRIC_COLUMNS)[number];
+
+const DEFAULT_CAMPAIGN_COLUMNS: Record<DashboardModel, readonly CampaignMetricColumn[]> = {
+  leads: ["spend", "impressions", "ctr", "link_clicks", "cpc", "leads", "cost_per_lead"],
+  messages: [
+    "spend", "impressions", "ctr", "link_clicks",
+    "messaging_conversations", "cost_per_messaging_conversation",
+  ],
+  ecommerce: [
+    "spend", "impressions", "ctr", "link_clicks", "cpc", "landing_page_views",
+    "add_to_cart", "cost_per_add_to_cart", "initiate_checkout",
+    "cost_per_initiate_checkout", "purchases", "cost_per_purchase", "revenue", "roas",
+  ],
+};
+
+export function defaultCampaignColumns(model: DashboardModel): CampaignMetricColumn[] {
+  return [...DEFAULT_CAMPAIGN_COLUMNS[model]];
+}
 
 export interface WindsorAccount {
   id: string;

@@ -142,5 +142,8 @@ describe("sincronização Windsor por conta", () => {
     expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("ad_id");
     expect(WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads).not.toContain("ad_id");
     expect(WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads).toContain("adset_id");
+    expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("campaign_daily_budget");
+    expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("actions_landing_page_view");
+    expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("actions_add_to_cart");
   });
 });
