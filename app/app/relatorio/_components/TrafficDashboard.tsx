@@ -23,15 +23,8 @@ import {
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
-import {
-  CAMPAIGN_METRIC_COLUMNS,
-  type CampaignMetricColumn,
-} from "@/lib/windsor/types";
-import {
-  buildTrafficFunnelStages,
-  ConversionFunnel,
-  type FunnelStage,
-} from "./ConversionFunnel";
+import { CAMPAIGN_METRIC_COLUMNS, type CampaignMetricColumn } from "@/lib/windsor/types";
+import { buildTrafficFunnelStages, ConversionFunnel, type FunnelStage } from "./ConversionFunnel";
 
 interface Metrics {
   budget: number | null;
@@ -52,6 +45,7 @@ interface Metrics {
   revenue: number;
   impressions: number;
   reach: number | null;
+  frequency: number | null;
   clicks: number;
   link_clicks: number;
   cost_per_conversion: number | null;
@@ -92,6 +86,7 @@ interface Campaign extends Metrics {
 interface CurrencyGroup {
   currency: string;
   summary: Metrics;
+  comparison: Metrics | null;
   daily: Array<{
     date: string;
     spend_meta: number;
@@ -110,7 +105,12 @@ interface ReportResponse {
     default_columns: CampaignMetricColumn[];
     can_manage_defaults: boolean;
     sync: { status: string; last_succeeded_at: string | null; error: string | null };
-    crm: { leads_entered: number; in_service: number; closed_won: number };
+    crm: {
+      leads_entered: number;
+      in_service: number;
+      closed_won: number;
+      previous?: { leads_entered: number; in_service: number; closed_won: number };
+    };
     currencies: CurrencyGroup[];
   };
   error?: { message?: string };
@@ -139,16 +139,158 @@ function percent(value: number | null): string {
   return value == null ? "—" : `${number(value)}%`;
 }
 
+export function metricDelta(current: number, previous: number | null | undefined): number | null {
+  if (previous == null || previous === 0) return current === 0 ? 0 : null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
+function useAnimatedNumber(value: number): number {
+  const [display, setDisplay] = useState(value);
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.requestAnimationFrame !== "function" ||
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ) {
+      const timeout = window.setTimeout(() => setDisplay(value), 0);
+      return () => window.clearTimeout(timeout);
+    }
+    const startedAt = performance.now();
+    const duration = 650;
+    let frame = 0;
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(value * eased);
+      if (progress < 1) frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [value]);
+  return display;
+}
+
+function Sparkline({
+  values,
+  active,
+  label,
+}: {
+  values: number[];
+  active: boolean;
+  label: string;
+}) {
+  const maximum = Math.max(...values, 1);
+  const points =
+    values.length > 1
+      ? values
+          .map((value, index) => {
+            const x = (index / (values.length - 1)) * 100;
+            const y = 28 - (value / maximum) * 24;
+            return `${x},${y}`;
+          })
+          .join(" ")
+      : `0,24 100,24`;
+  return (
+    <svg viewBox="0 0 100 32" className="h-9 w-full" role="img" aria-label={label}>
+      <polyline
+        points={points}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={active ? 3 : 2}
+        vectorEffect="non-scaling-stroke"
+        className="text-primary"
+      />
+    </svg>
+  );
+}
+
+function HeroMetric({
+  label,
+  value,
+  previous,
+  sparkline,
+  formatter,
+  active,
+  onSelect,
+  comparisonLabel,
+}: {
+  label: string;
+  value: number;
+  previous?: number | null;
+  sparkline: number[];
+  formatter: (value: number) => string;
+  active: boolean;
+  onSelect: () => void;
+  comparisonLabel: string;
+}) {
+  const animated = useAnimatedNumber(value);
+  const delta = metricDelta(value, previous);
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onSelect}
+      className={`group relative min-w-0 overflow-hidden rounded-2xl border p-4 text-left shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-hidden motion-reduce:transition-none sm:p-5 ${
+        active
+          ? "border-primary/50 bg-primary/[0.09] shadow-[0_16px_48px_-28px_var(--primary)]"
+          : "border-border/80 bg-card/90 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-card"
+      }`}
+    >
+      <span className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-primary/70 to-transparent" />
+      <span className="text-[11px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">
+        {label}
+      </span>
+      <span className="mt-2 block truncate text-2xl font-semibold tracking-[-0.04em] text-foreground sm:text-3xl">
+        {formatter(animated)}
+      </span>
+      <span className="mt-2 flex min-h-5 items-center gap-1.5 text-xs">
+        {delta == null ? (
+          <span className="text-muted-foreground">{comparisonLabel}</span>
+        ) : (
+          <span
+            className={
+              delta >= 0
+                ? "font-semibold text-emerald-600 dark:text-emerald-400"
+                : "font-semibold text-red-600 dark:text-red-400"
+            }
+          >
+            {delta >= 0 ? "↑" : "↓"} {number(Math.abs(delta))}%
+          </span>
+        )}
+        {delta != null && <span className="text-muted-foreground">{comparisonLabel}</span>}
+      </span>
+      <span className="mt-1 block opacity-75 transition-opacity group-hover:opacity-100">
+        <Sparkline values={sparkline} active={active} label={`${label}: ${comparisonLabel}`} />
+      </span>
+    </button>
+  );
+}
+
 const MONEY_COLUMNS = new Set<CampaignMetricColumn>([
-  "spend", "cpm", "cpc", "cost_per_landing_page_view", "cost_per_lead",
-  "cost_per_add_to_cart", "cost_per_initiate_checkout", "cost_per_purchase",
-  "revenue", "cost_per_messaging_conversation",
+  "spend",
+  "cpm",
+  "cpc",
+  "cost_per_landing_page_view",
+  "cost_per_lead",
+  "cost_per_add_to_cart",
+  "cost_per_initiate_checkout",
+  "cost_per_purchase",
+  "revenue",
+  "cost_per_messaging_conversation",
 ]);
 const META_ONLY_COLUMNS = new Set<CampaignMetricColumn>([
-  "budget", "reach", "landing_page_views", "cost_per_landing_page_view",
-  "add_to_cart", "cost_per_add_to_cart", "initiate_checkout",
-  "cost_per_initiate_checkout", "purchases", "cost_per_purchase",
-  "messaging_conversations", "cost_per_messaging_conversation",
+  "budget",
+  "reach",
+  "landing_page_views",
+  "cost_per_landing_page_view",
+  "add_to_cart",
+  "cost_per_add_to_cart",
+  "initiate_checkout",
+  "cost_per_initiate_checkout",
+  "purchases",
+  "cost_per_purchase",
+  "messaging_conversations",
+  "cost_per_messaging_conversation",
 ]);
 
 function localText(idioma: string, pt: string, es: string): string {
@@ -157,19 +299,26 @@ function localText(idioma: string, pt: string, es: string): string {
 
 function columnLabel(column: CampaignMetricColumn, idioma: string): string {
   const labels: Record<CampaignMetricColumn, [pt: string, es: string]> = {
-    budget: ["Orçamento", "Presupuesto"], spend: ["Valor gasto", "Importe gastado"],
-    reach: ["Alcance", "Alcance"], impressions: ["Impressões", "Impresiones"],
-    cpm: ["CPM", "CPM"], ctr: ["CTR", "CTR"],
-    link_clicks: ["Cliques no link", "Clics en el enlace"], cpc: ["CPC", "CPC"],
+    budget: ["Orçamento", "Presupuesto"],
+    spend: ["Valor gasto", "Importe gastado"],
+    reach: ["Alcance", "Alcance"],
+    impressions: ["Impressões", "Impresiones"],
+    cpm: ["CPM", "CPM"],
+    ctr: ["CTR", "CTR"],
+    link_clicks: ["Cliques no link", "Clics en el enlace"],
+    cpc: ["CPC", "CPC"],
     landing_page_views: ["Visualizações da página", "Visitas a la página"],
     cost_per_landing_page_view: ["Custo por visualização", "Costo por visita"],
-    leads: ["Leads", "Leads"], cost_per_lead: ["Custo por lead", "Costo por lead"],
+    leads: ["Leads", "Leads"],
+    cost_per_lead: ["Custo por lead", "Costo por lead"],
     add_to_cart: ["Carrinhos", "Añadidos al carrito"],
     cost_per_add_to_cart: ["Custo por carrinho", "Costo por carrito"],
     initiate_checkout: ["Finalizações", "Inicios de pago"],
     cost_per_initiate_checkout: ["Custo por finalização", "Costo por inicio de pago"],
-    purchases: ["Vendas", "Ventas"], cost_per_purchase: ["Custo por venda", "Costo por venta"],
-    revenue: ["Valor de conversão", "Valor de conversión"], roas: ["ROAS", "ROAS"],
+    purchases: ["Vendas", "Ventas"],
+    cost_per_purchase: ["Custo por venda", "Costo por venta"],
+    revenue: ["Valor de conversão", "Valor de conversión"],
+    roas: ["ROAS", "ROAS"],
     messaging_conversations: ["Conversas iniciadas", "Conversaciones iniciadas"],
     cost_per_messaging_conversation: ["Custo por conversa", "Costo por conversación"],
   };
@@ -202,7 +351,8 @@ function savedColumns(report: ReportResponse["data"]): CampaignMetricColumn[] {
     if (Array.isArray(stored)) {
       const allowed = new Set<string>(CAMPAIGN_METRIC_COLUMNS);
       const valid = stored.filter(
-        (column): column is CampaignMetricColumn => typeof column === "string" && allowed.has(column),
+        (column): column is CampaignMetricColumn =>
+          typeof column === "string" && allowed.has(column),
       );
       if (valid.length > 0) return valid;
     }
@@ -393,6 +543,9 @@ export function TrafficDashboard() {
   const [selectedColumns, setSelectedColumns] = useState<CampaignMetricColumn[]>([]);
   const [savingDefaults, setSavingDefaults] = useState(false);
   const [columnMessage, setColumnMessage] = useState<string | null>(null);
+  const [activeMetric, setActiveMetric] = useState<"spend" | "conversions" | "revenue">(
+    "conversions",
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -469,11 +622,35 @@ export function TrafficDashboard() {
         body: JSON.stringify({ columns: selectedColumns }),
       });
       const body = (await response.json()) as ReportResponse;
-      if (!response.ok) throw new Error(body.error?.message ?? localText(idioma, "Não foi possível salvar o padrão.", "No fue posible guardar el valor predeterminado."));
-      setReport((current) => current ? { ...current, default_columns: selectedColumns } : current);
-      setColumnMessage(localText(idioma, "Padrão salvo para esta organização.", "Valor predeterminado guardado para esta organización."));
+      if (!response.ok)
+        throw new Error(
+          body.error?.message ??
+            localText(
+              idioma,
+              "Não foi possível salvar o padrão.",
+              "No fue posible guardar el valor predeterminado.",
+            ),
+        );
+      setReport((current) =>
+        current ? { ...current, default_columns: selectedColumns } : current,
+      );
+      setColumnMessage(
+        localText(
+          idioma,
+          "Padrão salvo para esta organização.",
+          "Valor predeterminado guardado para esta organización.",
+        ),
+      );
     } catch (cause) {
-      setColumnMessage(cause instanceof Error ? cause.message : localText(idioma, "Não foi possível salvar o padrão.", "No fue posible guardar el valor predeterminado."));
+      setColumnMessage(
+        cause instanceof Error
+          ? cause.message
+          : localText(
+              idioma,
+              "Não foi possível salvar o padrão.",
+              "No fue posible guardar el valor predeterminado.",
+            ),
+      );
     } finally {
       setSavingDefaults(false);
     }
@@ -551,20 +728,22 @@ export function TrafficDashboard() {
           {report && (
             <details className="relative">
               <summary className="cursor-pointer rounded-md border px-3 py-2 text-sm font-medium">
-                {localText(idioma, "Colunas", "Columnas")} ({selectedColumns.length || report.default_columns.length})
+                {localText(idioma, "Colunas", "Columnas")} (
+                {selectedColumns.length || report.default_columns.length})
               </summary>
               <div className="absolute right-0 z-20 mt-2 w-[min(92vw,32rem)] rounded-xl border bg-card p-4 shadow-xl">
                 <p className="text-sm font-semibold">{columnUi.title}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {columnUi.localHint}
-                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{columnUi.localHint}</p>
                 <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2">
                   {CAMPAIGN_METRIC_COLUMNS.map((column) => (
                     <label key={column} className="flex items-start gap-2 text-sm">
                       <input
                         type="checkbox"
                         className="mt-0.5 size-4 accent-primary"
-                        checked={(selectedColumns.length ? selectedColumns : report.default_columns).includes(column)}
+                        checked={(selectedColumns.length
+                          ? selectedColumns
+                          : report.default_columns
+                        ).includes(column)}
                         onChange={() => toggleColumn(column)}
                       />
                       <span>{columnLabel(column, idioma)}</span>
@@ -583,7 +762,9 @@ export function TrafficDashboard() {
                       : columnUi.saveDefault}
                   </button>
                 )}
-                {columnMessage && <p className="mt-2 text-xs text-muted-foreground">{columnMessage}</p>}
+                {columnMessage && (
+                  <p className="mt-2 text-xs text-muted-foreground">{columnMessage}</p>
+                )}
               </div>
             </details>
           )}
@@ -622,216 +803,342 @@ export function TrafficDashboard() {
       {report?.currencies.map((group) => {
         const meta = group.platforms.find((item) => item.platform === "meta_ads");
         const google = group.platforms.find((item) => item.platform === "google_ads");
-        const metaCampaigns = group.campaigns.filter(
-          (campaign) => campaign.platform === "meta_ads",
-        );
-        const googleCampaigns = group.campaigns.filter(
-          (campaign) => campaign.platform === "google_ads",
-        );
+        const metaCampaigns = group.campaigns.filter((item) => item.platform === "meta_ads");
+        const googleCampaigns = group.campaigns.filter((item) => item.platform === "google_ads");
         const conversionLabel = report.model === "ecommerce" ? t("Compras") : t("Conversões");
+        const visibleColumns = selectedColumns.length ? selectedColumns : report.default_columns;
         const campaignLabels = {
           campaign: t("Campanha"),
           total: t("Total"),
           conversions: conversionLabel,
           openMedia: t("Abrir mídia"),
         };
-        const visibleColumns = selectedColumns.length ? selectedColumns : report.default_columns;
         const trafficStages = buildTrafficFunnelStages(group.summary, report.model, idioma);
-        const crmStages: FunnelStage[] = [
+        const lastTrafficValue = trafficStages.at(-1)?.value ?? 0;
+        const funnelStages: FunnelStage[] = [
+          ...trafficStages,
           {
             key: "crm-entered",
-            label: localText(idioma, "Leads que entraram", "Leads que ingresaron"),
+            label: localText(idioma, "Entraram no CRM", "Ingresaron al CRM"),
             value: report.crm.leads_entered,
-            rate: null,
+            rate: lastTrafficValue > 0 ? (report.crm.leads_entered / lastTrafficValue) * 100 : null,
+            cost:
+              report.crm.leads_entered > 0 ? group.summary.spend / report.crm.leads_entered : null,
           },
           {
             key: "crm-service",
             label: localText(idioma, "Em atendimento", "En atención"),
             value: report.crm.in_service,
-            rate: report.crm.leads_entered > 0
-              ? (report.crm.in_service / report.crm.leads_entered) * 100
-              : null,
+            rate:
+              report.crm.leads_entered > 0
+                ? (report.crm.in_service / report.crm.leads_entered) * 100
+                : null,
+            cost: report.crm.in_service > 0 ? group.summary.spend / report.crm.in_service : null,
           },
           {
             key: "crm-won",
-            label: localText(idioma, "Fechados", "Cerrados"),
+            label: localText(idioma, "Vendas fechadas", "Ventas cerradas"),
             value: report.crm.closed_won,
-            rate: report.crm.leads_entered > 0
-              ? (report.crm.closed_won / report.crm.leads_entered) * 100
-              : null,
+            rate:
+              report.crm.in_service > 0
+                ? (report.crm.closed_won / report.crm.in_service) * 100
+                : null,
+            cost: report.crm.closed_won > 0 ? group.summary.spend / report.crm.closed_won : null,
           },
         ];
-        const trafficCost = report.model === "messages"
-          ? group.summary.cost_per_messaging_conversation
-          : report.model === "leads"
-            ? group.summary.cost_per_lead
-            : group.summary.cost_per_conversion;
-        const trafficCostLabel = report.model === "messages"
-          ? localText(idioma, "Custo por conversa", "Costo por conversación")
-          : report.model === "ecommerce"
-            ? localText(idioma, "Custo por venda", "Costo por venta")
-            : localText(idioma, "Custo por lead", "Costo por lead");
-        const costPerClosed = report.crm.closed_won > 0 && report.currencies.length === 1
-          ? group.summary.spend / report.crm.closed_won
-          : null;
+        const costPerClosed =
+          report.crm.closed_won > 0 ? group.summary.spend / report.crm.closed_won : null;
+        const spendTrend = group.daily.map((day) => day.spend_meta + day.spend_google);
+        const conversionTrend = group.daily.map((day) => day.conversions);
+        const revenueTrend = group.daily.map((day) => day.revenue);
+        const costTrend = group.daily.map((day) =>
+          day.conversions > 0 ? (day.spend_meta + day.spend_google) / day.conversions : 0,
+        );
+        const previous = group.comparison;
+        const heroMetrics =
+          report.model === "ecommerce"
+            ? [
+                {
+                  key: "revenue" as const,
+                  label: t("Faturamento"),
+                  value: group.summary.revenue,
+                  previous: previous?.revenue,
+                  sparkline: revenueTrend,
+                  formatter: (value: number) => money(value, group.currency),
+                },
+                {
+                  key: "revenue" as const,
+                  label: "ROAS",
+                  value: group.summary.roas ?? 0,
+                  previous: previous?.roas,
+                  sparkline: revenueTrend,
+                  formatter: (value: number) => `${number(value)}x`,
+                },
+                {
+                  key: "conversions" as const,
+                  label: localText(idioma, "Vendas", "Ventas"),
+                  value: group.summary.purchases || group.summary.conversions,
+                  previous: previous?.purchases || previous?.conversions,
+                  sparkline: conversionTrend,
+                  formatter: number,
+                },
+                {
+                  key: "conversions" as const,
+                  label: localText(idioma, "Fechadas no CRM", "Cerradas en el CRM"),
+                  value: report.crm.closed_won,
+                  previous: report.crm.previous?.closed_won,
+                  sparkline: conversionTrend,
+                  formatter: number,
+                },
+              ]
+            : report.model === "messages"
+              ? [
+                  {
+                    key: "spend" as const,
+                    label: t("Investimento"),
+                    value: group.summary.spend,
+                    previous: previous?.spend,
+                    sparkline: spendTrend,
+                    formatter: (value: number) => money(value, group.currency),
+                  },
+                  {
+                    key: "conversions" as const,
+                    label: localText(idioma, "Conversas iniciadas", "Conversaciones iniciadas"),
+                    value: group.summary.messaging_conversations,
+                    previous: previous?.messaging_conversations,
+                    sparkline: conversionTrend,
+                    formatter: number,
+                  },
+                  {
+                    key: "spend" as const,
+                    label: localText(idioma, "Custo por conversa", "Costo por conversación"),
+                    value: group.summary.cost_per_messaging_conversation ?? 0,
+                    previous: previous?.cost_per_messaging_conversation,
+                    sparkline: costTrend,
+                    formatter: (value: number) => money(value, group.currency),
+                  },
+                  {
+                    key: "conversions" as const,
+                    label: localText(idioma, "Fechadas no CRM", "Cerradas en el CRM"),
+                    value: report.crm.closed_won,
+                    previous: report.crm.previous?.closed_won,
+                    sparkline: conversionTrend,
+                    formatter: number,
+                  },
+                ]
+              : [
+                  {
+                    key: "spend" as const,
+                    label: t("Investimento"),
+                    value: group.summary.spend,
+                    previous: previous?.spend,
+                    sparkline: spendTrend,
+                    formatter: (value: number) => money(value, group.currency),
+                  },
+                  {
+                    key: "conversions" as const,
+                    label: t("Leads"),
+                    value: group.summary.leads,
+                    previous: previous?.leads,
+                    sparkline: conversionTrend,
+                    formatter: number,
+                  },
+                  {
+                    key: "spend" as const,
+                    label: localText(idioma, "Custo por lead", "Costo por lead"),
+                    value: group.summary.cost_per_lead ?? 0,
+                    previous: previous?.cost_per_lead,
+                    sparkline: costTrend,
+                    formatter: (value: number) => money(value, group.currency),
+                  },
+                  {
+                    key: "conversions" as const,
+                    label: localText(idioma, "Vendas fechadas", "Ventas cerradas"),
+                    value: report.crm.closed_won,
+                    previous: report.crm.previous?.closed_won,
+                    sparkline: conversionTrend,
+                    formatter: number,
+                  },
+                ];
+
         return (
           <section key={group.currency} className="space-y-6">
-            {report.currencies.length > 1 && (
-              <h2 className="text-lg font-semibold">
-                {t("Moeda")}: {group.currency}
-              </h2>
-            )}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-border" />
-                <p className="text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-                  {t("Mídia e vendas")}
-                </p>
-                <div className="h-px flex-1 bg-border" />
+            <div className="relative overflow-hidden rounded-3xl border bg-card/70 p-3 shadow-[0_24px_80px_-48px_var(--primary)] backdrop-blur sm:p-5">
+              <div className="pointer-events-none absolute -top-24 right-0 size-64 rounded-full bg-primary/10 blur-3xl" />
+              <div className="relative mb-4 flex items-center justify-between gap-3 px-1">
+                <div>
+                  <p className="text-[11px] font-semibold tracking-[0.18em] text-primary uppercase">
+                    {t("Mídia e vendas")}
+                  </p>
+                  <h2 className="mt-1 text-xl font-semibold tracking-tight">
+                    {report.currencies.length > 1
+                      ? group.currency
+                      : localText(idioma, "O que move o resultado", "Lo que mueve el resultado")}
+                  </h2>
+                </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <Kpi label={t("Investimento")} value={money(group.summary.spend, group.currency)} />
-                <Kpi label={conversionLabel} value={number(group.summary.conversions)} />
-                <Kpi
-                  label={t("Custo por conversão")}
-                  value={
-                    group.summary.cost_per_conversion == null
-                      ? "—"
-                      : money(group.summary.cost_per_conversion, group.currency)
-                  }
-                />
-                <Kpi label={t("Impressões")} value={number(group.summary.impressions)} />
+              <div className="relative grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {heroMetrics.map(({ key: series, ...metric }, index) => (
+                  <HeroMetric
+                    key={`${metric.label}-${index}`}
+                    {...metric}
+                    active={activeMetric === series}
+                    onSelect={() => setActiveMetric(series)}
+                    comparisonLabel={t("Período anterior")}
+                  />
+                ))}
               </div>
             </div>
 
-            <div className="space-y-3">
-              <ConversionFunnel
-                title={localText(idioma, "Do anúncio à conversão", "Del anuncio a la conversión")}
-                description={localText(
-                  idioma,
-                  "As taxas mostram a passagem entre os dados disponíveis no período. Etapas sem medição não aparecem.",
-                  "Las tasas muestran el avance entre los datos disponibles del período. Las etapas sin medición no aparecen.",
-                )}
-                stages={trafficStages}
-                idioma={idioma}
-                summary={[
-                  { label: t("Investimento"), value: money(group.summary.spend, group.currency) },
-                  {
-                    label: trafficCostLabel,
-                    value: trafficCost == null ? "—" : money(trafficCost, group.currency),
-                    emphasis: true,
-                  },
-                  ...(report.model === "ecommerce"
-                    ? [{ label: "ROAS", value: group.summary.roas == null ? "—" : `${number(group.summary.roas)}x` }]
-                    : []),
-                ]}
-              />
-              <div className="flex items-center justify-center" aria-hidden="true">
-                <span className="rounded-full border bg-background px-4 py-1.5 text-xs font-semibold tracking-[0.1em] text-primary uppercase shadow-sm">
-                  {localText(idioma, "Continua no CRM", "Continúa en el CRM")}
+            <ConversionFunnel
+              eyebrow={t("Funil de desempenho")}
+              title={localText(
+                idioma,
+                "Do alcance à venda fechada",
+                "Del alcance a la venta cerrada",
+              )}
+              description={localText(
+                idioma,
+                "Uma jornada única conecta a mídia ao CRM. Passe sobre cada etapa para ver taxa e custo da passagem.",
+                "Un solo recorrido conecta los medios con el CRM. Pasa sobre cada etapa para ver tasa y costo.",
+              )}
+              stages={funnelStages}
+              idioma={idioma}
+              currency={group.currency}
+              summary={[
+                { label: t("Investimento"), value: money(group.summary.spend, group.currency) },
+                {
+                  label: localText(idioma, "Vendas fechadas", "Ventas cerradas"),
+                  value: number(report.crm.closed_won),
+                  emphasis: true,
+                },
+                {
+                  label: localText(idioma, "Custo por venda fechada", "Costo por venta cerrada"),
+                  value: costPerClosed == null ? "—" : money(costPerClosed, group.currency),
+                  emphasis: true,
+                },
+              ]}
+            />
+
+            <details open className="group overflow-hidden rounded-2xl border bg-card shadow-sm">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 border-b px-4 py-4 sm:px-5">
+                <div>
+                  <p className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
+                    {t("Período")}
+                  </p>
+                  <h3 className="mt-1 text-lg font-semibold">
+                    {t("Investimento")} · {t("Conversões")}
+                  </h3>
+                </div>
+                <span
+                  className="text-sm text-muted-foreground group-open:rotate-180"
+                  aria-hidden="true"
+                >
+                  ⌄
                 </span>
+              </summary>
+              <div className="h-72 p-3 sm:h-80 sm:p-5">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={group.daily}>
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                    />
+                    <YAxis
+                      yAxisId="spend"
+                      tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                    />
+                    <YAxis
+                      yAxisId="conversion"
+                      orientation="right"
+                      tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                    />
+                    <Tooltip
+                      labelFormatter={(label) =>
+                        new Date(`${String(label)}T12:00:00`).toLocaleDateString(
+                          idioma === "es" ? "es-ES" : "pt-BR",
+                        )
+                      }
+                      formatter={(value, name) => [
+                        name === t("Conversões")
+                          ? number(Number(value))
+                          : money(Number(value), group.currency),
+                        name,
+                      ]}
+                      contentStyle={{
+                        background: "var(--card)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 14,
+                        boxShadow: "0 18px 50px -28px var(--foreground)",
+                      }}
+                    />
+                    <Area
+                      yAxisId="spend"
+                      type="monotone"
+                      dataKey="spend_meta"
+                      stackId="spend"
+                      fill="#1877F2"
+                      stroke="#1877F2"
+                      fillOpacity={activeMetric === "spend" ? 0.55 : 0.16}
+                      name="Meta"
+                    />
+                    <Bar
+                      yAxisId="spend"
+                      dataKey="spend_google"
+                      stackId="spend"
+                      fill="#4285F4"
+                      opacity={activeMetric === "spend" ? 0.8 : 0.25}
+                      name="Google"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Line
+                      yAxisId="conversion"
+                      type="monotone"
+                      dataKey={activeMetric === "revenue" ? "revenue" : "conversions"}
+                      stroke="var(--primary)"
+                      strokeWidth={activeMetric === "spend" ? 2 : 3.5}
+                      dot={false}
+                      name={activeMetric === "revenue" ? t("Faturamento") : t("Conversões")}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
               </div>
-              <ConversionFunnel
-                title={localText(idioma, "Da entrada ao fechamento", "Del ingreso al cierre")}
-                description={localText(
-                  idioma,
-                  "Estado atual dos leads criados neste período. Fechados são os que estão em etapas marcadas como ganho.",
-                  "Estado actual de los leads creados en este período. Cerrados son los que están en etapas marcadas como ganadas.",
-                )}
-                stages={crmStages}
-                idioma={idioma}
-                summary={[
-                  {
-                    label: localText(idioma, "Fechados", "Cerrados"),
-                    value: number(report.crm.closed_won),
-                  },
-                  {
-                    label: localText(idioma, "Custo por venda fechada", "Costo por venta cerrada"),
-                    value: costPerClosed == null ? "—" : money(costPerClosed, group.currency),
-                    emphasis: true,
-                  },
-                ]}
-              />
-            </div>
-
-            <div className="h-72 rounded-xl border bg-card p-3 sm:h-80 sm:p-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={group.daily}>
-                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} />
-                  <YAxis yAxisId="spend" tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} />
-                  <YAxis
-                    yAxisId="conversion"
-                    orientation="right"
-                    tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "var(--card)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 10,
-                    }}
-                  />
-                  <Area
-                    yAxisId="spend"
-                    type="monotone"
-                    dataKey="spend_meta"
-                    stackId="spend"
-                    fill="var(--primary)"
-                    stroke="var(--primary)"
-                    fillOpacity={0.5}
-                    name="Meta"
-                  />
-                  <Bar
-                    yAxisId="spend"
-                    dataKey="spend_google"
-                    stackId="spend"
-                    fill="var(--accent-foreground)"
-                    opacity={0.55}
-                    name="Google"
-                  />
-                  <Line
-                    yAxisId="conversion"
-                    type="monotone"
-                    dataKey="conversions"
-                    stroke="var(--foreground)"
-                    strokeWidth={2.5}
-                    dot={false}
-                    name={t("Conversões")}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
+            </details>
 
             {meta && (
-              <section
-                aria-labelledby={`meta-${group.currency}`}
-                className="overflow-hidden rounded-2xl border border-[#1877F2]/30 bg-card shadow-sm"
+              <details
+                open
+                className="group overflow-hidden rounded-2xl border border-[#1877F2]/30 bg-card shadow-sm"
               >
-                <div className="border-b border-[#1877F2]/20 bg-[#1877F2]/[0.06] px-4 py-4 sm:px-5">
-                  <div className="flex items-center gap-3">
-                    <PlatformMark platform="meta_ads" />
-                    <div>
-                      <p className="text-xs font-semibold tracking-[0.14em] text-[#1877F2] uppercase">
-                        {t("Mídia e vendas")}
-                      </p>
-                      <h3 id={`meta-${group.currency}`} className="text-xl font-semibold">
-                        Meta Ads
-                      </h3>
-                    </div>
-                    <div className="ml-auto text-right">
-                      <p className="text-xs text-muted-foreground">{t("Investimento")}</p>
-                      <p className="font-semibold">{money(meta.spend, group.currency)}</p>
-                    </div>
+                <summary className="flex cursor-pointer list-none items-center gap-3 border-b border-[#1877F2]/20 bg-[#1877F2]/[0.06] px-4 py-4 sm:px-5">
+                  <PlatformMark platform="meta_ads" />
+                  <div>
+                    <p className="text-xs font-semibold tracking-[0.14em] text-[#1877F2] uppercase">
+                      {t("Mídia e vendas")}
+                    </p>
+                    <h3 id={`meta-${group.currency}`} className="text-xl font-semibold">
+                      Meta Ads
+                    </h3>
                   </div>
-                </div>
+                  <div className="ml-auto text-right">
+                    <p className="text-xs text-muted-foreground">{t("Investimento")}</p>
+                    <p className="font-semibold">{money(meta.spend, group.currency)}</p>
+                  </div>
+                  <span className="text-muted-foreground group-open:rotate-180" aria-hidden="true">
+                    ⌄
+                  </span>
+                </summary>
                 <div className="space-y-5 p-4 sm:p-5">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                    <Kpi label={t("Alcance")} value={meta.reach == null ? "—" : number(meta.reach)} />
+                    <Kpi
+                      label={t("Alcance")}
+                      value={meta.reach == null ? "—" : number(meta.reach)}
+                    />
                     <Kpi label={t("Impressões")} value={number(meta.impressions)} />
                     <Kpi
                       label={t("Frequência")}
-                      value={meta.reach != null && meta.reach > 0 ? `${number(meta.impressions / meta.reach)}x` : "—"}
+                      value={meta.frequency == null ? "—" : `${number(meta.frequency)}x`}
                     />
                     <Kpi
                       label="CPM"
@@ -854,33 +1161,8 @@ export function TrafficDashboard() {
                     />
                     <Kpi label={t("Investimento")} value={money(meta.spend, group.currency)} />
                   </div>
-
-                  <div className="grid gap-3 sm:grid-cols-3" aria-label={t("Funil de desempenho")}>
-                    {[
-                      [t("Pessoas alcançadas"), meta.reach],
-                      [t("Cliques no link"), meta.link_clicks],
-                      [conversionLabel, meta.conversions],
-                    ].map(([label, value], index) => (
-                      <div
-                        key={String(label)}
-                        className="relative overflow-hidden rounded-xl border bg-card p-4"
-                      >
-                        <span className="text-xs font-medium text-muted-foreground">
-                          {index + 1}. {label}
-                        </span>
-                        <p className="mt-2 text-xl font-semibold">{number(Number(value))}</p>
-                        <div className="absolute inset-x-0 bottom-0 h-1 bg-[#1877F2]/15">
-                          <div
-                            className="h-full bg-[#1877F2]"
-                            style={{ width: `${Math.max(4, 100 - index * 28)}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
                   {meta.video_views > 0 && (
-                    <div className="rounded-xl border bg-card p-4">
+                    <div className="rounded-xl border bg-muted/20 p-4">
                       <h4 className="font-semibold">{t("Retenção de vídeo")}</h4>
                       <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
                         {[
@@ -892,15 +1174,12 @@ export function TrafficDashboard() {
                         ].map(([label, value]) => (
                           <div key={String(label)}>
                             <p className="text-muted-foreground">{label}</p>
-                            <p className="font-semibold">
-                              {value == null ? "—" : number(Number(value))}
-                            </p>
+                            <p className="font-semibold">{number(Number(value))}</p>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
-
                   <CampaignTable
                     campaigns={metaCampaigns}
                     currency={group.currency}
@@ -911,37 +1190,29 @@ export function TrafficDashboard() {
                     idioma={idioma}
                   />
                 </div>
-              </section>
+              </details>
             )}
 
             {google && (
-              <section
-                aria-labelledby={`google-${group.currency}`}
-                className="overflow-hidden rounded-2xl border bg-card shadow-sm"
-              >
-                <div className="grid h-1 grid-cols-4" aria-hidden="true">
-                  <span className="bg-[#4285F4]" />
-                  <span className="bg-[#EA4335]" />
-                  <span className="bg-[#FBBC05]" />
-                  <span className="bg-[#34A853]" />
-                </div>
-                <div className="border-b px-4 py-4 sm:px-5">
-                  <div className="flex items-center gap-3">
-                    <PlatformMark platform="google_ads" />
-                    <div>
-                      <p className="text-xs font-semibold tracking-[0.14em] text-[#4285F4] uppercase">
-                        {t("Mídia e vendas")}
-                      </p>
-                      <h3 id={`google-${group.currency}`} className="text-xl font-semibold">
-                        Google Ads
-                      </h3>
-                    </div>
-                    <div className="ml-auto text-right">
-                      <p className="text-xs text-muted-foreground">{t("Investimento")}</p>
-                      <p className="font-semibold">{money(google.spend, group.currency)}</p>
-                    </div>
+              <details open className="group overflow-hidden rounded-2xl border bg-card shadow-sm">
+                <summary className="flex cursor-pointer list-none items-center gap-3 border-b px-4 py-4 sm:px-5">
+                  <PlatformMark platform="google_ads" />
+                  <div>
+                    <p className="text-xs font-semibold tracking-[0.14em] text-[#4285F4] uppercase">
+                      {t("Mídia e vendas")}
+                    </p>
+                    <h3 id={`google-${group.currency}`} className="text-xl font-semibold">
+                      Google Ads
+                    </h3>
                   </div>
-                </div>
+                  <div className="ml-auto text-right">
+                    <p className="text-xs text-muted-foreground">{t("Investimento")}</p>
+                    <p className="font-semibold">{money(google.spend, group.currency)}</p>
+                  </div>
+                  <span className="text-muted-foreground group-open:rotate-180" aria-hidden="true">
+                    ⌄
+                  </span>
+                </summary>
                 <div className="space-y-5 p-4 sm:p-5">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <Kpi label={t("Impressões")} value={number(google.impressions)} />
@@ -973,7 +1244,7 @@ export function TrafficDashboard() {
                     idioma={idioma}
                   />
                 </div>
-              </section>
+              </details>
             )}
           </section>
         );
