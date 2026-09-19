@@ -8,15 +8,15 @@ import type { Lead } from "@/lib/types/leads";
 import { cn } from "@/lib/utils";
 
 /**
- * A última mensagem do negócio, com atalho para o inbox.
+ * A última mensagem do negócio, com atalho para a tela do lead.
  *
  * ─── Por que atalho e não um composer aqui dentro ───────────────────────────
  *
  * Responder de dentro do quadro exigiria trazer o composer inteiro — anexos,
  * templates, notas internas, gravação de áudio — para uma segunda tela. Duas
  * cópias do mesmo campo divergem: a correção entra numa e não na outra, e o
- * atendente aprende que "no Kanban não funciona igual". O inbox já é o lugar
- * onde se conversa; o que faltava era chegar nele sem procurar.
+ * atendente aprende que "no Kanban não funciona igual". O lead já é o lugar
+ * onde se acompanha e conversa; o que faltava era chegar nele sem procurar.
  *
  * ─── O que a prévia resolve ─────────────────────────────────────────────────
  *
@@ -30,7 +30,13 @@ import { cn } from "@/lib/utils";
  * conversa. Nesses casos o slot não aparece — e NÃO aparece um "sem mensagens"
  * cinza, que ocuparia a mesma linha em metade dos cards para não dizer nada.
  */
-export function ConversaSlot({ conversa }: { conversa: Lead["conversa"] }) {
+export function ConversaSlot({
+  conversa,
+  leadId,
+}: {
+  conversa: Lead["conversa"];
+  leadId?: string;
+}) {
   const t = useT();
   if (!conversa) return null;
 
@@ -39,9 +45,9 @@ export function ConversaSlot({ conversa }: { conversa: Lead["conversa"] }) {
 
   return (
     <Link
-      href={`/app/inbox?id=${conversa.id}`}
-      // O card inteiro é arrastável e clicável (abre o dossiê). Sem parar a
-      // propagação, o clique no atalho também abriria o dossiê por baixo — dois
+      href={leadId ? `/app/leads/${leadId}` : `/app/inbox?id=${conversa.id}`}
+      // O card inteiro é arrastável e clicável (abre o lead). Sem parar a
+      // propagação, o clique no atalho também abriria o lead por baixo, criando dois
       // destinos para um gesto.
       onClick={(e: MouseEvent) => e.stopPropagation()}
       onPointerDown={(e: MouseEvent) => e.stopPropagation()}
@@ -49,10 +55,14 @@ export function ConversaSlot({ conversa }: { conversa: Lead["conversa"] }) {
         "group/conversa mt-1 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px]",
         "text-text-muted transition-colors hover:bg-muted hover:text-foreground",
       )}
-      title={t("Abrir esta conversa no Inbox")}
+      title={t("Abrir o lead e responder no WhatsApp")}
     >
       <ChatCircle size={12} weight="regular" className="shrink-0" aria-hidden />
-      <span className="truncate">
+      <span className="shrink-0 font-medium text-text">{t("WhatsApp")}</span>
+      <span aria-hidden className="shrink-0">
+        ·
+      </span>
+      <span className="min-w-0 truncate">
         {preview || <span className="italic">{t("conversa sem mensagens")}</span>}
       </span>
       {temNaoLidas && (

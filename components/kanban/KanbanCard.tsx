@@ -41,7 +41,7 @@ interface KanbanCardProps {
    * ordem visível dos cards — o card só relata o gesto.
    */
   onSelect?: (leadId: string, gesto: GestoDeSelecao) => void;
-  /** Abrir o dossiê. Separado de `onSelect`: são gestos e intenções diferentes. */
+  /** Abrir a tela do lead. Separado de `onSelect`: são gestos e intenções diferentes. */
   onOpen?: (leadId: string) => void;
 }
 
@@ -86,7 +86,7 @@ export function KanbanCard({
   const state = resolveCardState(card, t);
   const age = stageAgeLabel(card.hoursInStage, t);
 
-  // Clique ABRE o dossiê; ctrl/cmd+clique SELECIONA; shift+clique estende até a
+  // Clique ABRE o lead; ctrl/cmd+clique SELECIONA; shift+clique estende até a
   // âncora. "Clicar abre" é a convenção mais forte, e seleção múltipla é recurso
   // de poder, que tolera modificador. O arrasto continua funcionando porque o
   // dnd distingue clique de arrasto por movimento, não por handler.
@@ -98,15 +98,15 @@ export function KanbanCard({
   // ⚠️ UMA função, dois pontos de entrada — e a duplicação que existia aqui
   // custou o recurso inteiro no alvo mais óbvio. O TÍTULO é um `<button>` com
   // `stopPropagation()` (ver abaixo), então o clique nele NUNCA chega a este
-  // handler; e o `onClick` do título ignorava os modificadores e abria o dossiê
+  // handler; e o `onClick` do título ignorava os modificadores e abria o lead
   // sempre. Medido pela tela em 2026-09-04, com 6 cards e a âncora no 2º:
   //
-  //   shift+clique no TÍTULO do 5º  → 1 marcado, 1 diálogo aberto (o dossiê)
+  //   shift+clique no TÍTULO do 5º  → 1 marcado, 1 diálogo aberto (o lead)
   //   shift+clique no CORPO  do 5º  → 4 marcados, 0 diálogos
   //
   // O título é o maior e mais natural alvo do card. Quem lê "Segurando Shift,
   // um clique seleciona tudo entre o card anterior e o que você clicou" e clica
-  // no card clica no nome dele — e recebia o dossiê.
+  // no card clica no nome dele e recebia a tela do lead.
   const decidirClique = (e: {
     shiftKey: boolean;
     metaKey: boolean;
@@ -188,8 +188,8 @@ export function KanbanCard({
                 checked={Boolean(isSelected)}
                 aria-label={`${t("Selecionar")}: ${card.title}`}
                 onClick={(e) => {
-                  // O card inteiro tem onClick (abre o dossiê): sem parar a
-                  // propagação, marcar a caixa abriria o dossiê por cima.
+                  // O card inteiro tem onClick (abre o lead): sem parar a
+                  // propagação, marcar a caixa abriria o lead por cima.
                   e.stopPropagation();
                   onSelect?.(card.id, e.shiftKey ? "intervalo" : "alterna");
                 }}
@@ -290,10 +290,10 @@ export function KanbanCard({
             )}
           </div>
 
-          {/* A última mensagem, com atalho para o inbox. Fica ANTES do rodapé
+          {/* A última mensagem, com atalho para a tela do lead. Fica ANTES do rodapé
               de dono/tempo porque é conteúdo do negócio, não metadado do card —
               e some por inteiro quando não há conversa. */}
-          <ConversaSlot conversa={lead.conversa} />
+          <ConversaSlot conversa={lead.conversa} leadId={lead.id} />
 
           {/* ④ dono · ⑤ tempo no estágio */}
           <div className="mt-1 flex h-6 items-center justify-between gap-2">

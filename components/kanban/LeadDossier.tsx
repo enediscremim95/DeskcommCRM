@@ -138,7 +138,7 @@ export function LeadDossier({
           </p>
         )}
 
-        <ConversaNoDossie conversa={lead.conversa} />
+        <ConversaNoDossie conversa={lead.conversa} leadId={lead.id} />
 
         <section className="border-b border-border py-3">
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">

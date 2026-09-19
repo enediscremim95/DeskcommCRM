@@ -19,10 +19,10 @@
   "nodes": [
     { "id": "card", "lane": "humano", "col": 3, "type": "frontend", "label": "Card do Kanban", "sublabel": "5 elementos · altura constante" },
     { "id": "slot", "lane": "humano", "col": 2, "type": "frontend", "label": "O slot (faixa ③)", "sublabel": "aguardando > esfriando > normal" },
-    { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Dossiê (Sheet)", "sublabel": "cabeçalho > timeline > campos" },
+    { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Tela do lead", "sublabel": "dados + timeline única + resposta" },
     { "id": "radar", "lane": "humano", "col": 5, "type": "frontend", "label": "Radar de Risco", "sublabel": "alertas acionáveis · tarefas até 24h · leads sem próximo passo" },
     { "id": "filtro", "lane": "humano", "col": 3, "type": "frontend", "label": "Filtro Responsável", "sublabel": "user: e agent: no mesmo eixo" },
-    { "id": "chat", "lane": "humano", "col": 5, "type": "frontend", "label": "ChatThread ?msg=", "sublabel": "o destino da âncora" },
+    { "id": "chat", "lane": "humano", "col": 5, "type": "frontend", "label": "ChatThread + Composer", "sublabel": "mensagens, notas e eventos do negócio" },
     { "id": "decisao", "lane": "humano", "col": 3, "type": "frontend", "label": "Aprovar · Editar · Ignorar", "sublabel": "a recusa é sinal" },
     { "id": "fichacontato", "lane": "humano", "col": 5, "type": "frontend", "label": "Ficha 360 do contato", "sublabel": "todos os negócios · campos · origem · datas" },
 
@@ -62,7 +62,7 @@
     { "id": "e8", "from": "emissor", "to": "atividades", "label": "toda mutação deixa rastro" },
     { "id": "e9", "from": "atividades", "to": "leads", "label": "trigger toca last_activity_at" },
     { "id": "e10", "from": "atividades", "to": "timelineapi", "label": "TIMELINE_COLS explícito" },
-    { "id": "e11", "from": "timelineapi", "to": "dossie", "label": "realtime lead_id=eq.<id>" },
+    { "id": "e11", "from": "timelineapi", "to": "dossie", "label": "eventos entram no ChatThread em ordem temporal" },
     { "id": "e12", "from": "vocab", "to": "dossie", "label": "marcador e rótulo do ator" },
     { "id": "e13", "from": "vocab", "to": "card", "label": "mesmo alfabeto nas duas telas" },
     { "id": "e14", "from": "leadstate", "to": "slot", "label": "next_action vira proposta" },
@@ -93,7 +93,7 @@
     { "id": "e39", "from": "leads", "to": "card", "label": "realtime por pipeline_id" },
     { "id": "e40", "from": "leads", "to": "filtro", "label": "owner_kind: humano e agente são pares" },
     { "id": "e41", "from": "atividades", "to": "chat", "label": "âncora {conversation_id, message_id}" },
-    { "id": "e42", "from": "dossie", "to": "chat", "label": "clique leva ao momento" },
+    { "id": "e42", "from": "card", "to": "dossie", "label": "/app/leads/<id> abre a conversa no negócio" },
     { "id": "e43", "from": "dossie", "to": "atividades", "label": "editar campo deixa rastro humano" },
     { "id": "e44", "from": "filtro", "to": "card", "label": "applyFilters decide o que aparece" },
     { "id": "e45", "from": "leads", "to": "contactleadsapi", "label": "contact_id + organization_id" },
@@ -106,7 +106,8 @@
     { "id": "e52", "from": "risco", "to": "radar", "label": "texto e prazo do próximo contato" },
     { "id": "e53", "from": "radar", "to": "dossie", "label": "deep link ?lead=<id>" },
     { "id": "e54", "from": "tarefas", "to": "radar", "label": "toda tarefa aberta com prazo, pela urgência" },
-    { "id": "e55", "from": "radar", "to": "tarefas", "label": "porta para executar e concluir" }
+    { "id": "e55", "from": "radar", "to": "tarefas", "label": "porta para executar e concluir" },
+    { "id": "e56", "from": "dossie", "to": "chat", "label": "mensagens, notas e eventos na mesma rolagem" }
   ],
   "cards": [
     {

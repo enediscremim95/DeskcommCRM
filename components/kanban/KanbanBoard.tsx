@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
 import { useT } from "@/hooks/i18n/useT";
 import { Card } from "@/components/ui/card";
@@ -13,8 +14,6 @@ import { midpoint } from "@/lib/kanban/fractional-indexing";
 import type { Lead } from "@/lib/types/leads";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
-import { LeadDossier } from "./LeadDossier";
-import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 
 interface KanbanBoardProps {
   pipelineId: string;
@@ -33,7 +32,7 @@ interface KanbanBoardProps {
    */
   pulses?: Map<string, number>;
   onSelectionChange?: (ids: string[]) => void;
-  /** Lead a abrir já na montagem (deep link `?lead=` — ver o dossiê abaixo). */
+  /** Lead a abrir já na montagem (deep link legado `?lead=`). */
   leadInicial?: string | null;
 }
 
@@ -57,7 +56,7 @@ function BoardSkeleton() {
       {[0, 1, 2].map((c) => (
         <div
           key={c}
-          className="flex w-80 shrink-0 flex-col gap-2 rounded-lg border border-border bg-surface-muted/40 p-3"
+          className="bg-surface-muted/40 flex w-80 shrink-0 flex-col gap-2 rounded-lg border border-border p-3"
         >
           <Skeleton className="h-5 w-32" />
           {[0, 1, 2, 3].map((i) => (
@@ -80,6 +79,7 @@ export function KanbanBoard({
   leadInicial,
 }: KanbanBoardProps) {
   const t = useT();
+  const router = useRouter();
   const useExternal = stagesProp !== undefined && leadsProp !== undefined;
   const queryResult = useBoard(useExternal ? null : pipelineId);
   const moveCard = useMoveCard(pipelineId);
@@ -117,14 +117,11 @@ export function KanbanBoard({
     return Array.isArray(raw) ? raw.filter((t): t is string => typeof t === "string") : [];
   }, [pipelineProp, queryResult.data?.pipeline]);
 
-  // O dossiê é do BOARD e não da página: ele precisa do lead inteiro e do nome
-  // do estágio, que só existem aqui depois do agrupamento.
-  //
-  // `leadInicial` é o deep link: até aqui o dossiê SÓ abria por clique, então
-  // nenhuma outra tela do produto conseguia apontar para um lead específico —
-  // o histórico de captação tinha o id e nenhum lugar para levá-lo. Uma vez
-  // aberto, o estado local manda (fechar não reabre pela URL).
-  const [dossieId, setDossieId] = useState<string | null>(leadInicial ?? null);
+  // Compatibilidade com links antigos do quadro. A URL canônica agora é a tela
+  // inteira do lead; abrir um `?lead=` antigo só encaminha para ela.
+  useEffect(() => {
+    if (leadInicial) router.replace(`/app/leads/${leadInicial}`);
+  }, [leadInicial, router]);
   const [internalSelected, setInternalSelected] = useState<Set<string>>(new Set());
   const selectedLeadIds = useMemo(
     () => (selectedIds ? new Set(selectedIds) : internalSelected),
@@ -141,10 +138,6 @@ export function KanbanBoard({
   const isLoading = useExternal ? false : queryResult.isLoading;
   const isError = useExternal ? false : queryResult.isError;
   const error = useExternal ? null : queryResult.error;
-
-  const leadDoDossie = dossieId
-    ? (data?.leads.find((l) => l.id === dossieId) ?? null)
-    : null;
 
   const grouped = useMemo(() => {
     if (!data) return null;
@@ -179,10 +172,7 @@ export function KanbanBoard({
       if (!data || !grouped) return;
       const { source, destination, draggableId } = result;
       if (!destination) return;
-      if (
-        source.droppableId === destination.droppableId &&
-        source.index === destination.index
-      ) {
+      if (source.droppableId === destination.droppableId && source.index === destination.index) {
         return;
       }
 
@@ -190,13 +180,10 @@ export function KanbanBoard({
       if (!lead) return;
 
       const destStageId = destination.droppableId;
-      const destList = (grouped.get(destStageId) ?? []).filter(
-        (l) => l.id !== draggableId,
-      );
+      const destList = (grouped.get(destStageId) ?? []).filter((l) => l.id !== draggableId);
 
       const before = destination.index > 0 ? destList[destination.index - 1] : null;
-      const after =
-        destination.index < destList.length ? destList[destination.index] : null;
+      const after = destination.index < destList.length ? destList[destination.index] : null;
 
       const newPosition = midpoint(
         before?.position_in_stage ?? null,
@@ -259,24 +246,10 @@ export function KanbanBoard({
             canonicalTags={canonicalTags}
             selectedLeadIds={selectedLeadIds}
             onSelectMany={handleSelectMany}
-            onOpen={setDossieId}
+            onOpen={(leadId) => router.push(`/app/leads/${leadId}`)}
           />
         ))}
       </div>
-      {leadDoDossie && (
-        <LeadDossier
-          open
-          onOpenChange={(v: boolean) => !v && setDossieId(null)}
-          lead={leadDoDossie}
-          pipelineId={pipelineId}
-          pipelineName={data.pipeline.name}
-          fieldDefs={camposDoFunil(data.pipeline.settings ?? null)}
-          stageName={
-            data.stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"
-          }
-          ownerNames={ownerNames}
-        />
-      )}
     </DragDropContext>
   );
 }

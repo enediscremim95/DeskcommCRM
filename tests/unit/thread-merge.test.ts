@@ -28,4 +28,12 @@ describe("mergeThreadItems", () => {
   it("array vazio de ambos retorna vazio", () => {
     expect(mergeThreadItems([], [])).toEqual([]);
   });
+
+  it("intercala acontecimentos do lead na mesma linha do tempo", () => {
+    const msgs = [{ id: "m1", sent_at: "2026-07-23T10:00:00Z" }] as never;
+    const eventos = [{ id: "e1", ts: "2026-07-23T10:01:00Z", label: "Mudou de estágio" }];
+    const out = mergeThreadItems(msgs, [], eventos);
+    expect(out.map((i) => i.data.id)).toEqual(["m1", "e1"]);
+    expect(out[1]!.kind).toBe("context");
+  });
 });
