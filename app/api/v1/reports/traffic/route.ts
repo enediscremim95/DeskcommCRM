@@ -69,7 +69,15 @@ export async function GET(request: NextRequest): Promise<Response> {
     published_generation: string | null;
     campaign_metric_columns: unknown;
   };
-  const [{ data: accounts, error: accountError }, factsResult] = await Promise.all([
+  const fromCreatedAt = `${parsed.data.from}T00:00:00.000Z`;
+  const exclusiveTo = new Date(`${parsed.data.to}T00:00:00.000Z`);
+  exclusiveTo.setUTCDate(exclusiveTo.getUTCDate() + 1);
+  const [
+    { data: accounts, error: accountError },
+    factsResult,
+    { data: wonStages, error: wonStagesError },
+    { count: crmLeadsEntered, error: crmLeadsError },
+  ] = await Promise.all([
     admin.from("traffic_dashboard_accounts" as never)
       .select("account_id,account_name,platform,currency").eq("organization_id", organizationId),
     typedConfig.published_generation
@@ -79,11 +87,37 @@ export async function GET(request: NextRequest): Promise<Response> {
         .eq("sync_generation", typedConfig.published_generation)
         .gte("occurred_on", parsed.data.from).lte("occurred_on", parsed.data.to).order("occurred_on")
       : Promise.resolve({ data: [], error: null }),
+    admin.from("crm_stages" as never)
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("is_won", true),
+    admin.from("crm_leads" as never)
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .gte("created_at", fromCreatedAt)
+      .lt("created_at", exclusiveTo.toISOString()),
   ]);
   const factError = factsResult.error;
-  if (accountError || factError) {
+  if (accountError || factError || wonStagesError || crmLeadsError) {
     return fail("internal_error", "Não foi possível ler o relatório.", 500, { requestId });
   }
+  const wonStageIds = ((wonStages ?? []) as unknown as Array<{ id: string }>).map(
+    (stage) => stage.id,
+  );
+  let crmClosedWon = 0;
+  if (wonStageIds.length > 0) {
+    const { count, error } = await admin.from("crm_leads" as never)
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .gte("created_at", fromCreatedAt)
+      .lt("created_at", exclusiveTo.toISOString())
+      .in("stage_id", wonStageIds);
+    if (error) {
+      return fail("internal_error", "Não foi possível ler o relatório.", 500, { requestId });
+    }
+    crmClosedWon = count ?? 0;
+  }
+  const crmEntered = crmLeadsEntered ?? 0;
   const facts = factsResult.data;
   const storedAccounts = (accounts ?? []) as unknown as StoredAccount[];
   const campaignReach = new Map<string, number>();
@@ -116,6 +150,11 @@ export async function GET(request: NextRequest): Promise<Response> {
       error: typedConfig.last_sync_error,
     },
     window: { from: parsed.data.from, to: parsed.data.to },
+    crm: {
+      leads_entered: crmEntered,
+      in_service: Math.max(0, crmEntered - crmClosedWon),
+      closed_won: crmClosedWon,
+    },
     currencies: buildTrafficReport({
       model: typedConfig.model,
       conversionFields: typedConfig.conversion_fields,

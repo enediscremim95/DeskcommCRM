@@ -27,6 +27,11 @@ import {
   CAMPAIGN_METRIC_COLUMNS,
   type CampaignMetricColumn,
 } from "@/lib/windsor/types";
+import {
+  buildTrafficFunnelStages,
+  ConversionFunnel,
+  type FunnelStage,
+} from "./ConversionFunnel";
 
 interface Metrics {
   budget: number | null;
@@ -62,6 +67,11 @@ interface Metrics {
   video_p50: number;
   video_p75: number;
   video_p95: number;
+  landing_page_views_available: boolean;
+  add_to_cart_available: boolean;
+  initiate_checkout_available: boolean;
+  purchases_available: boolean;
+  messaging_conversations_available: boolean;
 }
 interface Campaign extends Metrics {
   name: string;
@@ -100,6 +110,7 @@ interface ReportResponse {
     default_columns: CampaignMetricColumn[];
     can_manage_defaults: boolean;
     sync: { status: string; last_succeeded_at: string | null; error: string | null };
+    crm: { leads_entered: number; in_service: number; closed_won: number };
     currencies: CurrencyGroup[];
   };
   error?: { message?: string };
@@ -625,6 +636,44 @@ export function TrafficDashboard() {
           openMedia: t("Abrir mídia"),
         };
         const visibleColumns = selectedColumns.length ? selectedColumns : report.default_columns;
+        const trafficStages = buildTrafficFunnelStages(group.summary, report.model, idioma);
+        const crmStages: FunnelStage[] = [
+          {
+            key: "crm-entered",
+            label: localText(idioma, "Leads que entraram", "Leads que ingresaron"),
+            value: report.crm.leads_entered,
+            rate: null,
+          },
+          {
+            key: "crm-service",
+            label: localText(idioma, "Em atendimento", "En atención"),
+            value: report.crm.in_service,
+            rate: report.crm.leads_entered > 0
+              ? (report.crm.in_service / report.crm.leads_entered) * 100
+              : null,
+          },
+          {
+            key: "crm-won",
+            label: localText(idioma, "Fechados", "Cerrados"),
+            value: report.crm.closed_won,
+            rate: report.crm.leads_entered > 0
+              ? (report.crm.closed_won / report.crm.leads_entered) * 100
+              : null,
+          },
+        ];
+        const trafficCost = report.model === "messages"
+          ? group.summary.cost_per_messaging_conversation
+          : report.model === "leads"
+            ? group.summary.cost_per_lead
+            : group.summary.cost_per_conversion;
+        const trafficCostLabel = report.model === "messages"
+          ? localText(idioma, "Custo por conversa", "Costo por conversación")
+          : report.model === "ecommerce"
+            ? localText(idioma, "Custo por venda", "Costo por venta")
+            : localText(idioma, "Custo por lead", "Costo por lead");
+        const costPerClosed = report.crm.closed_won > 0 && report.currencies.length === 1
+          ? group.summary.spend / report.crm.closed_won
+          : null;
         return (
           <section key={group.currency} className="space-y-6">
             {report.currencies.length > 1 && (
@@ -653,6 +702,56 @@ export function TrafficDashboard() {
                 />
                 <Kpi label={t("Impressões")} value={number(group.summary.impressions)} />
               </div>
+            </div>
+
+            <div className="space-y-3">
+              <ConversionFunnel
+                title={localText(idioma, "Do anúncio à conversão", "Del anuncio a la conversión")}
+                description={localText(
+                  idioma,
+                  "As taxas mostram a passagem entre os dados disponíveis no período. Etapas sem medição não aparecem.",
+                  "Las tasas muestran el avance entre los datos disponibles del período. Las etapas sin medición no aparecen.",
+                )}
+                stages={trafficStages}
+                idioma={idioma}
+                summary={[
+                  { label: t("Investimento"), value: money(group.summary.spend, group.currency) },
+                  {
+                    label: trafficCostLabel,
+                    value: trafficCost == null ? "—" : money(trafficCost, group.currency),
+                    emphasis: true,
+                  },
+                  ...(report.model === "ecommerce"
+                    ? [{ label: "ROAS", value: group.summary.roas == null ? "—" : `${number(group.summary.roas)}x` }]
+                    : []),
+                ]}
+              />
+              <div className="flex items-center justify-center" aria-hidden="true">
+                <span className="rounded-full border bg-background px-4 py-1.5 text-xs font-semibold tracking-[0.1em] text-primary uppercase shadow-sm">
+                  {localText(idioma, "Continua no CRM", "Continúa en el CRM")}
+                </span>
+              </div>
+              <ConversionFunnel
+                title={localText(idioma, "Da entrada ao fechamento", "Del ingreso al cierre")}
+                description={localText(
+                  idioma,
+                  "Estado atual dos leads criados neste período. Fechados são os que estão em etapas marcadas como ganho.",
+                  "Estado actual de los leads creados en este período. Cerrados son los que están en etapas marcadas como ganadas.",
+                )}
+                stages={crmStages}
+                idioma={idioma}
+                summary={[
+                  {
+                    label: localText(idioma, "Fechados", "Cerrados"),
+                    value: number(report.crm.closed_won),
+                  },
+                  {
+                    label: localText(idioma, "Custo por venda fechada", "Costo por venta cerrada"),
+                    value: costPerClosed == null ? "—" : money(costPerClosed, group.currency),
+                    emphasis: true,
+                  },
+                ]}
+              />
             </div>
 
             <div className="h-72 rounded-xl border bg-card p-3 sm:h-80 sm:p-4">

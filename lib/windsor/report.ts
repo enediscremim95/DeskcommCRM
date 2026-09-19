@@ -57,6 +57,11 @@ interface Bucket {
   video_p50: number;
   video_p75: number;
   video_p95: number;
+  landing_page_views_available: boolean;
+  add_to_cart_available: boolean;
+  initiate_checkout_available: boolean;
+  purchases_available: boolean;
+  messaging_conversations_available: boolean;
 }
 const empty = (): Bucket => ({
   spend: 0, conversions: 0, revenue: 0, impressions: 0, reach: 0,
@@ -64,6 +69,9 @@ const empty = (): Bucket => ({
   purchases: 0, messaging_conversations: 0,
   clicks: 0, link_clicks: 0, video_views: 0, video_p25: 0,
   video_p50: 0, video_p75: 0, video_p95: 0,
+  landing_page_views_available: false, add_to_cart_available: false,
+  initiate_checkout_available: false, purchases_available: false,
+  messaging_conversations_available: false,
 });
 const n = (value: unknown): number => {
   const parsed = typeof value === "number" ? value : Number(value ?? 0);
@@ -78,6 +86,10 @@ interface CampaignBudget {
 const budgetsByBucket = new WeakMap<Bucket, Map<string, CampaignBudget>>();
 function action(fact: StoredFact, field: string): number {
   return n(fact.conversions?.[field]);
+}
+function hasAction(fact: StoredFact, field: string): boolean {
+  return fact.conversions != null
+    && Object.prototype.hasOwnProperty.call(fact.conversions, field);
 }
 function rememberBudget(target: Bucket, fact: StoredFact): void {
   const campaignKey = fact.campaign_id ?? fact.campaign_name;
@@ -139,6 +151,14 @@ function add(target: Bucket, fact: StoredFact, fields: string[]): void {
   target.initiate_checkout += action(fact, "actions_initiate_checkout");
   target.purchases += action(fact, "actions_purchase");
   target.messaging_conversations += action(
+    fact,
+    "actions_onsite_conversion_messaging_conversation_started_7d",
+  );
+  target.landing_page_views_available ||= hasAction(fact, "actions_landing_page_view");
+  target.add_to_cart_available ||= hasAction(fact, "actions_add_to_cart");
+  target.initiate_checkout_available ||= hasAction(fact, "actions_initiate_checkout");
+  target.purchases_available ||= hasAction(fact, "actions_purchase");
+  target.messaging_conversations_available ||= hasAction(
     fact,
     "actions_onsite_conversion_messaging_conversation_started_7d",
   );

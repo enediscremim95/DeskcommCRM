@@ -4,8 +4,35 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TrafficDashboard } from "./TrafficDashboard";
 
-vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (value: string) => value }));
+const { translate } = vi.hoisted(() => ({ translate: (value: string) => value }));
+
+vi.mock("@/hooks/i18n/useT", () => ({ useT: () => translate }));
 vi.mock("@/lib/i18n/IdiomaProvider", () => ({ useIdioma: () => "pt" }));
+vi.mock("@/components/ui/select", () => ({
+  Select: ({
+    value,
+    onValueChange,
+    children,
+  }: {
+    value: string;
+    onValueChange: (value: string) => void;
+    children: React.ReactNode;
+  }) => (
+    <select
+      aria-label="Período"
+      value={value}
+      onChange={(event) => onValueChange(event.target.value)}
+    >
+      {children}
+    </select>
+  ),
+  SelectTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SelectValue: () => null,
+  SelectContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SelectItem: ({ value, children }: { value: string; children: React.ReactNode }) => (
+    <option value={value}>{children}</option>
+  ),
+}));
 vi.mock("recharts", () => ({
   Area: () => null,
   Bar: () => null,
@@ -29,6 +56,9 @@ const metrics = {
   cost_per_conversion: 10, cost_per_lead: 10, cpm: 50, ctr: 5, cpc: 1,
   conversion_rate: 10, roas: 4, average_order_value: 100,
   video_views: 0, video_p25: 0, video_p50: 0, video_p75: 0, video_p95: 0,
+  landing_page_views_available: true, add_to_cart_available: true,
+  initiate_checkout_available: true, purchases_available: true,
+  messaging_conversations_available: false,
 } as const;
 
 describe("colunas da tabela de campanhas", () => {
@@ -47,6 +77,7 @@ describe("colunas da tabela de campanhas", () => {
         default_columns: ["spend", "leads"],
         can_manage_defaults: true,
         sync: { status: "ready", last_succeeded_at: "2026-09-18T20:00:00Z", error: null },
+        crm: { leads_entered: 8, in_service: 5, closed_won: 3 },
         currencies: [{
           currency: "BRL", summary: metrics, daily: [],
           platforms: [{ ...metrics, platform: "meta_ads" }],
@@ -71,5 +102,30 @@ describe("colunas da tabela de campanhas", () => {
       method: "PATCH",
       body: JSON.stringify({ columns: ["spend", "impressions", "leads"] }),
     });
+  });
+
+  it("recarrega o funil quando o período muda", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      data: {
+        model: "leads", organization_key: "org-1", viewer_key: "user-1",
+        default_columns: ["spend", "leads"], can_manage_defaults: false,
+        sync: { status: "ready", last_succeeded_at: null, error: null },
+        crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
+        currencies: [{
+          currency: "BRL", summary: metrics, daily: [],
+          platforms: [], campaigns: [],
+        }],
+      },
+    }), { status: 200 }));
+
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    expect(await screen.findByText("Do anúncio à conversão")).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Período" }), "7");
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const secondUrl = String(fetchMock.mock.calls[1]?.[0]);
+    expect(secondUrl).toContain("/api/v1/reports/traffic?from=");
+    expect(secondUrl).toContain("&to=");
   });
 });
