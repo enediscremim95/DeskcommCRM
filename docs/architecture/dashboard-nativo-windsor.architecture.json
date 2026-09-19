@@ -23,6 +23,7 @@
     { "id": "windsor", "lane": "externo", "col": 2, "type": "service", "label": "Windsor API com chave somente no servidor" },
     { "id": "configdb", "lane": "banco", "col": 0, "type": "service", "label": "Config e contas server-side only" },
     { "id": "facts", "lane": "banco", "col": 4, "type": "service", "label": "Fatos diários por tenant, conta e moeda" },
+    { "id": "presets", "lane": "banco", "col": 4, "type": "service", "label": "Predefinições ordenadas de colunas por organização" },
     { "id": "runs", "lane": "banco", "col": 3, "type": "service", "label": "Runs, erro sanitizado e último dado bom" },
     { "id": "report", "lane": "execucao", "col": 5, "type": "service", "label": "API autenticada agrega sem misturar moedas" },
     { "id": "screen", "lane": "tenant", "col": 6, "type": "service", "label": "Relatório responsivo e drill campanha > conjunto > anúncio" }
@@ -37,6 +38,8 @@
     { "id": "e7", "from": "normalizer", "to": "runs", "label": "sucesso ou falha visível" },
     { "id": "e8", "from": "facts", "to": "report", "label": "leitura local tenant-scoped" },
     { "id": "e9", "from": "report", "to": "screen", "label": "métricas por moeda" },
-    { "id": "e10", "from": "runs", "to": "screen", "label": "frescor e falha sem apagar dado bom" }
+    { "id": "e10", "from": "runs", "to": "screen", "label": "frescor e falha sem apagar dado bom" },
+    { "id": "e11", "from": "config", "to": "presets", "label": "cria, renomeia, ordena, exclui e marca padrão com audit" },
+    { "id": "e12", "from": "presets", "to": "report", "label": "preset padrão e lista tenant-scoped" }
   ]
 }
