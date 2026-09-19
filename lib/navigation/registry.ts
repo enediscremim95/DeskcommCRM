@@ -146,7 +146,7 @@ export function hubSections(
     destinosDaInterface(settings, isPlatformAdmin, role, integrations).map((d) => d.href),
   );
   for (const d of NAV_DESTINATIONS) {
-    if (d.group !== group || !visible.has(d.href)) continue;
+    if (d.group !== group || !visible.has(d.href) || d.oculto) continue;
     const secao = d.section ?? "";
     const atual = porSecao.get(secao);
     if (atual) atual.push(d);
@@ -165,5 +165,5 @@ export function searchable(
   const visible = new Set<string>(
     destinosDaInterface(settings, isPlatformAdmin, role, integrations).map((d) => d.href),
   );
-  return NAV_DESTINATIONS.filter((d) => visible.has(d.href));
+  return NAV_DESTINATIONS.filter((d) => visible.has(d.href) && !d.oculto);
 }
