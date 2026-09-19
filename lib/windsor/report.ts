@@ -64,13 +64,27 @@ interface Bucket {
   messaging_conversations_available: boolean;
 }
 const empty = (): Bucket => ({
-  spend: 0, conversions: 0, revenue: 0, impressions: 0, reach: 0,
-  landing_page_views: 0, add_to_cart: 0, initiate_checkout: 0,
-  purchases: 0, messaging_conversations: 0,
-  clicks: 0, link_clicks: 0, video_views: 0, video_p25: 0,
-  video_p50: 0, video_p75: 0, video_p95: 0,
-  landing_page_views_available: false, add_to_cart_available: false,
-  initiate_checkout_available: false, purchases_available: false,
+  spend: 0,
+  conversions: 0,
+  revenue: 0,
+  impressions: 0,
+  reach: 0,
+  landing_page_views: 0,
+  add_to_cart: 0,
+  initiate_checkout: 0,
+  purchases: 0,
+  messaging_conversations: 0,
+  clicks: 0,
+  link_clicks: 0,
+  video_views: 0,
+  video_p25: 0,
+  video_p50: 0,
+  video_p75: 0,
+  video_p95: 0,
+  landing_page_views_available: false,
+  add_to_cart_available: false,
+  initiate_checkout_available: false,
+  purchases_available: false,
   messaging_conversations_available: false,
 });
 const n = (value: unknown): number => {
@@ -88,8 +102,7 @@ function action(fact: StoredFact, field: string): number {
   return n(fact.conversions?.[field]);
 }
 function hasAction(fact: StoredFact, field: string): boolean {
-  return fact.conversions != null
-    && Object.prototype.hasOwnProperty.call(fact.conversions, field);
+  return fact.conversions != null && Object.prototype.hasOwnProperty.call(fact.conversions, field);
 }
 function rememberBudget(target: Bucket, fact: StoredFact): void {
   const campaignKey = fact.campaign_id ?? fact.campaign_name;
@@ -125,16 +138,24 @@ function rememberBudget(target: Bucket, fact: StoredFact): void {
     Math.max(budget.adsets_lifetime.get(adsetKey) ?? 0, action(fact, "adset_lifetime_budget")),
   );
 }
-function budgetOf(bucket: Bucket): { budget: number | null; budget_type: "daily" | "lifetime" | null } {
+function budgetOf(bucket: Bucket): {
+  budget: number | null;
+  budget_type: "daily" | "lifetime" | null;
+} {
   const campaigns = budgetsByBucket.get(bucket);
   if (!campaigns?.size) return { budget: null, budget_type: null };
-  const resolved = [...campaigns.values()].map((item) => {
-    const daily = item.campaign_daily || [...item.adsets_daily.values()].reduce((sum, value) => sum + value, 0);
-    if (daily > 0) return { value: daily / 100, type: "daily" as const };
-    const lifetime = item.campaign_lifetime
-      || [...item.adsets_lifetime.values()].reduce((sum, value) => sum + value, 0);
-    return lifetime > 0 ? { value: lifetime / 100, type: "lifetime" as const } : null;
-  }).filter((item): item is { value: number; type: "daily" | "lifetime" } => item !== null);
+  const resolved = [...campaigns.values()]
+    .map((item) => {
+      const daily =
+        item.campaign_daily ||
+        [...item.adsets_daily.values()].reduce((sum, value) => sum + value, 0);
+      if (daily > 0) return { value: daily / 100, type: "daily" as const };
+      const lifetime =
+        item.campaign_lifetime ||
+        [...item.adsets_lifetime.values()].reduce((sum, value) => sum + value, 0);
+      return lifetime > 0 ? { value: lifetime / 100, type: "lifetime" as const } : null;
+    })
+    .filter((item): item is { value: number; type: "daily" | "lifetime" } => item !== null);
   if (!resolved.length || new Set(resolved.map((item) => item.type)).size !== 1) {
     return { budget: null, budget_type: null };
   }
@@ -174,30 +195,32 @@ function add(target: Bucket, fact: StoredFact, fields: string[]): void {
   target.video_p95 += n(fact.video_p95);
   rememberBudget(target, fact);
 }
-function ratios(bucket: Bucket, model: DashboardModel) {
+function ratios(bucket: Bucket, model: DashboardModel, periodReach: number | null = null) {
   const budget = budgetOf(bucket);
   return {
     ...bucket,
     ...budget,
-    reach: null,
+    reach: periodReach,
+    frequency: periodReach != null && periodReach > 0 ? bucket.impressions / periodReach : null,
     leads: bucket.conversions,
     cost_per_conversion: bucket.conversions > 0 ? bucket.spend / bucket.conversions : null,
     cost_per_lead: bucket.conversions > 0 ? bucket.spend / bucket.conversions : null,
-    cost_per_landing_page_view: bucket.landing_page_views > 0
-      ? bucket.spend / bucket.landing_page_views : null,
+    cost_per_landing_page_view:
+      bucket.landing_page_views > 0 ? bucket.spend / bucket.landing_page_views : null,
     cost_per_add_to_cart: bucket.add_to_cart > 0 ? bucket.spend / bucket.add_to_cart : null,
-    cost_per_initiate_checkout: bucket.initiate_checkout > 0
-      ? bucket.spend / bucket.initiate_checkout : null,
+    cost_per_initiate_checkout:
+      bucket.initiate_checkout > 0 ? bucket.spend / bucket.initiate_checkout : null,
     cost_per_purchase: bucket.purchases > 0 ? bucket.spend / bucket.purchases : null,
-    cost_per_messaging_conversation: bucket.messaging_conversations > 0
-      ? bucket.spend / bucket.messaging_conversations : null,
+    cost_per_messaging_conversation:
+      bucket.messaging_conversations > 0 ? bucket.spend / bucket.messaging_conversations : null,
     cpm: bucket.impressions > 0 ? (bucket.spend / bucket.impressions) * 1000 : null,
     ctr: bucket.impressions > 0 ? (bucket.link_clicks / bucket.impressions) * 100 : null,
     cpc: bucket.link_clicks > 0 ? bucket.spend / bucket.link_clicks : null,
-    conversion_rate: bucket.link_clicks > 0 ? (bucket.conversions / bucket.link_clicks) * 100 : null,
+    conversion_rate:
+      bucket.link_clicks > 0 ? (bucket.conversions / bucket.link_clicks) * 100 : null,
     roas: model === "ecommerce" && bucket.spend > 0 ? bucket.revenue / bucket.spend : null,
-    average_order_value: model === "ecommerce" && bucket.conversions > 0
-      ? bucket.revenue / bucket.conversions : null,
+    average_order_value:
+      model === "ecommerce" && bucket.conversions > 0 ? bucket.revenue / bucket.conversions : null,
   };
 }
 export function buildTrafficReport(args: {
@@ -206,25 +229,55 @@ export function buildTrafficReport(args: {
   accounts: StoredAccount[];
   facts: StoredFact[];
   campaignReach?: ReadonlyMap<string, number>;
+  accountReach?: ReadonlyMap<string, number>;
 }) {
   const accountById = new Map(args.accounts.map((account) => [account.account_id, account]));
-  const rollupKey = (fact: StoredFact) => JSON.stringify([
-    fact.account_id,
-    fact.occurred_on,
-    fact.campaign_id ?? fact.campaign_name,
-    fact.adset_id ?? fact.adset_name,
-  ]);
+  const rollupKey = (fact: StoredFact) =>
+    JSON.stringify([
+      fact.account_id,
+      fact.occurred_on,
+      fact.campaign_id ?? fact.campaign_name,
+      fact.adset_id ?? fact.adset_name,
+    ]);
   const metaSummaryKeys = new Set(
     args.facts
       .filter((fact) => fact.platform === "meta_ads" && !fact.ad_id && !fact.ad_name)
       .map(rollupKey),
   );
-  const byCurrency = new Map<string, {
-    total: Bucket;
-    daily: Map<string, { total: Bucket; meta: Bucket; google: Bucket }>;
-    platforms: Map<AdPlatform, Bucket>;
-    campaigns: Map<string, { id: string | null; name: string; platform: AdPlatform; total: Bucket; adsets: Map<string, { name: string; total: Bucket; ads: Map<string, { name: string; total: Bucket; thumbnail_url: string | null; story_id: string | null }> }> }>;
-  }>();
+  const byCurrency = new Map<
+    string,
+    {
+      total: Bucket;
+      daily: Map<string, { total: Bucket; meta: Bucket; google: Bucket }>;
+      platforms: Map<AdPlatform, Bucket>;
+      accountIds: Map<AdPlatform, Set<string>>;
+      campaigns: Map<
+        string,
+        {
+          id: string | null;
+          name: string;
+          platform: AdPlatform;
+          total: Bucket;
+          adsets: Map<
+            string,
+            {
+              name: string;
+              total: Bucket;
+              ads: Map<
+                string,
+                {
+                  name: string;
+                  total: Bucket;
+                  thumbnail_url: string | null;
+                  story_id: string | null;
+                }
+              >;
+            }
+          >;
+        }
+      >;
+    }
+  >();
 
   for (const fact of args.facts) {
     const account = accountById.get(fact.account_id);
@@ -232,9 +285,21 @@ export function buildTrafficReport(args: {
     const currency = account.currency;
     let group = byCurrency.get(currency);
     if (!group) {
-      group = { total: empty(), daily: new Map(), platforms: new Map(), campaigns: new Map() };
+      group = {
+        total: empty(),
+        daily: new Map(),
+        platforms: new Map(),
+        accountIds: new Map(),
+        campaigns: new Map(),
+      };
       byCurrency.set(currency, group);
     }
+    let accountIds = group.accountIds.get(fact.platform);
+    if (!accountIds) {
+      accountIds = new Set();
+      group.accountIds.set(fact.platform, accountIds);
+    }
+    accountIds.add(fact.account_id);
     const isMetaDetail = fact.platform === "meta_ads" && Boolean(fact.ad_id || fact.ad_name);
     const contributesToRollup = !(isMetaDetail && metaSummaryKeys.has(rollupKey(fact)));
     if (contributesToRollup) add(group.total, fact, args.conversionFields);
@@ -249,7 +314,10 @@ export function buildTrafficReport(args: {
     }
 
     let platform = group.platforms.get(fact.platform);
-    if (!platform) { platform = empty(); group.platforms.set(fact.platform, platform); }
+    if (!platform) {
+      platform = empty();
+      group.platforms.set(fact.platform, platform);
+    }
     if (contributesToRollup) add(platform, fact, args.conversionFields);
 
     const campaignKey = campaignReportKey(fact.platform, fact.campaign_id, fact.campaign_name);
@@ -268,14 +336,22 @@ export function buildTrafficReport(args: {
     const adsetName = fact.adset_name || "Sem conjunto";
     const adsetKey = fact.adset_id ?? adsetName;
     let adset = campaign.adsets.get(adsetKey);
-    if (!adset) { adset = { name: adsetName, total: empty(), ads: new Map() }; campaign.adsets.set(adsetKey, adset); }
+    if (!adset) {
+      adset = { name: adsetName, total: empty(), ads: new Map() };
+      campaign.adsets.set(adsetKey, adset);
+    }
     if (contributesToRollup) add(adset.total, fact, args.conversionFields);
     if (fact.platform === "meta_ads" && !isMetaDetail) continue;
     const adName = fact.ad_name || "Sem anúncio";
     const adKey = fact.ad_id ?? adName;
     let ad = adset.ads.get(adKey);
     if (!ad) {
-      ad = { name: adName, total: empty(), thumbnail_url: fact.thumbnail_url, story_id: fact.story_id };
+      ad = {
+        name: adName,
+        total: empty(),
+        thumbnail_url: fact.thumbnail_url,
+        story_id: fact.story_id,
+      };
       adset.ads.set(adKey, ad);
     }
     if (!ad.thumbnail_url && fact.thumbnail_url) ad.thumbnail_url = fact.thumbnail_url;
@@ -283,32 +359,66 @@ export function buildTrafficReport(args: {
     add(ad.total, fact, args.conversionFields);
   }
 
-  return [...byCurrency.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([currency, group]) => ({
-    currency,
-    summary: ratios(group.total, args.model),
-    daily: [...group.daily.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({
-      date, spend_meta: value.meta.spend, spend_google: value.google.spend,
-      conversions: value.total.conversions, revenue: value.total.revenue,
-    })),
-    platforms: [...group.platforms.entries()].map(([platform, value]) => ({
-      platform, ...ratios(value, args.model),
-    })),
-    campaigns: [...group.campaigns.values()]
-      .sort((a, b) => b.total.spend - a.total.spend)
-      .map((campaign) => ({
-        name: campaign.name, platform: campaign.platform, ...ratios(campaign.total, args.model),
-        reach: args.campaignReach?.get(campaignReportKey(
-          campaign.platform,
-          campaign.id,
-          campaign.name,
-        )) ?? null,
-        adsets: [...campaign.adsets.values()].map((adset) => ({
-          name: adset.name, ...ratios(adset.total, args.model),
-          ads: [...adset.ads.values()].map((ad) => ({
-            name: ad.name, ...ratios(ad.total, args.model),
-            thumbnail_url: ad.thumbnail_url, story_id: ad.story_id,
+  const reachForAccounts = (accountIds: Iterable<string> | undefined): number | null => {
+    if (!accountIds || !args.accountReach) return null;
+    let total = 0;
+    let available = false;
+    for (const accountId of accountIds) {
+      const reach = args.accountReach.get(accountId);
+      if (reach == null) continue;
+      total += reach;
+      available = true;
+    }
+    return available ? total : null;
+  };
+
+  return [...byCurrency.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([currency, group]) => {
+      const metaReach = reachForAccounts(group.accountIds.get("meta_ads"));
+      return {
+        currency,
+        summary: ratios(group.total, args.model, metaReach),
+        daily: [...group.daily.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, value]) => ({
+            date,
+            spend_meta: value.meta.spend,
+            spend_google: value.google.spend,
+            conversions: value.total.conversions,
+            revenue: value.total.revenue,
           })),
+        platforms: [...group.platforms.entries()].map(([platform, value]) => ({
+          platform,
+          ...ratios(
+            value,
+            args.model,
+            platform === "meta_ads" ? reachForAccounts(group.accountIds.get(platform)) : null,
+          ),
         })),
-      })),
-  }));
+        campaigns: [...group.campaigns.values()]
+          .sort((a, b) => b.total.spend - a.total.spend)
+          .map((campaign) => ({
+            name: campaign.name,
+            platform: campaign.platform,
+            ...ratios(
+              campaign.total,
+              args.model,
+              args.campaignReach?.get(
+                campaignReportKey(campaign.platform, campaign.id, campaign.name),
+              ) ?? null,
+            ),
+            adsets: [...campaign.adsets.values()].map((adset) => ({
+              name: adset.name,
+              ...ratios(adset.total, args.model),
+              ads: [...adset.ads.values()].map((ad) => ({
+                name: ad.name,
+                ...ratios(ad.total, args.model),
+                thumbnail_url: ad.thumbnail_url,
+                story_id: ad.story_id,
+              })),
+            })),
+          })),
+      };
+    });
 }
