@@ -371,4 +371,123 @@ describe("colunas da tabela de campanhas", () => {
     expect(await screen.findByText("Beta")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("Alpha")).not.toBeInTheDocument());
   });
+
+  const baseResponse = (campaigns: unknown[], columns = ["spend", "leads", "impressions"]) => ({
+    data: {
+      model: "leads", organization_key: "org-1", viewer_key: "viewer-1",
+      default_columns: columns, default_preset_id: null,
+      column_presets: [], can_manage_defaults: false,
+      sync: { status: "ready", last_succeeded_at: null, error: null },
+      crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
+      currencies: [{
+        currency: "BRL", summary: metrics, comparison: null, daily: [],
+        platforms: [{ ...metrics, platform: "meta_ads" }],
+        campaigns,
+      }],
+    },
+  });
+  const headerNames = (table: HTMLTableElement) =>
+    Array.from(table.tHead?.rows[0]?.cells ?? []).map((cell) =>
+      (cell.textContent ?? "").replace(/[▼▲]/g, "").trim(),
+    );
+  const columnIndex = (table: HTMLTableElement, header: string) =>
+    headerNames(table).findIndex((name) => name.includes(header));
+
+  it("cada valor fica sob o seu cabeçalho: nome, status e as métricas na ordem da predefinição", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse([
+          { ...metrics, spend: 30, leads: 7, impressions: 1234, name: "Beta", platform: "meta_ads", campaign_status: "ACTIVE", adsets: [{ ...metrics, name: "Conjunto Beta", ads: [] }] },
+          { ...metrics, spend: 10, leads: 2, impressions: 99, name: "Alpha", platform: "meta_ads", campaign_status: null, adsets: [] },
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const beta = await screen.findByText("Beta");
+    const table = beta.closest("table") as HTMLTableElement;
+
+    expect(headerNames(table)).toEqual([
+      "Campanha", "Status", "Valor gasto", "Leads", "Impressões",
+    ]);
+    const statusColumn = columnIndex(table, "Status");
+    const spendColumn = columnIndex(table, "Valor gasto");
+    const impressionsColumn = columnIndex(table, "Impressões");
+    const rows = Array.from(table.tBodies[0]?.rows ?? []);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.cells).toHaveLength(headerNames(table).length);
+    }
+    const betaRow = beta.closest("tr") as HTMLTableRowElement;
+    expect(betaRow.cells[0]).toHaveTextContent("Beta");
+    expect(betaRow.cells[statusColumn]).toHaveTextContent("Ativa");
+    expect(betaRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s30,00$/);
+    expect(betaRow.cells[impressionsColumn]?.textContent).toBe("1.234");
+    const alphaRow = screen.getByText("Alpha").closest("tr") as HTMLTableRowElement;
+    expect(alphaRow.cells[statusColumn]).toHaveTextContent("Não informada");
+    expect(alphaRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s10,00$/);
+
+    const totalRow = screen.getByText("Total").closest("tr") as HTMLTableRowElement;
+    expect(totalRow.cells).toHaveLength(headerNames(table).length);
+    expect(totalRow.cells[statusColumn]?.textContent).toBe("");
+    expect(totalRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s50,00$/);
+
+    // Sem status conhecido a campanha só aparece em "Todas".
+    await user.click(screen.getByRole("button", { name: "Ativas" }));
+    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+    expect(screen.getByText("Beta")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Pausadas" }));
+    expect(screen.queryByText("Beta")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Todas" }));
+
+    // Abrir os conjuntos não desalinha: a linha extra ocupa todas as colunas.
+    await user.click(screen.getByRole("button", { name: "Beta", expanded: false }));
+    const adsetRow = screen.getByText("Conjunto Beta").closest("tr") as HTMLTableRowElement;
+    expect(adsetRow.cells).toHaveLength(1);
+    expect(adsetRow.cells[0]?.colSpan).toBe(headerNames(table).length);
+    expect(screen.getByRole("button", { name: "Beta", expanded: true })).toBeInTheDocument();
+  });
+
+  it("esconde o filtro e a coluna de status quando nenhuma campanha tem status conhecido", async () => {
+    localStorage.setItem("traffic-campaign-status-filter:meta_ads", "active");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse([
+          { ...metrics, spend: 30, name: "Beta", platform: "meta_ads", campaign_status: null, adsets: [] },
+          { ...metrics, spend: 10, name: "Alpha", platform: "meta_ads", campaign_status: "", adsets: [] },
+        ]),
+      ),
+    );
+    render(<TrafficDashboard />);
+    const beta = await screen.findByText("Beta");
+    const table = beta.closest("table") as HTMLTableElement;
+    expect(headerNames(table)).toEqual(["Campanha", "Valor gasto", "Leads", "Impressões"]);
+    expect(screen.queryByRole("group", { name: "Filtrar campanhas por status" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Não informada")).not.toBeInTheDocument();
+    // O filtro "Ativas" lembrado não some com as campanhas quando o status ainda não chegou.
+    await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
+    for (const row of Array.from(table.tBodies[0]?.rows ?? [])) {
+      expect(row.cells).toHaveLength(4);
+    }
+    expect(screen.getByText("Total").closest("tr")?.cells).toHaveLength(4);
+  });
+
+  it("segue a predefinição de colunas ao montar a tabela", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [{ ...metrics, name: "Beta", platform: "meta_ads", campaign_status: "PAUSED", adsets: [] }],
+          ["impressions", "ctr", "spend"],
+        ),
+      ),
+    );
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Beta")).closest("table") as HTMLTableElement;
+    expect(headerNames(table)).toEqual(["Campanha", "Status", "Impressões", "CTR", "Valor gasto"]);
+    const row = screen.getByText("Beta").closest("tr") as HTMLTableRowElement;
+    expect(row.cells[2]?.textContent).toBe("1.000");
+    expect(row.cells[3]?.textContent).toBe("5%");
+    expect(row.cells[4]?.textContent).toMatch(/^R\$\s50,00$/);
+    expect(screen.getByText("Pausada")).toBeInTheDocument();
+  });
 });
