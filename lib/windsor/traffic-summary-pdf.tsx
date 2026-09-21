@@ -89,20 +89,6 @@ const styles = StyleSheet.create({
   metric: { flex: 1, borderWidth: 1, borderColor: "#e5ebe6", borderRadius: 5, padding: 6 },
   metricLabel: { color: "#66736a", fontSize: 7, textTransform: "uppercase" },
   metricValue: { marginTop: 3, fontSize: 12, fontWeight: "bold" },
-  funnelTitle: { marginHorizontal: 7, marginTop: 2, fontSize: 8, fontWeight: "bold" },
-  funnel: { flexDirection: "row", alignItems: "center", padding: 7, gap: 3 },
-  stage: {
-    flex: 1,
-    minHeight: 42,
-    borderWidth: 1,
-    borderColor: "#d8e3da",
-    borderRadius: 5,
-    padding: 5,
-    justifyContent: "center",
-  },
-  stageLabel: { color: "#66736a", fontSize: 6.5, textAlign: "center" },
-  stageValue: { marginTop: 2, fontSize: 11, fontWeight: "bold", textAlign: "center" },
-  arrow: { color: "#809087", fontSize: 10 },
   drawing: { alignItems: "center", paddingTop: 6, paddingBottom: 12 },
   levelLabel: {
     marginTop: 4,
@@ -380,15 +366,6 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function FunnelStage({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.stage}>
-      <Text style={styles.stageLabel}>{label}</Text>
-      <Text style={styles.stageValue}>{value}</Text>
-    </View>
-  );
-}
-
 export function TrafficSummaryPdf({
   source,
   brand,
@@ -412,12 +389,6 @@ export function TrafficSummaryPdf({
         </View>
 
         {groups.map((group, index) => {
-          const mediaLabel =
-            group.mediaKind === "reach"
-              ? text(language, "Alcance", "Alcance")
-              : group.mediaKind === "impressions"
-                ? text(language, "Impressões", "Impresiones")
-                : text(language, "Mídia", "Medios");
           return (
             <View key={group.currency ?? `crm-${index}`} style={styles.group} wrap={false}>
               <Text
@@ -447,32 +418,8 @@ export function TrafficSummaryPdf({
                   value={formatMoney(group.costPerLead, group.currency, language)}
                 />
               </View>
-              <Text style={styles.funnelTitle}>
-                {text(language, "Funil do período", "Embudo del período")}
-              </Text>
-              <View style={styles.funnel}>
-                <FunnelStage label={mediaLabel} value={formatNumber(group.mediaValue, language)} />
-                <Text style={styles.arrow}>›</Text>
-                <FunnelStage
-                  label={text(language, "Cliques", "Clics")}
-                  value={formatNumber(group.clicks, language)}
-                />
-                <Text style={styles.arrow}>›</Text>
-                <FunnelStage
-                  label={text(language, "Leads no CRM", "Leads en el CRM")}
-                  value={formatNumber(group.leads, language)}
-                />
-                <Text style={styles.arrow}>›</Text>
-                <FunnelStage
-                  label={text(language, "Em atendimento", "En atención")}
-                  value={formatNumber(group.inService, language)}
-                />
-                <Text style={styles.arrow}>›</Text>
-                <FunnelStage
-                  label={text(language, "Vendas fechadas", "Ventas cerradas")}
-                  value={formatNumber(group.closedWon, language)}
-                />
-              </View>
+              {/* A linha de caixinhas do funil saiu: repetia o desenho logo abaixo
+                  (pedido do dono, 21/09/2026). */}
               <FunnelDrawing group={group} brand={brand} language={language} />
               {/* Sem nota de metodologia: o dono pediu um PDF macro e simples,
                   só números e funil (21/09/2026). */}
