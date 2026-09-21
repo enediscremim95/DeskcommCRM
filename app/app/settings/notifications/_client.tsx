@@ -2,7 +2,8 @@
 
 import { useT } from "@/hooks/i18n/useT";
 
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
+import { toast } from "sonner";
 
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -16,6 +17,7 @@ import {
   type NotifyCategory,
   type NotifyChannelPref,
 } from "@/lib/notifications/prefs";
+import type { EmailNotificationPreferences } from "@/lib/notifications/email-preferences";
 
 const LABELS: Record<NotifyCategory, string> = {
   message: "Nova mensagem",
@@ -25,12 +27,20 @@ const LABELS: Record<NotifyCategory, string> = {
   mention: "Você foi mencionado",
 };
 
-export function NotificationPrefsClient() {
+export function NotificationPrefsClient({
+  initialEmailPrefs = { new_lead: true, urgent_lead: true },
+  emailConfigured = false,
+}: {
+  initialEmailPrefs?: EmailNotificationPreferences;
+  emailConfigured?: boolean;
+}) {
   const t = useT();
   const { permission, request } = useNotificationPermission();
   const prefs = useSyncExternalStore(assinarPrefs, getPrefsSnapshot, getPrefsSnapshotDoServidor);
   const denied = permission === "denied";
   const unsupported = permission === "unsupported";
+  const [emailPrefs, setEmailPrefs] = useState(initialEmailPrefs);
+  const [savingEmail, setSavingEmail] = useState<keyof EmailNotificationPreferences | null>(null);
 
   async function onToggle(category: NotifyCategory, channel: NotifyChannelPref, on: boolean) {
     if (channel === "push" && on) {
@@ -42,53 +52,126 @@ export function NotificationPrefsClient() {
     gravarCanal(category, channel, on);
   }
 
+  async function onEmailToggle(category: keyof EmailNotificationPreferences, on: boolean) {
+    const previous = emailPrefs;
+    setEmailPrefs({ ...emailPrefs, [category]: on });
+    setSavingEmail(category);
+    try {
+      const response = await fetch("/api/v1/notifications/email", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ [category]: on }),
+      });
+      if (!response.ok) throw new Error("save_failed");
+    } catch {
+      setEmailPrefs(previous);
+      toast.error(t("Não foi possível salvar a preferência de e-mail."));
+    } finally {
+      setSavingEmail(null);
+    }
+  }
+
   return (
-    <Card className="p-0">
-      <table className="w-full text-sm">
-        <thead className="border-b">
-          <tr>
-            <th className="px-4 py-3 text-left font-medium">{t("Categoria")}</th>
-            <th className="px-4 py-3 text-center font-medium">Email</th>
-            <th className="px-4 py-3 text-center font-medium">In-app</th>
-            <th className="px-4 py-3 text-center font-medium">Push</th>
-          </tr>
-        </thead>
-        <tbody>
-          {NOTIFY_UI_CATEGORIES.map((cat) => (
-            <tr key={cat} className="border-b last:border-0">
-              <td className="px-4 py-3">
-                {t(LABELS[cat])}
-                {cat === "message" && denied ? (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t(
-                      "O navegador bloqueou as notificações. Libere-as nas configurações do site e recarregue.",
-                    )}
-                  </p>
-                ) : null}
-              </td>
-              <td className="px-4 py-3 text-center">
-                <Switch checked={false} disabled aria-label={`${t(LABELS[cat])} via email`} />
-              </td>
-              <td className="px-4 py-3 text-center">
-                <Switch
-                  checked={prefs[cat].in_app}
-                  onCheckedChange={(on) => void onToggle(cat, "in_app", on)}
-                  aria-label={`${t(LABELS[cat])} via in_app`}
-                />
-              </td>
-              <td className="px-4 py-3 text-center">
-                <Switch
-                  checked={prefs[cat].push}
-                  disabled={denied || unsupported}
-                  onCheckedChange={(on) => void onToggle(cat, "push", on)}
-                  aria-label={`${t(LABELS[cat])} via push`}
-                  data-testid={cat === "message" ? (prefs.message.push ? "alerts-toggle" : "alerts-enable") : undefined}
-                />
-              </td>
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="mb-4">
+          <h2 className="font-medium">{t("Avisos importantes por e-mail")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t(
+              "Ligados por padrão para você não perder uma oportunidade. Cada pessoa controla os próprios avisos.",
+            )}
+          </p>
+          {!emailConfigured ? (
+            <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">
+              {t("O envio de e-mail ainda não foi configurado nesta instalação.")}
+            </p>
+          ) : null}
+        </div>
+        <div className="space-y-3">
+          <label className="flex items-center justify-between gap-4">
+            <span>
+              <span className="block text-sm font-medium">{t("Novo lead entrou")}</span>
+              <span className="block text-xs text-muted-foreground">
+                {t("Formulário, WhatsApp, importação ou API.")}
+              </span>
+            </span>
+            <Switch
+              checked={emailPrefs.new_lead}
+              disabled={!emailConfigured || savingEmail !== null}
+              onCheckedChange={(on) => void onEmailToggle("new_lead", on)}
+              aria-label={t("Novo lead via email")}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-4 border-t pt-3">
+            <span>
+              <span className="block text-sm font-medium">{t("Ação urgente no lead")}</span>
+              <span className="block text-xs text-muted-foreground">
+                {t("Sinal do Radar de Risco ou tarefa vencida.")}
+              </span>
+            </span>
+            <Switch
+              checked={emailPrefs.urgent_lead}
+              disabled={!emailConfigured || savingEmail !== null}
+              onCheckedChange={(on) => void onEmailToggle("urgent_lead", on)}
+              aria-label={t("Ação urgente via email")}
+            />
+          </label>
+        </div>
+      </Card>
+
+      <Card className="p-0">
+        <table className="w-full text-sm">
+          <thead className="border-b">
+            <tr>
+              <th className="px-4 py-3 text-left font-medium">{t("Categoria")}</th>
+              <th className="px-4 py-3 text-center font-medium">Email</th>
+              <th className="px-4 py-3 text-center font-medium">In-app</th>
+              <th className="px-4 py-3 text-center font-medium">Push</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
+          </thead>
+          <tbody>
+            {NOTIFY_UI_CATEGORIES.map((cat) => (
+              <tr key={cat} className="border-b last:border-0">
+                <td className="px-4 py-3">
+                  {t(LABELS[cat])}
+                  {cat === "message" && denied ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t(
+                        "O navegador bloqueou as notificações. Libere-as nas configurações do site e recarregue.",
+                      )}
+                    </p>
+                  ) : null}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className="text-xs text-muted-foreground">{t("Não enviado")}</span>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <Switch
+                    checked={prefs[cat].in_app}
+                    onCheckedChange={(on) => void onToggle(cat, "in_app", on)}
+                    aria-label={`${t(LABELS[cat])} via in_app`}
+                  />
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <Switch
+                    checked={prefs[cat].push}
+                    disabled={denied || unsupported}
+                    onCheckedChange={(on) => void onToggle(cat, "push", on)}
+                    aria-label={`${t(LABELS[cat])} via push`}
+                    data-testid={
+                      cat === "message"
+                        ? prefs.message.push
+                          ? "alerts-toggle"
+                          : "alerts-enable"
+                        : undefined
+                    }
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
   );
 }

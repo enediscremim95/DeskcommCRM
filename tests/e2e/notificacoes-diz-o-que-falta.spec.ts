@@ -138,6 +138,15 @@ test.describe("Notificações — a tela conta a verdade sobre esta instalação
     await expect(aviso).toContainText("VAPID_PRIVATE_KEY");
     await expect(aviso).toContainText(/\.env/);
 
+    // 4 · O e-mail tem recorte próprio: apenas lead novo e urgência. A tabela
+    //     de rotina precisa dizer explicitamente que não envia e-mail.
+    await expect(
+      page.getByRole("heading", { name: "Avisos importantes por e-mail" }),
+    ).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Novo lead via email" })).toBeDisabled();
+    await expect(page.getByRole("switch", { name: "Ação urgente via email" })).toBeDisabled();
+    await expect(page.getByRole("row", { name: /Nova mensagem/i })).toContainText("Não enviado");
+
     await captura(page, "01-aviso-sem-chaves");
   });
 

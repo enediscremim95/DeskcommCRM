@@ -40,6 +40,8 @@ interface SendArgs {
    * Ausente usa o endereço puro: quem não passa marca não ganha a nossa.
    */
   fromName?: string;
+  /** Chave estável para retry sem e-mail duplicado no provedor. */
+  idempotencyKey?: string;
 }
 
 interface SendResult {
@@ -97,15 +99,18 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
   }
 
   try {
-    const { data, error } = await client.emails.send({
-      from,
-      to: args.to,
-      subject: args.subject,
-      html: args.html,
-      text: args.text,
-      replyTo: args.replyTo,
-      tags: args.tags,
-    });
+    const { data, error } = await client.emails.send(
+      {
+        from,
+        to: args.to,
+        subject: args.subject,
+        html: args.html,
+        text: args.text,
+        replyTo: args.replyTo,
+        tags: args.tags,
+      },
+      args.idempotencyKey ? { idempotencyKey: args.idempotencyKey } : undefined,
+    );
 
     if (error) {
       return {
