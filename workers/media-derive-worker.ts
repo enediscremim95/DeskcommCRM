@@ -12,9 +12,18 @@ import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
 import { resolveOrgLlmConfig, type LlmEdgeConfig } from "@/lib/agent-engine/edge/llm/credentials";
 import { createDefaultRegistry } from "@/lib/agent-engine/edge/llm/providers";
 import { createPool } from "@/lib/agent-engine/db/pool";
+import {
+  CHANNEL_SESSION_REF_COLUMNS,
+  DEFAULT_CHANNEL_PROVIDER,
+  getAdapter,
+  resolveSessionRef,
+  type ChannelProvider,
+  type ChannelSessionRef,
+} from "@/lib/channels";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
 import { TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
+import { midiaFoiDescartada } from "@/lib/messaging/media/retention";
 import { deriveVideoText } from "@/lib/messaging/media/video-derive";
 import { apiTranscriptionProvider } from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
@@ -40,9 +49,12 @@ interface MessageRow {
   id: string;
   organization_id: string;
   type: string;
+  channel_session_id: string;
+  media_url: string | null;
   media_mime: string | null;
   media_storage_path: string | null;
   media_derived_status: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> {
@@ -53,16 +65,37 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("messages")
-    .select("id, organization_id, type, media_mime, media_storage_path, media_derived_status")
+    .select(
+      "id, organization_id, type, channel_session_id, media_url, media_mime, media_storage_path, media_derived_status, metadata",
+    )
     .eq("id", messageId)
     .eq("organization_id", row.organization_id)
     .maybeSingle();
   if (error) return { consumer_key, status: "error", detail: error.message };
 
   const msg = data as MessageRow | null;
-  if (!msg?.media_storage_path) return { consumer_key, status: "skipped", detail: "no media" };
-  if (msg.media_derived_status === "ready") return { consumer_key, status: "skipped", detail: "already derived" };
-  if (!TIPOS_DERIVAVEIS.has(msg.type)) return { consumer_key, status: "skipped", detail: `type ${msg.type}` };
+  if (!msg) return { consumer_key, status: "skipped", detail: "no message" };
+  const transient = midiaFoiDescartada(msg.metadata);
+  const clearTransientPointer = async (patch: Record<string, unknown> = {}) => {
+    const { error: updateError } = await admin
+      .from("messages")
+      .update({ ...(transient ? { media_url: null } : {}), ...patch })
+      .eq("id", msg.id)
+      .eq("organization_id", msg.organization_id);
+    if (updateError) throw new Error(`message update failed: ${updateError.message}`);
+  };
+
+  if (!msg.media_storage_path && !(transient && msg.media_url)) {
+    return { consumer_key, status: "skipped", detail: "no media" };
+  }
+  if (msg.media_derived_status === "ready") {
+    await clearTransientPointer();
+    return { consumer_key, status: "skipped", detail: "already derived" };
+  }
+  if (!TIPOS_DERIVAVEIS.has(msg.type)) {
+    await clearTransientPointer();
+    return { consumer_key, status: "skipped", detail: `type ${msg.type}` };
+  }
   // Vídeo é opt-in (custo: ffmpeg + N chamadas de visão): só deriva se algum agente
   // publicado da org tem video_frames_enabled=true (flag da migration 0058).
   if (msg.type === "video") {
@@ -74,18 +107,53 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       .eq("video_frames_enabled", true)
       .limit(1)
       .maybeSingle();
-    if (!flag) return { consumer_key, status: "skipped", detail: "video_frames_disabled" };
+    if (!flag) {
+      // O vocabulário final compartilhado com o drain é ready|failed. Usar
+      // um terceiro estado faria o turno esperar até o teto toda vez.
+      await clearTransientPointer({ media_derived_status: "failed" });
+      return { consumer_key, status: "skipped", detail: "video_frames_disabled" };
+    }
   }
 
   const markFailed = async () => {
-    await admin.from("messages").update({ media_derived_status: "failed" })
-      .eq("id", msg.id).eq("organization_id", msg.organization_id);
+    await clearTransientPointer({ media_derived_status: "failed" });
   };
 
   try {
-    const dl = await admin.storage.from("whatsapp-media").download(msg.media_storage_path);
-    if (dl.error || !dl.data) throw new Error(`storage_download_failed: ${dl.error?.message ?? "no_data"}`);
-    const buffer = Buffer.from(await dl.data.arrayBuffer());
+    let buffer: Buffer;
+    let effectiveMime = msg.media_mime ?? "application/octet-stream";
+
+    if (msg.media_storage_path) {
+      const dl = await admin.storage.from("whatsapp-media").download(msg.media_storage_path);
+      if (dl.error || !dl.data) {
+        throw new Error(`storage_download_failed: ${dl.error?.message ?? "no_data"}`);
+      }
+      buffer = Buffer.from(await dl.data.arrayBuffer());
+    } else {
+      const { data: session } = await admin
+        .from("channel_sessions")
+        .select(`provider, ${CHANNEL_SESSION_REF_COLUMNS}`)
+        .eq("organization_id", msg.organization_id)
+        .eq("id", msg.channel_session_id)
+        .maybeSingle();
+      const adapter = getAdapter(
+        ((session?.provider as string) ?? DEFAULT_CHANNEL_PROVIDER) as ChannelProvider,
+      );
+      const sessionRef = session
+        ? resolveSessionRef(session as unknown as ChannelSessionRef)
+        : null;
+      if (!adapter.fetchInboundMedia || !sessionRef || !msg.media_url) {
+        throw new Error("transient_media_unavailable");
+      }
+      const media = await adapter.fetchInboundMedia({
+        organizationId: msg.organization_id,
+        sessionRef,
+        url: msg.media_url,
+        hintMime: msg.media_mime,
+      });
+      buffer = media.buffer;
+      effectiveMime = media.mime;
+    }
 
     // Credencial BYOK da org p/ visão (imagem).
     const llmCfg: LlmEdgeConfig = {
@@ -154,10 +222,12 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
 
     const deps = buildDeriveDeps(llm, openaiKey, row.organization_id, admin);
 
-    const text = await deriveMediaText(msg.type, buffer, msg.media_mime ?? "application/octet-stream", deps);
-    await admin.from("messages")
-      .update({ media_derived_text: text, media_derived_status: "ready" })
-      .eq("id", msg.id).eq("organization_id", msg.organization_id);
+    const text = await deriveMediaText(msg.type, buffer, effectiveMime, deps);
+    await clearTransientPointer({
+      media_derived_text: text,
+      media_derived_status: "ready",
+      media_mime: effectiveMime,
+    });
     return { consumer_key, status: "ok" };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

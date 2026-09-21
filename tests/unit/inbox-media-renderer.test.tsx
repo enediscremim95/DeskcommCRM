@@ -66,4 +66,22 @@ describe("MessageBubble com mídia", () => {
     render(<MessageBubble message={msg({ type: "text", body: "oi", media_url: null })} />);
     expect(screen.queryByAltText("Imagem recebida")).not.toBeInTheDocument();
   });
+
+  it("mídia descartada mostra aviso e caption sem montar imagem quebrada", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          type: "image",
+          body: "comprovante",
+          metadata: { media_status: "not_stored", media_filename: "pix.jpg" },
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId("media-not-stored")).toHaveTextContent(
+      "Foto recebida, arquivo não guardado: pix.jpg",
+    );
+    expect(screen.getByText("comprovante")).toBeInTheDocument();
+    expect(screen.queryByAltText("Imagem recebida")).not.toBeInTheDocument();
+  });
 });
