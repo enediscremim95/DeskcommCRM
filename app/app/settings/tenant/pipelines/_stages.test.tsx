@@ -11,7 +11,7 @@
  * sem dizer para onde eles vão; e (d) reler o servidor depois de tudo.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -28,12 +28,15 @@ vi.mock("sonner", () => ({
 import { apiClient } from "@/lib/api/client";
 import {
   StagesSection,
-  contagemDeNegocios,
+  contagemDeLeads,
   destinosPossiveis,
+  moverNaLista,
   papelDaEtapa,
   patchDePapel,
+  DESCRICAO_DO_PAPEL,
   ROTULO_DO_PAPEL,
   vizinhoAoMover,
+  vizinhoAoSoltar,
 } from "./_stages";
 
 // Polyfills que o Radix Select exige e o jsdom não tem.
@@ -94,10 +97,19 @@ async function opcoesNaTela(user: ReturnType<typeof userEvent.setup>, testid: st
     .map((o) => o.textContent);
 }
 
-/** Abre o menu «…» de uma etapa e escolhe uma ação pelo `data-testid`. */
-async function noMenu(user: ReturnType<typeof userEvent.setup>, id: string, acao: string) {
-  await user.click(screen.getByTestId(`menu-${id}`));
-  await user.click(await screen.findByTestId(acao));
+/** Abre o seletor de tipo de uma etapa e escolhe um papel. */
+async function escolherTipo(
+  user: ReturnType<typeof userEvent.setup>,
+  id: string,
+  papel: "nenhum" | "won" | "lost",
+) {
+  await user.click(screen.getByTestId(`tipo-${id}`));
+  await user.click(await screen.findByTestId(`tipo-${papel}-${id}`));
+}
+
+/** Clica na lixeira da etapa: abre o painel de exclusão, não envia nada ainda. */
+async function excluir(user: ReturnType<typeof userEvent.setup>, id: string) {
+  await user.click(screen.getByTestId(`excluir-${id}`));
 }
 
 beforeEach(() => {
@@ -157,14 +169,14 @@ describe("destinosPossiveis — para onde os negócios podem ir", () => {
   });
 });
 
-describe("contagemDeNegocios — a tela recompõe a frase, então pluraliza", () => {
-  it("um negócio não vira «1 negócios»", () => {
-    expect(contagemDeNegocios(1)).toBe("1 negócio");
+describe("contagemDeLeads — a tela recompõe a frase, então pluraliza", () => {
+  it("um lead não vira «1 leads»", () => {
+    expect(contagemDeLeads(1)).toBe("1 lead");
   });
 
   it("zero e muitos ficam no plural", () => {
-    expect(contagemDeNegocios(0)).toBe("0 negócios");
-    expect(contagemDeNegocios(38)).toBe("38 negócios");
+    expect(contagemDeLeads(0)).toBe("0 leads");
+    expect(contagemDeLeads(38)).toBe("38 leads");
   });
 });
 
@@ -182,57 +194,157 @@ describe("vizinhoAoMover — a coluna da esquerda depois do passo", () => {
   });
 });
 
+/**
+ * ⭐ ARRASTAR É UMA CHAMADA SÓ. Soltar a linha em qualquer lugar vira o mesmo
+ * `depois_de` das setas, calculado a partir de onde ela saiu e onde caiu, nos
+ * índices da lista ANTES de mover. Descendo e subindo o vizinho é outro: quem
+ * ocupa o destino sobe uma casa quando a linha desce, e fica onde está quando
+ * ela sobe.
+ */
+describe("vizinhoAoSoltar — a coluna da esquerda de onde a linha caiu", () => {
+  it("arrastar a primeira para a terceira posição a deixa depois da que ERA a terceira", () => {
+    // [a b c d] → [b c a d]: à esquerda de «a» está «c».
+    expect(vizinhoAoSoltar(ETAPAS, 0, 2)).toBe("e3");
+  });
+
+  it("arrastar a última para a segunda posição a deixa depois da primeira", () => {
+    // [a b c d] → [a d b c]: à esquerda de «d» está «a».
+    expect(vizinhoAoSoltar(ETAPAS, 3, 1)).toBe("e1");
+  });
+
+  it("soltar no topo é «primeira coluna» (null), de onde quer que tenha vindo", () => {
+    expect(vizinhoAoSoltar(ETAPAS, 2, 0)).toBeNull();
+    expect(vizinhoAoSoltar(ETAPAS, 3, 0)).toBeNull();
+  });
+
+  it("soltar no fim deixa a linha depois da que era a última", () => {
+    expect(vizinhoAoSoltar(ETAPAS, 0, 3)).toBe("e4");
+  });
+
+  it("uma casa para cima ou para baixo bate com as setas", () => {
+    expect(vizinhoAoSoltar(ETAPAS, 2, 1)).toBe(vizinhoAoMover(ETAPAS, 2, "subir"));
+    expect(vizinhoAoSoltar(ETAPAS, 0, 1)).toBe(vizinhoAoMover(ETAPAS, 0, "descer"));
+  });
+});
+
+describe("moverNaLista — a ordem que a tela mostra antes do servidor responder", () => {
+  it("move sem mexer na lista original", () => {
+    const ids = (l: EtapaDoFunil[]) => l.map((e) => e.id);
+    expect(ids(moverNaLista(ETAPAS, 0, 2))).toEqual(["e2", "e3", "e1", "e4"]);
+    expect(ids(moverNaLista(ETAPAS, 3, 1))).toEqual(["e1", "e4", "e2", "e3"]);
+    expect(ids(ETAPAS)).toEqual(["e1", "e2", "e3", "e4"]);
+  });
+
+  it("a ordem otimista e o vizinho enviado contam a mesma história", () => {
+    // Para todo par (origem, destino): na lista movida, quem está imediatamente
+    // à esquerda da etapa movida é exatamente o `depois_de` que vai ao servidor.
+    for (let origem = 0; origem < ETAPAS.length; origem++) {
+      for (let destino = 0; destino < ETAPAS.length; destino++) {
+        const movida = moverNaLista(ETAPAS, origem, destino);
+        const esquerda = movida[destino - 1]?.id ?? null;
+        expect(vizinhoAoSoltar(ETAPAS, origem, destino)).toBe(esquerda);
+      }
+    }
+  });
+});
+
 describe("StagesSection — a linha se explica sozinha", () => {
   /**
-   * ⭐ A VERSÃO ANTERIOR ERA UMA TABELA, e dentro da janela lateral do quadro
-   * (≈ 380 a 576 px) o nome da etapa encolhia até sumir atrás de um cabeçalho
-   * de seis linhas e de um seletor «Nada especial». O que a linha precisa
-   * mostrar é: o NOME inteiro, num campo; o papel como selo só em quem tem; e
-   * as ações num menu que não empurra o nome. Sem cabeçalho de colunas: ele
-   * não sobrevive a contêiner estreito.
+   * ⭐ A VERSÃO ANTERIOR ESCONDIA AS AÇÕES NUM MENU «…» com três itens que não
+   * diziam para que serviam ("esse menu aí não tem pé nem cabeça, e também não
+   * tem opção de excluir"). Agora cada linha mostra, sem clicar em nada: a alça
+   * de arrastar, o NOME num campo, o TIPO num seletor que explica o que a
+   * marcação faz, e a lixeira. Nada de menu, nada de cabeçalho de tabela (ele
+   * não sobrevive ao contêiner estreito da janela lateral).
    */
-  it("mostra o nome inteiro num campo editável e o papel como selo só em quem tem", async () => {
+  it("mostra alça, nome editável, tipo e lixeira em cada linha, sem menu", async () => {
     montar();
     await screen.findByTestId("nome-e1");
 
     expect(screen.getByTestId("nome-e1")).toHaveValue("Carrinho abandonado");
     expect(screen.getByTestId("nome-e2")).toHaveValue("Aguardando pagamento");
 
-    // Selo em linguagem simples, e só onde há papel: a maioria das colunas
-    // não tem nada a dizer, e um seletor por linha era ruído.
-    expect(screen.getByTestId("papel-e3")).toHaveTextContent(ROTULO_DO_PAPEL.won);
-    expect(screen.getByTestId("papel-e4")).toHaveTextContent(ROTULO_DO_PAPEL.lost);
-    expect(screen.queryByTestId("papel-e1")).not.toBeInTheDocument();
-    expect(screen.queryByText("Nada especial")).not.toBeInTheDocument();
-
-    // Nenhum cabeçalho de tabela para quebrar.
-    expect(screen.queryByTestId("etapas-cabecalho")).not.toBeInTheDocument();
-  });
-
-  it("o menu de cada etapa oferece marcar o papel e arquivar, com nomes acessíveis", async () => {
-    const user = userEvent.setup();
-    montar();
-    await screen.findByTestId("nome-e1");
-
-    expect(screen.getByTestId("menu-e1")).toHaveAccessibleName("Opções de «Carrinho abandonado»");
+    expect(screen.getByTestId("alca-e1")).toHaveAccessibleName("Arrastar «Carrinho abandonado»");
+    expect(screen.getByTestId("alca-e1").closest("[title]")).toHaveAttribute(
+      "title",
+      "Segure e arraste para mudar a ordem",
+    );
+    expect(screen.getByTestId("tipo-e1")).toHaveAccessibleName("Tipo da etapa «Carrinho abandonado»");
+    expect(screen.getByTestId("excluir-e1")).toHaveAccessibleName("Excluir «Carrinho abandonado»");
     expect(screen.getByTestId("subir-e1")).toHaveAccessibleName(
       "Mover «Carrinho abandonado» uma coluna para trás",
     );
 
-    await user.click(screen.getByTestId("menu-e1"));
-    const itens = (await screen.findAllByRole("menuitem")).map((i) => i.textContent?.trim());
-    expect(itens).toEqual(["Marcar como venda fechada", "Marcar como perdido", "Arquivar etapa"]);
+    // O tipo, fechado, diz em uma ou duas palavras o que a etapa é.
+    expect(screen.getByTestId("tipo-e1")).toHaveTextContent(ROTULO_DO_PAPEL.nenhum);
+    expect(screen.getByTestId("tipo-e3")).toHaveTextContent(ROTULO_DO_PAPEL.won);
+    expect(screen.getByTestId("tipo-e4")).toHaveTextContent(ROTULO_DO_PAPEL.lost);
+
+    expect(screen.queryByTestId("menu-e1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("etapas-cabecalho")).not.toBeInTheDocument();
   });
 
-  it("a etapa que já tem papel não pode ser marcada de novo nem oferece desmarcar", async () => {
+  it("o subtítulo diz o que dá para fazer: arrastar, renomear, tipo e excluir", async () => {
+    montar();
+    const guia = await screen.findByTestId("etapas-como-usar");
+    expect(guia).toHaveTextContent("Arraste pela alça para mudar a ordem");
+    expect(guia).toHaveTextContent("clique no nome para renomear");
+    expect(guia).toHaveTextContent("escolha o tipo de cada etapa");
+    expect(guia).toHaveTextContent("exclua as que não usa");
+  });
+
+  it("o seletor de tipo explica, em linguagem de dono, o que cada marcação faz", async () => {
     const user = userEvent.setup();
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("menu-e3"));
-    expect(await screen.findByTestId("marcar-won-e3")).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByTestId("marcar-lost-e3")).not.toHaveAttribute("aria-disabled", "true");
-    expect(screen.queryByTestId("desmarcar-e3")).not.toBeInTheDocument();
+    expect(await opcoesNaTela(user, "tipo-e1")).toEqual([
+      DESCRICAO_DO_PAPEL.nenhum,
+      DESCRICAO_DO_PAPEL.won,
+      DESCRICAO_DO_PAPEL.lost,
+    ]);
+    expect(DESCRICAO_DO_PAPEL.won).toBe("Venda fechada (aqui o lead vira cliente)");
+    expect(DESCRICAO_DO_PAPEL.lost).toBe("Perdido (aqui o lead desistiu)");
+  });
+
+  /**
+   * ⭐ VOLTAR A «ETAPA NORMAL» NÃO EXISTE (o servidor recusa: o funil precisa de
+   * uma etapa de venda e uma de perda), então a opção fica desabilitada e a dica
+   * diz o único caminho que funciona: marcar OUTRA etapa.
+   */
+  it("a etapa que já tem papel não oferece voltar a normal, e a dica diz o caminho", async () => {
+    const user = userEvent.setup();
+    montar();
+    await screen.findByTestId("nome-e1");
+
+    expect(screen.getByTestId("tipo-e3").closest("[title]")).toHaveAttribute(
+      "title",
+      "Para mudar, escolha Venda fechada em outra etapa.",
+    );
+    expect(screen.getByTestId("tipo-e4").closest("[title]")).toHaveAttribute(
+      "title",
+      "Para mudar, escolha Perdido em outra etapa.",
+    );
+    // A etapa comum não carrega dica: dica sem motivo é ruído.
+    expect(screen.getByTestId("tipo-e1").closest("[title]")).toBeNull();
+
+    await user.click(screen.getByTestId("tipo-e3"));
+    expect(await screen.findByTestId("tipo-nenhum-e3")).toHaveAttribute("data-disabled");
+    expect(screen.getByTestId("tipo-lost-e3")).not.toHaveAttribute("data-disabled");
+  });
+
+  it("venda fechada e perdido não podem ser excluídas, e o botão diz por quê", async () => {
+    montar();
+    await screen.findByTestId("nome-e1");
+
+    expect(screen.getByTestId("excluir-e3")).toBeDisabled();
+    expect(screen.getByTestId("excluir-e4")).toBeDisabled();
+    expect(screen.getByTestId("excluir-e3").closest("[title]")).toHaveAttribute(
+      "title",
+      "Etapas de venda fechada e perdido não podem ser excluídas: o funil precisa de uma de cada.",
+    );
+    expect(screen.getByTestId("excluir-e1")).toBeEnabled();
+    expect(screen.getByTestId("excluir-e1").closest("[title]")).toBeNull();
   });
 
   it("seta que não pode mover explica por quê", async () => {
@@ -322,6 +434,125 @@ describe("StagesSection — renomear, criar e reordenar", () => {
   });
 });
 
+/**
+ * ⭐ ARRASTAR DE VERDADE, pelo caminho que o jsdom permite: o teclado. A alça
+ * responde a espaço (pegar), setas (mover) e espaço (soltar) pela mesma
+ * biblioteca que trata o mouse, e o `onDragEnd` é o mesmo. O jsdom não mede
+ * nada, então cada linha ganha uma altura fingida (50px) para a biblioteca
+ * saber que "uma seta para baixo" cruza a linha de baixo.
+ */
+describe("StagesSection — arrastar pela alça", () => {
+  const ALTURA = 50;
+
+  function medidas() {
+    const rect = (top: number, height: number) =>
+      ({
+        x: 0,
+        y: top,
+        top,
+        left: 0,
+        right: 600,
+        bottom: top + height,
+        width: 600,
+        height,
+        toJSON() {},
+      }) as DOMRect;
+    return vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: Element) {
+        if (this.tagName === "UL" && this.hasAttribute("data-rfd-droppable-id")) {
+          return rect(0, ALTURA * this.children.length);
+        }
+        if (this.tagName === "LI" && this.hasAttribute("data-rfd-draggable-id")) {
+          const i = Array.from(this.parentElement?.children ?? []).indexOf(this);
+          return rect(i * ALTURA, ALTURA);
+        }
+        return rect(0, 0);
+      });
+  }
+
+  /**
+   * Espaço na alça pega, uma seta move uma casa, espaço solta. A biblioteca só
+   * olha `keyCode` (32, 38, 40), que o `user-event` não preenche, daí o
+   * `fireEvent` com os códigos à mão; entre um passo e outro ela agenda o
+   * próximo quadro, então cada tecla espera um tique. Depois de pegar, a linha
+   * original sai do DOM (o clone é que segue o mouse), então as teclas
+   * seguintes vão para o `window`, que é onde a biblioteca escuta.
+   */
+  async function arrastarPeloTeclado(id: string, seta: "baixo" | "cima", casas: number) {
+    const alca = screen.getByTestId(`alca-${id}`);
+    const tique = () => new Promise((r) => setTimeout(r, 0));
+    alca.focus();
+    fireEvent.keyDown(alca, { key: " ", keyCode: 32 });
+    await tique();
+    for (let k = 0; k < casas; k++) {
+      fireEvent.keyDown(window, seta === "baixo" ? { key: "ArrowDown", keyCode: 40 } : { key: "ArrowUp", keyCode: 38 });
+      await tique();
+    }
+    fireEvent.keyDown(window, { key: " ", keyCode: 32 });
+    await tique();
+    // Soltar termina no `transitionend` da animação de queda, que o jsdom nunca
+    // dispara; a biblioteca aceita um `scroll` como sinal para concluir.
+    fireEvent.scroll(window);
+    await tique();
+  }
+
+  const ordemNaTela = () =>
+    screen.getAllByTestId(/^nome-e\d$/).map((campo) => (campo as HTMLInputElement).value);
+
+  it("soltar a linha manda UMA chamada com a vizinha da esquerda da posição final, e a lista já muda", async () => {
+    medidas();
+    let responder: () => void = () => {};
+    vi.mocked(apiClient.patch).mockReturnValue(
+      new Promise((resolve) => {
+        responder = () => resolve({ data: { etapas: [] } });
+      }),
+    );
+    montar();
+    await screen.findByTestId("nome-e1");
+
+    // «Carrinho abandonado» desce duas casas: [e1 e2 e3 e4] → [e2 e3 e1 e4].
+    await arrastarPeloTeclado("e1", "baixo", 2);
+
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]).toEqual([
+      `/api/v1/pipelines/${PIPE}/stages/e1`,
+      { depois_de: "e3" },
+    ]);
+    // Otimista: a ordem nova aparece ANTES de o servidor responder.
+    expect(ordemNaTela()).toEqual(["Aguardando pagamento", "Pago", "Carrinho abandonado", "Cancelado"]);
+
+    responder();
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(2));
+  });
+
+  it("se o servidor recusar, a ordem anterior volta e o motivo aparece na linha arrastada", async () => {
+    medidas();
+    vi.mocked(apiClient.patch).mockRejectedValue(
+      new ApiError(409, "state_conflict", undefined, "r", "Este funil mudou enquanto você editava. Recarregue a página."),
+    );
+    montar();
+    await screen.findByTestId("nome-e1");
+
+    await arrastarPeloTeclado("e4", "cima", 3);
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]![1]).toEqual({ depois_de: null });
+
+    const aviso = await screen.findByTestId("etapa-erro-e4");
+    expect(aviso).toHaveTextContent("Recarregue a página");
+    expect(ordemNaTela()).toEqual(["Carrinho abandonado", "Aguardando pagamento", "Pago", "Cancelado"]);
+  });
+
+  it("soltar no mesmo lugar não manda nada", async () => {
+    medidas();
+    montar();
+    await screen.findByTestId("nome-e1");
+
+    await arrastarPeloTeclado("e2", "baixo", 0);
+    expect(apiClient.patch).not.toHaveBeenCalled();
+  });
+});
+
 describe("StagesSection — a marcação de fechamento", () => {
   it("avisa CITANDO A ETAPA que perde a marcação, e não envia antes de confirmar", async () => {
     const user = userEvent.setup();
@@ -329,7 +560,7 @@ describe("StagesSection — a marcação de fechamento", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await noMenu(user, "e2", "marcar-won-e2");
+    await escolherTipo(user, "e2", "won");
 
     const aviso = await screen.findByTestId("confirmar-papel-e2");
     // O nome, não um aviso genérico: «Pago» é a coluna que vai deixar de fechar.
@@ -347,7 +578,7 @@ describe("StagesSection — a marcação de fechamento", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await noMenu(user, "e2", "marcar-won-e2");
+    await escolherTipo(user, "e2", "won");
     await user.click(within(await screen.findByTestId("confirmar-papel-e2")).getByText("Cancelar"));
 
     expect(screen.queryByTestId("confirmar-papel-e2")).not.toBeInTheDocument();
@@ -365,7 +596,7 @@ describe("StagesSection — a marcação de fechamento", () => {
     montar();
     await screen.findByTestId("nome-e2");
 
-    await noMenu(user, "e2", "marcar-won-e2");
+    await escolherTipo(user, "e2", "won");
 
     // Nada a desmarcar: um aviso aqui seria falso ("desmarca «undefined»").
     expect(screen.queryByTestId("confirmar-papel-e2")).not.toBeInTheDocument();
@@ -404,24 +635,25 @@ describe("StagesSection — a marcação de fechamento", () => {
   });
 });
 
-describe("StagesSection — arquivar", () => {
+describe("StagesSection — excluir (que por baixo é arquivar)", () => {
   it("pede confirmação antes de tirar a coluna do quadro", async () => {
     const user = userEvent.setup();
     montar();
     await screen.findByTestId("nome-e1");
 
-    await noMenu(user, "e1", "arquivar-e1");
-    // Nada foi enviado só por clicar em «Arquivar»: uma coluna some do quadro
+    await excluir(user, "e1");
+    // Nada foi enviado só por clicar na lixeira: uma coluna some do quadro
     // sem tela para desfazer.
     expect(apiClient.delete).not.toHaveBeenCalled();
-    const painel = await screen.findByTestId("arquivar-painel-e1");
-    expect(painel).toHaveTextContent("A coluna sai do quadro");
+    const painel = await screen.findByTestId("excluir-painel-e1");
+    expect(painel).toHaveTextContent("Excluir a etapa «Carrinho abandonado»?");
+    expect(painel).toHaveTextContent("os leads que estiverem nela vão para a etapa que você escolher");
     // Honestidade: não existe tela que desarquive. Dizer isso ANTES é a
     // diferença entre uma escolha e uma armadilha.
-    expect(painel).toHaveTextContent("não dá para trazer a coluna de volta por aqui");
+    expect(painel).toHaveTextContent("não dá para trazer a etapa de volta por aqui");
 
     vi.mocked(apiClient.delete).mockResolvedValue({ data: { etapas: [] } });
-    await user.click(screen.getByTestId("arquivar-confirmar-e1"));
+    await user.click(screen.getByTestId("excluir-confirmar-e1"));
     await waitFor(() => expect(apiClient.delete).toHaveBeenCalledTimes(1));
     expect(vi.mocked(apiClient.delete).mock.calls[0]![0]).toBe(
       `/api/v1/pipelines/${PIPE}/stages/e1`,
@@ -442,15 +674,17 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await noMenu(user, "e1", "arquivar-e1");
-    await user.click(screen.getByTestId("arquivar-confirmar-e1"));
+    await excluir(user, "e1");
+    await user.click(screen.getByTestId("excluir-confirmar-e1"));
 
-    expect(await screen.findByTestId("arquivar-pergunta-e1")).toHaveTextContent(
-      "38 negócios estão nesta etapa. Para onde eles vão?",
+    // A frase do dono, com o número do servidor: "Os N leads dela vão para a
+    // etapa que você escolher."
+    expect(await screen.findByTestId("excluir-pergunta-e1")).toHaveTextContent(
+      "Excluir a etapa «Carrinho abandonado»? Os 38 leads dela vão para a etapa que você escolher.",
     );
     // ⭐ Sem destino escolhido, arquivar NÃO é oferecido: perder o rastro de 38
     // negócios não pode ser um clique de distância.
-    expect(screen.getByTestId("arquivar-confirmar-e1")).toBeDisabled();
+    expect(screen.getByTestId("excluir-confirmar-e1")).toBeDisabled();
 
     // ⭐ E o destino nunca inclui fechamento nem perda: mandar os negócios para
     // «Pago» os daria por vendidos, com data de fechamento.
@@ -458,8 +692,8 @@ describe("StagesSection — arquivar", () => {
     await user.click(await screen.findByRole("option", { name: "Aguardando pagamento" }));
 
     vi.mocked(apiClient.delete).mockResolvedValue({ data: { etapas: [] } });
-    await waitFor(() => expect(screen.getByTestId("arquivar-confirmar-e1")).toBeEnabled());
-    await user.click(screen.getByTestId("arquivar-confirmar-e1"));
+    await waitFor(() => expect(screen.getByTestId("excluir-confirmar-e1")).toBeEnabled());
+    await user.click(screen.getByTestId("excluir-confirmar-e1"));
 
     await waitFor(() => expect(apiClient.delete).toHaveBeenCalledTimes(2));
     expect(vi.mocked(apiClient.delete).mock.calls[1]![0]).toBe(
@@ -477,49 +711,34 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await noMenu(user, "e1", "arquivar-e1");
-    await user.click(screen.getByTestId("arquivar-confirmar-e1"));
+    await excluir(user, "e1");
+    await user.click(screen.getByTestId("excluir-confirmar-e1"));
 
-    expect(await screen.findByTestId("arquivar-sem-destino-e1")).toHaveTextContent(
-      "Crie uma etapa antes de arquivar «Carrinho abandonado»",
+    expect(await screen.findByTestId("excluir-sem-destino-e1")).toHaveTextContent(
+      "4 leads estão nesta etapa e não há outra etapa normal para recebê-los. Crie uma etapa antes de excluir «Carrinho abandonado»",
     );
     expect(screen.queryByTestId("destino-e1")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("arquivar-confirmar-e1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("excluir-confirmar-e1")).not.toBeInTheDocument();
   });
 
   /**
-   * ⚠️ A ETAPA DE FECHAMENTO TEM NEGÓCIOS NA FIXTURE, E ISSO É O TESTE.
-   *
-   * Com `negocios: 0` este caso passava mesmo com a regra removida — a tela não
-   * perguntava destino porque não havia negócio nenhum, não porque a etapa é a
-   * de fechamento. Teste confundido: verde pelo motivo errado. «Pago» com 12
-   * negócios fechados é o estado NORMAL de um funil em uso, e é aí que a
-   * diferença aparece: sem a regra, a tela engole a explicação do servidor e
-   * oferece mover 12 negócios fechados para outra coluna — operação que a API
-   * recusaria de novo, deixando o usuário num laço sem explicação.
+   * ⚠️ A ETAPA DE FECHAMENTO NEM ABRE O PAINEL. A versão anterior deixava
+   * clicar, mandava o DELETE, e mostrava a recusa do servidor («Pago» é a etapa
+   * de ganho, marque outra antes). Hoje a lixeira dessa linha é desabilitada com
+   * a dica no lugar: a regra continua sendo da API (ela recusaria igual), mas
+   * oferecer um botão que sempre falha é convidar ao erro. O que o servidor diz
+   * numa recusa que NÃO pede destino continua coberto pelo caso do 409 abaixo.
    */
-  it("arquivar a etapa de fechamento COM negócios: explica, e não pergunta destino nenhum", async () => {
+  it("a lixeira da etapa de fechamento não abre painel nem manda DELETE", async () => {
     const user = userEvent.setup();
-    vi.mocked(apiClient.delete).mockRejectedValue(
-      new ApiError(
-        422,
-        "unprocessable_entity",
-        { negocios: 12, precisa_destino: false },
-        "r",
-        "«Pago» é a etapa de ganho deste funil. Marque OUTRA etapa como de ganho antes de arquivar esta — senão os negócios continuariam indo parar numa coluna fora do quadro.",
-      ),
-    );
     montar();
     await screen.findByTestId("nome-e1");
 
-    await noMenu(user, "e3", "arquivar-e3");
-    await user.click(screen.getByTestId("arquivar-confirmar-e3"));
-
-    expect(await screen.findByTestId("arquivar-erro-e3")).toHaveTextContent(
-      "Marque OUTRA etapa como de ganho antes de arquivar esta",
-    );
-    expect(screen.queryByTestId("destino-e3")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("arquivar-pergunta-e3")).not.toBeInTheDocument();
+    const botao = screen.getByTestId("excluir-e3");
+    expect(botao).toBeDisabled();
+    await user.click(botao);
+    expect(screen.queryByTestId("excluir-painel-e3")).not.toBeInTheDocument();
+    expect(apiClient.delete).not.toHaveBeenCalled();
   });
 
   /**
@@ -535,8 +754,8 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await noMenu(user, "e2", "arquivar-e2");
-    const aviso = await screen.findByTestId("arquivar-perde-passo-e2");
+    await excluir(user, "e2");
+    const aviso = await screen.findByTestId("excluir-perde-passo-e2");
     expect(aviso).toHaveTextContent("assistente usa para «Em negociação»");
     expect(aviso).toHaveTextContent("para de mover o card nesse passo");
     expect(within(aviso).getByRole("link")).toHaveAttribute("href", `#mapeamento-${PIPE}`);
@@ -546,12 +765,12 @@ describe("StagesSection — arquivar", () => {
     const user = userEvent.setup();
     montar();
     await screen.findByTestId("nome-e1");
-    await noMenu(user, "e1", "arquivar-e1");
-    await screen.findByTestId("arquivar-painel-e1");
-    expect(screen.queryByTestId("arquivar-perde-passo-e1")).not.toBeInTheDocument();
+    await excluir(user, "e1");
+    await screen.findByTestId("excluir-painel-e1");
+    expect(screen.queryByTestId("excluir-perde-passo-e1")).not.toBeInTheDocument();
   });
 
-  it("com UM negócio a frase não vira «1 negócios estão»", async () => {
+  it("com UM lead a frase não vira «Os 1 leads»", async () => {
     const user = userEvent.setup();
     vi.mocked(apiClient.delete).mockRejectedValue(
       new ApiError(422, "unprocessable_entity", { negocios: 1, precisa_destino: true }, "r", "…tem 1 negócio…"),
@@ -559,11 +778,13 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await noMenu(user, "e1", "arquivar-e1");
-    await user.click(screen.getByTestId("arquivar-confirmar-e1"));
-    const pergunta = await screen.findByTestId("arquivar-pergunta-e1");
-    expect(pergunta).toHaveTextContent("1 negócio está nesta etapa. Para onde ele vai?");
-    expect(pergunta).not.toHaveTextContent("1 negócios");
+    await excluir(user, "e1");
+    await user.click(screen.getByTestId("excluir-confirmar-e1"));
+    const pergunta = await screen.findByTestId("excluir-pergunta-e1");
+    expect(pergunta).toHaveTextContent(
+      "Excluir a etapa «Carrinho abandonado»? O único lead dela vai para a etapa que você escolher.",
+    );
+    expect(pergunta).not.toHaveTextContent("1 leads");
   });
 
   /**
@@ -586,10 +807,10 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await noMenu(user, "e1", "arquivar-e1");
-    await user.click(screen.getByTestId("arquivar-confirmar-e1"));
-    expect(await screen.findByTestId("arquivar-erro-e1")).toHaveTextContent("mudou de papel");
-    expect(screen.queryByTestId("arquivar-pergunta-e1")).not.toBeInTheDocument();
+    await excluir(user, "e1");
+    await user.click(screen.getByTestId("excluir-confirmar-e1"));
+    expect(await screen.findByTestId("excluir-erro-e1")).toHaveTextContent("mudou de papel");
+    expect(screen.queryByTestId("excluir-pergunta-e1")).not.toBeInTheDocument();
   });
 
   it("erro 500 não vaza texto do Postgres para o dono da clínica", async () => {
@@ -606,10 +827,10 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await noMenu(user, "e1", "arquivar-e1");
-    await user.click(screen.getByTestId("arquivar-confirmar-e1"));
+    await excluir(user, "e1");
+    await user.click(screen.getByTestId("excluir-confirmar-e1"));
 
-    const aviso = await screen.findByTestId("arquivar-erro-e1");
+    const aviso = await screen.findByTestId("excluir-erro-e1");
     expect(aviso).not.toHaveTextContent("violates");
     expect(aviso).not.toHaveTextContent("crm_leads");
     expect(aviso).toHaveTextContent("Não deu para salvar");
