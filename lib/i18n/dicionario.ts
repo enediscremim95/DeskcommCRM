@@ -8634,7 +8634,6 @@ export const DICIONARIO: Traducoes = {
   "Visualizações": { es: "Visualizaciones" },
   "Adicionar métrica": { es: "Agregar métrica" },
   "Arrastar": { es: "Arrastrar" },
-  "Voltar ao lugar": { es: "Volver a su lugar" },
   "Colunas": { es: "Columnas" },
   "Colunas selecionadas": { es: "Columnas seleccionadas" },
   "Escolha uma predefinição liberada para esta organização.": { es: "Elige una predefinición disponible para esta organización." },
