@@ -26,7 +26,6 @@ import { useT } from "@/hooks/i18n/useT";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import type { CampaignMetricColumn } from "@/lib/windsor/types";
 import type { TrafficColumnPreset } from "@/lib/windsor/column-presets";
-import { CaixaArrastavel, chaveDePosicao } from "./CaixaArrastavel";
 import { ColumnPresetMenu } from "./ColumnPresetMenu";
 import { buildTrafficFunnelStages, ConversionFunnel, type FunnelStage } from "./ConversionFunnel";
 
@@ -644,7 +643,7 @@ export function TrafficDashboard() {
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-6">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">
             {t("Relatório de desempenho")}
@@ -655,10 +654,9 @@ export function TrafficDashboard() {
               : t("Aguardando a primeira sincronização.")}
           </p>
         </div>
-        <CaixaArrastavel
-          chave={chaveDePosicao(report?.organization_key ?? null, report?.viewer_key ?? null)}
-          className="flex flex-wrap items-end gap-2 rounded-xl border bg-card p-3"
-        >
+        {/* Fixa no lugar que o dono escolheu arrastando (21/09/2026): alinhada ao
+            título e um pouco afastada da borda direita. O arrasto saiu. */}
+        <div className="flex flex-wrap items-end gap-2 rounded-2xl border bg-card p-3 shadow-sm lg:mr-20">
           <div className="space-y-1">
             <Label htmlFor="traffic-period">{t("Período")}</Label>
             <Select value={preset} onValueChange={changePreset}>
@@ -718,7 +716,7 @@ export function TrafficDashboard() {
               onColumnsChange={setSelectedColumns}
             />
           )}
-        </CaixaArrastavel>
+        </div>
       </header>
 
       {report?.sync.status === "failed" && (
