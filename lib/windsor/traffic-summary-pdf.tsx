@@ -94,18 +94,6 @@ const styles = StyleSheet.create({
   stageLabel: { color: "#66736a", fontSize: 6.5, textAlign: "center" },
   stageValue: { marginTop: 2, fontSize: 11, fontWeight: "bold", textAlign: "center" },
   arrow: { color: "#809087", fontSize: 10 },
-  note: { marginHorizontal: 7, marginBottom: 7, color: "#66736a", fontSize: 7 },
-  footer: {
-    position: "absolute",
-    left: 30,
-    right: 30,
-    bottom: 20,
-    paddingTop: 5,
-    borderTopWidth: 1,
-    borderColor: "#e5ebe6",
-    color: "#7a867e",
-    fontSize: 7,
-  },
 });
 
 type Language = "pt-BR" | "es";
@@ -170,7 +158,6 @@ export function TrafficSummaryPdf({
   language: Language;
 }): React.ReactElement {
   const groups = buildTrafficSummaryGroups(source);
-  const moreThanOneCurrency = groups.filter((group) => group.currency).length > 1;
 
   return (
     <Document>
@@ -186,7 +173,7 @@ export function TrafficSummaryPdf({
         {groups.map((group, index) => {
           const mediaLabel =
             group.mediaKind === "reach"
-              ? text(language, "Alcance reportado", "Alcance reportado")
+              ? text(language, "Alcance", "Alcance")
               : group.mediaKind === "impressions"
                 ? text(language, "Impressões", "Impresiones")
                 : text(language, "Mídia", "Medios");
@@ -245,31 +232,11 @@ export function TrafficSummaryPdf({
                   value={formatNumber(group.closedWon, language)}
                 />
               </View>
-              <Text style={styles.note}>
-                {text(
-                  language,
-                  "Leads inclui todas as entradas no CRM no período, de qualquer origem. O custo por lead divide o investimento deste bloco por esses leads. Alcance é o valor reportado pelas plataformas e não é deduplicado entre contas ou plataformas.",
-                  "Leads incluye todas las entradas en el CRM durante el período, de cualquier origen. El costo por lead divide la inversión de este bloque por esos leads. El alcance es el valor reportado por las plataformas y no se deduplica entre cuentas o plataformas.",
-                )}
-                {moreThanOneCurrency
-                  ? text(
-                      language,
-                      " Os mesmos leads do CRM aparecem em cada moeda; investimentos de moedas diferentes nunca são somados.",
-                      " Los mismos leads del CRM aparecen en cada moneda; las inversiones en monedas diferentes nunca se suman.",
-                    )
-                  : ""}
-              </Text>
+              {/* Sem nota de metodologia: o dono pediu um PDF macro e simples,
+                  só números e funil (21/09/2026). */}
             </View>
           );
         })}
-
-        <Text style={styles.footer} fixed>
-          {text(
-            language,
-            "Gerado a partir dos dados confirmados do relatório e do CRM.",
-            "Generado a partir de los datos confirmados del informe y del CRM.",
-          )}
-        </Text>
       </Page>
     </Document>
   );
