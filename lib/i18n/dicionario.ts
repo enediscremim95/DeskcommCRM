@@ -4129,6 +4129,21 @@ export const DICIONARIO: Traducoes = {
   "Para conferir pelo servidor, quem tem acesso pode rodar:": {
     es: "Para confirmarlo por el servidor, quien tenga acceso puede ejecutar:",
   },
+  "Uma tentativa anterior não terminou, mas já foi superada": {
+    es: "Un intento anterior no terminó, pero ya fue superado",
+  },
+  "A tentativa de instalar a versão": {
+    es: "El intento de instalar la versión",
+  },
+  "ficou registrada para diagnóstico.": {
+    es: "quedó registrado para diagnóstico.",
+  },
+  "Depois dela, o servidor confirmou a versão": {
+    es: "Después, el servidor confirmó la versión",
+  },
+  "Não há nada para desfazer.": {
+    es: "No hay nada que deshacer.",
+  },
   "Atualização automática indisponível": { es: "Actualización automática no disponible" },
   "Não estou conseguindo falar com o servidor onde o sistema está instalado, então não posso atualizar sozinho. Quem tem acesso ao servidor pode entrar na pasta onde o sistema foi instalado e rodar este comando — se for a primeira vez, rode duas vezes: a primeira baixa o programa novo e a segunda liga o botão desta tela.": {
     es: "No estoy pudiendo hablar con el servidor donde el sistema está instalado, así que no puedo actualizar solo. Quien tenga acceso al servidor puede entrar en la carpeta donde el sistema fue instalado y ejecutar este comando — si es la primera vez, ejecútalo dos veces: la primera baja el programa nuevo y la segunda activa el botón de esta pantalla.",

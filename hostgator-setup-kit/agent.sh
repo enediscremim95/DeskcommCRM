@@ -277,6 +277,7 @@ UPDATE_ARGS=()
 [ -n "$LATEST_TAG" ] && UPDATE_ARGS=(--to "$LATEST_TAG")
 set +e
 DESKCOMM_AGENT_REPORT=1 \
+DESKCOMM_UPDATE_LOCK_HELD=1 \
 DESKCOMM_AGENT_PREV_IMAGE="$PREV_IMAGE" \
 DESKCOMM_AGENT_REPORT_CMD="$(declare -f post report log_err); report" \
   bash "$(dirname "$0")/update.sh" "${UPDATE_ARGS[@]+"${UPDATE_ARGS[@]}"}" >"$LOG" 2>&1
@@ -285,6 +286,18 @@ set -e
 
 # ── 3. O app voltou? Se não, volta a imagem anterior. ───────────────────────
 STATUS="success"
+COLISAO_DE_DEPLOY=""
+if [ $RC -ne 0 ]; then
+  # A corrida pode começar DEPOIS do preflight do update.sh. O erro observado
+  # pelo Docker é prova suficiente; um processo compose ainda vivo na mesma
+  # pasta cobre a janela em que a mensagem veio diferente. Neste caso rollback
+  # seria uma terceira recriação concorrente, exatamente o que não se deve fazer.
+  if grep -qiE 'container name .* is already in use|Conflict\. The container name' "$LOG" 2>/dev/null \
+     || compose_em_andamento >/dev/null 2>&1; then
+    COLISAO_DE_DEPLOY=1
+    printf '\nInterrompi sem tentar rollback: outro docker compose estava recriando esta instalação. Espere o deploy pelo terminal terminar; o próximo heartbeat confirmará a versão que ficou no ar.\n' >> "$LOG"
+  fi
+fi
 if [ $RC -eq "$REFUSED_RC" ]; then
   # O update.sh recusou ANTES de tocar em qualquer coisa (alvo anterior ao
   # instalado, ou impossível ter certeza). Não há nada a desfazer: reiniciar o
@@ -294,7 +307,7 @@ if [ $RC -eq "$REFUSED_RC" ]; then
   STATUS="failed"
 elif [ $RC -ne 0 ]; then
   STATUS="failed"
-  if [ -n "$PREV_IMAGE" ]; then
+  if [ -n "$PREV_IMAGE" ] && [ -z "$COLISAO_DE_DEPLOY" ]; then
     # Os serviços que temos como voltar. Worker e scheduler entram só se o
     # `images -q` deles respondeu: numa instalação que ainda não tinha as
     # imagens novas, voltar o app sozinho continua sendo o comportamento certo,
