@@ -52,6 +52,28 @@ describe("normalizador Windsor", () => {
     });
   });
 
+  it("preserva status e todos os endereços de destino conferidos no Windsor", () => {
+    const [meta] = normalizeFacts([{
+      date: "2026-09-18", account_id: "act_1", campaign_name: "Meta",
+      campaign_effective_status: "ACTIVE",
+      website_destination_url: "https://cliente.test/meta?utm_source=x",
+    }], "meta_ads");
+    const [google] = normalizeFacts([{
+      date: "2026-09-18", account_id: "1", campaign_name: "Google",
+      campaign_status: "ENABLED",
+      ad_final_urls: ["https://cliente.test/a", "https://cliente.test/b"],
+    }], "google_ads");
+
+    expect(meta).toMatchObject({
+      campaign_status: "ACTIVE",
+      destination_urls: ["https://cliente.test/meta?utm_source=x"],
+    });
+    expect(google).toMatchObject({
+      campaign_status: "ENABLED",
+      destination_urls: ["https://cliente.test/a", "https://cliente.test/b"],
+    });
+  });
+
   it("interrompe carga material degradada sem nome de campanha", () => {
     expect(() => normalizeFacts([
       { date: "2026-09-18", account_id: "act_1", spend: 10 },

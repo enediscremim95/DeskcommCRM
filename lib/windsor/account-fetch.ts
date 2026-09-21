@@ -10,7 +10,16 @@ const META_DIMENSION_FIELDS = [
 ] as const;
 
 const META_DETAIL_FIELDS = {
-  core: [...META_DIMENSION_FIELDS, "spend", "impressions", "reach", "clicks", ...BUDGET_FIELDS],
+  core: [
+    ...META_DIMENSION_FIELDS,
+    "campaign_effective_status",
+    "website_destination_url",
+    "spend",
+    "impressions",
+    "reach",
+    "clicks",
+    ...BUDGET_FIELDS,
+  ],
   conversions: [...META_DIMENSION_FIELDS, ...META_CONVERSION_FIELDS, "action_values_purchase"],
   video: [
     ...META_DIMENSION_FIELDS, "video_view", "actions_video_view",
@@ -26,7 +35,7 @@ export const WINDSOR_FIELDS_BY_PLATFORM: Record<AdPlatform, readonly string[]> =
     ...META_DETAIL_FIELDS.video, ...META_DETAIL_FIELDS.media,
   ])],
   google_ads: [
-    ...COMMON_FIELDS, "campaign_name", "campaign_objective", "cost",
+    ...COMMON_FIELDS, "campaign_name", "campaign_objective", "campaign_status", "ad_final_urls", "cost",
     "impressions", "clicks", "conversions", "conversion_value",
   ],
 };
@@ -34,6 +43,7 @@ export const WINDSOR_FIELDS_BY_PLATFORM: Record<AdPlatform, readonly string[]> =
 export const WINDSOR_SUMMARY_FIELDS_BY_PLATFORM: Record<AdPlatform, readonly string[]> = {
   meta_ads: [...new Set(WINDSOR_FIELDS_BY_PLATFORM.meta_ads.filter((field) => ![
     "ad_id", "ad_name", "thumbnail_url", "image_url", "effective_object_story_id",
+    "website_destination_url",
   ].includes(field)))],
   google_ads: WINDSOR_FIELDS_BY_PLATFORM.google_ads,
 };

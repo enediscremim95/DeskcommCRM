@@ -22,7 +22,13 @@ import {
   type DashboardModel,
 } from "@/lib/windsor/types";
 import { serializeTrafficColumnPresets } from "@/lib/windsor/column-presets";
+import { buildTrafficDelivery } from "@/lib/windsor/delivery";
 import { clientCanViewIntegration } from "@/lib/integrations/access";
+import {
+  buildTrafficLeadSituation,
+  type TrafficLeadRow,
+  type TrafficStageRow,
+} from "@/lib/windsor/traffic-insights";
 
 export const dynamic = "force-dynamic";
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -140,13 +146,33 @@ export async function GET(request: NextRequest): Promise<Response> {
     from: previousFrom.toISOString().slice(0, 10),
     to: new Date(previousExclusiveTo.getTime() - 86_400_000).toISOString().slice(0, 10),
   };
+  async function fetchLeadSituationRows(from: Date, to: Date) {
+    const rows: TrafficLeadRow[] = [];
+    const pageSize = 1_000;
+    for (let offset = 0; ; offset += pageSize) {
+      const result = await admin
+        .from("crm_leads" as never)
+        .select("id,status,stage_id,lost_reason,created_at")
+        .eq("organization_id", organizationId)
+        .gte("created_at", from.toISOString())
+        .lt("created_at", to.toISOString())
+        .order("created_at")
+        .order("id")
+        .range(offset, offset + pageSize - 1);
+      if (result.error) return { data: null, error: result.error };
+      const page = (result.data ?? []) as unknown as TrafficLeadRow[];
+      rows.push(...page);
+      if (page.length < pageSize) return { data: rows, error: null };
+    }
+  }
   const [
     { data: accounts, error: accountError },
     factsResult,
+    deliveryFactsResult,
     previousFactsResult,
-    { data: wonStages, error: wonStagesError },
-    { count: crmLeadsEntered, error: crmLeadsError },
-    { count: previousCrmLeadsEntered, error: previousCrmLeadsError },
+    { data: crmStages, error: crmStagesError },
+    currentLeadRowsResult,
+    previousLeadRowsResult,
     { data: presetRows, error: presetError },
   ] = await Promise.all([
     admin
@@ -157,13 +183,23 @@ export async function GET(request: NextRequest): Promise<Response> {
       ? admin
           .from("traffic_dashboard_facts" as never)
           .select(
-            "account_id,platform,occurred_on,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,reach,clicks,link_clicks,spend,conversions,revenue,video_views,video_p25,video_p50,video_p75,video_p95,thumbnail_url,story_id",
+            "account_id,platform,occurred_on,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,reach,clicks,link_clicks,spend,conversions,revenue,video_views,video_p25,video_p50,video_p75,video_p95,thumbnail_url,story_id,campaign_status,destination_urls",
           )
           .eq("organization_id", organizationId)
           .eq("sync_generation", typedConfig.published_generation)
           .gte("occurred_on", parsed.data.from)
           .lte("occurred_on", parsed.data.to)
           .order("occurred_on")
+      : Promise.resolve({ data: [], error: null }),
+    typedConfig.published_generation
+      ? admin
+          .from("traffic_dashboard_facts" as never)
+          .select(
+            "account_id,platform,occurred_on,campaign_id,campaign_name,campaign_status,destination_urls,spend",
+          )
+          .eq("organization_id", organizationId)
+          .eq("sync_generation", typedConfig.published_generation)
+          .order("occurred_on", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
     typedConfig.published_generation
       ? admin
@@ -179,21 +215,10 @@ export async function GET(request: NextRequest): Promise<Response> {
       : Promise.resolve({ data: [], error: null }),
     admin
       .from("crm_stages" as never)
-      .select("id")
-      .eq("organization_id", organizationId)
-      .eq("is_won", true),
-    admin
-      .from("crm_leads" as never)
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .gte("created_at", fromCreatedAt)
-      .lt("created_at", exclusiveTo.toISOString()),
-    admin
-      .from("crm_leads" as never)
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .gte("created_at", previousFrom.toISOString())
-      .lt("created_at", previousExclusiveTo.toISOString()),
+      .select("id,name,position,is_won,is_lost")
+      .eq("organization_id", organizationId),
+    fetchLeadSituationRows(new Date(fromCreatedAt), exclusiveTo),
+    fetchLeadSituationRows(previousFrom, previousExclusiveTo),
     admin
       .from("traffic_dashboard_column_presets" as never)
       .select("id,name,metric_columns")
@@ -201,48 +226,23 @@ export async function GET(request: NextRequest): Promise<Response> {
       .order("name"),
   ]);
   const factError = factsResult.error;
+  const deliveryFactError = deliveryFactsResult.error;
   const previousFactError = previousFactsResult.error;
   if (
     accountError ||
     factError ||
+    deliveryFactError ||
     previousFactError ||
-    wonStagesError ||
-    crmLeadsError ||
-    previousCrmLeadsError ||
+    crmStagesError ||
+    currentLeadRowsResult.error ||
+    previousLeadRowsResult.error ||
     presetError
   ) {
     return fail("internal_error", "Não foi possível ler o relatório.", 500, { requestId });
   }
-  const wonStageIds = ((wonStages ?? []) as unknown as Array<{ id: string }>).map(
-    (stage) => stage.id,
-  );
-  let crmClosedWon = 0;
-  let previousCrmClosedWon = 0;
-  if (wonStageIds.length > 0) {
-    const [currentWon, previousWon] = await Promise.all([
-      admin
-        .from("crm_leads" as never)
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", organizationId)
-        .gte("created_at", fromCreatedAt)
-        .lt("created_at", exclusiveTo.toISOString())
-        .in("stage_id", wonStageIds),
-      admin
-        .from("crm_leads" as never)
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", organizationId)
-        .gte("created_at", previousFrom.toISOString())
-        .lt("created_at", previousExclusiveTo.toISOString())
-        .in("stage_id", wonStageIds),
-    ]);
-    if (currentWon.error || previousWon.error) {
-      return fail("internal_error", "Não foi possível ler o relatório.", 500, { requestId });
-    }
-    crmClosedWon = currentWon.count ?? 0;
-    previousCrmClosedWon = previousWon.count ?? 0;
-  }
-  const crmEntered = crmLeadsEntered ?? 0;
-  const previousCrmEntered = previousCrmLeadsEntered ?? 0;
+  const stages = (crmStages ?? []) as unknown as TrafficStageRow[];
+  const crm = buildTrafficLeadSituation(currentLeadRowsResult.data ?? [], stages);
+  const previousCrm = buildTrafficLeadSituation(previousLeadRowsResult.data ?? [], stages);
   const facts = factsResult.data;
   const previousFacts = previousFactsResult.data;
   const storedAccounts = (accounts ?? []) as unknown as StoredAccount[];
@@ -325,15 +325,13 @@ export async function GET(request: NextRequest): Promise<Response> {
       window: { from: parsed.data.from, to: parsed.data.to },
       previous_window: previousRange,
       crm: {
-        leads_entered: crmEntered,
-        in_service: Math.max(0, crmEntered - crmClosedWon),
-        closed_won: crmClosedWon,
-        previous: {
-          leads_entered: previousCrmEntered,
-          in_service: Math.max(0, previousCrmEntered - previousCrmClosedWon),
-          closed_won: previousCrmClosedWon,
-        },
+        ...crm,
+        previous: previousCrm,
       },
+      delivery: buildTrafficDelivery(
+        (facts ?? []) as unknown as StoredFact[],
+        (deliveryFactsResult.data ?? []) as unknown as StoredFact[],
+      ),
       currencies: currentCurrencies.map((group) => ({
         ...group,
         comparison: previousByCurrency.get(group.currency)?.summary ?? null,

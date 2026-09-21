@@ -82,5 +82,7 @@ export interface NormalizedFact {
   video_p95: number;
   thumbnail_url: string | null;
   story_id: string | null;
+  campaign_status: string | null;
+  destination_urls: string[];
   source_key: string;
 }
