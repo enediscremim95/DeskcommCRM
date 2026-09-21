@@ -11,6 +11,7 @@ import {
 import React from "react";
 
 import type { MarcaDeSaida } from "@/lib/branding/saida";
+import type { TrafficDelivery, TrafficDeliveryCampaign } from "@/lib/windsor/delivery";
 
 export type TrafficSummarySource = {
   window: { from: string; to: string };
@@ -24,6 +25,7 @@ export type TrafficSummarySource = {
       clicks: number;
     };
   }>;
+  delivery?: TrafficDelivery;
 };
 
 export type TrafficSummaryGroup = {
@@ -124,6 +126,17 @@ const styles = StyleSheet.create({
   },
   costValue: { fontSize: 18, fontWeight: "bold" },
   costLabel: { marginTop: 2, fontSize: 7.5, textTransform: "uppercase", letterSpacing: 1 },
+  delivery: {
+    marginTop: 2,
+    borderWidth: 1,
+    borderColor: "#dce4de",
+    borderRadius: 7,
+    padding: 10,
+  },
+  deliveryTitle: { fontSize: 11, fontWeight: "bold", marginBottom: 7 },
+  deliverySection: { marginTop: 7 },
+  deliverySectionTitle: { fontSize: 9, fontWeight: "bold", marginBottom: 3 },
+  deliveryItem: { color: "#344139", fontSize: 8, marginTop: 2 },
 });
 
 /** Largura do topo do funil e quanto cada nível afina, em pontos. */
@@ -366,6 +379,83 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+const DELIVERY_LIMIT = 10;
+
+export type TrafficDeliverySection = { title: string; items: string[] };
+
+function campaignPlatform(platform: TrafficDeliveryCampaign["platform"]): string {
+  return platform === "meta_ads" ? "Meta" : "Google";
+}
+
+function limitedItems(items: string[], language: Language): string[] {
+  const visible = items.slice(0, DELIVERY_LIMIT);
+  const remaining = items.length - visible.length;
+  return remaining > 0
+    ? [...visible, text(language, `e mais ${remaining}`, `y ${remaining} más`)]
+    : visible;
+}
+
+export function buildTrafficDeliverySections(
+  delivery: TrafficDelivery | undefined,
+  language: Language,
+): TrafficDeliverySection[] {
+  const active = delivery?.active_campaigns ?? [];
+  const invested = delivery?.invested_campaigns ?? [];
+  const pages = delivery?.pages ?? [];
+  const campaignItems = (campaigns: TrafficDeliveryCampaign[]) =>
+    limitedItems(
+      campaigns.map((campaign) => `${campaign.name} · ${campaignPlatform(campaign.platform)}`),
+      language,
+    );
+  const activeTitle = text(
+    language,
+    `Hoje: ${active.length} ${active.length === 1 ? "campanha ativa" : "campanhas ativas"}`,
+    `Hoy: ${active.length} ${active.length === 1 ? "campaña activa" : "campañas activas"}`,
+  );
+  const investedTitle = text(
+    language,
+    `${invested.length} ${invested.length === 1 ? "campanha com investimento no período" : "campanhas com investimento no período"}`,
+    `${invested.length} ${invested.length === 1 ? "campaña con inversión en el período" : "campañas con inversión en el período"}`,
+  );
+  const pagesTitle = text(
+    language,
+    `${pages.length} ${pages.length === 1 ? "página em teste" : "páginas em teste"}`,
+    `${pages.length} ${pages.length === 1 ? "página en prueba" : "páginas en prueba"}`,
+  );
+  return [
+    { title: activeTitle, items: campaignItems(active) },
+    ...(invested.length > 0 ? [{ title: investedTitle, items: campaignItems(invested) }] : []),
+    { title: pagesTitle, items: limitedItems(pages, language) },
+  ];
+}
+
+function DeliveryBlock({
+  delivery,
+  language,
+  accent,
+}: {
+  delivery: TrafficDelivery | undefined;
+  language: Language;
+  accent: string;
+}) {
+  const sections = buildTrafficDeliverySections(delivery, language);
+  return (
+    <View style={styles.delivery} wrap={false}>
+      <Text style={[styles.deliveryTitle, { color: accent }]}>
+        {text(language, "O que está rodando", "Lo que está activo")}
+      </Text>
+      {sections.map((section) => (
+        <View key={section.title} style={styles.deliverySection}>
+          <Text style={styles.deliverySectionTitle}>{section.title}</Text>
+          {section.items.map((item) => (
+            <Text key={item} style={styles.deliveryItem}>• {item}</Text>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export function TrafficSummaryPdf({
   source,
   brand,
@@ -426,6 +516,7 @@ export function TrafficSummaryPdf({
             </View>
           );
         })}
+        <DeliveryBlock delivery={source.delivery} language={language} accent={brand.accent} />
       </Page>
     </Document>
   );

@@ -33,6 +33,29 @@ function numeric(row: WindsorRow, ...keys: string[]): number {
   }
   return 0;
 }
+function stringList(row: WindsorRow, ...keys: string[]): string[] {
+  for (const key of keys) {
+    const value = row[key];
+    const values = Array.isArray(value)
+      ? value
+      : typeof value === "string" && value.trim().startsWith("[")
+        ? (() => {
+            try {
+              const parsed: unknown = JSON.parse(value);
+              return Array.isArray(parsed) ? parsed : [value];
+            } catch {
+              return [value];
+            }
+          })()
+        : [value];
+    const normalized = values
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => repairMojibake(item.trim()))
+      .filter(Boolean);
+    if (normalized.length > 0) return [...new Set(normalized)];
+  }
+  return [];
+}
 export function accountId(row: WindsorRow): string {
   return text(row, "account_id", "ad_account_id", "customer_id");
 }
@@ -69,6 +92,8 @@ export function deduplicateRows(rows: WindsorRow[]): { rows: WindsorRow[]; remov
       accountId(row), text(row, "date"), text(row, "campaign_id", "campaign_name", "campaign"),
       text(row, "adset_id", "adset_name"), text(row, "ad_id", "ad_name"),
       String(row.spend ?? row.cost ?? ""), String(row.impressions ?? ""),
+      String(row.campaign_effective_status ?? row.campaign_status ?? ""),
+      JSON.stringify(row.website_destination_url ?? row.ad_final_urls ?? ""),
     ]);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -108,6 +133,18 @@ export function normalizeFacts(rows: WindsorRow[], configuredPlatform: AdPlatfor
       text(row, "ad_id") || adName,
       String(platform === "google_ads" ? row.cost ?? "" : row.spend ?? ""),
       String(row.impressions ?? ""),
+      text(row, "campaign_effective_status", "campaign_status"),
+      stringList(
+        row,
+        "website_destination_url",
+        "ad_final_urls",
+        "ad_group_ad_ad_final_urls",
+        "final_url",
+        "expanded_final_url",
+        "link_url",
+        "object_url",
+        "link",
+      ),
     ])).digest("hex");
     facts.push({
       account_id: id, platform, occurred_on: occurredOn,
@@ -125,6 +162,18 @@ export function normalizeFacts(rows: WindsorRow[], configuredPlatform: AdPlatfor
       video_p95: numeric(row, "video_p95_watched_actions_video_view"),
       thumbnail_url: text(row, "thumbnail_url", "image_url") || null,
       story_id: text(row, "effective_object_story_id") || null,
+      campaign_status: text(row, "campaign_effective_status", "campaign_status") || null,
+      destination_urls: stringList(
+        row,
+        "website_destination_url",
+        "ad_final_urls",
+        "ad_group_ad_ad_final_urls",
+        "final_url",
+        "expanded_final_url",
+        "link_url",
+        "object_url",
+        "link",
+      ),
       source_key: sourceKey,
     });
   }

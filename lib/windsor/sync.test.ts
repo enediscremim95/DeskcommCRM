@@ -166,9 +166,14 @@ describe("sincronização Windsor por conta", () => {
     expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("thumbnail_url");
     expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("ad_id");
     expect(WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads).not.toContain("ad_id");
+    expect(WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads).not.toContain("website_destination_url");
     expect(WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads).toContain("adset_id");
     expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("campaign_daily_budget");
     expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("actions_landing_page_view");
     expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("actions_add_to_cart");
+    expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("campaign_effective_status");
+    expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("website_destination_url");
+    expect(WINDSOR_FIELDS_BY_PLATFORM.google_ads).toContain("campaign_status");
+    expect(WINDSOR_FIELDS_BY_PLATFORM.google_ads).toContain("ad_final_urls");
   });
 });

@@ -22,6 +22,7 @@ import {
   type DashboardModel,
 } from "@/lib/windsor/types";
 import { serializeTrafficColumnPresets } from "@/lib/windsor/column-presets";
+import { buildTrafficDelivery } from "@/lib/windsor/delivery";
 import { clientCanViewIntegration } from "@/lib/integrations/access";
 
 export const dynamic = "force-dynamic";
@@ -143,6 +144,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const [
     { data: accounts, error: accountError },
     factsResult,
+    deliveryFactsResult,
     previousFactsResult,
     { data: wonStages, error: wonStagesError },
     { count: crmLeadsEntered, error: crmLeadsError },
@@ -157,13 +159,23 @@ export async function GET(request: NextRequest): Promise<Response> {
       ? admin
           .from("traffic_dashboard_facts" as never)
           .select(
-            "account_id,platform,occurred_on,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,reach,clicks,link_clicks,spend,conversions,revenue,video_views,video_p25,video_p50,video_p75,video_p95,thumbnail_url,story_id",
+            "account_id,platform,occurred_on,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,reach,clicks,link_clicks,spend,conversions,revenue,video_views,video_p25,video_p50,video_p75,video_p95,thumbnail_url,story_id,campaign_status,destination_urls",
           )
           .eq("organization_id", organizationId)
           .eq("sync_generation", typedConfig.published_generation)
           .gte("occurred_on", parsed.data.from)
           .lte("occurred_on", parsed.data.to)
           .order("occurred_on")
+      : Promise.resolve({ data: [], error: null }),
+    typedConfig.published_generation
+      ? admin
+          .from("traffic_dashboard_facts" as never)
+          .select(
+            "account_id,platform,occurred_on,campaign_id,campaign_name,campaign_status,destination_urls,spend",
+          )
+          .eq("organization_id", organizationId)
+          .eq("sync_generation", typedConfig.published_generation)
+          .order("occurred_on", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
     typedConfig.published_generation
       ? admin
@@ -201,10 +213,12 @@ export async function GET(request: NextRequest): Promise<Response> {
       .order("name"),
   ]);
   const factError = factsResult.error;
+  const deliveryFactError = deliveryFactsResult.error;
   const previousFactError = previousFactsResult.error;
   if (
     accountError ||
     factError ||
+    deliveryFactError ||
     previousFactError ||
     wonStagesError ||
     crmLeadsError ||
@@ -334,6 +348,10 @@ export async function GET(request: NextRequest): Promise<Response> {
           closed_won: previousCrmClosedWon,
         },
       },
+      delivery: buildTrafficDelivery(
+        (facts ?? []) as unknown as StoredFact[],
+        (deliveryFactsResult.data ?? []) as unknown as StoredFact[],
+      ),
       currencies: currentCurrencies.map((group) => ({
         ...group,
         comparison: previousByCurrency.get(group.currency)?.summary ?? null,

@@ -24,6 +24,8 @@ export interface StoredFact {
   video_p95: number | string;
   thumbnail_url: string | null;
   story_id: string | null;
+  campaign_status?: string | null;
+  destination_urls?: string[] | null;
 }
 export interface StoredAccount {
   account_id: string;

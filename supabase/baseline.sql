@@ -25376,6 +25376,17 @@ comment on table public.notification_email_batches is
 comment on table public.notification_email_batch_items is
   'Eventos únicos que compõem cada resumo de lead novo.';
 
+-- ---- Status e páginas do relatório (migration 0253) ----
+alter table public.traffic_dashboard_facts
+  add column if not exists campaign_status text,
+  add column if not exists destination_urls text[] not null default '{}'::text[];
+
+comment on column public.traffic_dashboard_facts.campaign_status is
+  'Status de campanha informado pelo Windsor na sincronização; null aciona fallback explícito por investimento.';
+
+comment on column public.traffic_dashboard_facts.destination_urls is
+  'URLs brutas de destino informadas pelo Windsor; limpeza e deduplicação ocorrem na leitura do relatório.';
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

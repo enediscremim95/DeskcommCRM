@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildTrafficSummaryGroups } from "./traffic-summary-pdf";
+import { buildTrafficDeliverySections, buildTrafficSummaryGroups } from "./traffic-summary-pdf";
 
 describe("resumo do relatório para PDF", () => {
   it("repete todos os leads do CRM por moeda e nunca soma investimentos distintos", () => {
@@ -62,5 +62,25 @@ describe("resumo do relatório para PDF", () => {
       inService: 3,
       closedWon: 1,
     });
+  });
+
+  it("mostra as duas réguas separadas, URLs limpas e limita listas longas", () => {
+    const sections = buildTrafficDeliverySections({
+      active_campaigns: [{ name: "Captação", platform: "meta_ads" }],
+      invested_campaigns: [{ name: "Pesquisa", platform: "google_ads" }],
+      pages: Array.from({ length: 12 }, (_, index) => `cliente.test/pagina-${index + 1}`),
+    }, "pt-BR");
+
+    expect(sections[0]).toEqual({
+      title: "Hoje: 1 campanha ativa",
+      items: ["Captação · Meta"],
+    });
+    expect(sections[1]).toEqual({
+      title: "1 campanha com investimento no período",
+      items: ["Pesquisa · Google"],
+    });
+    expect(sections[2]?.title).toBe("12 páginas em teste");
+    expect(sections[2]?.items).toHaveLength(11);
+    expect(sections[2]?.items.at(-1)).toBe("e mais 2");
   });
 });
