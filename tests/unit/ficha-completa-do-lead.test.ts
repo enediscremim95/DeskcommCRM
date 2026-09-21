@@ -1,9 +1,49 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { historicoEstruturado, rotuloDoCampo, valorLegivel } from "@/lib/leads/dados-completos";
+import {
+  apresentacaoDoValor,
+  historicoEstruturado,
+  linhasDaNota,
+  rotuloDoCampo,
+  valorLegivel,
+} from "@/lib/leads/dados-completos";
 
 describe("ficha completa do lead", () => {
+  it("e-mail, endereço e código ficam numa linha só; prosa quebra em palavra", () => {
+    expect(apresentacaoDoValor("ferrernelson33@yahoo.com")).toBe("email");
+    expect(apresentacaoDoValor("https://exemplo.com/lp?utm=x")).toBe("url");
+    expect(apresentacaoDoValor("site-4cee4438f1de40f0867f2b1c")).toBe("codigo");
+    expect(apresentacaoDoValor("Cobertura Batel")).toBe("texto");
+    expect(apresentacaoDoValor("20/09/2026, 17:20")).toBe("texto");
+    expect(apresentacaoDoValor("R$ 1.500,00")).toBe("texto");
+  });
+
+  it("nota corrida vira uma linha por informação sem perder nada", () => {
+    expect(linhasDaNota("E-mail: ferrernelson33@yahoo.com · Origem: LP CO0025")).toEqual([
+      { rotulo: "E-mail", valor: "ferrernelson33@yahoo.com" },
+      { rotulo: "Origem", valor: "LP CO0025" },
+    ]);
+    expect(linhasDaNota("Quer visitar sábado\nLigar às 10:00")).toEqual([
+      { valor: "Quer visitar sábado" },
+      { valor: "Ligar às 10:00" },
+    ]);
+    expect(linhasDaNota("Cliente pediu retorno amanhã às 9:30")).toBeNull();
+    expect(linhasDaNota("Site: https://a.com · Obs: ok")).toEqual([
+      { rotulo: "Site", valor: "https://a.com" },
+      { rotulo: "Obs", valor: "ok" },
+    ]);
+  });
+
+  it("a ficha decide o layout pela largura do painel, sem cortar rótulo", () => {
+    const ficha = readFileSync("components/leads/DadosCompletosDoLead.tsx", "utf8");
+    expect(ficha).toContain("@container");
+    expect(ficha).toContain("@md:grid-cols-[9rem_minmax(0,1fr)]");
+    expect(ficha).not.toContain("sm:grid-cols-2");
+    expect(ficha).not.toMatch(/<dt className="[^"]*truncate/);
+    expect(ficha).toContain("copyToClipboard");
+  });
+
   it("prefere o rótulo declarado e mantém qualquer chave desconhecida legível", () => {
     expect(rotuloDoCampo("imovel")).toBe("Imóvel de interesse");
     expect(rotuloDoCampo("faixaDeInvestimento")).toBe("Faixa de investimento");

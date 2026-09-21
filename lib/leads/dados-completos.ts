@@ -67,6 +67,53 @@ export function valorLegivel(valor: unknown): string {
   return String(valor);
 }
 
+/**
+ * Como um valor de texto deve ser exibido na ficha. O que muda é só a quebra:
+ * e-mail, endereço e código não têm espaço para o navegador quebrar em ponto
+ * sensato, então vão numa linha só (com o valor inteiro no tooltip e no botão
+ * de copiar) em vez de partirem letra a letra num painel estreito.
+ */
+export type ApresentacaoDoValor = "texto" | "email" | "url" | "codigo";
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const URL_ABSOLUTA = /^https?:\/\/\S+$/i;
+
+export function apresentacaoDoValor(texto: string): ApresentacaoDoValor {
+  const limpo = texto.trim();
+  if (EMAIL.test(limpo)) return "email";
+  if (URL_ABSOLUTA.test(limpo)) return "url";
+  if (limpo.length >= 20 && !/\s/.test(limpo)) return "codigo";
+  return "texto";
+}
+
+export interface LinhaDeNota {
+  rotulo?: string;
+  valor: string;
+}
+
+/**
+ * Nota que chegou como texto corrido ("E-mail: x · Origem: y") vira uma linha
+ * por informação, sem parser esperto: só separa no " · " e na quebra de linha
+ * e reconhece o "Rótulo: valor" quando ele é curto e inequívoco. Nada some —
+ * o trecho que não casa continua inteiro na própria linha. Devolve `null`
+ * quando não há o que separar, e a ficha mostra o texto como veio.
+ */
+export function linhasDaNota(texto: string): LinhaDeNota[] | null {
+  const partes = texto
+    .split(/\s*[·•|]\s*|\r?\n+/)
+    .map((parte) => parte.trim())
+    .filter(Boolean);
+  if (partes.length < 2) return null;
+
+  return partes.map((parte) => {
+    const par = /^([^:]{1,32}?):\s+(.+)$/s.exec(parte);
+    const rotulo = par?.[1]?.trim();
+    const valor = par?.[2]?.trim();
+    if (!rotulo || !valor || URL_ABSOLUTA.test(parte)) return { valor: parte };
+    return { rotulo, valor };
+  });
+}
+
 /** `historico` migrado pode ser JSON textual; dado inválido segue visível como texto. */
 export function historicoEstruturado(valor: unknown): unknown[] | null {
   let candidato = valor;
