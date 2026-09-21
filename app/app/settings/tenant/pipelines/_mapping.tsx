@@ -120,12 +120,12 @@ export function motivoDaListaVazia(
   }
   if (passo === "won") {
     return t(
-      "Este funil não tem nenhuma etapa marcada como fechamento, então não há para onde levar o card quando a pessoa fecha. Use «Marcar como venda fechada» em «Etapas deste funil».",
+      "Este funil não tem nenhuma etapa marcada como fechamento, então não há para onde levar o card quando a pessoa fecha. Em «Etapas deste funil», escolha o tipo «Venda fechada» numa etapa.",
     );
   }
   if (passo === "lost") {
     return t(
-      "Este funil não tem nenhuma etapa marcada como perda, então não há para onde levar o card quando a pessoa desiste. Use «Marcar como perdido» em «Etapas deste funil».",
+      "Este funil não tem nenhuma etapa marcada como perda, então não há para onde levar o card quando a pessoa desiste. Em «Etapas deste funil», escolha o tipo «Perdido» numa etapa.",
     );
   }
   return t(
