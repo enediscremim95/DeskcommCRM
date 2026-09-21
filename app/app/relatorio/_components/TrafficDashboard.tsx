@@ -26,6 +26,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import type { CampaignMetricColumn } from "@/lib/windsor/types";
 import type { TrafficColumnPreset } from "@/lib/windsor/column-presets";
+import { CaixaArrastavel, chaveDePosicao } from "./CaixaArrastavel";
 import { ColumnPresetMenu } from "./ColumnPresetMenu";
 import { buildTrafficFunnelStages, ConversionFunnel, type FunnelStage } from "./ConversionFunnel";
 
@@ -654,7 +655,10 @@ export function TrafficDashboard() {
               : t("Aguardando a primeira sincronização.")}
           </p>
         </div>
-        <div className="flex flex-wrap items-end gap-2 rounded-xl border bg-card p-3">
+        <CaixaArrastavel
+          chave={chaveDePosicao(report?.organization_key ?? null, report?.viewer_key ?? null)}
+          className="flex flex-wrap items-end gap-2 rounded-xl border bg-card p-3"
+        >
           <div className="space-y-1">
             <Label htmlFor="traffic-period">{t("Período")}</Label>
             <Select value={preset} onValueChange={changePreset}>
@@ -714,7 +718,7 @@ export function TrafficDashboard() {
               onColumnsChange={setSelectedColumns}
             />
           )}
-        </div>
+        </CaixaArrastavel>
       </header>
 
       {report?.sync.status === "failed" && (
