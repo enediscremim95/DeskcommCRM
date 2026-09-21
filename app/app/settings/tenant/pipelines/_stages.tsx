@@ -38,7 +38,7 @@ import { LEAD_STAGES, type LeadStage } from "@/lib/agent-engine/agent/lead-state
 import { ApiError } from "@/lib/api/types";
 import { ROTULO_DO_PASSO } from "@/lib/leads/agent-mapping";
 import { cn } from "@/lib/utils";
-import { CaretDown, CaretUp, Check, DotsSixVertical, Plus, Trash, Warning } from "@/lib/ui/icons";
+import { Check, DotsSixVertical, Plus, Trash, Warning } from "@/lib/ui/icons";
 import { SeloDeAutoria } from "@/components/operacao/SeloDeAutoria";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -409,7 +409,6 @@ export function StagesSection({
       data-testid={`etapas-${pipelineId}`}
     >
       <div className="space-y-1">
-        <h3 className="text-sm font-semibold">{t("Etapas deste funil")}</h3>
         <p className="text-sm leading-relaxed text-text-muted" data-testid="etapas-como-usar">
           {t(
             "Arraste pela alça para mudar a ordem, clique no nome para renomear, escolha o tipo de cada etapa e exclua as que não usa.",
@@ -450,8 +449,6 @@ export function StagesSection({
                 const passo = passos.get(etapa.id) ?? null;
                 const papel = papelDaEtapa(etapa);
                 const especial = papel !== "nenhum";
-                const primeira = i === 0;
-                const ultima = i === etapas.length - 1;
                 const erroDaLinha = erro?.etapaId === etapa.id ? erro.texto : null;
                 const confirmandoAqui = confirmacao?.etapaId === etapa.id ? confirmacao : null;
                 const excluindoAqui = exclusao?.etapaId === etapa.id ? exclusao : null;
@@ -596,41 +593,6 @@ export function StagesSection({
                                 </Button>
                               </span>
                             </div>
-                          </div>
-
-                          {/* As setas ficam como caminho de teclado e leitor de
-                              tela; discretas, porque o mouse tem a alça. */}
-                          <div className="flex shrink-0 items-center opacity-60 hover:opacity-100 focus-within:opacity-100">
-                            <span title={primeira ? t("Já é a primeira etapa") : undefined}>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-6"
-                                aria-label={`${t("Mover")} «${etapa.name}» ${t("uma coluna para trás")}`}
-                                data-testid={`subir-${etapa.id}`}
-                                disabled={primeira || ocupado}
-                                onClick={() =>
-                                  aplicar(etapa.id, { depois_de: vizinhoAoMover(etapas, i, "subir") })
-                                }
-                              >
-                                <CaretUp size={14} aria-hidden />
-                              </Button>
-                            </span>
-                            <span title={ultima ? t("Já é a última etapa") : undefined}>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-6"
-                                aria-label={`${t("Mover")} «${etapa.name}» ${t("uma coluna para frente")}`}
-                                data-testid={`descer-${etapa.id}`}
-                                disabled={ultima || ocupado}
-                                onClick={() =>
-                                  aplicar(etapa.id, { depois_de: vizinhoAoMover(etapas, i, "descer") })
-                                }
-                              >
-                                <CaretDown size={14} aria-hidden />
-                              </Button>
-                            </span>
                           </div>
                         </div>
 

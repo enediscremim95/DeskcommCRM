@@ -271,9 +271,8 @@ describe("StagesSection — a linha se explica sozinha", () => {
     );
     expect(screen.getByTestId("tipo-e1")).toHaveAccessibleName("Tipo da etapa «Carrinho abandonado»");
     expect(screen.getByTestId("excluir-e1")).toHaveAccessibleName("Excluir «Carrinho abandonado»");
-    expect(screen.getByTestId("subir-e1")).toHaveAccessibleName(
-      "Mover «Carrinho abandonado» uma coluna para trás",
-    );
+    // As setas saíram (21/09/2026): o arrasto pela alça também funciona no teclado.
+    expect(screen.queryByTestId("subir-e1")).toBeNull();
 
     // O tipo, fechado, diz em uma ou duas palavras o que a etapa é.
     expect(screen.getByTestId("tipo-e1")).toHaveTextContent(ROTULO_DO_PAPEL.nenhum);
@@ -347,21 +346,6 @@ describe("StagesSection — a linha se explica sozinha", () => {
     expect(screen.getByTestId("excluir-e1").closest("[title]")).toBeNull();
   });
 
-  it("seta que não pode mover explica por quê", async () => {
-    montar();
-    await screen.findByTestId("nome-e1");
-
-    expect(screen.getByTestId("subir-e1").closest("[title]")).toHaveAttribute(
-      "title",
-      "Já é a primeira etapa",
-    );
-    expect(screen.getByTestId("descer-e4").closest("[title]")).toHaveAttribute(
-      "title",
-      "Já é a última etapa",
-    );
-    // A seta que PODE mover não carrega dica nenhuma: dica sem motivo é ruído.
-    expect(screen.getByTestId("descer-e1").closest("[title]")).toBeNull();
-  });
 });
 
 describe("StagesSection — renomear, criar e reordenar", () => {
@@ -414,24 +398,7 @@ describe("StagesSection — renomear, criar e reordenar", () => {
     await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(2));
   });
 
-  it("subir uma coluna manda a VIZINHA DA ESQUERDA, não um número de posição", async () => {
-    const user = userEvent.setup();
-    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
-    montar();
-    await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("subir-e3"));
-    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(apiClient.patch).mock.calls[0]![1]).toEqual({ depois_de: "e1" });
-  });
-
-  it("a primeira coluna não sobe e a última não desce", async () => {
-    montar();
-    await screen.findByTestId("nome-e1");
-    expect(screen.getByTestId("subir-e1")).toBeDisabled();
-    expect(screen.getByTestId("descer-e4")).toBeDisabled();
-    expect(screen.getByTestId("descer-e1")).toBeEnabled();
-  });
 });
 
 /**
