@@ -27,6 +27,8 @@ interface FilterBarProps {
   filters: LeadFilters;
   onChange: (next: LeadFilters) => void;
   leads: Lead[];
+  /** Ações do quadro que moram na mesma linha dos filtros (ex.: editar etapas). */
+  extra?: React.ReactNode;
 }
 
 const STATUS_OPTIONS: Array<{ value: NonNullable<LeadFilters["status"]>; label: string }> = [
@@ -36,7 +38,7 @@ const STATUS_OPTIONS: Array<{ value: NonNullable<LeadFilters["status"]>; label: 
   { value: "lost", label: "Perdidos" },
 ];
 
-export function FilterBar({ filters, onChange, leads }: FilterBarProps) {
+export function FilterBar({ filters, onChange, leads, extra }: FilterBarProps) {
   const t = useT();
   const user = useUser();
   const { data: members } = useAssignableMembers(true);
@@ -218,6 +220,8 @@ export function FilterBar({ filters, onChange, leads }: FilterBarProps) {
         />
         {t("Apenas atrasados")}
       </label>
+
+      {extra}
 
       {(filters.search ||
         filters.owner ||
