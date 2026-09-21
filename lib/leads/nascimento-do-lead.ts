@@ -43,7 +43,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 
-import { ehIdentificadorTecnico, rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
+import {
+  ehIdentificadorTecnico,
+  rotuloDoContato,
+  SEM_NOME,
+} from "@/lib/contacts/rotulo-do-contato";
 
 import { emitLeadActivity } from "./activity-emitter";
 
@@ -260,6 +264,29 @@ export async function garantirLeadDaConversa(
       organization_id: organizationId,
       lead_id: lead.id as string,
       error: registro.error?.slice(0, 120),
+    });
+  }
+
+  // A outra porta de criação (`createLeadHandler`) já emite `lead.created`.
+  // Conversa inbound também precisa entrar no mesmo barramento para que
+  // automações e o aviso de lead novo não dependam da origem.
+  const { error: eventoError } = await db.rpc("emit_event", {
+    p_event_type: "lead.created",
+    p_entity_kind: "crm_lead",
+    p_entity_id: lead.id as string,
+    p_payload: {
+      pipeline_id: destino.pipelineId,
+      stage_id: destino.stageId,
+      source: rotuloDeAnuncio ? contato!.source : "whatsapp",
+    },
+    p_metadata: { source_module: "canal.ingest" },
+    p_organization_id: organizationId,
+  });
+  if (eventoError) {
+    logger.warn("nascimento-do-lead: evento lead.created não registrado", {
+      organization_id: organizationId,
+      lead_id: lead.id as string,
+      error: eventoError.message.slice(0, 120),
     });
   }
 

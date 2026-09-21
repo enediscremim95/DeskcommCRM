@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Avisos importantes por e-mail",
+    "subtitle": "Lead novo e ação urgente, fora das categorias de rotina",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "app", "label": "Aplicativo" },
+    { "id": "db", "label": "Banco" },
+    { "id": "externo", "label": "Serviço externo" },
+    { "id": "humano", "label": "Pessoa" }
+  ],
+  "mainPath": ["origens", "outbox", "handler", "resend", "destinatario"],
+  "nodes": [
+    {
+      "id": "origens",
+      "lane": "app",
+      "col": 0,
+      "type": "service",
+      "label": "Captação de lead, Radar de Risco e watcher de tarefa vencida"
+    },
+    {
+      "id": "outbox",
+      "lane": "db",
+      "col": 1,
+      "type": "database",
+      "label": "event_log: lead.created ou lead.action_required"
+    },
+    {
+      "id": "handler",
+      "lane": "app",
+      "col": 2,
+      "type": "service",
+      "label": "Consumidor assíncrono, idempotente e sem bloquear outros canais"
+    },
+    {
+      "id": "preferencias",
+      "lane": "db",
+      "col": 2,
+      "type": "database",
+      "label": "Preferência pessoal por organização, ligada por padrão"
+    },
+    {
+      "id": "responsavel",
+      "lane": "db",
+      "col": 3,
+      "type": "database",
+      "label": "Responsável ativo; sem responsável, administradores ativos"
+    },
+    {
+      "id": "marca",
+      "lane": "app",
+      "col": 3,
+      "type": "service",
+      "label": "marcaDaSaida e conteúdo mínimo sem dados do lead"
+    },
+    {
+      "id": "resend",
+      "lane": "externo",
+      "col": 4,
+      "type": "external",
+      "label": "Resend com chave de idempotência por evento e pessoa"
+    },
+    {
+      "id": "destinatario",
+      "lane": "humano",
+      "col": 5,
+      "type": "ui",
+      "label": "E-mail leva à ficha autenticada do lead"
+    },
+    {
+      "id": "configuracao",
+      "lane": "humano",
+      "col": 1,
+      "type": "ui",
+      "label": "Tela permite opt-out separado para novo lead e urgência"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "origens", "to": "outbox", "label": "persiste o fato" },
+    { "id": "e2", "from": "outbox", "to": "handler", "label": "drain assíncrono" },
+    { "id": "e3", "from": "configuracao", "to": "preferencias", "label": "opt-out pessoal" },
+    { "id": "e4", "from": "preferencias", "to": "handler", "label": "autoriza a categoria" },
+    { "id": "e5", "from": "responsavel", "to": "handler", "label": "resolve destinatários" },
+    { "id": "e6", "from": "handler", "to": "marca", "label": "monta aviso mínimo" },
+    { "id": "e7", "from": "marca", "to": "resend", "label": "envio white-label" },
+    { "id": "e8", "from": "resend", "to": "destinatario", "label": "entrega" },
+    {
+      "id": "e9",
+      "from": "destinatario",
+      "to": "configuracao",
+      "label": "controla os próximos avisos"
+    }
+  ]
+}

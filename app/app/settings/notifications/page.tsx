@@ -1,7 +1,10 @@
-import { requireAuth } from "@/lib/auth/server";
+import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { Card } from "@/components/ui/card";
 import { vapidPronto } from "@/lib/notifications/vapid";
+import { isEmailConfigured } from "@/lib/email/resend";
+import { readEmailNotificationPreferences } from "@/lib/notifications/email-preferences";
+import { createClient } from "@/lib/supabase/server";
 import { NotificationPrefsClient } from "./_client";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +50,11 @@ export default async function NotificationsPage() {
   const idioma = user.idioma;
   const t = (texto: string) => traduzir(texto, idioma);
   const pushPronto = vapidPronto();
+  const activeOrg = await resolveActiveOrg(user);
+  const emailPrefs = activeOrg
+    ? await readEmailNotificationPreferences(await createClient(), activeOrg.orgId, user.id)
+    : { new_lead: true, urgent_lead: true };
+  const emailConfigured = isEmailConfigured();
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
@@ -61,7 +69,7 @@ export default async function NotificationsPage() {
           className="border-amber-500/40 bg-amber-50/40 p-4 text-sm dark:bg-amber-900/10"
         >
           {t(
-            "Email ainda não está disponível. In-app (toast) e Push (Chrome) já funcionam para as cinco categorias, inclusive com a aba fechada.",
+            "In-app e Push funcionam para as categorias de rotina, inclusive com a aba fechada. O e-mail fica reservado a novos leads e ações urgentes.",
           )}
         </Card>
       ) : (
@@ -87,12 +95,14 @@ export default async function NotificationsPage() {
           <p className="mt-2 text-muted-foreground">
             {t("O resultado vai no arquivo")} <code>.env</code>, {t("em")}{" "}
             <code>VAPID_PUBLIC_KEY</code> {t("e")} <code>VAPID_PRIVATE_KEY</code>.{" "}
-            {t("Email ainda não está disponível.")}
+            {emailConfigured
+              ? t("Os avisos importantes por e-mail continuam disponíveis abaixo.")
+              : t("O e-mail também precisa ser configurado por quem administra o servidor.")}
           </p>
         </Card>
       )}
 
-      <NotificationPrefsClient />
+      <NotificationPrefsClient initialEmailPrefs={emailPrefs} emailConfigured={emailConfigured} />
     </div>
   );
 }

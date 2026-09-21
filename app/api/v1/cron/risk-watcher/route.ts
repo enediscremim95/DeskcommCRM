@@ -39,6 +39,7 @@ import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { venceReativacoes } from "@/lib/leads/reactivation";
 import { observaTravessias } from "@/lib/leads/risk-worker";
+import { enqueueOverdueLeadTaskEvents } from "@/lib/notifications/urgent-events";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -77,6 +78,7 @@ async function handle(req: NextRequest): Promise<Response> {
   let falhas = 0;
   let propostas = 0;
   let vencidas = 0;
+  let tarefasUrgentesEnfileiradas = 0;
   const comErro: string[] = [];
 
   for (const org of orgs) {
@@ -94,6 +96,9 @@ async function handle(req: NextRequest): Promise<Response> {
       const v = await venceReativacoes(admin, org, new Date());
       vencidas += v.vencidas;
       falhas += v.falhasDeAtividade;
+
+      const tarefas = await enqueueOverdueLeadTaskEvents(admin, org, new Date());
+      tarefasUrgentesEnfileiradas += tarefas.enqueued;
     } catch (e) {
       // Uma org que falha NÃO derruba as outras. Sem isto, um tenant com dado
       // estranho congelaria o radar de todos os demais — e o sintoma seria
@@ -119,6 +124,7 @@ async function handle(req: NextRequest): Promise<Response> {
       reativaram,
       propostas_criadas: propostas,
       propostas_vencidas: vencidas,
+      tarefas_urgentes_enfileiradas: tarefasUrgentesEnfileiradas,
       atividades_falhas: falhas,
       organizations_com_erro: comErro.length,
     },

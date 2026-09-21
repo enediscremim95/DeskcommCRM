@@ -52,17 +52,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const vapidPronto = vi.hoisted(() => vi.fn<() => boolean>());
+const emailConfigurado = vi.hoisted(() => vi.fn<() => boolean>());
 vi.mock("@/lib/notifications/vapid", () => ({ vapidPronto }));
-vi.mock("@/lib/auth/server", () => ({ requireAuth: vi.fn().mockResolvedValue({}) }));
+vi.mock("@/lib/email/resend", () => ({ isEmailConfigured: emailConfigurado }));
+vi.mock("@/lib/auth/server", () => ({
+  requireAuth: vi.fn().mockResolvedValue({ id: "user-1", idioma: "pt-BR" }),
+  resolveActiveOrg: vi.fn().mockResolvedValue({ orgId: "org-1" }),
+}));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn().mockResolvedValue({}) }));
+vi.mock("@/lib/notifications/email-preferences", () => ({
+  readEmailNotificationPreferences: vi.fn().mockResolvedValue({
+    new_lead: true,
+    urgent_lead: true,
+  }),
+}));
 vi.mock("@/app/app/settings/notifications/_client", () => ({
   NotificationPrefsClient: () => <table />,
 }));
 
 async function telaCom(chaves: boolean): Promise<string> {
   vapidPronto.mockReturnValue(chaves);
-  const { default: NotificationsPage } = await import(
-    "@/app/app/settings/notifications/page"
-  );
+  const { default: NotificationsPage } = await import("@/app/app/settings/notifications/page");
   return renderToStaticMarkup(await NotificationsPage());
 }
 
@@ -70,6 +80,7 @@ describe("tela de Notificações — o que ela afirma sobre esta instalação", 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    emailConfigurado.mockReturnValue(false);
   });
 
   it("o instrumento está vivo — controle positivo antes de qualquer conclusão", async () => {
@@ -107,10 +118,9 @@ describe("tela de Notificações — o que ela afirma sobre esta instalação", 
 
     // Esta é a afirmação literal que existia antes e era falsa neste estado:
     // «In-app (toast) e Push (Chrome) já funcionam para as cinco categorias».
-    expect(
-      html,
-      "a tela afirma que o Push já funciona numa instalação sem as chaves",
-    ).not.toMatch(/já funcionam/i);
+    expect(html, "a tela afirma que o Push já funciona numa instalação sem as chaves").not.toMatch(
+      /já funcionam/i,
+    );
 
     // ⚠️ MENCIONAR O LIMITE NÃO É PROMETÊ-LO, e esta distinção me custou um
     // vermelho. Escrevi este caso primeiro como um `&&` de duas condições
@@ -128,10 +138,9 @@ describe("tela de Notificações — o que ela afirma sobre esta instalação", 
     // se a tela fala em aba fechada neste estado, tem de ser dizendo o que
     // fazer para consegui-la.
     if (/aba fechada/i.test(html)) {
-      expect(
-        html,
-        "a tela fala em aba fechada sem dizer que ela depende de configuração",
-      ).toMatch(/precisa gerar|para receber também/i);
+      expect(html, "a tela fala em aba fechada sem dizer que ela depende de configuração").toMatch(
+        /precisa gerar|para receber também/i,
+      );
     }
   });
 
@@ -144,9 +153,8 @@ describe("tela de Notificações — o que ela afirma sobre esta instalação", 
 
     // Capacidade que já está de pé não pode continuar pedindo que o operador
     // rode um comando: seria mandá-lo mexer no `.env` de produção à toa.
-    expect(
-      html,
-      "a instalação já tem as chaves e a tela ainda manda gerar o par",
-    ).not.toContain("npx web-push generate-vapid-keys");
+    expect(html, "a instalação já tem as chaves e a tela ainda manda gerar o par").not.toContain(
+      "npx web-push generate-vapid-keys",
+    );
   });
 });

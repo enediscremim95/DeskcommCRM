@@ -478,6 +478,15 @@ num job que já leva meia hora.
 | J12.3 | O controle de Push não some, e a tela diz por que está travado | interruptor visível + «o navegador bloqueou as notificações» | PASS |
 | J12.5 | VAPID ausente NÃO desabilita o Push | com `granted` e sem chaves, nasce habilitado | PASS (unit) |
 | J12.4 | Com VAPID, anuncia a aba fechada | e para de mandar gerar o par que já existe | PASS (unit) |
+| J12.6 | E-mail fica fora da rotina | só existem controles para lead novo e ação urgente; Nova mensagem diz «Não enviado» | NÃO EXECUTADO (e2e) |
+
+O canal de e-mail usa o mesmo outbox do produto, mas tem um consumidor separado.
+O evento nasce na captação do lead ou numa urgência já calculada pelo Radar e
+pelas tarefas vencidas. A falha desse consumidor não desfaz os consumidores de
+in-app e Push. O destinatário é o responsável ativo; sem responsável, são os
+administradores ativos. Cada pessoa pode desligar as duas categorias, que
+nascem ligadas para uma instalação nova. As categorias de rotina não entram
+nesse consumidor.
 
 **Por que J12.5 não é `e2e`, medido e não suposto.** Ela nasceu como asserção
 `toBeEnabled()` na spec, e não podia viver lá. Medido no Chromium do Playwright,
