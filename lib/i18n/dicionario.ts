@@ -8509,6 +8509,12 @@ export const DICIONARIO: Traducoes = {
   "acontecimentos.": { es: "sucesos." },
   "Carregando organização…": { es: "Cargando organización…" },
   "Gerenciar organizações": { es: "Administrar organizaciones" },
+  "Não foi possível salvar a configuração de mídia": { es: "No se pudo guardar la configuración de medios" },
+  "Mídia do WhatsApp": { es: "Medios de WhatsApp" },
+  "Guardar arquivos de mídia recebidos": { es: "Guardar los archivos de medios recibidos" },
+  "Padrão desligado. Arquivos já guardados não são apagados por esta opção.": {
+    es: "Desactivado por defecto. Los archivos ya guardados no se eliminan con esta opción.",
+  },
   "Buscar organização…": { es: "Buscar organización…" },
   "Buscar organização": { es: "Buscar organización" },
   "Nenhuma organização com esse nome": { es: "Ninguna organización con ese nombre" },
