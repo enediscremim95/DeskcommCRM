@@ -9,6 +9,7 @@ import {
   useUpdateConversationTags,
   useConversationTagVocabulary,
 } from "@/hooks/inbox/useConversationTags";
+import { usePermission } from "@/hooks/auth/AuthProvider";
 
 interface Props {
   conversationId: string;
@@ -22,6 +23,7 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
   const [draft, setDraft] = useState("");
   const mutation = useUpdateConversationTags();
   const { data: vocabulary } = useConversationTagVocabulary(orgId);
+  const podeExcluir = usePermission("resource.delete");
 
   // Normalização espelha o Zod do PATCH (trim+lowercase); dedup no set.
   function apply(next: string[]) {
@@ -43,24 +45,24 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
 
   return (
     <section>
-      <h3 className="text-xs font-semibold text-text">
-        {t("Tags da conversa")}
-      </h3>
+      <h3 className="text-xs font-semibold text-text">{t("Tags da conversa")}</h3>
 
       <div className="mt-2 flex flex-wrap gap-1">
         {tags.length > 0 ? (
           tags.map((tag) => (
             <Badge key={tag} variant="secondary" className="h-5 gap-1 px-1.5 text-[10px]">
               {tag}
-              <button
-                type="button"
-                onClick={() => remove(tag)}
-                disabled={mutation.isPending}
-                aria-label={`${t("Remover tag")} ${tag}`}
-                className="rounded-sm hover:text-destructive"
-              >
-                <X size={10} weight="bold" aria-hidden />
-              </button>
+              {podeExcluir && (
+                <button
+                  type="button"
+                  onClick={() => remove(tag)}
+                  disabled={mutation.isPending}
+                  aria-label={`${t("Remover tag")} ${tag}`}
+                  className="rounded-sm hover:text-destructive"
+                >
+                  <X size={10} weight="bold" aria-hidden />
+                </button>
+              )}
             </Badge>
           ))
         ) : (

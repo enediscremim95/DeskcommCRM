@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 interface Props {
   tarefas: Tarefa[];
   podeEditar: boolean;
+  podeExcluir: boolean;
   aoAlternarConcluida: (tarefa: Tarefa) => Promise<unknown>;
   aoEditar: (tarefa: Tarefa) => void;
   aoApagar: (tarefa: Tarefa) => Promise<unknown>;
@@ -35,12 +36,14 @@ const COR_DA_PRIORIDADE: Record<PrioridadeDaTarefa, string> = {
 function Linha({
   tarefa,
   podeEditar,
+  podeExcluir,
   aoAlternarConcluida,
   aoEditar,
   aoApagar,
 }: {
   tarefa: Tarefa;
   podeEditar: boolean;
+  podeExcluir: boolean;
   aoAlternarConcluida: (t: Tarefa) => Promise<unknown>;
   aoEditar: (t: Tarefa) => void;
   aoApagar: (t: Tarefa) => Promise<unknown>;
@@ -94,12 +97,7 @@ function Linha({
       </button>
 
       <div className="min-w-0 flex-1">
-        <p
-          className={cn(
-            "text-sm font-medium",
-            encerrada && "text-muted-foreground line-through",
-          )}
-        >
+        <p className={cn("text-sm font-medium", encerrada && "text-muted-foreground line-through")}>
           {tarefa.title}
         </p>
         {tarefa.description ? (
@@ -115,7 +113,9 @@ function Linha({
           >
             {rotuloDaPrioridade[tarefa.priority]}
           </span>
-          <span className={cn("text-muted-foreground", atrasada && "font-semibold text-destructive")}>
+          <span
+            className={cn("text-muted-foreground", atrasada && "font-semibold text-destructive")}
+          >
             {tarefa.due_date
               ? new Date(tarefa.due_date).toLocaleString(tag, {
                   day: "2-digit",
@@ -129,7 +129,7 @@ function Linha({
       </div>
 
       {podeEditar ? (
-        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
           <Button
             variant="ghost"
             size="icon"
@@ -145,7 +145,7 @@ function Linha({
             não passa por `t()` — o texto sai no idioma do navegador, não no da
             organização.
           */}
-          {confirmando ? (
+          {podeExcluir && confirmando ? (
             <Button
               variant="destructive"
               size="sm"
@@ -155,7 +155,7 @@ function Linha({
             >
               {t("Confirmar")}
             </Button>
-          ) : (
+          ) : podeExcluir ? (
             <Button
               variant="ghost"
               size="icon"
@@ -166,7 +166,7 @@ function Linha({
             >
               <Trash size={14} aria-hidden />
             </Button>
-          )}
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -176,6 +176,7 @@ function Linha({
 export function ListaDeTarefas({
   tarefas,
   podeEditar,
+  podeExcluir,
   aoAlternarConcluida,
   aoEditar,
   aoApagar,
@@ -209,7 +210,7 @@ export function ListaDeTarefas({
         <section key={grupo.faixa}>
           <h2
             className={cn(
-              "mb-1 px-3 text-xs font-semibold uppercase tracking-wider",
+              "mb-1 px-3 text-xs font-semibold tracking-wider uppercase",
               grupo.faixa === "atrasada" ? "text-destructive" : "text-muted-foreground",
             )}
           >
@@ -221,6 +222,7 @@ export function ListaDeTarefas({
                 key={tarefa.id}
                 tarefa={tarefa}
                 podeEditar={podeEditar}
+                podeExcluir={podeExcluir}
                 aoAlternarConcluida={aoAlternarConcluida}
                 aoEditar={aoEditar}
                 aoApagar={aoApagar}

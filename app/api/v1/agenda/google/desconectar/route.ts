@@ -35,9 +35,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * ─── Quem pode ────────────────────────────────────────────────────────────
  *
- * A própria pessoa desconecta a dela com `agent`. Desconectar a de OUTRO membro
- * exige `manager` — e é o caso que dá saída ao ex-funcionário: sem isto, a
- * agenda pessoal de quem saiu fica no banco sem via de produto que a apague.
+ * Desconectar remove credenciais e bloqueios persistentes, portanto exige
+ * `resource.delete` (manager+), inclusive quando a pessoa aponta para a própria
+ * conexão. O gerente também consegue limpar a agenda de quem saiu da equipe.
  *
  * O `organization_id` vem SEMPRE da sessão, nunca do corpo. O corpo carrega no
  * máximo o `user_id` ALVO, e ele é validado pelo papel — não é o que decide o
@@ -48,7 +48,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -56,7 +56,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const corpo = z.object({
-  /** Ausente = a própria conexão de quem chamou. Presente = exige `manager`. */
+  /** Ausente = a própria conexão; presente = conexão de outro membro da org. */
   user_id: z.string().uuid().optional(),
 });
 
@@ -66,7 +66,10 @@ export async function DELETE(req: NextRequest): Promise<Response> {
 
   const requestId = req.headers.get("x-request-id") ?? undefined;
 
-  const autorizado = await requireRole("agent", { requestId, resource: "calendar_connections" });
+  const autorizado = await requirePermission("resource.delete", {
+    requestId,
+    resource: "calendar_connections",
+  });
   if (!autorizado.ok) return autorizado.response;
   const t = (texto: string) => traduzir(texto, autorizado.user.idioma);
   const { user, org } = autorizado;
@@ -77,12 +80,7 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   if (!lido.success) {
     return fail("validation_failed", t("Corpo inválido para desconectar."), 422, { requestId });
   }
-  if (lido.data.user_id && lido.data.user_id !== user.id) {
-    // Desconectar a agenda de OUTRA pessoa é ato de gestão, não de uso.
-    const gestor = await requireRole("manager", { requestId, resource: "calendar_connections" });
-    if (!gestor.ok) return gestor.response;
-    alvo = lido.data.user_id;
-  }
+  if (lido.data.user_id && lido.data.user_id !== user.id) alvo = lido.data.user_id;
 
   const admin = createAdminClient();
 

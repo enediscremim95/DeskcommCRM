@@ -1,15 +1,14 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * DELETE /api/v1/conversations/[id]/notes/[noteId] — apaga uma nota interna.
- * Autor da nota OU manager+ pode apagar; qualquer outro agent recebe 403.
+ * Excluir qualquer nota é manager+; o atendente continua podendo criar notas.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { fail, noContent } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { roleAtLeast } from "@/lib/auth/types";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -24,7 +23,10 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams): Promis
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "conversation_notes" });
+  const authz = await requirePermission("resource.delete", {
+    requestId,
+    resource: "conversation_notes",
+  });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
@@ -42,10 +44,6 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams): Promis
     .eq("organization_id", org.orgId)
     .maybeSingle();
   if (!note) return fail("not_found", t("Nota não encontrada."), 404, { requestId });
-
-  if (note.created_by_user_id !== user.id && !roleAtLeast(org.role, "manager")) {
-    return fail("forbidden", t("Só o autor ou manager+ pode apagar esta nota."), 403, { requestId });
-  }
 
   const { data: deleted, error } = await supabase
     .from("conversation_notes")

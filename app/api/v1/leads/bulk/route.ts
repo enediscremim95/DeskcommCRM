@@ -15,6 +15,7 @@ import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { resolveOwnerPatch } from "@/lib/leads/owner-patch";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
@@ -62,12 +63,23 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   if (input.lead_ids.length > MAX_BULK) {
-    return fail("bulk_too_large", `${t("Máximo")} ${MAX_BULK} ${t("leads por bulk.")}`, 422, { requestId });
+    return fail("bulk_too_large", `${t("Máximo")} ${MAX_BULK} ${t("leads por bulk.")}`, 422, {
+      requestId,
+    });
+  }
+
+  const removesTags = input.action === "tag" && (input.params.remove?.length ?? 0) > 0;
+  if (input.action === "delete" || removesTags) {
+    const deleteAuthz = await requirePermission("resource.delete", {
+      requestId,
+      resource: "crm_leads",
+    });
+    if (!deleteAuthz.ok) return deleteAuthz.response;
   }
 
   // G3-04: assign é reatribuição de dono em lote → piso ≥manager (spec 04 §6.5,
-  // INB-03). Gate por-action: move/tag/delete continuam agent+ (piso acima);
-  // só o assign exige manager. Reusa o helper (nada de ROLE_RANK na mão).
+  // INB-03). Gate por-action: move/tag continuam agent+; assign e delete
+  // exigem manager. Reusa os helpers centrais (nada de ROLE_RANK na mão).
   if (input.action === "assign") {
     const mgr = await requireRole("manager", { requestId, resource: "crm_leads" });
     if (!mgr.ok) return mgr.response;
@@ -124,12 +136,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const visible = scoped ?? [];
   const first = visible[0];
   if (!first) {
-    return fail(
-      "not_found",
-      t("Nenhum lead acessível na operação."),
-      404,
-      { requestId },
-    );
+    return fail("not_found", t("Nenhum lead acessível na operação."), 404, { requestId });
   }
   const visibleIds = visible.map((r) => r.id);
 
@@ -239,7 +246,8 @@ export async function POST(req: NextRequest): Promise<Response> {
               p_organization_id: organizationId,
             })
             .then(({ error: emitError }) => {
-              if (emitError) console.error("[lead.bulk_moved] emit_event failed", emitError.message);
+              if (emitError)
+                console.error("[lead.bulk_moved] emit_event failed", emitError.message);
             }),
         ),
       );
@@ -306,7 +314,8 @@ export async function POST(req: NextRequest): Promise<Response> {
               p_organization_id: organizationId,
             })
             .then(({ error: emitError }) => {
-              if (emitError) console.error("[lead.bulk_tagged] emit_event failed", emitError.message);
+              if (emitError)
+                console.error("[lead.bulk_tagged] emit_event failed", emitError.message);
             });
         }
       }

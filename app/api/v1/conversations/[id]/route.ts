@@ -9,6 +9,8 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
+import { replacementRemovesValues } from "@/lib/auth/permissions";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { patchConversationSchema, validateRequest } from "@/lib/schemas";
@@ -91,6 +93,24 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
       });
     }
     throw err;
+  }
+
+  if (input.tags !== undefined) {
+    const { data: current, error } = await supabase
+      .from("conversations")
+      .select("tags")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("id", id)
+      .maybeSingle();
+    if (error) return fail("internal_error", error.message, 500, { requestId });
+    const previous = (current as { tags?: string[] } | null)?.tags ?? [];
+    if (replacementRemovesValues(previous, input.tags)) {
+      const deleteAuthz = await requirePermission("resource.delete", {
+        requestId,
+        resource: "conversation_tags",
+      });
+      if (!deleteAuthz.ok) return deleteAuthz.response;
+    }
   }
 
   try {

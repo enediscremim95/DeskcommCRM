@@ -31,6 +31,8 @@ import { logger } from "@/lib/logger";
 type AgendamentoDaResposta = AgendamentoListado & { origem?: "google_sync" };
 import { ApiError } from "@/lib/api/types";
 import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
+import type { Permission } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -90,7 +92,7 @@ const alterarSchema = z
     id: z.string().uuid(),
     revision: z.number().int().positive().optional(),
     outcome_message_id: z.string().uuid().optional(),
-    confirmation_next_at: z.string().datetime({offset:true}).optional(),
+    confirmation_next_at: z.string().datetime({ offset: true }).optional(),
     /** Remarcar: o novo início. A duração vem do tipo, como na criação. */
     starts_at: z.string().datetime({ offset: true }).optional(),
     /**
@@ -273,7 +275,7 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  return despachar(req, cancelarSchema, cancelarAgendamentoHandler, 200);
+  return despachar(req, cancelarSchema, cancelarAgendamentoHandler, 200, "resource.delete");
 }
 
 /**
@@ -292,10 +294,13 @@ async function despachar<T>(
     input: T,
   ) => Promise<Record<string, unknown>>,
   status: 200 | 201,
+  permission?: Permission,
 ): Promise<Response> {
   const requestId = randomUUID();
 
-  const authz = await requireRole("agent", { requestId, resource: "agenda" });
+  const authz = permission
+    ? await requirePermission(permission, { requestId, resource: "agenda" })
+    : await requireRole("agent", { requestId, resource: "agenda" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg, user } = authz;

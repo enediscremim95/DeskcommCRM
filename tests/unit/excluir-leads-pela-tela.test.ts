@@ -18,12 +18,12 @@ describe("exclusão de leads pela tela", () => {
     expect(ficha).toContain("<DeleteLeadDialog");
   });
 
-  it("protege as ações visuais com o mesmo piso agent+ da rota", () => {
-    expect(card).toContain('usePermission("pipeline.move_card")');
+  it("protege as ações visuais com o piso manager+ de exclusão", () => {
+    expect(card).toContain('usePermission("resource.delete")');
     expect(card).toMatch(/\{canDelete && \([\s\S]*setDeleteOpen\(true\)/);
-    expect(lote).toContain('const podeExcluir = usePermission("pipeline.move_card")');
+    expect(lote).toContain('const podeExcluir = usePermission("resource.delete")');
     expect(lote).toMatch(/\{podeExcluir && \([\s\S]*setConfirmDelete\(true\)/);
-    expect(ficha).toContain("const podeExcluir = podeEditar");
+    expect(ficha).toContain('usePermission("resource.delete")');
   });
 
   it("nomeia o lead e avisa que a exclusão é irreversível", () => {

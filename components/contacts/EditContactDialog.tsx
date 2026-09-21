@@ -19,6 +19,7 @@ import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import type { Contact } from "@/lib/types/contacts";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { usePermission } from "@/hooks/auth/AuthProvider";
 
 interface FormShape {
   name?: string;
@@ -39,6 +40,7 @@ interface Props {
 export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs = [] }: Props) {
   const t = useT();
   const update = useUpdateContact(contact.id);
+  const podeExcluir = usePermission("resource.delete");
   const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<FormShape>({
@@ -46,7 +48,7 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
       name: contact.name ?? "",
       email: contact.email ?? "",
       phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
-      tagsRaw: contact.tags.join(", "),
+      tagsRaw: podeExcluir ? contact.tags.join(", ") : "",
       custom_fields: contact.custom_fields ?? {},
     },
   });
@@ -59,18 +61,21 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
         name: contact.name ?? "",
         email: contact.email ?? "",
         phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
-        tagsRaw: contact.tags.join(", "),
+        tagsRaw: podeExcluir ? contact.tags.join(", ") : "",
         custom_fields: contact.custom_fields ?? {},
       });
     }
-  }, [open, contact, form]);
+  }, [open, contact, form, podeExcluir]);
 
   async function onSubmit(values: FormShape) {
     setServerError(null);
-    const tags = (values.tagsRaw ?? "")
+    const tagsInformadas = (values.tagsRaw ?? "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
+    const tags = podeExcluir
+      ? tagsInformadas
+      : Array.from(new Set([...contact.tags, ...tagsInformadas]));
 
     const payload: Record<string, unknown> = {};
     if (values.name?.trim()) payload.name = values.name.trim();
@@ -116,8 +121,15 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
             <Input id="ec-phone" {...form.register("phone_number")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="ec-tags">Tags</Label>
+            <Label htmlFor="ec-tags">{podeExcluir ? "Tags" : t("Adicionar tags")}</Label>
             <Input id="ec-tags" {...form.register("tagsRaw")} />
+            {!podeExcluir && contact.tags.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "As tags atuais serão mantidas. Somente Gerente ou Administrador pode removê-las.",
+                )}
+              </p>
+            )}
           </div>
           {customFieldDefs.length > 0 && (
             <div className="space-y-3 rounded-md border border-border p-3">

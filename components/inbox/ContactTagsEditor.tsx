@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Plus } from "@/lib/ui/icons";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
+import { usePermission } from "@/hooks/auth/AuthProvider";
 
 interface Props {
   contactId: string;
@@ -18,6 +19,7 @@ export function ContactTagsEditor({ contactId, tags }: Props) {
   const t = useT();
   const [draft, setDraft] = useState("");
   const mutation = useUpdateContact(contactId);
+  const podeExcluir = usePermission("resource.delete");
 
   function apply(next: string[]) {
     mutation.mutate({ tags: next });
@@ -41,15 +43,17 @@ export function ContactTagsEditor({ contactId, tags }: Props) {
           tags.map((tag) => (
             <Badge key={tag} variant="secondary" className="h-5 gap-1 px-1.5 text-[10px]">
               {tag}
-              <button
-                type="button"
-                onClick={() => remove(tag)}
-                disabled={mutation.isPending}
-                aria-label={`${t("Remover tag")} ${tag}`}
-                className="rounded-sm hover:text-destructive"
-              >
-                <X size={10} weight="bold" aria-hidden />
-              </button>
+              {podeExcluir && (
+                <button
+                  type="button"
+                  onClick={() => remove(tag)}
+                  disabled={mutation.isPending}
+                  aria-label={`${t("Remover tag")} ${tag}`}
+                  className="rounded-sm hover:text-destructive"
+                >
+                  <X size={10} weight="bold" aria-hidden />
+                </button>
+              )}
             </Badge>
           ))
         ) : (

@@ -7,6 +7,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 
 import { GoogleLogo } from "@/lib/ui/icons";
+import { usePermission } from "@/hooks/auth/AuthProvider";
 
 /**
  * O cartão da agenda conectada — e o caso que importa é o de quem NÃO tem.
@@ -47,6 +48,7 @@ export function CartaoDaConexaoGoogle({
 }) {
   const t = useT();
   const router = useRouter();
+  const podeExcluir = usePermission("resource.delete");
   const [desconectando, setDesconectando] = React.useState(false);
 
   if (!configurado) {
@@ -55,7 +57,9 @@ export function CartaoDaConexaoGoogle({
         data-testid="google-nao-configurado"
         className="rounded-lg border border-border bg-surface-elevated/50 p-3"
       >
-        <p className="text-sm font-medium text-text">{t("Sincronizar com o Google ainda não está disponível")}</p>
+        <p className="text-sm font-medium text-text">
+          {t("Sincronizar com o Google ainda não está disponível")}
+        </p>
         {/*
           DUAS FRASES, porque são duas pessoas.
           
@@ -67,11 +71,15 @@ export function CartaoDaConexaoGoogle({
         */}
         {linkDeConfiguracao ? (
           <p className="mt-1 text-xs leading-4 text-text-muted">
-            {t("Falta cadastrar o aplicativo do Google desta instalação. Leva um minuto e você faz por aqui mesmo.")}
+            {t(
+              "Falta cadastrar o aplicativo do Google desta instalação. Leva um minuto e você faz por aqui mesmo.",
+            )}
           </p>
         ) : (
           <p className="mt-1 text-xs leading-4 text-text-muted">
-            {t("Esta instalação não tem as credenciais do Google cadastradas — não é nada que você tenha feito. Quem instalou o sistema precisa configurar")}
+            {t(
+              "Esta instalação não tem as credenciais do Google cadastradas — não é nada que você tenha feito. Quem instalou o sistema precisa configurar",
+            )}
             {falta.length > 0 ? (
               <>
                 {" "}
@@ -88,7 +96,7 @@ export function CartaoDaConexaoGoogle({
           <a
             href={linkDeConfiguracao}
             data-testid="ir-configurar-google"
-            className="mt-2 inline-block text-xs font-medium text-accent underline underline-offset-2 hover:text-accent-strong"
+            className="hover:text-accent-strong mt-2 inline-block text-xs font-medium text-accent underline underline-offset-2"
           >
             {t("Cadastrar as credenciais do Google")}
           </a>
@@ -105,7 +113,7 @@ export function CartaoDaConexaoGoogle({
             <span className="font-medium">{t("exatamente assim")}</span>:{" "}
             <code
               data-testid="endereco-de-retorno"
-              className="select-all break-all font-mono text-[11px] text-text"
+              className="font-mono text-[11px] break-all text-text select-all"
             >
               {enderecoDeRetorno}
             </code>
@@ -129,27 +137,31 @@ export function CartaoDaConexaoGoogle({
           <span className="text-text-muted">{t("Agenda conectada:")} </span>
           <span className="font-medium">{contaConectada}</span>
         </p>
-        <a href="/app/settings/tenant/agenda" className="text-xs underline">{t("Configurar suas agendas")}</a>
-        <Button
-          variant="outline"
-          size="sm"
-          data-testid="desconectar-google"
-          disabled={desconectando}
-          onClick={() => {
-            setDesconectando(true);
-            void fetch("/api/v1/agenda/google/desconectar", { method: "DELETE" })
-              .then(async (r) => {
-                if (!r.ok) throw new Error(await r.text());
-                // `refresh` e não estado local: quem sabe se a conexão saiu é o
-                // servidor. Trocar o cartão no cliente repetiria o "Marcado ✓"
-                // que esta mesma entrega acabou de pagar.
-                router.refresh();
-              })
-              .catch(() => setDesconectando(false));
-          }}
-        >
-          {desconectando ? t("Desconectando…") : t("Desconectar")}
-        </Button>
+        <a href="/app/settings/tenant/agenda" className="text-xs underline">
+          {t("Configurar suas agendas")}
+        </a>
+        {podeExcluir ? (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="desconectar-google"
+            disabled={desconectando}
+            onClick={() => {
+              setDesconectando(true);
+              void fetch("/api/v1/agenda/google/desconectar", { method: "DELETE" })
+                .then(async (r) => {
+                  if (!r.ok) throw new Error(await r.text());
+                  // `refresh` e não estado local: quem sabe se a conexão saiu é o
+                  // servidor. Trocar o cartão no cliente repetiria o "Marcado ✓"
+                  // que esta mesma entrega acabou de pagar.
+                  router.refresh();
+                })
+                .catch(() => setDesconectando(false));
+            }}
+          >
+            {desconectando ? t("Desconectando…") : t("Desconectar")}
+          </Button>
+        ) : null}
       </div>
     );
   }
@@ -157,7 +169,9 @@ export function CartaoDaConexaoGoogle({
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border bg-surface p-3">
       <p className="min-w-0 flex-1 text-sm text-text-muted">
-        {t("Conecte sua agenda do Google para ver aqui o que já está marcado lá — e enviar para lá o que for marcado aqui.")}
+        {t(
+          "Conecte sua agenda do Google para ver aqui o que já está marcado lá — e enviar para lá o que for marcado aqui.",
+        )}
       </p>
       <Button variant="outline" size="sm" data-testid="conectar-google" asChild>
         <a href="/api/v1/agenda/google/connect">

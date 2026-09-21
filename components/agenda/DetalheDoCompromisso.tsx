@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { usePermission } from "@/hooks/auth/AuthProvider";
 
 type Detalhe = {
   meeting?: MeetingDetail | null;
@@ -54,6 +55,7 @@ export function DetalheDoCompromisso({
   const t = useT();
   const tagDoIdioma = useTagDeIdioma();
   const qc = useQueryClient();
+  const podeExcluir = usePermission("resource.delete");
   const [evidence, setEvidence] = useState("");
   const [reason, setReason] = useState("");
   const [draftRevision, setDraftRevision] = useState<number | null>(null);
@@ -126,8 +128,22 @@ export function DetalheDoCompromisso({
         <SheetHeader>
           <SheetTitle>{a?.title ?? t("Compromisso")}</SheetTitle>
         </SheetHeader>
-        {a?.google_sync && <SincronizacaoDoCompromisso key={a.id} id={a.id} sync={a.google_sync} onSaved={() => void query.refetch()} />}
-        {a?.meeting && <MeetDoCompromisso id={a.id} revision={a.google_sync?.revision ?? String(a.revision)} meeting={a.meeting} onSaved={() => void query.refetch()} />}
+        {a?.google_sync && (
+          <SincronizacaoDoCompromisso
+            key={a.id}
+            id={a.id}
+            sync={a.google_sync}
+            onSaved={() => void query.refetch()}
+          />
+        )}
+        {a?.meeting && (
+          <MeetDoCompromisso
+            id={a.id}
+            revision={a.google_sync?.revision ?? String(a.revision)}
+            meeting={a.meeting}
+            onSaved={() => void query.refetch()}
+          />
+        )}
         {query.isPending ? (
           <p>{t("Carregando…")}</p>
         ) : query.isError ? (
@@ -285,24 +301,30 @@ export function DetalheDoCompromisso({
                     {t("Lembrar em uma hora")}
                   </Button>
                 ) : null}
-                <label className="block">
-                  {t("Motivo do cancelamento")}
-                  <input
-                    className="mt-2 w-full rounded-md border bg-surface p-2"
-                    value={reason}
-                    onChange={(e) => {
-                      beginDraft();
-                      setReason(e.target.value);
-                    }}
-                  />
-                </label>
-                <Button
-                  variant="outline"
-                  disabled={!reason.trim() || cancel.isPending || staleDraft}
-                  onClick={() => cancel.mutate({ revision: draftRevision ?? a.revision, reason })}
-                >
-                  {t("Cancelar agendamento")}
-                </Button>
+                {podeExcluir ? (
+                  <>
+                    <label className="block">
+                      {t("Motivo do cancelamento")}
+                      <input
+                        className="mt-2 w-full rounded-md border bg-surface p-2"
+                        value={reason}
+                        onChange={(e) => {
+                          beginDraft();
+                          setReason(e.target.value);
+                        }}
+                      />
+                    </label>
+                    <Button
+                      variant="outline"
+                      disabled={!reason.trim() || cancel.isPending || staleDraft}
+                      onClick={() =>
+                        cancel.mutate({ revision: draftRevision ?? a.revision, reason })
+                      }
+                    >
+                      {t("Cancelar agendamento")}
+                    </Button>
+                  </>
+                ) : null}
               </div>
             ) : null}
           </div>

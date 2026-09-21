@@ -284,6 +284,7 @@ describe("PATCH e DELETE /api/v1/tasks/[id]", () => {
   it("apagar tarefa de outra organização é 404, não 200", async () => {
     // O `.eq(organization_id)` casa zero linhas. Sem o `.select()` no delete,
     // isso devolveria 200 e a tela sumiria com uma linha que ninguém apagou.
+    sessao("manager");
     const espiao = fazerSupabase([{ data: [] }]);
     const { DELETE } = await import("@/app/api/v1/tasks/[id]/route");
 
