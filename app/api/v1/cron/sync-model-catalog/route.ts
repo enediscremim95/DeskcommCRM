@@ -127,9 +127,13 @@ async function buscarDaOpenRouter(): Promise<ModeloDaOpenRouter[]> {
 }
 
 function autorizado(req: NextRequest): boolean {
-  const esperado = env.INTERNAL_CRON_SECRET || env.INTERNAL_SECRET;
-  if (!esperado) return false; // fail-closed
-  return req.headers.get("authorization") === `Bearer ${esperado}`;
+  // Aceita as DUAS, como event-log-drain e agent-dispatcher: o scheduler manda
+  // INTERNAL_SECRET, e `CRON || SECRET` recusava o scheduler sempre que as duas
+  // existiam e eram diferentes (medido em produção em 21/09/2026: 401 calado).
+  const aceitos = [env.INTERNAL_CRON_SECRET, env.INTERNAL_SECRET].filter(Boolean);
+  if (aceitos.length === 0) return false; // fail-closed
+  const header = req.headers.get("authorization") ?? "";
+  return aceitos.some((segredo) => header === `Bearer ${segredo}`);
 }
 
 async function handler(req: NextRequest): Promise<Response> {
