@@ -24,8 +24,19 @@ import { KanbanBoard } from "@/components/kanban/KanbanBoard";
 import { FilterBar } from "@/components/kanban/FilterBar";
 import { BulkActionBar } from "@/components/kanban/BulkActionBar";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Plus } from "@/lib/ui/icons";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { useAuth } from "@/hooks/auth/AuthProvider";
+import { StagesSection } from "@/app/app/settings/tenant/pipelines/_stages";
+import { ROLE_RANK } from "@/lib/auth/types";
+import { PencilSimple, Plus } from "@/lib/ui/icons";
 import type { LeadFilters } from "@/lib/kanban/filters";
 import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
 
@@ -51,6 +62,22 @@ export function PipelinePageClient({
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [newOpen, setNewOpen] = useState(false);
+  const { activeOrg, user } = useAuth();
+  // Mesmo piso da tela "Etapas do funil" (minRole manager no catálogo): quem não
+  // pode editar não vê o botão, em vez de cair numa tela que recusa.
+  const podeEditarEtapas = Boolean(
+    activeOrg &&
+      ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager &&
+      user.support?.access_mode !== "support_readonly",
+  );
+  const [etapasOpen, setEtapasOpen] = useState(false);
+  const queryClient = useQueryClient();
+  // Ao fechar a janela, o quadro relê as colunas: etapa criada, renomeada ou
+  // arquivada lá dentro aparece aqui sem recarregar a página.
+  const mudarEtapasOpen = (aberto: boolean) => {
+    setEtapasOpen(aberto);
+    if (!aberto) void queryClient.invalidateQueries({ queryKey: ["board", pipelineId] });
+  };
 
   const filteredLeads = data ? applyFilters(data.leads, filters) : [];
   // Exclusão individual e eventos remotos podem tirar um card que estava
@@ -96,6 +123,24 @@ export function PipelinePageClient({
           <Plus size={16} className="mr-2" /> {t("Novo Lead")}
         </Button>
       </header>
+      {podeEditarEtapas && (
+        <Sheet open={etapasOpen} onOpenChange={mudarEtapasOpen}>
+          <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+            <SheetHeader>
+              <SheetTitle>{t("Etapas do funil")}</SheetTitle>
+              <SheetDescription>{data?.pipeline.name ?? initialName}</SheetDescription>
+            </SheetHeader>
+            <div className="px-4 pb-6">
+              {etapasOpen && (
+                <StagesSection
+                  pipelineId={pipelineId}
+                  ancoraMapeamento="/app/settings/tenant/pipelines"
+                />
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
       {data && (
         <NewLeadDialog
           open={newOpen}
@@ -104,7 +149,18 @@ export function PipelinePageClient({
           stages={data.stages}
         />
       )}
-      <FilterBar filters={filters} onChange={setFilters} leads={data?.leads ?? []} />
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        leads={data?.leads ?? []}
+        extra={
+          podeEditarEtapas ? (
+            <Button variant="outline" size="sm" onClick={() => mudarEtapasOpen(true)}>
+              <PencilSimple size={14} className="mr-1.5" /> {t("Editar etapas")}
+            </Button>
+          ) : null
+        }
+      />
       {error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
           {t("Não consegui carregar este funil:")} {formatError(error, t)}

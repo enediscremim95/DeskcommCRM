@@ -6122,6 +6122,7 @@ export const DICIONARIO: Traducoes = {
   },
   "Excluir de vez": { es: "Eliminar definitivamente" },
   "Novo Lead": { es: "Nuevo Lead" },
+  "Editar etapas": { es: "Editar etapas" },
   "Não consegui carregar este funil:": { es: "No pude cargar este embudo:" },
   "sem responsável.": { es: "sin responsable." },
   "atribuído.": { es: "asignado." },
