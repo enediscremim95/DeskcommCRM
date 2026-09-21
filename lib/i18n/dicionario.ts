@@ -4414,11 +4414,11 @@ export const DICIONARIO: Traducoes = {
   "As etapas que serviriam para este passo já estão sendo usadas por outros passos. Libere uma delas para poder escolhê-la aqui.": {
     es: "Las etapas que servirían para este paso ya están siendo usadas por otros pasos. Libera una de ellas para poder elegirla aquí.",
   },
-  "Este funil não tem nenhuma etapa marcada como fechamento, então não há para onde levar o card quando a pessoa fecha. Marque uma etapa como «aqui o cliente fecha» em «Etapas deste funil».": {
-    es: "Este embudo no tiene ninguna etapa marcada como cierre, así que no hay adónde llevar la tarjeta cuando la persona cierra. Marca una etapa como «aquí el cliente cierra» en «Etapas de este embudo».",
+  "Este funil não tem nenhuma etapa marcada como fechamento, então não há para onde levar o card quando a pessoa fecha. Use «Marcar como venda fechada» em «Etapas deste funil».": {
+    es: "Este embudo no tiene ninguna etapa marcada como cierre, así que no hay adónde llevar la tarjeta cuando la persona cierra. Usa «Marcar como venta cerrada» en «Etapas de este embudo».",
   },
-  "Este funil não tem nenhuma etapa marcada como perda, então não há para onde levar o card quando a pessoa desiste. Marque uma etapa como «aqui o cliente desiste» em «Etapas deste funil».": {
-    es: "Este embudo no tiene ninguna etapa marcada como pérdida, así que no hay adónde llevar la tarjeta cuando la persona desiste. Marca una etapa como «aquí el cliente desiste» en «Etapas de este embudo».",
+  "Este funil não tem nenhuma etapa marcada como perda, então não há para onde levar o card quando a pessoa desiste. Use «Marcar como perdido» em «Etapas deste funil».": {
+    es: "Este embudo no tiene ninguna etapa marcada como pérdida, así que no hay adónde llevar la tarjeta cuando la persona desiste. Usa «Marcar como perdido» en «Etapas de este embudo».",
   },
   "Este funil só tem etapas de fechamento e de perda, então não há etapa comum para receber o card neste passo. Crie as etapas do meio do caminho em «Etapas deste funil».": {
     es: "Este embudo solo tiene etapas de cierre y de pérdida, así que no hay una etapa común para recibir la tarjeta en este paso. Crea las etapas intermedias en «Etapas de este embudo».",
@@ -4451,25 +4451,28 @@ export const DICIONARIO: Traducoes = {
   negócio: { es: "negocio" },
   negócios: { es: "negocios" },
   "Etapa atualizada.": { es: "Etapa actualizada." },
-  "Só uma etapa pode ser a de fechamento. Marcar esta desmarca": {
-    es: "Solo una etapa puede ser la de cierre. Marcar esta desmarca",
+  "Só uma etapa pode ser a de venda fechada. Marcar esta desmarca": {
+    es: "Solo una etapa puede ser la de venta cerrada. Marcar esta desmarca",
   },
-  "Só uma etapa pode ser a de perda. Marcar esta desmarca": {
-    es: "Solo una etapa puede ser la de pérdida. Marcar esta desmarca",
+  "Só uma etapa pode ser a de perdido. Marcar esta desmarca": {
+    es: "Solo una etapa puede ser la de perdido. Marcar esta desmarca",
   },
   "saiu do quadro.": { es: "salió del tablero." },
   "entrou no fim do funil.": { es: "entró al final del embudo." },
   "Etapas deste funil": { es: "Etapas de este embudo" },
-  "Estas são as colunas do seu quadro, na ordem em que o cliente avança. Você pode renomear, criar, reordenar e arquivar.": {
-    es: "Estas son las columnas de tu tablero, en el orden en que el cliente avanza. Puedes renombrar, crear, reordenar y archivar.",
+  "Renomeie direto no campo, mude a ordem com as setas e use o menu de cada etapa para marcar venda fechada, perdido ou arquivar.": {
+    es: "Renombra directo en el campo, cambia el orden con las flechas y usa el menú de cada etapa para marcar venta cerrada, perdido o archivar.",
   },
-  "Duas colunas têm papel especial: a": { es: "Dos columnas tienen un rol especial: la" },
+  "Venda fechada": { es: "Venta cerrada" },
+  "Já é a primeira etapa": { es: "Ya es la primera etapa" },
+  "Já é a última etapa": { es: "Ya es la última etapa" },
+  "Opções de": { es: "Opciones de" },
+  "Marcar como venda fechada": { es: "Marcar como venta cerrada" },
+  "Tirar a marcação": { es: "Quitar la marca" },
+  "Arquivar etapa": { es: "Archivar etapa" },
+  "Adicionar etapa": { es: "Agregar etapa" },
   "de fechamento": { es: "de cierre" },
-  "é onde o negócio vira venda, e a": { es: "es donde el negocio se convierte en venta, y la" },
   "de perda": { es: "de pérdida" },
-  "é onde ele se perde. Cada funil precisa de uma de cada — por isso a marcação se muda de lugar, não se apaga.": {
-    es: "es donde se pierde. Cada embudo necesita una de cada — por eso la marca se cambia de lugar, no se borra.",
-  },
   Mover: { es: "Mover" },
   "uma coluna para trás": { es: "una columna hacia atrás" },
   "uma coluna para frente": { es: "una columna hacia adelante" },
@@ -4477,8 +4480,8 @@ export const DICIONARIO: Traducoes = {
   "O assistente usa esta etapa para": { es: "El asistente usa esta etapa para" },
   "Mudar isso": { es: "Cambiar esto" },
   "Marcar mesmo assim": { es: "Marcar de todas formas" },
-  "A coluna sai do quadro e para de receber negócios novos. Nada é apagado — o histórico de quem passou por ela continua guardado —, mas": {
-    es: "La columna sale del tablero y deja de recibir negocios nuevos. Nada se borra — el historial de quien pasó por ella sigue guardado —, pero",
+  "A coluna sai do quadro e para de receber negócios novos. Nada é apagado (o histórico de quem passou por ela continua guardado), mas": {
+    es: "La columna sale del tablero y deja de recibir negocios nuevos. Nada se borra (el historial de quien pasó por ella sigue guardado), pero",
   },
   "não dá para trazer a coluna de volta por aqui": {
     es: "no se puede traer la columna de vuelta por aquí",
@@ -4499,8 +4502,6 @@ export const DICIONARIO: Traducoes = {
   },
   "Mover os negócios e arquivar": { es: "Mover los negocios y archivar" },
   "Ir para o mapeamento do assistente": { es: "Ir al mapeo del asistente" },
-  "Acrescentar etapa ao fim": { es: "Agregar etapa al final" },
-  "Nome da nova coluna": { es: "Nombre de la nueva columna" },
   "Nome da nova etapa": { es: "Nombre de la nueva etapa" },
   "Nome da etapa": { es: "Nombre de la etapa" },
   "Para onde o agente leva o card em cada passo do atendimento": {
@@ -4509,14 +4510,7 @@ export const DICIONARIO: Traducoes = {
   ", vocabulário, custom fields e motivos de perda": {
     es: ", vocabulario, custom fields y motivos de pérdida",
   },
-  "Nada especial": { es: "Nada especial" },
-  "Aqui o cliente fecha": { es: "Aquí el cliente cierra" },
-  "Aqui o cliente desiste": { es: "Aquí el cliente desiste" },
-  "Nome da coluna (clique para renomear)": {
-    es: "Nombre de la columna (haz clic para renombrar)",
-  },
   Ordem: { es: "Orden" },
-  "O que acontece nesta coluna": { es: "Qué pasa en esta columna" },
   "a pessoa acabou de chamar e ninguém respondeu ainda": {
     es: "la persona acaba de escribir y todavía nadie respondió",
   },

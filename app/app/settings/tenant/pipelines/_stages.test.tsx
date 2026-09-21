@@ -32,7 +32,7 @@ import {
   destinosPossiveis,
   papelDaEtapa,
   patchDePapel,
-  ROTULO,
+  ROTULO_DO_PAPEL,
   vizinhoAoMover,
 } from "./_stages";
 
@@ -92,6 +92,12 @@ async function opcoesNaTela(user: ReturnType<typeof userEvent.setup>, testid: st
   return within(lista)
     .getAllByRole("option")
     .map((o) => o.textContent);
+}
+
+/** Abre o menu «…» de uma etapa e escolhe uma ação pelo `data-testid`. */
+async function noMenu(user: ReturnType<typeof userEvent.setup>, id: string, acao: string) {
+  await user.click(screen.getByTestId(`menu-${id}`));
+  await user.click(await screen.findByTestId(acao));
 }
 
 beforeEach(() => {
@@ -178,34 +184,71 @@ describe("vizinhoAoMover — a coluna da esquerda depois do passo", () => {
 
 describe("StagesSection — a linha se explica sozinha", () => {
   /**
-   * ⭐ ACHADO DA AVALIAÇÃO DE EXPERIÊNCIA, não do brief. Sem cabeçalho, a linha
-   * mostra um campo de texto sem rótulo, duas setas sem legenda e um seletor
-   * dizendo «Nada especial» sobre coisa nenhuma — e a pergunta do gate ("ela
-   * entende o que é a etapa de fechamento?") vira um chute. O rótulo do seletor
-   * foi escrito para ser lido SOB este cabeçalho.
+   * ⭐ A VERSÃO ANTERIOR ERA UMA TABELA, e dentro da janela lateral do quadro
+   * (≈ 380 a 576 px) o nome da etapa encolhia até sumir atrás de um cabeçalho
+   * de seis linhas e de um seletor «Nada especial». O que a linha precisa
+   * mostrar é: o NOME inteiro, num campo; o papel como selo só em quem tem; e
+   * as ações num menu que não empurra o nome. Sem cabeçalho de colunas: ele
+   * não sobrevive a contêiner estreito.
    */
-  it("cada controle tem rótulo NOS DOIS layouts — cabeçalho no desktop, na linha no celular", async () => {
+  it("mostra o nome inteiro num campo editável e o papel como selo só em quem tem", async () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    // Desktop: o cabeçalho de colunas.
-    const cabecalho = within(screen.getByTestId("etapas-cabecalho"));
-    for (const texto of [ROTULO.nome, ROTULO.ordem, ROTULO.papel]) {
-      expect(cabecalho.getByText(texto)).toBeInTheDocument();
-    }
+    expect(screen.getByTestId("nome-e1")).toHaveValue("Carrinho abandonado");
+    expect(screen.getByTestId("nome-e2")).toHaveValue("Aguardando pagamento");
 
-    // ⭐ Celular: a linha EMPILHA e o cabeçalho não alinha com nada — os mesmos
-    // rótulos precisam viajar dentro da linha. Sem isto, o defeito que o
-    // cabeçalho consertou fica intacto num viewport inteiro, e `aria-label` não
-    // cobre: é invisível para quem enxerga.
-    const linha = within(screen.getByTestId("etapa-e1"));
-    expect(linha.getByText(ROTULO.nome)).toBeInTheDocument();
-    expect(linha.getByText(ROTULO.ordem)).toBeInTheDocument();
-    expect(linha.getByText(ROTULO.papel)).toBeInTheDocument();
+    // Selo em linguagem simples, e só onde há papel: a maioria das colunas
+    // não tem nada a dizer, e um seletor por linha era ruído.
+    expect(screen.getByTestId("papel-e3")).toHaveTextContent(ROTULO_DO_PAPEL.won);
+    expect(screen.getByTestId("papel-e4")).toHaveTextContent(ROTULO_DO_PAPEL.lost);
+    expect(screen.queryByTestId("papel-e1")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nada especial")).not.toBeInTheDocument();
 
-    // E o seletor mostra o rótulo que só faz sentido debaixo deles.
-    expect(screen.getByTestId("papel-e3")).toHaveTextContent("Aqui o cliente fecha");
-    expect(screen.getByTestId("papel-e1")).toHaveTextContent("Nada especial");
+    // Nenhum cabeçalho de tabela para quebrar.
+    expect(screen.queryByTestId("etapas-cabecalho")).not.toBeInTheDocument();
+  });
+
+  it("o menu de cada etapa oferece marcar o papel e arquivar, com nomes acessíveis", async () => {
+    const user = userEvent.setup();
+    montar();
+    await screen.findByTestId("nome-e1");
+
+    expect(screen.getByTestId("menu-e1")).toHaveAccessibleName("Opções de «Carrinho abandonado»");
+    expect(screen.getByTestId("subir-e1")).toHaveAccessibleName(
+      "Mover «Carrinho abandonado» uma coluna para trás",
+    );
+
+    await user.click(screen.getByTestId("menu-e1"));
+    const itens = (await screen.findAllByRole("menuitem")).map((i) => i.textContent?.trim());
+    expect(itens).toEqual(["Marcar como venda fechada", "Marcar como perdido", "Arquivar etapa"]);
+  });
+
+  it("a etapa que já tem papel ganha «Tirar a marcação» e não pode ser marcada de novo", async () => {
+    const user = userEvent.setup();
+    montar();
+    await screen.findByTestId("nome-e1");
+
+    await user.click(screen.getByTestId("menu-e3"));
+    expect(await screen.findByTestId("marcar-won-e3")).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByTestId("marcar-lost-e3")).not.toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByTestId("desmarcar-e3")).toBeInTheDocument();
+  });
+
+  it("seta que não pode mover explica por quê", async () => {
+    montar();
+    await screen.findByTestId("nome-e1");
+
+    expect(screen.getByTestId("subir-e1").closest("[title]")).toHaveAttribute(
+      "title",
+      "Já é a primeira etapa",
+    );
+    expect(screen.getByTestId("descer-e4").closest("[title]")).toHaveAttribute(
+      "title",
+      "Já é a última etapa",
+    );
+    // A seta que PODE mover não carrega dica nenhuma: dica sem motivo é ruído.
+    expect(screen.getByTestId("descer-e1").closest("[title]")).toBeNull();
   });
 });
 
@@ -227,6 +270,8 @@ describe("StagesSection — renomear, criar e reordenar", () => {
       `/api/v1/pipelines/${PIPE}/stages/e1`,
       { name: "Primeira consulta" },
     ]);
+    // Feedback discreto ao lado do campo, onde o olho já está.
+    expect(await screen.findByTestId("salvo-e1")).toHaveTextContent("Salvo");
   });
 
   it("sair do campo sem mudar nada não manda pedido nenhum", async () => {
@@ -244,7 +289,7 @@ describe("StagesSection — renomear, criar e reordenar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("nova-etapa"));
+    // O campo está sempre à vista no fim da lista: não há botão para "abrir".
     await user.type(screen.getByTestId("nova-etapa-nome"), "Retorno");
     await user.click(screen.getByTestId("nova-etapa-criar"));
 
@@ -284,12 +329,11 @@ describe("StagesSection — a marcação de fechamento", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("papel-e2"));
-    await user.click(await screen.findByRole("option", { name: "Aqui o cliente fecha" }));
+    await noMenu(user, "e2", "marcar-won-e2");
 
     const aviso = await screen.findByTestId("confirmar-papel-e2");
     // O nome, não um aviso genérico: «Pago» é a coluna que vai deixar de fechar.
-    expect(aviso).toHaveTextContent("Só uma etapa pode ser a de fechamento.");
+    expect(aviso).toHaveTextContent("Só uma etapa pode ser a de venda fechada.");
     expect(aviso).toHaveTextContent("desmarca «Pago»");
     expect(apiClient.patch).not.toHaveBeenCalled();
 
@@ -303,8 +347,7 @@ describe("StagesSection — a marcação de fechamento", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("papel-e2"));
-    await user.click(await screen.findByRole("option", { name: "Aqui o cliente fecha" }));
+    await noMenu(user, "e2", "marcar-won-e2");
     await user.click(within(await screen.findByTestId("confirmar-papel-e2")).getByText("Cancelar"));
 
     expect(screen.queryByTestId("confirmar-papel-e2")).not.toBeInTheDocument();
@@ -322,15 +365,14 @@ describe("StagesSection — a marcação de fechamento", () => {
     montar();
     await screen.findByTestId("nome-e2");
 
-    await user.click(screen.getByTestId("papel-e2"));
-    await user.click(await screen.findByRole("option", { name: "Aqui o cliente fecha" }));
+    await noMenu(user, "e2", "marcar-won-e2");
 
     // Nada a desmarcar: um aviso aqui seria falso ("desmarca «undefined»").
     expect(screen.queryByTestId("confirmar-papel-e2")).not.toBeInTheDocument();
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
   });
 
-  it("tirar a marcação: a recusa do servidor chega inteira e o seletor não mente", async () => {
+  it("tirar a marcação: a recusa do servidor chega inteira e o selo não mente", async () => {
     const user = userEvent.setup();
     vi.mocked(apiClient.patch).mockRejectedValue(
       new ApiError(
@@ -344,16 +386,15 @@ describe("StagesSection — a marcação de fechamento", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("papel-e3"));
-    await user.click(await screen.findByRole("option", { name: "Nada especial" }));
+    await noMenu(user, "e3", "desmarcar-e3");
 
     expect(await screen.findByTestId("etapa-erro-e3")).toHaveTextContent(
       "a marcação se muda, não se apaga",
     );
-    // O seletor volta a dizer o que o BANCO tem — deixá-lo em «nenhuma» faria a
-    // tela afirmar um estado que não existe.
+    // O selo continua dizendo o que o BANCO tem — tirá-lo faria a tela afirmar
+    // um estado que não existe.
     await waitFor(() =>
-      expect(screen.getByTestId("papel-e3")).toHaveTextContent("Aqui o cliente fecha"),
+      expect(screen.getByTestId("papel-e3")).toHaveTextContent(ROTULO_DO_PAPEL.won),
     );
     // E releu o servidor: reenviar sobre um funil que mudou é o que o 409 pede
     // para evitar.
@@ -397,7 +438,7 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("arquivar-e1"));
+    await noMenu(user, "e1", "arquivar-e1");
     // Nada foi enviado só por clicar em «Arquivar»: uma coluna some do quadro
     // sem tela para desfazer.
     expect(apiClient.delete).not.toHaveBeenCalled();
@@ -429,7 +470,7 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("arquivar-e1"));
+    await noMenu(user, "e1", "arquivar-e1");
     await user.click(screen.getByTestId("arquivar-confirmar-e1"));
 
     expect(await screen.findByTestId("arquivar-pergunta-e1")).toHaveTextContent(
@@ -464,7 +505,7 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("arquivar-e1"));
+    await noMenu(user, "e1", "arquivar-e1");
     await user.click(screen.getByTestId("arquivar-confirmar-e1"));
 
     expect(await screen.findByTestId("arquivar-sem-destino-e1")).toHaveTextContent(
@@ -499,7 +540,7 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("arquivar-e3"));
+    await noMenu(user, "e3", "arquivar-e3");
     await user.click(screen.getByTestId("arquivar-confirmar-e3"));
 
     expect(await screen.findByTestId("arquivar-erro-e3")).toHaveTextContent(
@@ -522,7 +563,7 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("arquivar-e2"));
+    await noMenu(user, "e2", "arquivar-e2");
     const aviso = await screen.findByTestId("arquivar-perde-passo-e2");
     expect(aviso).toHaveTextContent("assistente usa para «Em negociação»");
     expect(aviso).toHaveTextContent("para de mover o card nesse passo");
@@ -533,7 +574,7 @@ describe("StagesSection — arquivar", () => {
     const user = userEvent.setup();
     montar();
     await screen.findByTestId("nome-e1");
-    await user.click(screen.getByTestId("arquivar-e1"));
+    await noMenu(user, "e1", "arquivar-e1");
     await screen.findByTestId("arquivar-painel-e1");
     expect(screen.queryByTestId("arquivar-perde-passo-e1")).not.toBeInTheDocument();
   });
@@ -546,7 +587,7 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("arquivar-e1"));
+    await noMenu(user, "e1", "arquivar-e1");
     await user.click(screen.getByTestId("arquivar-confirmar-e1"));
     const pergunta = await screen.findByTestId("arquivar-pergunta-e1");
     expect(pergunta).toHaveTextContent("1 negócio está nesta etapa. Para onde ele vai?");
@@ -573,7 +614,7 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("arquivar-e1"));
+    await noMenu(user, "e1", "arquivar-e1");
     await user.click(screen.getByTestId("arquivar-confirmar-e1"));
     expect(await screen.findByTestId("arquivar-erro-e1")).toHaveTextContent("mudou de papel");
     expect(screen.queryByTestId("arquivar-pergunta-e1")).not.toBeInTheDocument();
@@ -593,7 +634,7 @@ describe("StagesSection — arquivar", () => {
     montar();
     await screen.findByTestId("nome-e1");
 
-    await user.click(screen.getByTestId("arquivar-e1"));
+    await noMenu(user, "e1", "arquivar-e1");
     await user.click(screen.getByTestId("arquivar-confirmar-e1"));
 
     const aviso = await screen.findByTestId("arquivar-erro-e1");
