@@ -357,6 +357,29 @@ describe("GET /api/v1/system/version", () => {
     // tela só quando alguém tenta atualizar de novo. O que ele deixa de fazer é
     // NOMEAR a versão no ar.
     expect(body.data.run.from_version).toBe("1.0.0");
+    expect(body.data.run.superseded).toBe(true);
+  });
+
+  it("marca também uma falha sem rollback como superada quando o host já confirmou outra versão", async () => {
+    versionRow.current_version = "1.6.0-veritas.29";
+    versionRow.updated_at = "2026-09-21T17:45:00.000Z";
+    runRow = {
+      id: "67676767-6767-4767-8767-676767676767",
+      status: "failed",
+      last_step: "banco",
+      dispatched_at: "2026-09-21T16:24:00.000Z",
+      finished_at: "2026-09-21T16:35:00.000Z",
+      from_version: "1.6.0-veritas.25",
+      to_version: "1.6.0-veritas.26",
+      log_tail: "Conflict. The container name is already in use",
+    };
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("../version/route");
+    const body = await (await GET(get())).json();
+
+    expect(body.data.current_version).toBe("1.6.0-veritas.29");
+    expect(body.data.run.status).toBe("failed");
+    expect(body.data.run.superseded).toBe(true);
   });
 
   it("sem `finished_at`, o run velho ainda decide — ausência de prova não é prova de deploy", async () => {

@@ -68,6 +68,14 @@ mkdir -p "$WORK/bin"
 cat > "$WORK/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$DOCKER_LOG"
+if [ "${DOCKER_CONFLICT:-0}" = "1" ]; then
+  case " $* " in
+    *" compose "*" up -d "*)
+      echo 'Conflict. The container name "/deskcommcrm-app-1" is already in use' >&2
+      exit 1
+      ;;
+  esac
+fi
 case " $* " in
   # Healthcheck do update.sh: "docker compose ... exec -T app node -e ...".
   # O dublê responde o que o app RESPONDE DE VERDADE — capturado da instalação
@@ -96,6 +104,7 @@ STUB
 # não está sob prova, então o dublê só deixa passar.
 cat > "$WORK/bin/flock" <<'STUB'
 #!/usr/bin/env bash
+[ "${FLOCK_FAIL:-0}" = "1" ] && exit 1
 exit 0
 STUB
 # O "app": responde ao heartbeat que ALGUÉM PEDIU uma atualização (é o que faz
@@ -152,6 +161,7 @@ STUB
 # shellcheck disable=SC2016  # o ${APP_IMAGE} é literal DENTRO do compose
 printf 'services:\n  app:\n    image: \${APP_IMAGE:-x}\n' > "$PROJ/docker-compose.prod.yml"
 printf 'select 1;\n' > "$PROJ/supabase/baseline.sql"
+printf '.update.lock\n.update.log\n.update-agent.log\n' > "$PROJ/.gitignore"
 cat > "$PROJ/.env" <<ENV
 APP_IMAGE=${NS}/deskcommcrm:latest
 APP_PULL_POLICY=always
@@ -177,6 +187,12 @@ run_update() {  # run_update <args...> → saída em $OUTFILE, status em $RC
   bash hostgator-setup-kit/update.sh "$@" > "$OUTFILE" 2>&1
   RC=$?
 }
+
+echo "── 0. update.sh direto disputa a mesma trava do agente"
+FLOCK_FAIL=1 run_update --to v0.9.0-veritas.1
+check "recusa com status 3 quando outra atualização segura o lock" test "$RC" -eq 3
+check "explica que já existe atualização em andamento" grep -q "atualização em andamento" "$OUTFILE"
+check "recusa antes de qualquer backup" test ! -f "$BACKUP_MARK"
 
 echo "── 1. Alvo anterior ao instalado é recusado antes do backup"
 run_update --to v0.9.0-veritas.1
@@ -258,7 +274,7 @@ cp -R "$PROJ/hostgator-setup-kit" "$SRC/"
 mkdir -p "$SRC/supabase"; printf 'select 1;\n' > "$SRC/supabase/baseline.sql"
 # shellcheck disable=SC2016  # o ${APP_IMAGE} é literal DENTRO do compose
 printf 'services:\n  app:\n    image: \${APP_IMAGE:-x}\n' > "$SRC/docker-compose.prod.yml"
-printf '.env\n' > "$SRC/.gitignore"
+printf '.env\n.update.lock\n.update.log\n.update-agent.log\n' > "$SRC/.gitignore"
 cd "$SRC" || exit 1
 git init --quiet; git config user.email t@t.t; git config user.name t
 git add -A; git commit --quiet -m "release antiga"; git tag v0.9.0-veritas.1
@@ -325,6 +341,23 @@ check "não reportou rollback nenhum" test -z "$(grep -F 'failed_rolled_back' "$
 check "o motivo em português chegou no log que a tela mostra" \
   grep -qi 'anterior' "$CURL_LOG"
 
+echo "── 7b. Colisão de compose não dispara uma terceira recriação de rollback"
+: > "$DOCKER_LOG"; : > "$CURL_LOG"; rm -f "$BACKUP_MARK"
+# O caso 7 deixa este clone à frente da tag antiga, portanto o update seria
+# recusado antes de chegar ao Docker. Cria uma release genuinamente posterior e
+# volta ao commit anterior para a colisão acontecer no `up -d`.
+HEAD_ANTES="$(git rev-parse HEAD)"
+git config user.email t@t.t; git config user.name t
+echo colisao > colisao.txt; git add colisao.txt; git commit --quiet -m "release para colisão"
+git tag v1.2.0-veritas.1
+git checkout --quiet "$HEAD_ANTES"
+DOCKER_CONFLICT=1 bash hostgator-setup-kit/agent.sh > "$WORK/agente-colisao.out" 2>&1
+check "reportou falha, sem fingir rollback" test -n "$(grep -F '"status":"failed"' "$CURL_LOG" || true)"
+check "não reportou failed_rolled_back" test -z "$(grep -F 'failed_rolled_back' "$CURL_LOG" || true)"
+check "o diagnóstico explica que havia outro compose" grep -qi 'outro docker compose' "$CURL_LOG"
+check "houve uma tentativa de up, não uma segunda para rollback" \
+  test "$(grep -c 'compose .* up -d' "$DOCKER_LOG" || true)" -eq 1
+
 echo "── 8. CONTIDA=2 (unshallow falhou) SOZINHO já acende compare_failed, mesmo com fetch --tags OK"
 # Isola a linha `[ "$CONTIDA" = 2 ] && COMPARE_FAILED=true`. O modo de falha
 # mais provável numa VPS fraca é exatamente este: um `fetch --tags` é barato e
@@ -381,6 +414,28 @@ echo "── 10. Pin pela metade: o estado que a 1ª atualização deixa, e ning
 # shellcheck source=/dev/null
 . "$KIT_DIR_TESTE/_common.sh"
 command -v pin_incompleto >/dev/null || { echo "  ✗ pin_incompleto não carregou — teste inconclusivo"; FAILS=$((FAILS+1)); }
+
+echo "── 9b. Detecta docker compose na mesma pasta, sem bloquear outra stack"
+PROC_FAKE="$WORK/proc"; mkdir -p "$PROC_FAKE/4242" "$PROC_FAKE/4343" "$WORK/outra-stack"
+printf 'docker\0compose\0up\0-d\0app\0' > "$PROC_FAKE/4242/cmdline"
+printf '%s' "$PROJ" > "$PROC_FAKE/4242/cwd.path"
+printf 'docker\0compose\0up\0-d\0app\0' > "$PROC_FAKE/4343/cmdline"
+printf '%s' "$WORK/outra-stack" > "$PROC_FAKE/4343/cwd.path"
+PROJECT_DIR="$PROJ"
+if compose_em_andamento "$PROC_FAKE" >/dev/null; then
+  check "encontra compose cujo cwd é a instalação" true
+else
+  check "encontra compose cujo cwd é a instalação" false
+fi
+rm -f "$PROC_FAKE/4242/cwd.path" "$PROC_FAKE/4242/cmdline"
+if compose_em_andamento "$PROC_FAKE" >/dev/null; then
+  check "ignora compose de outra stack" false
+else
+  check "ignora compose de outra stack" true
+fi
+LINHA_COMPOSE="$(grep -n 'if COMPOSE_ATIVO=.*compose_em_andamento' "$KIT_DIR_TESTE/update.sh" | cut -d: -f1)"
+LINHA_BACKUP="$(grep -n 'Backup de segurança ANTES' "$KIT_DIR_TESTE/update.sh" | cut -d: -f1)"
+check "a recusa roda antes do backup" test "$LINHA_COMPOSE" -lt "$LINHA_BACKUP"
 
 pin_caso() {  # pin_caso <descrição> <conteúdo do .env> <esperado>
   local d="$1" env="$2" esperado="$3" r

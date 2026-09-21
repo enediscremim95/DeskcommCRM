@@ -32,6 +32,25 @@ done
 # em 401. Ver `recusar_projeto_de_outra_arvore` em _common.sh.
 recusar_projeto_de_outra_arvore || die "Atualização interrompida para não quebrar a instalação que está no ar."
 
+# agent.sh e update.sh compartilham a mesma trava. Quando o agente chamou este
+# script, o descritor 9 já está herdado e a flag evita tentar trancar de novo.
+# Uma execução direta pelo terminal, por outro lado, precisa disputar o lock.
+if [ -z "${DESKCOMM_UPDATE_LOCK_HELD:-}" ]; then
+  exec 9>"${PROJECT_DIR}/.update.lock"
+  flock -n 9 || refuse "Já existe uma atualização em andamento nesta instalação.
+Não mexi em nada. Espere ela terminar antes de tentar de novo."
+fi
+
+# O lock acima não alcança um `docker compose up -d` cru. Se um deploy manual
+# já está recriando estes mesmos contêineres, entrar agora produziria a colisão
+# "container name is already in use". Recusar antes do backup/checkout é o
+# único desfecho que não mistura dois donos da mesma recriação.
+if COMPOSE_ATIVO="$(compose_em_andamento)"; then
+  refuse "Já existe um deploy pelo terminal recriando esta instalação.
+Não mexi em nada. Espere o comando terminar e tente novamente.
+Comando detectado: ${COMPOSE_ATIVO}"
+fi
+
 # ── 0. Liga o agente da tela ANTES de qualquer decisão de versão ─────────────
 # Instalar o cron aqui, e não no fim, é o que faz o bootstrap ter fim: os
 # caminhos "já está na versão mais recente" e "essa versão é anterior à sua"

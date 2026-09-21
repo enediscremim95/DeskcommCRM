@@ -157,6 +157,11 @@ export async function GET(_req: NextRequest): Promise<Response> {
           from_version: run.from_version ?? "",
           to_version: run.to_version ?? "",
           log_tail: run.log_tail ?? "",
+          // O run continua na resposta como diagnóstico, mas a tela precisa
+          // distinguir uma falha atual de uma tentativa que um deploy posterior
+          // já deixou para trás. Sem este sinal, o mesmo registro que deixou de
+          // decidir `current_version` ainda era desenhado como emergência.
+          superseded: rollbackSuperado,
         }
       : null,
   });

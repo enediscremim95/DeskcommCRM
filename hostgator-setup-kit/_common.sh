@@ -130,6 +130,39 @@ recusar_projeto_de_outra_arvore() {  # recusar_projeto_de_outra_arvore <como rep
   return 1
 }
 
+# Há um `docker compose` mexendo neste mesmo projeto agora?
+#
+# O lock do agente protege agent.sh/update.sh entre si, mas um deploy manual
+# pode chamar `docker compose up -d` diretamente. O processo não carrega nosso
+# lock; o único vínculo confiável é o diretório corrente exposto em /proc.
+# Filtrar pelo cwd evita bloquear uma VPS só porque OUTRA stack está subindo.
+# O argumento existe para o teste montar um /proc descartável; produção usa o
+# /proc real.
+compose_em_andamento() {  # compose_em_andamento [raiz_proc] -> imprime o comando
+  local proc_root="${1:-/proc}" proc cmd cwd
+  for proc in "$proc_root"/[0-9]*; do
+    [ -r "$proc/cmdline" ] || continue
+    cmd="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
+    case " $cmd " in
+      *" docker compose "*|*" docker-compose "*) : ;;
+      *) continue ;;
+    esac
+    if [ -e "$proc/cwd" ]; then
+      cwd="$(readlink -f "$proc/cwd" 2>/dev/null || true)"
+    else
+      cwd=""
+    fi
+    # Fixture portável para shells sem symlink de /proc (Git Bash no Windows).
+    # Em produção este arquivo não existe e o caminho acima continua sendo a
+    # fonte única.
+    [ -n "$cwd" ] || cwd="$(cat "$proc/cwd.path" 2>/dev/null || true)"
+    [ "$cwd" = "${PROJECT_DIR:-$PWD}" ] || continue
+    printf '%s' "$cmd"
+    return 0
+  done
+  return 1
+}
+
 # A bridge que ESTE projeto reserva para o proxy externo. Um `basename` cru
 # diverge numa pasta com maiúscula, ponto ou underscore inicial — e aí o kit
 # cria uma rede e o compose procura outra.

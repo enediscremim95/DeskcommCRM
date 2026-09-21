@@ -86,6 +86,16 @@ export function UpdatePanel() {
 
   const versao = semV(data.current_version);
   const nova = semV(data.latest_version);
+  const falhaSuperada =
+    Boolean(data.run?.superseded) &&
+    (data.run?.status === "failed" || data.run?.status === "failed_rolled_back");
+  const historico = falhaSuperada ? (
+    <FalhaSuperada
+      versaoAtual={versao}
+      alvo={semV(data.run?.to_version)}
+      log={data.run?.log_tail}
+    />
+  ) : null;
 
   if (rodando) {
     return (
@@ -118,7 +128,7 @@ export function UpdatePanel() {
   const alvo = semV(data.run?.to_version);
   const anterior = semV(data.run?.from_version);
 
-  if (data.run?.status === "failed_rolled_back") {
+  if (data.run?.status === "failed_rolled_back" && !falhaSuperada) {
     return (
       <Layout titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}>
         <p className="text-sm">
@@ -143,7 +153,7 @@ export function UpdatePanel() {
     );
   }
 
-  if (data.run?.status === "failed") {
+  if (data.run?.status === "failed" && !falhaSuperada) {
     // Já houve aqui um texto próprio para "o host recusou antes de começar",
     // detectado por `last_step` nulo. Era sinal errado: `run_progress` não tem
     // retry e engole falha (o `run_result` insiste por ~2 min), então uma
@@ -202,7 +212,7 @@ export function UpdatePanel() {
 
   if (!data.agent_online) {
     return (
-      <Layout titulo={t("Atualização automática indisponível")}>
+      <Layout titulo={t("Atualização automática indisponível")} historico={historico}>
         <p className="text-sm">
           {t(
             "Não estou conseguindo falar com o servidor onde o sistema está instalado, então não posso atualizar sozinho. Quem tem acesso ao servidor pode entrar na pasta onde o sistema foi instalado e rodar este comando — se for a primeira vez, rode duas vezes: a primeira baixa o programa novo e a segunda liga o botão desta tela.",
@@ -221,7 +231,7 @@ export function UpdatePanel() {
   // conta disso é o cliente nunca receber a próxima correção de segurança.
   if (data.compare_failed) {
     return (
-      <Layout titulo={t("Não consegui checar se há versão nova")}>
+      <Layout titulo={t("Não consegui checar se há versão nova")} historico={historico}>
         <p className="text-sm">
           {t("O servidor não conseguiu comparar a sua versão (")}
           <strong>{versao}</strong>
@@ -245,7 +255,7 @@ export function UpdatePanel() {
 
   if (!data.update_available && !data.off_release) {
     return (
-      <Layout titulo={`${t("Você está na versão")} ${versao}`}>
+      <Layout titulo={`${t("Você está na versão")} ${versao}`} historico={historico}>
         <p className="text-sm text-muted-foreground">
           {t("É a mais recente. Não há nada a fazer.")}
         </p>
@@ -267,7 +277,7 @@ export function UpdatePanel() {
   if (!nova) {
     if (!data.has_known_release) {
       return (
-        <Layout titulo={t("Ainda não há nenhuma versão publicada")}>
+        <Layout titulo={t("Ainda não há nenhuma versão publicada")} historico={historico}>
           <p className="text-sm">
             {t(
               "Este projeto ainda não tem nenhuma versão publicada para comparar com a sua instalação — normal em um fork novo ou recém-criado a partir do código-fonte.",
@@ -285,7 +295,7 @@ export function UpdatePanel() {
       );
     }
     return (
-      <Layout titulo={t("Você está à frente da versão publicada")}>
+      <Layout titulo={t("Você está à frente da versão publicada")} historico={historico}>
         <p className="text-sm">
           {t("Seu sistema roda uma versão mais nova do que a última publicada, então")}{" "}
           <strong>{t("não há nada a atualizar")}</strong>.{" "}
@@ -305,7 +315,7 @@ export function UpdatePanel() {
   }
 
   return (
-    <Layout titulo={`${t("Versão")} ${nova} ${t("disponível")}`}>
+    <Layout titulo={`${t("Versão")} ${nova} ${t("disponível")}`} historico={historico}>
       {data.off_release && (
         <p className="mb-4 rounded-md border border-warning bg-warning-bg p-3 text-sm text-warning-fg">
           {t("Sua instalação está numa versão de desenvolvimento. Atualizar vai levá-la para a versão publicada")}{" "}
@@ -458,7 +468,37 @@ function DetalhesTecnicos({ texto }: { texto: string | undefined }) {
   );
 }
 
-function Layout({ titulo, children }: { titulo?: string; children: React.ReactNode }) {
+function FalhaSuperada({
+  versaoAtual,
+  alvo,
+  log,
+}: {
+  versaoAtual: string;
+  alvo: string;
+  log: string | undefined;
+}) {
+  const t = useT();
+  return (
+    <Card className="border-muted p-4">
+      <p className="text-sm font-medium">{t("Uma tentativa anterior não terminou, mas já foi superada")}</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {t("A tentativa de instalar a versão")} {alvo} {t("ficou registrada para diagnóstico.")} {" "}
+        {t("Depois dela, o servidor confirmou a versão")} {versaoAtual}. {t("Não há nada para desfazer.")}
+      </p>
+      <DetalhesTecnicos texto={log} />
+    </Card>
+  );
+}
+
+function Layout({
+  titulo,
+  children,
+  historico,
+}: {
+  titulo?: string;
+  children: React.ReactNode;
+  historico?: React.ReactNode;
+}) {
   const t = useT();
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
@@ -468,6 +508,7 @@ function Layout({ titulo, children }: { titulo?: string; children: React.ReactNo
         </h1>
       </header>
       <Card className="p-6">{children}</Card>
+      {historico}
     </div>
   );
 }

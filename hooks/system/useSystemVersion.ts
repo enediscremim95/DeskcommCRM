@@ -32,6 +32,8 @@ export interface SystemVersion {
     to_version: string;
     /** Últimas linhas da saída do update.sh — o diagnóstico da falha. */
     log_tail: string;
+    /** Um deploy posterior já levou a instalação a outra versão. */
+    superseded?: boolean;
   } | null;
 }
 

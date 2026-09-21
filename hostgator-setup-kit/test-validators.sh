@@ -1464,13 +1464,18 @@ rodar() {
   local script="$1" flags="$2"
   printf '%s\n%s\n' "$BASE_ENV" "${3-}" > "$VPS_PROJ/.env"
   : > "$VPS_LOG"
+  # Estes cenários medem o miolo de install/update dentro de uma VPS falsa.
+  # A disputa da trava tem suíte própria em tests/shell/update-guard.test.sh;
+  # aqui o harness representa o agente que já a adquiriu, inclusive no NTFS.
   if [ $# -ge 4 ]; then
     printf '%s' "$4" > "$VPS_RAIZ/respostas.txt"
     (cd "$VPS_PROJ" && env PATH="$VPS_RAIZ/bin:$PATH" DOCKER_LOG="$VPS_LOG" CRONTAB_SANDBOX="$CRONTAB_SANDBOX" \
+      DESKCOMM_UPDATE_LOCK_HELD=1 \
       SUPABASE_ACCESS_TOKEN= \
       bash "$VPS_RAIZ/$script" $flags <"$VPS_RAIZ/respostas.txt" 2>&1 || true) | sed -E 's/\x1b\[[0-9;]*m//g'
   else
     (cd "$VPS_PROJ" && env PATH="$VPS_RAIZ/bin:$PATH" DOCKER_LOG="$VPS_LOG" CRONTAB_SANDBOX="$CRONTAB_SANDBOX" \
+      DESKCOMM_UPDATE_LOCK_HELD=1 \
       SUPABASE_ACCESS_TOKEN= \
       bash "$VPS_RAIZ/$script" $flags 2>&1 || true) | sed -E 's/\x1b\[[0-9;]*m//g'
   fi
