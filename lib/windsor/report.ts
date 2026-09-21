@@ -259,6 +259,8 @@ export function buildTrafficReport(args: {
           id: string | null;
           name: string;
           platform: AdPlatform;
+          campaign_status: string | null;
+          status_occurred_on: string | null;
           total: Bucket;
           adsets: Map<
             string,
@@ -329,10 +331,20 @@ export function buildTrafficReport(args: {
         id: fact.campaign_id,
         name: fact.campaign_name || "Sem campanha",
         platform: fact.platform,
+        campaign_status: null,
+        status_occurred_on: null,
         total: empty(),
         adsets: new Map(),
       };
       group.campaigns.set(campaignKey, campaign);
+    }
+    const campaignStatus = fact.campaign_status?.trim() || null;
+    if (
+      campaignStatus &&
+      (campaign.status_occurred_on == null || fact.occurred_on >= campaign.status_occurred_on)
+    ) {
+      campaign.campaign_status = campaignStatus;
+      campaign.status_occurred_on = fact.occurred_on;
     }
     if (contributesToRollup) add(campaign.total, fact, args.conversionFields);
     const adsetName = fact.adset_name || "Sem conjunto";
@@ -403,6 +415,7 @@ export function buildTrafficReport(args: {
           .map((campaign) => ({
             name: campaign.name,
             platform: campaign.platform,
+            campaign_status: campaign.campaign_status,
             ...ratios(
               campaign.total,
               args.model,

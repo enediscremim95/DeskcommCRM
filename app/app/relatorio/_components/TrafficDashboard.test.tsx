@@ -306,4 +306,69 @@ describe("colunas da tabela de campanhas", () => {
     expect(pdfUrl).toContain("language=pt-BR");
     expect(click).toHaveBeenCalledOnce();
   });
+
+  it("filtra por status, persiste a escolha e ordena campanhas sem separar seus detalhes", async () => {
+    const response = {
+      data: {
+        model: "leads", organization_key: "org-1", viewer_key: "viewer-1",
+        default_columns: ["spend", "leads"], default_preset_id: null,
+        column_presets: [], can_manage_defaults: false,
+        sync: { status: "ready", last_succeeded_at: null, error: null },
+        crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
+        currencies: [{
+          currency: "BRL", summary: metrics, comparison: null, daily: [],
+          platforms: [{ ...metrics, platform: "meta_ads" }],
+          campaigns: [
+            { ...metrics, spend: 10, name: "Alpha", platform: "meta_ads", campaign_status: "ACTIVE", adsets: [{ ...metrics, name: "Conjunto Alpha", ads: [] }] },
+            { ...metrics, spend: 30, name: "Beta", platform: "meta_ads", campaign_status: "PAUSED", adsets: [{ ...metrics, name: "Conjunto Beta", ads: [] }] },
+            { ...metrics, spend: 20, name: "Gamma", platform: "meta_ads", campaign_status: "ARCHIVED", adsets: [{ ...metrics, name: "Conjunto Gamma", ads: [] }] },
+          ],
+        }],
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(response));
+    const user = userEvent.setup();
+    const { unmount } = render(<TrafficDashboard />);
+    const alpha = await screen.findByText("Alpha");
+    const beta = screen.getByText("Beta");
+    const gamma = screen.getByText("Gamma");
+    const appearsBefore = (first: HTMLElement, second: HTMLElement) =>
+      Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+    expect(screen.getByRole("columnheader", { name: /Valor gasto/ })).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    expect(appearsBefore(beta, gamma)).toBe(true);
+    expect(appearsBefore(gamma, alpha)).toBe(true);
+    expect(screen.getByText("Ativa")).toBeInTheDocument();
+    expect(screen.getByText("Pausada")).toBeInTheDocument();
+    expect(screen.getByText("Encerrada")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Ordenar por Valor gasto" }));
+    expect(screen.getByRole("columnheader", { name: /Valor gasto/ })).toHaveAttribute(
+      "aria-sort",
+      "ascending",
+    );
+    expect(appearsBefore(alpha, gamma)).toBe(true);
+    expect(appearsBefore(gamma, beta)).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Ordenar por Campanha" }));
+    expect(appearsBefore(gamma, beta)).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Ordenar por Campanha" }));
+    expect(appearsBefore(alpha, beta)).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Pausadas" }));
+    expect(screen.getByText("Beta")).toBeInTheDocument();
+    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+    expect(screen.queryByText("Gamma")).not.toBeInTheDocument();
+    expect(localStorage.getItem("traffic-campaign-status-filter:meta_ads")).toBe("paused");
+    expect(screen.queryByRole("combobox", { name: /status/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Total").closest("tfoot")).not.toBeNull();
+
+    unmount();
+    render(<TrafficDashboard />);
+    expect(await screen.findByText("Beta")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Alpha")).not.toBeInTheDocument());
+  });
 });
