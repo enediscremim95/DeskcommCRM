@@ -42,6 +42,20 @@ describe("PDF do relatório enriquecido", () => {
             currency: "BRL",
             summary: { spend: 3_150, reach: 48_200, impressions: 76_100, clicks: 1_860 },
             comparison: { spend: 2_975, reach: 44_100, impressions: 70_200, clicks: 1_590 },
+            campaigns: [
+              {
+                name: "Captação principal",
+                leads: 42,
+                cost_per_lead: 75,
+                conversion_rate: 12.5,
+              },
+              {
+                name: "Remarketing",
+                leads: 18,
+                cost_per_lead: 60,
+                conversion_rate: 15,
+              },
+            ],
           },
         ],
         delivery: {
@@ -62,6 +76,12 @@ describe("PDF do relatório enriquecido", () => {
     const text = pages.join(" ");
 
     expect(text).toContain("+20% vs. período anterior");
+    expect(text).toContain("MAIS LEADS");
+    expect(text).toContain("MENOR CUSTO POR LEAD");
+    expect(text).toContain("MELHOR CONVERSÃO");
+    expect(text).toContain("Captação principal");
+    expect(text).toContain("R$ 75,00");
+    expect(text).toContain("12,5%");
     expect(text).toContain("Destaques do período");
     expect(text).toContain("Situação dos leads");
     expect(text).toContain("Sem orçamento: 10");

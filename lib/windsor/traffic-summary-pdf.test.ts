@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildTrafficCampaignChampions,
   buildTrafficDeliverySections,
   buildTrafficFunnelReading,
   buildTrafficHighlights,
@@ -9,6 +10,64 @@ import {
 } from "./traffic-summary-pdf";
 
 describe("resumo do relatório para PDF", () => {
+  it("elege as campanhas campeãs com a métrica atribuída pela plataforma", () => {
+    const champions = buildTrafficCampaignChampions(
+      [
+        { name: "Alfa", leads: 41, cost_per_lead: 9, conversion_rate: 12.5 },
+        { name: "Beta", leads: 52, cost_per_lead: 11, conversion_rate: 10 },
+        { name: "Gama", leads: 45, cost_per_lead: 8, conversion_rate: 15 },
+      ],
+      "BRL",
+      "pt-BR",
+    );
+
+    expect(champions).toEqual([
+      { label: "Mais leads", campaignName: "Beta", value: "52 leads" },
+      { label: "Menor custo por lead", campaignName: "Gama", value: "R$ 8,00" },
+      { label: "Melhor conversão", campaignName: "Gama", value: "15%" },
+    ]);
+  });
+
+  it("respeita os mínimos inclusivos de 20 e 40 leads", () => {
+    const champions = buildTrafficCampaignChampions(
+      [
+        { name: "Dezenove", leads: 19, cost_per_lead: 1, conversion_rate: 99 },
+        { name: "Vinte", leads: 20, cost_per_lead: 7, conversion_rate: 98 },
+        { name: "Quarenta", leads: 40, cost_per_lead: 8, conversion_rate: 14 },
+      ],
+      "BRL",
+      "pt-BR",
+    );
+
+    expect(champions[1]).toMatchObject({ campaignName: "Vinte", value: "R$ 7,00" });
+    expect(champions[2]).toMatchObject({ campaignName: "Quarenta", value: "14%" });
+  });
+
+  it("desempata pelo nome e mostra o fallback em espanhol quando falta amostra", () => {
+    const champions = buildTrafficCampaignChampions(
+      [
+        { name: "Zulu", leads: 12, cost_per_lead: 4, conversion_rate: 18 },
+        { name: "Alfa", leads: 12, cost_per_lead: 4, conversion_rate: 18 },
+      ],
+      "BRL",
+      "es",
+    );
+
+    expect(champions).toEqual([
+      { label: "Más leads", campaignName: "Alfa", value: "12 leads" },
+      {
+        label: "Menor costo por lead",
+        campaignName: "Sin datos suficientes",
+        value: null,
+      },
+      {
+        label: "Mejor conversión",
+        campaignName: "Sin datos suficientes",
+        value: null,
+      },
+    ]);
+  });
+
   it("repete todos os leads do CRM por moeda e nunca soma investimentos distintos", () => {
     const groups = buildTrafficSummaryGroups({
       window: { from: "2026-09-01", to: "2026-09-30" },
