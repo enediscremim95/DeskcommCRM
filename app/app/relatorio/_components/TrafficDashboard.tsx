@@ -798,6 +798,7 @@ export function TrafficDashboard() {
 
   useEffect(() => {
     const controller = new AbortController();
+    let active = true;
     fetch(`/api/v1/reports/traffic?from=${window.from}&to=${window.to}`, {
       signal: controller.signal,
       headers: { accept: "application/json" },
@@ -806,17 +807,22 @@ export function TrafficDashboard() {
         const body = (await response.json()) as ReportResponse;
         if (!response.ok)
           throw new Error(body.error?.message ?? t("Não foi possível carregar o relatório."));
-        setReport(body.data);
+        if (active) setReport(body.data);
       })
       .catch((cause: unknown) => {
-        if ((cause as { name?: string }).name !== "AbortError") {
+        if (active && (cause as { name?: string }).name !== "AbortError") {
           setError(
             cause instanceof Error ? cause.message : t("Não foi possível carregar o relatório."),
           );
         }
       })
-      .finally(() => setLoading(false));
-    return () => controller.abort();
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [window, t]);
 
   const updatedAt = useMemo(
@@ -833,6 +839,7 @@ export function TrafficDashboard() {
     setPreset(value);
     setLoading(true);
     setError(null);
+    setReport(null);
     if (value === "month") setWindow(thisMonth());
     else if (value !== "custom") setWindow(range(Number(value)));
   }
@@ -840,6 +847,7 @@ export function TrafficDashboard() {
   function changeWindow(next: { from: string; to: string }) {
     setLoading(true);
     setError(null);
+    setReport(null);
     setWindow(next);
   }
 

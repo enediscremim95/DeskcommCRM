@@ -120,4 +120,101 @@ describe("relatório de tráfego", () => {
     });
     expect(group?.campaigns[0]?.campaign_status).toBe("PAUSED");
   });
+
+  it("restringe campanha, detalhes, total e retenção à janela escolhida sem duplicar anúncios", () => {
+    const dates = Array.from({ length: 22 }, (_, index) => {
+      const date = new Date("2026-08-27T00:00:00Z");
+      date.setUTCDate(date.getUTCDate() + index);
+      return date.toISOString().slice(0, 10);
+    });
+    const dailySpend = dates.map((date, index) => {
+      if (date >= "2026-09-15") return 6.63;
+      return index === 18 ? 31.02 : 30.86;
+    });
+    const campaignFacts = dates.flatMap((occurred_on, index) => {
+      const spend = dailySpend[index]!;
+      const summary = fact({
+        occurred_on,
+        adset_id: null,
+        adset_name: "",
+        ad_id: null,
+        ad_name: "",
+        spend,
+        impressions: 100,
+        video_views: 10,
+        video_p25: 8,
+        video_p50: 6,
+        video_p75: 4,
+        video_p95: 2,
+      });
+      const firstAd = fact({
+        occurred_on,
+        ad_id: "ad-1",
+        ad_name: "Anúncio 1",
+        spend: Number((spend / 2).toFixed(2)),
+        impressions: 40,
+        video_views: 4,
+        video_p25: 3,
+        video_p50: 2,
+        video_p75: 1,
+        video_p95: 1,
+      });
+      const secondAd = fact({
+        occurred_on,
+        ad_id: "ad-2",
+        ad_name: "Anúncio 2",
+        spend: Number((spend - Number(firstAd.spend)).toFixed(2)),
+        impressions: 60,
+        video_views: 6,
+        video_p25: 5,
+        video_p50: 4,
+        video_p75: 3,
+        video_p95: 1,
+      });
+      return [summary, firstAd, secondAd];
+    });
+    const outsideCampaign = fact({
+      occurred_on: "2026-09-10",
+      campaign_id: "campaign-outside",
+      campaign_name: "Campanha fora do período",
+      spend: 599.65,
+    });
+    const noDeliveryCampaign = fact({
+      occurred_on: "2026-09-16",
+      campaign_id: "campaign-zero",
+      campaign_name: "Campanha sem entrega",
+      spend: 0,
+      impressions: 0,
+      reach: 0,
+      clicks: 0,
+      link_clicks: 0,
+      conversions: {},
+    });
+
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
+      facts: [...campaignFacts, outsideCampaign, noDeliveryCampaign],
+      window: { from: "2026-09-15", to: "2026-09-21" },
+    });
+
+    expect(group?.summary.spend).toBeCloseTo(19.89, 2);
+    expect(group?.summary.impressions).toBe(300);
+    expect(group?.summary.video_views).toBe(30);
+    expect(group?.daily.map((day) => day.date)).toEqual([
+      "2026-09-15",
+      "2026-09-16",
+      "2026-09-17",
+    ]);
+    expect(group?.campaigns.map((campaign) => campaign.name)).toEqual(["Campanha"]);
+    expect(group?.campaigns[0]?.spend).toBeCloseTo(19.89, 2);
+    expect(group?.campaigns[0]?.adsets[0]?.spend).toBeCloseTo(19.89, 2);
+    expect(group?.campaigns[0]?.adsets[0]?.ads).toHaveLength(2);
+    expect(
+      group?.campaigns[0]?.adsets[0]?.ads.reduce((sum, ad) => sum + ad.spend, 0),
+    ).toBeCloseTo(19.89, 2);
+  });
 });
