@@ -108,4 +108,16 @@ describe("relatório de tráfego", () => {
     expect(group?.campaigns[0]?.reach).toBe(750);
     expect(group?.summary.reach).toBeNull();
   });
+
+  it("publica o status mais recente de cada campanha", () => {
+    const [group] = buildTrafficReport({
+      model: "leads", conversionFields: ["actions_lead"],
+      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      facts: [
+        fact({ occurred_on: "2026-09-17", campaign_status: "ACTIVE" }),
+        fact({ occurred_on: "2026-09-18", campaign_status: "PAUSED" }),
+      ],
+    });
+    expect(group?.campaigns[0]?.campaign_status).toBe("PAUSED");
+  });
 });

@@ -7654,6 +7654,13 @@ export const DICIONARIO: Traducoes = {
 
   // Colunas da tabela
   Campanha: { es: "Campaña" },
+  "Filtrar campanhas por status": { es: "Filtrar campañas por estado" },
+  "Ordenar por": { es: "Ordenar por" },
+  Ativas: { es: "Activas" },
+  Pausadas: { es: "Pausadas" },
+  Encerrada: { es: "Cerrada" },
+  "Não informada": { es: "No informado" },
+  "Outro estado": { es: "Otro estado" },
   Veiculação: { es: "Entrega" },
   "Custo por Resultado": { es: "Costo por Resultado" },
   "Valor Gasto": { es: "Importe Gastado" },

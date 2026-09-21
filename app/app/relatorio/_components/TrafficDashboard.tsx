@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -73,6 +74,7 @@ interface Metrics {
 interface Campaign extends Metrics {
   name: string;
   platform: "meta_ads" | "google_ads";
+  campaign_status: string | null;
   adsets: Array<
     Metrics & {
       name: string;
@@ -349,6 +351,76 @@ function metricValue(
   return number(value);
 }
 
+type CampaignStatusFilter = "all" | "active" | "paused";
+type CampaignSortKey = "name" | CampaignMetricColumn;
+type SortDirection = "ascending" | "descending";
+
+const CAMPAIGN_STATUS: Record<
+  string,
+  {
+    label: string;
+    category: Exclude<CampaignStatusFilter, "all"> | "other";
+    variant: "success" | "warning" | "error" | "info" | "neutral";
+  }
+> = {
+  ACTIVE: { label: "Ativa", category: "active", variant: "success" },
+  ENABLED: { label: "Ativa", category: "active", variant: "success" },
+  PAUSED: { label: "Pausada", category: "paused", variant: "warning" },
+  CAMPAIGN_PAUSED: { label: "Pausada", category: "paused", variant: "warning" },
+  ADSET_PAUSED: { label: "Pausada", category: "paused", variant: "warning" },
+  DELETED: { label: "Encerrada", category: "other", variant: "neutral" },
+  REMOVED: { label: "Encerrada", category: "other", variant: "neutral" },
+  ARCHIVED: { label: "Encerrada", category: "other", variant: "neutral" },
+  IN_PROCESS: { label: "Em processamento", category: "other", variant: "info" },
+  PENDING_REVIEW: { label: "Em análise", category: "other", variant: "info" },
+  IN_REVIEW: { label: "Em análise", category: "other", variant: "info" },
+  PREAPPROVED: { label: "Pré-aprovada", category: "other", variant: "info" },
+  PENDING_BILLING_INFO: {
+    label: "Aguardando dados de cobrança",
+    category: "other",
+    variant: "warning",
+  },
+  WITH_ISSUES: { label: "Com problemas", category: "other", variant: "error" },
+  DISAPPROVED: { label: "Reprovada", category: "other", variant: "error" },
+};
+
+function campaignStatus(status: string | null | undefined) {
+  const normalized = status?.trim().toUpperCase();
+  if (!normalized) {
+    return { label: "Não informada", category: "other" as const, variant: "neutral" as const };
+  }
+  return CAMPAIGN_STATUS[normalized] ?? {
+    label: "Outro estado",
+    category: "other" as const,
+    variant: "neutral" as const,
+  };
+}
+
+function compareCampaigns(
+  first: Campaign,
+  second: Campaign,
+  key: CampaignSortKey,
+  direction: SortDirection,
+  idioma: string,
+): number {
+  if (key === "name") {
+    const result = first.name.localeCompare(second.name, idioma, { sensitivity: "base" });
+    return direction === "ascending" ? result : -result;
+  }
+  const firstValue = first[key];
+  const secondValue = second[key];
+  const firstNumber = typeof firstValue === "number" ? firstValue : null;
+  const secondNumber = typeof secondValue === "number" ? secondValue : null;
+  if (firstNumber == null && secondNumber == null) return first.name.localeCompare(second.name);
+  if (firstNumber == null) return 1;
+  if (secondNumber == null) return -1;
+  const result = firstNumber - secondNumber;
+  if (result === 0) {
+    return first.name.localeCompare(second.name, idioma, { sensitivity: "base" });
+  }
+  return direction === "ascending" ? result : -result;
+}
+
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-xl border bg-card p-4 shadow-sm">
@@ -430,34 +502,116 @@ function CampaignTable({
     conversions: string;
   };
 }) {
+  const t = useT();
   const isMeta = platform === "meta_ads";
-  const gridTemplateColumns = `minmax(240px, 1fr) repeat(${columns.length}, minmax(120px, auto))`;
+  const storageKey = `traffic-campaign-status-filter:${platform}`;
+  const [statusFilter, setStatusFilter] = useState<CampaignStatusFilter>("all");
+  const [sortKey, setSortKey] = useState<CampaignSortKey>("spend");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("descending");
+  const gridTemplateColumns = `minmax(240px, 1fr) minmax(110px, auto) repeat(${columns.length}, minmax(120px, auto))`;
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(storageKey);
+    if (stored === "all" || stored === "active" || stored === "paused") {
+      const timeout = window.setTimeout(() => setStatusFilter(stored), 0);
+      return () => window.clearTimeout(timeout);
+    }
+    return undefined;
+  }, [storageKey]);
+
+  const visibleCampaigns = useMemo(
+    () =>
+      campaigns
+        .filter(
+          (campaign) =>
+            statusFilter === "all" ||
+            campaignStatus(campaign.campaign_status).category === statusFilter,
+        )
+        .sort((first, second) =>
+          compareCampaigns(first, second, sortKey, sortDirection, idioma),
+        ),
+    [campaigns, idioma, sortDirection, sortKey, statusFilter],
+  );
+
+  const changeSort = (key: CampaignSortKey) => {
+    if (key === sortKey) {
+      setSortDirection((current) =>
+        current === "descending" ? "ascending" : "descending",
+      );
+      return;
+    }
+    setSortKey(key);
+    setSortDirection("descending");
+  };
+
+  const changeStatusFilter = (filter: CampaignStatusFilter) => {
+    setStatusFilter(filter);
+    window.localStorage.setItem(storageKey, filter);
+  };
+
+  const sortableHeader = (key: CampaignSortKey, label: string, align: "left" | "right") => {
+    const active = sortKey === key;
+    return (
+      <th
+        key={key}
+        className={`min-w-30 px-4 py-3 font-semibold ${align === "right" ? "text-right" : "text-left"} ${active ? "bg-muted/60 text-foreground" : ""}`}
+        aria-sort={active ? sortDirection : "none"}
+      >
+        <button
+          type="button"
+          className={`inline-flex w-full items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${align === "right" ? "justify-end" : "justify-start"}`}
+          onClick={() => changeSort(key)}
+          aria-label={`${t("Ordenar por")} ${label}`}
+        >
+          {label}
+          {active && <span aria-hidden="true">{sortDirection === "descending" ? "▼" : "▲"}</span>}
+        </button>
+      </th>
+    );
+  };
+
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
+      <div
+        role="group"
+        aria-label={t("Filtrar campanhas por status")}
+        className="flex flex-wrap items-center gap-1 border-b px-3 py-2"
+      >
+        <span className="mr-1 text-xs font-medium text-muted-foreground">{t("Status")}</span>
+        {([
+          ["all", t("Todas")],
+          ["active", t("Ativas")],
+          ["paused", t("Pausadas")],
+        ] as const).map(([value, label]) => (
+          <Button
+            key={value}
+            type="button"
+            size="sm"
+            variant={statusFilter === value ? "secondary" : "ghost"}
+            aria-pressed={statusFilter === value}
+            onClick={() => changeStatusFilter(value)}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-max text-sm">
           <thead className="border-b bg-muted/35 text-left text-xs tracking-[0.08em] text-muted-foreground uppercase">
             <tr>
-              <th className="min-w-60 px-4 py-3 font-semibold">{labels.campaign}</th>
-              {columns.map((column) => (
-                <th key={column} className="min-w-30 px-4 py-3 text-right font-semibold">
-                  {columnLabel(column, idioma)}
-                </th>
-              ))}
+              {sortableHeader("name", labels.campaign, "left")}
+              <th className="min-w-28 px-4 py-3 font-semibold">{t("Status")}</th>
+              {columns.map((column) =>
+                sortableHeader(column, columnLabel(column, idioma), "right"),
+              )}
             </tr>
           </thead>
           <tbody className="divide-y">
-            <tr className="bg-muted/45 font-semibold">
-              <td className="px-4 py-3">{labels.total}</td>
-              {columns.map((column) => (
-                <td key={column} className="px-4 py-3 text-right">
-                  {metricValue(total, column, currency, platform)}
-                </td>
-              ))}
-            </tr>
-            {campaigns.map((campaign) => (
+            {visibleCampaigns.map((campaign) => {
+              const status = campaignStatus(campaign.campaign_status);
+              return (
               <tr key={`${campaign.platform}:${campaign.name}`} className="align-top">
-                <td colSpan={columns.length + 1} className="p-0">
+                <td colSpan={columns.length + 2} className="p-0">
                   {isMeta ? (
                     <details className="group">
                       <summary
@@ -466,6 +620,9 @@ function CampaignTable({
                       >
                         <span className="font-medium group-open:text-[#1877F2]">
                           {campaign.name}
+                        </span>
+                        <span>
+                          <Badge variant={status.variant}>{t(status.label)}</Badge>
                         </span>
                         {columns.map((column) => (
                           <span key={column} className="text-right text-muted-foreground">
@@ -524,6 +681,9 @@ function CampaignTable({
                       style={{ gridTemplateColumns }}
                     >
                       <span className="font-medium">{campaign.name}</span>
+                      <span>
+                        <Badge variant={status.variant}>{t(status.label)}</Badge>
+                      </span>
                       {columns.map((column) => (
                         <span key={column} className="text-right text-muted-foreground">
                           {metricValue(campaign, column, currency, platform)}
@@ -533,8 +693,20 @@ function CampaignTable({
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
+          <tfoot>
+            <tr className="border-t bg-muted/45 font-semibold">
+              <td className="px-4 py-3">{labels.total}</td>
+              <td className="px-4 py-3 text-muted-foreground">—</td>
+              {columns.map((column) => (
+                <td key={column} className="px-4 py-3 text-right">
+                  {metricValue(total, column, currency, platform)}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
