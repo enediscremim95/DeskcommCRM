@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Area,
   Bar,
@@ -123,8 +123,11 @@ interface ReportResponse {
   error?: { message?: string };
 }
 
+// Data local (fuso do navegador), não UTC: `toISOString()` virava o dia seguinte
+// depois das 21h no Brasil e o período pedido não batia com o mostrado.
 function iso(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 function range(days: number): { from: string; to: string } {
   const to = new Date();
@@ -365,9 +368,9 @@ const CAMPAIGN_STATUS: Record<
 > = {
   ACTIVE: { label: "Ativa", category: "active", variant: "success" },
   ENABLED: { label: "Ativa", category: "active", variant: "success" },
-  PAUSED: { label: "Pausada", category: "paused", variant: "warning" },
-  CAMPAIGN_PAUSED: { label: "Pausada", category: "paused", variant: "warning" },
-  ADSET_PAUSED: { label: "Pausada", category: "paused", variant: "warning" },
+  PAUSED: { label: "Pausada", category: "paused", variant: "neutral" },
+  CAMPAIGN_PAUSED: { label: "Pausada", category: "paused", variant: "neutral" },
+  ADSET_PAUSED: { label: "Pausada", category: "paused", variant: "neutral" },
   DELETED: { label: "Encerrada", category: "other", variant: "neutral" },
   REMOVED: { label: "Encerrada", category: "other", variant: "neutral" },
   ARCHIVED: { label: "Encerrada", category: "other", variant: "neutral" },
@@ -387,12 +390,20 @@ const CAMPAIGN_STATUS: Record<
 function campaignStatus(status: string | null | undefined) {
   const normalized = status?.trim().toUpperCase();
   if (!normalized) {
-    return { label: "Não informada", category: "other" as const, variant: "neutral" as const };
+    return {
+      label: "Não informada",
+      category: "other" as const,
+      variant: "neutral" as const,
+      known: false,
+    };
   }
-  return CAMPAIGN_STATUS[normalized] ?? {
+  const found = CAMPAIGN_STATUS[normalized];
+  if (found) return { ...found, known: true };
+  return {
     label: "Outro estado",
     category: "other" as const,
     variant: "neutral" as const,
+    known: true,
   };
 }
 
@@ -508,7 +519,12 @@ function CampaignTable({
   const [statusFilter, setStatusFilter] = useState<CampaignStatusFilter>("all");
   const [sortKey, setSortKey] = useState<CampaignSortKey>("spend");
   const [sortDirection, setSortDirection] = useState<SortDirection>("descending");
-  const gridTemplateColumns = `minmax(240px, 1fr) minmax(110px, auto) repeat(${columns.length}, minmax(120px, auto))`;
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  // Antes da primeira sincronização que traz o status, nenhuma campanha o conhece.
+  // Nesse caso a coluna e o filtro somem em vez de mostrar "Não informada" em tudo.
+  const showStatus = campaigns.some((campaign) => campaignStatus(campaign.campaign_status).known);
+  const activeFilter = showStatus ? statusFilter : "all";
+  const columnCount = columns.length + (showStatus ? 2 : 1);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(storageKey);
@@ -524,13 +540,13 @@ function CampaignTable({
       campaigns
         .filter(
           (campaign) =>
-            statusFilter === "all" ||
-            campaignStatus(campaign.campaign_status).category === statusFilter,
+            activeFilter === "all" ||
+            campaignStatus(campaign.campaign_status).category === activeFilter,
         )
         .sort((first, second) =>
           compareCampaigns(first, second, sortKey, sortDirection, idioma),
         ),
-    [campaigns, idioma, sortDirection, sortKey, statusFilter],
+    [activeFilter, campaigns, idioma, sortDirection, sortKey],
   );
 
   const changeSort = (key: CampaignSortKey) => {
@@ -549,58 +565,100 @@ function CampaignTable({
     window.localStorage.setItem(storageKey, filter);
   };
 
+  const toggleExpanded = (key: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Um único estilo para todo cabeçalho. O <button> de ordenar repete as classes
+  // de texto para não depender do que o navegador reseta em botões.
+  const headerText = "text-xs font-semibold tracking-[0.08em] uppercase";
+  const headerCell = `${headerText} px-4 py-3 whitespace-nowrap`;
+
   const sortableHeader = (key: CampaignSortKey, label: string, align: "left" | "right") => {
     const active = sortKey === key;
+    // A seta ocupa o mesmo espaço sempre (invisível quando inativa) e fica do lado
+    // de dentro da coluna: à direita do nome e à esquerda dos números, para o
+    // texto não sair do alinhamento quando a ordenação troca de coluna.
+    const arrow = (
+      <span
+        aria-hidden="true"
+        className={`w-3 shrink-0 text-center text-[9px] ${active ? "" : "opacity-0"}`}
+      >
+        {sortDirection === "descending" ? "▼" : "▲"}
+      </span>
+    );
     return (
       <th
         key={key}
-        className={`min-w-30 px-4 py-3 font-semibold ${align === "right" ? "text-right" : "text-left"} ${active ? "bg-muted/60 text-foreground" : ""}`}
+        scope="col"
+        className={`${headerCell} ${align === "right" ? "text-right" : "text-left"} ${active ? "text-foreground" : "text-muted-foreground"}`}
         aria-sort={active ? sortDirection : "none"}
       >
         <button
           type="button"
-          className={`inline-flex w-full items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${align === "right" ? "justify-end" : "justify-start"}`}
+          className={`${headerText} inline-flex w-full items-center gap-1 rounded-sm text-inherit hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${align === "right" ? "justify-end" : "justify-start"}`}
           onClick={() => changeSort(key)}
           aria-label={`${t("Ordenar por")} ${label}`}
         >
-          {label}
-          {active && <span aria-hidden="true">{sortDirection === "descending" ? "▼" : "▲"}</span>}
+          {align === "right" && arrow}
+          <span>{label}</span>
+          {align === "left" && arrow}
         </button>
       </th>
     );
   };
 
+  const metricCell = (metrics: Metrics, column: CampaignMetricColumn, className = "") => (
+    <td
+      key={column}
+      className={`px-4 py-3 text-right whitespace-nowrap tabular-nums ${className}`}
+    >
+      {metricValue(metrics, column, currency, platform)}
+    </td>
+  );
+
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
-      <div
-        role="group"
-        aria-label={t("Filtrar campanhas por status")}
-        className="flex flex-wrap items-center gap-1 border-b px-3 py-2"
-      >
-        <span className="mr-1 text-xs font-medium text-muted-foreground">{t("Status")}</span>
-        {([
-          ["all", t("Todas")],
-          ["active", t("Ativas")],
-          ["paused", t("Pausadas")],
-        ] as const).map(([value, label]) => (
-          <Button
-            key={value}
-            type="button"
-            size="sm"
-            variant={statusFilter === value ? "secondary" : "ghost"}
-            aria-pressed={statusFilter === value}
-            onClick={() => changeStatusFilter(value)}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
+      {showStatus && (
+        <div
+          role="group"
+          aria-label={t("Filtrar campanhas por status")}
+          className="flex flex-wrap items-center gap-1 border-b px-3 py-2"
+        >
+          <span className="mr-1 text-xs font-medium text-muted-foreground">{t("Status")}</span>
+          {([
+            ["all", t("Todas")],
+            ["active", t("Ativas")],
+            ["paused", t("Pausadas")],
+          ] as const).map(([value, label]) => (
+            <Button
+              key={value}
+              type="button"
+              size="sm"
+              variant={statusFilter === value ? "secondary" : "ghost"}
+              aria-pressed={statusFilter === value}
+              onClick={() => changeStatusFilter(value)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full min-w-max text-sm">
-          <thead className="border-b bg-muted/35 text-left text-xs tracking-[0.08em] text-muted-foreground uppercase">
+          <thead className="border-b bg-muted/35">
             <tr>
               {sortableHeader("name", labels.campaign, "left")}
-              <th className="min-w-28 px-4 py-3 font-semibold">{t("Status")}</th>
+              {showStatus && (
+                <th scope="col" className={`${headerCell} text-left text-muted-foreground`}>
+                  {t("Status")}
+                </th>
+              )}
               {columns.map((column) =>
                 sortableHeader(column, columnLabel(column, idioma), "right"),
               )}
@@ -608,29 +666,55 @@ function CampaignTable({
           </thead>
           <tbody className="divide-y">
             {visibleCampaigns.map((campaign) => {
+              const key = `${campaign.platform}:${campaign.name}`;
               const status = campaignStatus(campaign.campaign_status);
+              const isOpen = isMeta && expanded.has(key);
               return (
-              <tr key={`${campaign.platform}:${campaign.name}`} className="align-top">
-                <td colSpan={columns.length + 2} className="p-0">
-                  {isMeta ? (
-                    <details className="group">
-                      <summary
-                        className="grid cursor-pointer items-center gap-3 px-4 py-3 hover:bg-muted/35"
-                        style={{ gridTemplateColumns }}
-                      >
-                        <span className="font-medium group-open:text-[#1877F2]">
-                          {campaign.name}
-                        </span>
-                        <span>
-                          <Badge variant={status.variant}>{t(status.label)}</Badge>
-                        </span>
-                        {columns.map((column) => (
-                          <span key={column} className="text-right text-muted-foreground">
-                            {metricValue(campaign, column, currency, platform)}
-                          </span>
-                        ))}
-                      </summary>
-                      <div className="border-t bg-muted/15 px-4 py-2">
+                <Fragment key={key}>
+                  <tr className="hover:bg-muted/35">
+                    <td className="max-w-md px-4 py-3 font-medium">
+                      {isMeta ? (
+                        <button
+                          type="button"
+                          aria-expanded={isOpen}
+                          onClick={() => toggleExpanded(key)}
+                          className={`inline-flex max-w-full items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${isOpen ? "text-[#1877F2]" : ""}`}
+                        >
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 16 16"
+                            className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`}
+                          >
+                            <path
+                              d="M6 3.5 10.5 8 6 12.5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          <span className="truncate">{campaign.name}</span>
+                        </button>
+                      ) : (
+                        <span className="block truncate">{campaign.name}</span>
+                      )}
+                    </td>
+                    {showStatus && (
+                      <td className="px-4 py-3">
+                        <Badge
+                          variant={status.variant}
+                          className="px-2 py-0 text-[11px] leading-5 whitespace-nowrap"
+                        >
+                          {t(status.label)}
+                        </Badge>
+                      </td>
+                    )}
+                    {columns.map((column) => metricCell(campaign, column, "text-muted-foreground"))}
+                  </tr>
+                  {isOpen && (
+                    <tr>
+                      <td colSpan={columnCount} className="bg-muted/15 px-4 py-2">
                         {campaign.adsets.map((adset) => (
                           <details key={adset.name} className="border-b last:border-b-0">
                             <summary className="cursor-pointer py-2 text-sm font-medium">
@@ -666,45 +750,29 @@ function CampaignTable({
                                       <span className="truncate">{ad.name}</span>
                                     )}
                                   </span>
-                                  <span className="text-right">{money(ad.spend, currency)}</span>
-                                  <span className="text-right">{number(ad.conversions)}</span>
+                                  <span className="text-right tabular-nums">
+                                    {money(ad.spend, currency)}
+                                  </span>
+                                  <span className="text-right tabular-nums">
+                                    {number(ad.conversions)}
+                                  </span>
                                 </div>
                               ))}
                             </div>
                           </details>
                         ))}
-                      </div>
-                    </details>
-                  ) : (
-                    <div
-                      className="grid items-center gap-3 px-4 py-3 hover:bg-muted/35"
-                      style={{ gridTemplateColumns }}
-                    >
-                      <span className="font-medium">{campaign.name}</span>
-                      <span>
-                        <Badge variant={status.variant}>{t(status.label)}</Badge>
-                      </span>
-                      {columns.map((column) => (
-                        <span key={column} className="text-right text-muted-foreground">
-                          {metricValue(campaign, column, currency, platform)}
-                        </span>
-                      ))}
-                    </div>
+                      </td>
+                    </tr>
                   )}
-                </td>
-              </tr>
+                </Fragment>
               );
             })}
           </tbody>
           <tfoot>
             <tr className="border-t bg-muted/45 font-semibold">
               <td className="px-4 py-3">{labels.total}</td>
-              <td className="px-4 py-3 text-muted-foreground">—</td>
-              {columns.map((column) => (
-                <td key={column} className="px-4 py-3 text-right">
-                  {metricValue(total, column, currency, platform)}
-                </td>
-              ))}
+              {showStatus && <td className="px-4 py-3" />}
+              {columns.map((column) => metricCell(total, column))}
             </tr>
           </tfoot>
         </table>
