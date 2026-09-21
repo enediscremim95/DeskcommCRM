@@ -23,7 +23,17 @@ export async function readEmailNotificationPreferences(
     .maybeSingle();
 
   if (error) throw error;
-  if (!data) return { ...DEFAULT_EMAIL_NOTIFICATION_PREFERENCES };
+  if (!data) {
+    const { data: platformAdmin, error: platformError } = await db
+      .from("platform_admins")
+      .select("user_id")
+      .eq("user_id", userId)
+      .is("revoked_at", null)
+      .maybeSingle();
+    if (platformError) throw platformError;
+    if (platformAdmin) return { new_lead: false, urgent_lead: false };
+    return { ...DEFAULT_EMAIL_NOTIFICATION_PREFERENCES };
+  }
   const row = data as unknown as Partial<EmailNotificationPreferences>;
   return {
     new_lead: row.new_lead !== false,

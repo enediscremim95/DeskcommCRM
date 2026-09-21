@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -548,6 +549,8 @@ export function TrafficDashboard() {
   const [report, setReport] = useState<ReportResponse["data"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [selectedColumns, setSelectedColumns] = useState<CampaignMetricColumn[]>([]);
   const [activeMetric, setActiveMetric] = useState<"spend" | "conversions" | "revenue">(
     "conversions",
@@ -600,6 +603,44 @@ export function TrafficDashboard() {
     setWindow(next);
   }
 
+  async function downloadSummary() {
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const query = new URLSearchParams({
+        from: window.from,
+        to: window.to,
+        language: idioma,
+      });
+      const response = await fetch(`/api/v1/reports/traffic/pdf?${query.toString()}`, {
+        headers: { accept: "application/pdf" },
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        throw new Error(body?.error?.message ?? t("Não foi possível baixar o relatório."));
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const disposition = response.headers.get("content-disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/i);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = match?.[1] ?? `relatorio-resumido-${window.from}-a-${window.to}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setDownloadError(
+        cause instanceof Error ? cause.message : t("Não foi possível baixar o relatório."),
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-6">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -630,6 +671,14 @@ export function TrafficDashboard() {
               </SelectContent>
             </Select>
           </div>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={downloadSummary}
+            disabled={!report || loading || downloading}
+          >
+            {downloading ? t("Preparando PDF…") : t("Baixar relatório")}
+          </Button>
           {preset === "custom" && (
             <>
               <div className="space-y-1">
@@ -685,6 +734,14 @@ export function TrafficDashboard() {
           className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm"
         >
           {error}
+        </div>
+      )}
+      {downloadError && (
+        <div
+          role="alert"
+          className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm"
+        >
+          {downloadError}
         </div>
       )}
       {loading && <p className="text-sm text-muted-foreground">{t("Carregando relatório…")}</p>}
@@ -832,6 +889,17 @@ export function TrafficDashboard() {
                     sparkline: spendTrend,
                     formatter: (value: number) => money(value, group.currency),
                   },
+                  // Ordem pedida pelo dono (21/09/2026): investimento, alcance, leads, custo
+                  // por lead. Vendas fechadas seguem no funil logo abaixo.
+                  {
+                    key: "spend" as const,
+                    label: localText(idioma, "Alcance", "Alcance"),
+                    value: group.summary.reach ?? 0,
+                    previous: previous?.reach,
+                    // Não há alcance diário (alcance não soma dia a dia), então sem minigráfico.
+                    sparkline: [],
+                    formatter: number,
+                  },
                   {
                     key: "conversions" as const,
                     label: t("Leads"),
@@ -847,14 +915,6 @@ export function TrafficDashboard() {
                     previous: previous?.cost_per_lead,
                     sparkline: costTrend,
                     formatter: (value: number) => money(value, group.currency),
-                  },
-                  {
-                    key: "conversions" as const,
-                    label: localText(idioma, "Vendas fechadas", "Ventas cerradas"),
-                    value: report.crm.closed_won,
-                    previous: report.crm.previous?.closed_won,
-                    sparkline: conversionTrend,
-                    formatter: number,
                   },
                 ];
 
@@ -890,11 +950,6 @@ export function TrafficDashboard() {
                 idioma,
                 "Do alcance à venda fechada",
                 "Del alcance a la venta cerrada",
-              )}
-              description={localText(
-                idioma,
-                "Uma jornada única conecta a mídia ao CRM. Passe sobre cada etapa para ver taxa e custo da passagem.",
-                "Un solo recorrido conecta los medios con el CRM. Pasa sobre cada etapa para ver tasa y costo.",
               )}
               stages={funnelStages}
               idioma={idioma}

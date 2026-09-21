@@ -138,15 +138,14 @@ function rateText(rate: number | null | undefined, idioma: string): string {
 
 export function ConversionFunnel({
   title,
-  description,
   eyebrow,
   stages,
   summary,
   idioma,
   currency,
 }: {
+  /** Nome acessível da seção; não é mais exibido (pedido do dono, 21/09/2026). */
   title: string;
-  description: string;
   eyebrow?: string;
   stages: FunnelStage[];
   summary: Array<{ label: string; value: string; emphasis?: boolean }>;
@@ -172,8 +171,6 @@ export function ConversionFunnel({
         <p className="text-xs font-semibold tracking-[0.16em] text-primary uppercase">
           {eyebrow ?? title}
         </p>
-        <h3 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">{title}</h3>
-        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>
       </div>
 
       <div className="grid gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-center">

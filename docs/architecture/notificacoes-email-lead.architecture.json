@@ -12,7 +12,7 @@
     { "id": "externo", "label": "Serviço externo" },
     { "id": "humano", "label": "Pessoa" }
   ],
-  "mainPath": ["origens", "outbox", "handler", "resend", "destinatario"],
+  "mainPath": ["origens", "outbox", "handler", "batch", "flush", "resend", "destinatario"],
   "nodes": [
     {
       "id": "origens",
@@ -33,21 +33,42 @@
       "lane": "app",
       "col": 2,
       "type": "service",
-      "label": "Consumidor assíncrono, idempotente e sem bloquear outros canais"
+      "label": "Consumidor assíncrono: urgência imediata; lead novo entra na outbox de lote"
+    },
+    {
+      "id": "batch",
+      "lane": "db",
+      "col": 3,
+      "type": "database",
+      "label": "Lote pendente por organização, destinatário e categoria, com janela curta"
+    },
+    {
+      "id": "batch_items",
+      "lane": "db",
+      "col": 3,
+      "type": "database",
+      "label": "Item único por evento e destinatário impede reentrada e mistura entre lotes"
+    },
+    {
+      "id": "flush",
+      "lane": "app",
+      "col": 4,
+      "type": "service",
+      "label": "Flush envia um lead isolado ou um resumo da rajada com chave idempotente estável"
     },
     {
       "id": "preferencias",
       "lane": "db",
       "col": 2,
       "type": "database",
-      "label": "Preferência pessoal por organização, ligada por padrão"
+      "label": "Preferência pessoal por organização; dono da instalação começa desligado"
     },
     {
       "id": "responsavel",
       "lane": "db",
       "col": 3,
       "type": "database",
-      "label": "Responsável ativo; sem responsável, administradores ativos"
+      "label": "Responsável ativo; sem responsável, administradores e gerentes ativos"
     },
     {
       "id": "marca",
@@ -92,6 +113,10 @@
       "from": "destinatario",
       "to": "configuracao",
       "label": "controla os próximos avisos"
-    }
+    },
+    { "id": "e10", "from": "handler", "to": "batch_items", "label": "deduplica evento e pessoa" },
+    { "id": "e11", "from": "batch_items", "to": "batch", "label": "compõe resumo" },
+    { "id": "e12", "from": "batch", "to": "flush", "label": "vence após silêncio curto" },
+    { "id": "e13", "from": "flush", "to": "resend", "label": "um envio por lote" }
   ]
 }
