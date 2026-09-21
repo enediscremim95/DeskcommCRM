@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { BulkLeadActionInput } from "@/lib/schemas/leads";
+import type { BoardData } from "@/lib/kanban/types";
 import { liberarEcoLocal, marcarEcoLocal } from "@/lib/kanban/local-echo";
 import { lotesDeIds } from "@/lib/kanban/selecao";
 
@@ -47,6 +48,13 @@ export function useBulkAction(pipelineId: string) {
       return { data: { updated_count: aplicados } };
     },
     onError: showApiError,
+    onSuccess: (_data, input) => {
+      if (input.action !== "delete") return;
+      const removidos = new Set(input.lead_ids);
+      qc.setQueryData<BoardData>(["board", pipelineId], (atual) =>
+        atual ? { ...atual, leads: atual.leads.filter((lead) => !removidos.has(lead.id)) } : atual,
+      );
+    },
     onSettled: (_data, _err, input) => {
       for (const leadId of input.lead_ids) liberarEcoLocal(leadId);
       qc.invalidateQueries({ queryKey: ["board", pipelineId] });

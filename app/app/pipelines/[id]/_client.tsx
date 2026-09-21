@@ -53,6 +53,14 @@ export function PipelinePageClient({
   const [newOpen, setNewOpen] = useState(false);
 
   const filteredLeads = data ? applyFilters(data.leads, filters) : [];
+  // Exclusão individual e eventos remotos podem tirar um card que estava
+  // selecionado. A seleção exposta acompanha os dados vivos para a barra não
+  // ficar contando um id que já não existe no quadro.
+  const selectedIdsVisiveis = useMemo(() => {
+    if (!data) return [];
+    const existentes = new Set(data.leads.map((lead) => lead.id));
+    return selectedIds.filter((id) => existentes.has(id));
+  }, [data, selectedIds]);
 
   return (
     <div
@@ -112,13 +120,13 @@ export function PipelinePageClient({
           leads={filteredLeads}
           pulses={pulses}
           pipeline={data.pipeline}
-          selectedIds={selectedIds}
+          selectedIds={selectedIdsVisiveis}
           onSelectionChange={setSelectedIds}
           leadInicial={searchParams.get("lead")}
         />
       )}
       <BulkActionBar
-        selectedIds={selectedIds}
+        selectedIds={selectedIdsVisiveis}
         stages={data?.stages ?? []}
         pipelineId={pipelineId}
         vocabulary={data?.pipeline.vocabulary ?? null}

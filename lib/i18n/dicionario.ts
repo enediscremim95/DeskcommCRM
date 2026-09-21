@@ -711,6 +711,15 @@ export const DICIONARIO: Traducoes = {
   "Nenhum resultado": { es: "Ningún resultado" },
   Erro: { es: "Error" },
   Excluir: { es: "Eliminar" },
+  "Excluir o lead": { es: "Eliminar el lead" },
+  "Lead excluído.": { es: "Lead eliminado." },
+  "leads excluídos.": { es: "leads eliminados." },
+  "Este lead será excluído permanentemente. Esta ação não pode ser desfeita.": {
+    es: "Este lead se eliminará permanentemente. Esta acción no se puede deshacer.",
+  },
+  "Os leads selecionados serão excluídos permanentemente. Esta ação não pode ser desfeita.": {
+    es: "Los leads seleccionados se eliminarán permanentemente. Esta acción no se puede deshacer.",
+  },
   Editar: { es: "Editar" },
   Voltar: { es: "Volver" },
   // ─── Configurações: hub, perfil e tenant ───

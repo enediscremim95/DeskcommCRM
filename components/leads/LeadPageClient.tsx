@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatThread, type ThreadContextItem } from "@/components/inbox/ChatThread";
@@ -26,10 +27,11 @@ import { activityLabel, actorName } from "@/lib/leads/activity-vocabulary";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import type { Lead } from "@/lib/types/leads";
 import type { Message } from "@/lib/types/messaging";
-import { ChatCircle, Gear, Phone } from "@/lib/ui/icons";
+import { ChatCircle, Gear, Phone, Trash } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { DadosCompletosDoLead } from "./DadosCompletosDoLead";
 import { FollowupsDoLead } from "./FollowupsDoLead";
+import { DeleteLeadDialog } from "./DeleteLeadDialog";
 
 interface ContactSummary {
   id: string;
@@ -54,7 +56,11 @@ function nomeDoContato(contact: ContactSummary | null): string {
   return contact?.display_name?.trim() || contact?.name?.trim() || "Contato sem nome";
 }
 
-function valorDoNegocio(centavos: number | null, moeda: string | null, locale: string): string | null {
+function valorDoNegocio(
+  centavos: number | null,
+  moeda: string | null,
+  locale: string,
+): string | null {
   if (centavos === null) return null;
   try {
     return new Intl.NumberFormat(locale, {
@@ -143,11 +149,16 @@ export function LeadPageClient({
   const t = useT();
   const locale = useTagDeIdioma();
   const { activeOrg, user } = useAuth();
+  const router = useRouter();
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const supportReadonly = user.support?.access_mode === "support_readonly";
   const podeEditar = Boolean(
     activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && !supportReadonly,
   );
   const podeConfigurar = activeOrg?.role === "admin" && !supportReadonly;
+  // A rota de lote exige agent+. A ficha usa o mesmo piso já calculado para
+  // edição e continua fail-closed no acompanhamento somente leitura.
+  const podeExcluir = podeEditar;
   const timeline = useLeadTimeline(lead.id, lead.contact_id);
   const conversation = useConversation(conversationId, Boolean(conversationId));
   const selectedConversation = conversation.data ?? null;
@@ -232,7 +243,22 @@ export function LeadPageClient({
             <p className="truncate text-[11px] font-medium tracking-[0.08em] text-text-muted uppercase">
               {pipelineName}
             </p>
-            <h1 className="mt-1 text-lg leading-tight font-semibold text-text">{lead.title}</h1>
+            <div className="mt-1 flex items-start justify-between gap-3">
+              <h1 className="min-w-0 text-lg leading-tight font-semibold text-text">
+                {lead.title}
+              </h1>
+              {podeExcluir ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-destructive hover:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash size={15} aria-hidden />
+                  {t("Excluir")}
+                </Button>
+              ) : null}
+            </div>
 
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               {valor ? (
@@ -421,6 +447,14 @@ export function LeadPageClient({
           )}
         </section>
       </div>
+      <DeleteLeadDialog
+        open={podeExcluir && deleteOpen}
+        onOpenChange={setDeleteOpen}
+        pipelineId={lead.pipeline_id}
+        leadIds={[lead.id]}
+        leadTitle={lead.title}
+        onDeleted={() => router.replace(`/app/pipelines/${lead.pipeline_id}`)}
+      />
     </OpenConversationProvider>
   );
 }
