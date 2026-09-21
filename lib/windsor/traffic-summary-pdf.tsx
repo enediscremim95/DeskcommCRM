@@ -15,7 +15,22 @@ import type { TrafficDelivery, TrafficDeliveryCampaign } from "@/lib/windsor/del
 
 export type TrafficSummarySource = {
   window: { from: string; to: string };
-  crm: { leads_entered: number; in_service: number; closed_won: number };
+  crm: {
+    leads_entered: number;
+    in_service: number;
+    closed_won: number;
+    closed_lost?: number;
+    stages?: Array<{ name: string; count: number }>;
+    loss_reasons?: Array<{ reason: string; count: number }>;
+    previous?: {
+      leads_entered: number;
+      in_service: number;
+      closed_won: number;
+      closed_lost?: number;
+      stages?: Array<{ name: string; count: number }>;
+      loss_reasons?: Array<{ reason: string; count: number }>;
+    };
+  };
   currencies: Array<{
     currency: string;
     summary: {
@@ -24,6 +39,12 @@ export type TrafficSummarySource = {
       impressions: number;
       clicks: number;
     };
+    comparison?: {
+      spend: number;
+      reach: number | null;
+      impressions: number;
+      clicks: number;
+    } | null;
   }>;
   delivery?: TrafficDelivery;
 };
@@ -39,6 +60,17 @@ export type TrafficSummaryGroup = {
   mediaKind: "reach" | "impressions" | "unavailable";
   inService: number;
   closedWon: number;
+  closedLost: number;
+  previous: {
+    spend: number | null;
+    reach: number | null;
+    clicks: number | null;
+    leads: number | null;
+    costPerLead: number | null;
+    inService: number | null;
+    closedWon: number | null;
+    closedLost: number | null;
+  };
 };
 
 export function buildTrafficSummaryGroups(source: TrafficSummarySource): TrafficSummaryGroup[] {
@@ -56,27 +88,55 @@ export function buildTrafficSummaryGroups(source: TrafficSummarySource): Traffic
         mediaKind: "unavailable",
         inService: source.crm.in_service,
         closedWon: source.crm.closed_won,
+        closedLost: source.crm.closed_lost ?? 0,
+        previous: {
+          spend: null,
+          reach: null,
+          clicks: null,
+          leads: source.crm.previous?.leads_entered ?? null,
+          costPerLead: null,
+          inService: source.crm.previous?.in_service ?? null,
+          closedWon: source.crm.previous?.closed_won ?? null,
+          closedLost: source.crm.previous?.closed_lost ?? null,
+        },
       },
     ];
   }
 
-  return source.currencies.map((group) => ({
-    currency: group.currency,
-    spend: group.summary.spend,
-    reach: group.summary.reach,
-    clicks: group.summary.clicks,
-    leads,
-    costPerLead: leads > 0 ? group.summary.spend / leads : null,
-    mediaValue: group.summary.reach ?? group.summary.impressions,
-    mediaKind:
-      group.summary.reach != null
-        ? "reach"
-        : group.summary.impressions > 0
-          ? "impressions"
-          : "unavailable",
-    inService: source.crm.in_service,
-    closedWon: source.crm.closed_won,
-  }));
+  return source.currencies.map((group) => {
+    const previousLeads = source.crm.previous?.leads_entered ?? null;
+    return {
+      currency: group.currency,
+      spend: group.summary.spend,
+      reach: group.summary.reach,
+      clicks: group.summary.clicks,
+      leads,
+      costPerLead: leads > 0 ? group.summary.spend / leads : null,
+      mediaValue: group.summary.reach ?? group.summary.impressions,
+      mediaKind:
+        group.summary.reach != null
+          ? "reach" as const
+          : group.summary.impressions > 0
+            ? "impressions" as const
+            : "unavailable" as const,
+      inService: source.crm.in_service,
+      closedWon: source.crm.closed_won,
+      closedLost: source.crm.closed_lost ?? 0,
+      previous: {
+        spend: group.comparison?.spend ?? null,
+        reach: group.comparison?.reach ?? null,
+        clicks: group.comparison?.clicks ?? null,
+        leads: previousLeads,
+        costPerLead:
+          group.comparison && previousLeads != null && previousLeads > 0
+            ? group.comparison.spend / previousLeads
+            : null,
+        inService: source.crm.previous?.in_service ?? null,
+        closedWon: source.crm.previous?.closed_won ?? null,
+        closedLost: source.crm.previous?.closed_lost ?? null,
+      },
+    };
+  });
 }
 
 const styles = StyleSheet.create({
@@ -91,6 +151,7 @@ const styles = StyleSheet.create({
   metric: { flex: 1, borderWidth: 1, borderColor: "#e5ebe6", borderRadius: 5, padding: 6 },
   metricLabel: { color: "#66736a", fontSize: 7, textTransform: "uppercase" },
   metricValue: { marginTop: 3, fontSize: 12, fontWeight: "bold" },
+  metricComparison: { marginTop: 2, color: "#66736a", fontSize: 6.5 },
   drawing: { alignItems: "center", paddingTop: 6, paddingBottom: 12 },
   levelLabel: {
     marginTop: 4,
@@ -137,6 +198,9 @@ const styles = StyleSheet.create({
   deliverySection: { marginTop: 7 },
   deliverySectionTitle: { fontSize: 9, fontWeight: "bold", marginBottom: 3 },
   deliveryItem: { color: "#344139", fontSize: 8, marginTop: 2 },
+  insightGrid: { flexDirection: "row", gap: 7, marginTop: 6 },
+  insightColumn: { flex: 1 },
+  situationMetrics: { flexDirection: "row", gap: 5, marginBottom: 6 },
 });
 
 /** Largura do topo do funil e quanto cada nível afina, em pontos. */
@@ -201,6 +265,13 @@ function formatPercent(value: number, language: Language): string {
     style: "percent",
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
+  }).format(value);
+}
+
+function formatPercentNumber(value: number, language: Language): string {
+  return new Intl.NumberFormat(language === "es" ? "es-ES" : "pt-BR", {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 1,
+    maximumFractionDigits: 1,
   }).format(value);
 }
 
@@ -319,11 +390,6 @@ function FunnelDrawing({
       from: text(language, "que viraram leads no CRM", "que se volvieron leads en el CRM"),
     },
     {
-      value: group.inService,
-      legend: text(language, "entraram em atendimento", "entraron en atención"),
-      from: text(language, "que entraram em atendimento", "que entraron en atención"),
-    },
-    {
       value: group.closedWon,
       legend: text(language, "fecharam a venda", "cerraron la venta"),
       from: "",
@@ -332,9 +398,9 @@ function FunnelDrawing({
   const levelLabels: Record<number, string> = {
     0: text(language, "Topo · Descoberta", "Arriba · Descubrimiento"),
     1: text(language, "Meio · Interesse", "Medio · Interés"),
-    3: text(language, "Fundo · Ação", "Fondo · Acción"),
+    2: text(language, "Fundo · Ação", "Fondo · Acción"),
   };
-  const tints = [0.22, 0.4, 0.58, 0.78, 1];
+  const tints = [0.22, 0.48, 0.72, 1];
 
   return (
     <View style={styles.drawing} wrap={false}>
@@ -370,11 +436,53 @@ function FunnelDrawing({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+export type TrafficVariation =
+  | { kind: "unavailable"; percent: null }
+  | { kind: "new"; percent: null }
+  | { kind: "percent"; percent: number };
+
+export function trafficVariation(
+  current: number | null,
+  previous: number | null | undefined,
+): TrafficVariation {
+  if (current == null || previous == null) return { kind: "unavailable", percent: null };
+  if (previous === 0) {
+    return current === 0 ? { kind: "percent", percent: 0 } : { kind: "new", percent: null };
+  }
+  return { kind: "percent", percent: ((current - previous) / Math.abs(previous)) * 100 };
+}
+
+function formatVariation(
+  current: number | null,
+  previous: number | null | undefined,
+  language: Language,
+): string | null {
+  const variation = trafficVariation(current, previous);
+  if (variation.kind === "unavailable") return null;
+  if (variation.kind === "new") {
+    return text(language, "novo vs. período anterior", "nuevo vs. período anterior");
+  }
+  const value = variation.percent;
+  const signal = value > 0 ? "+" : "";
+  return `${signal}${new Intl.NumberFormat(language === "es" ? "es-ES" : "pt-BR", {
+    maximumFractionDigits: 1,
+  }).format(value)}% ${text(language, "vs. período anterior", "vs. período anterior")}`;
+}
+
+function Metric({
+  label,
+  value,
+  comparison,
+}: {
+  label: string;
+  value: string;
+  comparison?: string | null;
+}) {
   return (
     <View style={styles.metric}>
       <Text style={styles.metricLabel}>{label}</Text>
       <Text style={styles.metricValue}>{value}</Text>
+      {comparison ? <Text style={styles.metricComparison}>{comparison}</Text> : null}
     </View>
   );
 }
@@ -440,7 +548,7 @@ function DeliveryBlock({
 }) {
   const sections = buildTrafficDeliverySections(delivery, language);
   return (
-    <View style={styles.delivery} wrap={false}>
+    <View style={styles.delivery}>
       <Text style={[styles.deliveryTitle, { color: accent }]}>
         {text(language, "O que está rodando", "Lo que está activo")}
       </Text>
@@ -453,6 +561,212 @@ function DeliveryBlock({
         </View>
       ))}
     </View>
+  );
+}
+
+function changeSentence(
+  language: Language,
+  labelPt: string,
+  labelEs: string,
+  current: number,
+  previous: number,
+): string {
+  const variation = trafficVariation(current, previous);
+  const label = text(language, labelPt, labelEs);
+  if (variation.kind === "new") {
+    return text(
+      language,
+      `${label}: ${formatNumber(current, language)}, sem ocorrência no período anterior.`,
+      `${label}: ${formatNumber(current, language)}, sin ocurrencias en el período anterior.`,
+    );
+  }
+  const percent = variation.kind === "percent" ? variation.percent : 0;
+  if (percent === 0) {
+    return text(
+      language,
+      `${label} permaneceu em ${formatNumber(current, language)}.`,
+      `${label} se mantuvo en ${formatNumber(current, language)}.`,
+    );
+  }
+  const signedPercent = `${percent > 0 ? "+" : "-"}${formatPercentNumber(Math.abs(percent), language)}%`;
+  return text(
+    language,
+    `${label}: ${signedPercent}, de ${formatNumber(previous, language)} para ${formatNumber(current, language)}.`,
+    `${label}: ${signedPercent}, de ${formatNumber(previous, language)} a ${formatNumber(current, language)}.`,
+  );
+}
+
+export function buildTrafficHighlights(
+  source: TrafficSummarySource,
+  groups: TrafficSummaryGroup[],
+  language: Language,
+): string[] {
+  const highlights: string[] = [];
+  const previous = source.crm.previous;
+  if (previous) {
+    highlights.push(
+      changeSentence(
+        language,
+        "Entrada de leads",
+        "Entrada de leads",
+        source.crm.leads_entered,
+        previous.leads_entered,
+      ),
+    );
+  }
+
+  const primary = [...groups]
+    .filter((group) => group.currency != null && group.spend != null)
+    .sort((a, b) => (b.spend ?? 0) - (a.spend ?? 0))[0];
+  if (primary?.costPerLead != null && primary.previous.costPerLead != null) {
+    const variation = trafficVariation(primary.costPerLead, primary.previous.costPerLead);
+    if (variation.kind === "percent" && variation.percent !== 0) {
+      highlights.push(
+        text(
+          language,
+          `Custo por lead ${variation.percent < 0 ? "melhorou" : "aumentou"} ${formatPercentNumber(Math.abs(variation.percent), language)}%, para ${formatMoney(primary.costPerLead, primary.currency, language)}.`,
+          `El costo por lead ${variation.percent < 0 ? "mejoró" : "aumentó"} ${formatPercentNumber(Math.abs(variation.percent), language)}%, a ${formatMoney(primary.costPerLead, primary.currency, language)}.`,
+        ),
+      );
+    }
+  }
+
+  if (previous) {
+    highlights.push(
+      changeSentence(
+        language,
+        "Vendas ganhas",
+        "Ventas ganadas",
+        source.crm.closed_won,
+        previous.closed_won,
+      ),
+    );
+  }
+
+  const topLossReason = source.crm.loss_reasons?.[0];
+  if (topLossReason && (source.crm.closed_lost ?? 0) > 0) {
+    const share = topLossReason.count / (source.crm.closed_lost ?? 1);
+    highlights.push(
+      text(
+        language,
+        `Principal motivo de perda: ${topLossReason.reason}, ${formatPercent(share, language)} das perdas.`,
+        `Principal motivo de pérdida: ${topLossReason.reason}, ${formatPercent(share, language)} de las pérdidas.`,
+      ),
+    );
+  }
+  return highlights.slice(0, 4);
+}
+
+export function buildTrafficFunnelReading(
+  groups: TrafficSummaryGroup[],
+  language: Language,
+): string[] {
+  const primary = [...groups]
+    .filter((group) => group.mediaValue != null || group.leads > 0)
+    .sort((a, b) => (b.spend ?? 0) - (a.spend ?? 0))[0];
+  if (!primary) return [];
+
+  const mediaLabel =
+    primary.mediaKind === "reach"
+      ? text(language, "visualização do anúncio", "visualización del anuncio")
+      : text(language, "impressão", "impresión");
+  const transitions = [
+    { from: primary.mediaValue, to: primary.clicks, fromLabel: mediaLabel, toLabel: text(language, "clique", "clic") },
+    { from: primary.clicks, to: primary.leads, fromLabel: text(language, "clique", "clic"), toLabel: "lead" },
+    { from: primary.leads, to: primary.closedWon, fromLabel: "lead", toLabel: text(language, "venda", "venta") },
+  ]
+    .filter((item): item is { from: number; to: number; fromLabel: string; toLabel: string } =>
+      item.from != null && item.from > 0,
+    )
+    .map((item) => ({ ...item, rate: item.to / item.from }));
+  const bottleneck = [...transitions].sort((a, b) => a.rate - b.rate)[0];
+  const readings: string[] = [];
+  if (bottleneck) {
+    readings.push(
+      text(
+        language,
+        `Maior estreitamento: ${bottleneck.fromLabel} para ${bottleneck.toLabel}, com ${formatPercent(bottleneck.rate, language)} de passagem.`,
+        `Mayor estrechamiento: ${bottleneck.fromLabel} a ${bottleneck.toLabel}, con ${formatPercent(bottleneck.rate, language)} de paso.`,
+      ),
+    );
+  }
+  if (primary.leads > 0) {
+    readings.push(
+      text(
+        language,
+        `Conversão de lead em venda: ${formatPercent(primary.closedWon / primary.leads, language)} (${formatNumber(primary.closedWon, language)} de ${formatNumber(primary.leads, language)}).`,
+        `Conversión de lead en venta: ${formatPercent(primary.closedWon / primary.leads, language)} (${formatNumber(primary.closedWon, language)} de ${formatNumber(primary.leads, language)}).`,
+      ),
+    );
+  }
+  return readings;
+}
+
+function InsightsBlock({
+  source,
+  groups,
+  language,
+  accent,
+}: {
+  source: TrafficSummarySource;
+  groups: TrafficSummaryGroup[];
+  language: Language;
+  accent: string;
+}) {
+  const highlights = buildTrafficHighlights(source, groups, language);
+  const readings = buildTrafficFunnelReading(groups, language);
+  const stages = limitedItems(
+    (source.crm.stages ?? []).map((stage) => `${stage.name}: ${formatNumber(stage.count, language)}`),
+    language,
+  );
+  const losses = limitedItems(
+    (source.crm.loss_reasons ?? []).map(
+      (item) => `${item.reason}: ${formatNumber(item.count, language)}`,
+    ),
+    language,
+  );
+  const stageItems = stages.length > 0 ? stages : [text(language, "Nenhuma", "Ninguna")];
+  const lossItems = losses.length > 0 ? losses : [text(language, "Nenhum", "Ninguno")];
+  return (
+    <>
+      {highlights.length > 0 ? (
+        <View style={styles.delivery}>
+          <Text style={[styles.deliveryTitle, { color: accent }]}>
+            {text(language, "Destaques do período", "Destacados del período")}
+          </Text>
+          {highlights.map((item) => <Text key={item} style={styles.deliveryItem}>• {item}</Text>)}
+        </View>
+      ) : null}
+      <View style={styles.delivery} wrap={false}>
+        <Text style={[styles.deliveryTitle, { color: accent }]}>
+          {text(language, "Situação dos leads", "Situación de los leads")}
+        </Text>
+        <View style={styles.situationMetrics}>
+          <Metric label={text(language, "Recebidos", "Recibidos")} value={formatNumber(source.crm.leads_entered, language)} comparison={formatVariation(source.crm.leads_entered, source.crm.previous?.leads_entered, language)} />
+          <Metric label={text(language, "Em atendimento", "En atención")} value={formatNumber(source.crm.in_service, language)} comparison={formatVariation(source.crm.in_service, source.crm.previous?.in_service, language)} />
+          <Metric label={text(language, "Ganhos", "Ganados")} value={formatNumber(source.crm.closed_won, language)} comparison={formatVariation(source.crm.closed_won, source.crm.previous?.closed_won, language)} />
+          <Metric label={text(language, "Perdidos", "Perdidos")} value={formatNumber(source.crm.closed_lost ?? 0, language)} comparison={formatVariation(source.crm.closed_lost ?? 0, source.crm.previous?.closed_lost, language)} />
+        </View>
+        <View style={styles.insightGrid}>
+          <View style={styles.insightColumn}>
+            <Text style={styles.deliverySectionTitle}>{text(language, "Etapas atuais", "Etapas actuales")}</Text>
+            {stageItems.map((item) => <Text key={item} style={styles.deliveryItem}>• {item}</Text>)}
+          </View>
+          <View style={styles.insightColumn}>
+            <Text style={styles.deliverySectionTitle}>{text(language, "Motivos de perda", "Motivos de pérdida")}</Text>
+            {lossItems.map((item) => <Text key={item} style={styles.deliveryItem}>• {item}</Text>)}
+          </View>
+        </View>
+      </View>
+      {readings.length > 0 ? (
+        <View style={styles.delivery}>
+          <Text style={[styles.deliveryTitle, { color: accent }]}>
+            {text(language, "Leitura do funil", "Lectura del embudo")}
+          </Text>
+          {readings.map((item) => <Text key={item} style={styles.deliveryItem}>• {item}</Text>)}
+        </View>
+      ) : null}
+    </>
   );
 }
 
@@ -493,19 +807,23 @@ export function TrafficSummaryPdf({
                 <Metric
                   label={text(language, "Investimento", "Inversión")}
                   value={formatMoney(group.spend, group.currency, language)}
+                  comparison={formatVariation(group.spend, group.previous.spend, language)}
                 />
                 <Metric
                   label={text(language, "Alcance", "Alcance")}
                   value={formatNumber(group.reach, language)}
+                  comparison={formatVariation(group.reach, group.previous.reach, language)}
                 />
                 <Metric
                   label={text(language, "Cliques", "Clics")}
                   value={formatNumber(group.clicks, language)}
+                  comparison={formatVariation(group.clicks, group.previous.clicks, language)}
                 />
-                <Metric label="Leads" value={formatNumber(group.leads, language)} />
+                <Metric label="Leads" value={formatNumber(group.leads, language)} comparison={formatVariation(group.leads, group.previous.leads, language)} />
                 <Metric
                   label={text(language, "Custo por lead", "Costo por lead")}
                   value={formatMoney(group.costPerLead, group.currency, language)}
+                  comparison={formatVariation(group.costPerLead, group.previous.costPerLead, language)}
                 />
               </View>
               {/* A linha de caixinhas do funil saiu: repetia o desenho logo abaixo
@@ -516,6 +834,7 @@ export function TrafficSummaryPdf({
             </View>
           );
         })}
+        <InsightsBlock source={source} groups={groups} language={language} accent={brand.accent} />
         <DeliveryBlock delivery={source.delivery} language={language} accent={brand.accent} />
       </Page>
     </Document>
