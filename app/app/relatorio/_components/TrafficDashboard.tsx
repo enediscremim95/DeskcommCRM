@@ -832,6 +832,17 @@ export function TrafficDashboard() {
                     sparkline: spendTrend,
                     formatter: (value: number) => money(value, group.currency),
                   },
+                  // Ordem pedida pelo dono (21/09/2026): investimento, alcance, leads, custo
+                  // por lead. Vendas fechadas seguem no funil logo abaixo.
+                  {
+                    key: "spend" as const,
+                    label: localText(idioma, "Alcance", "Alcance"),
+                    value: group.summary.reach ?? 0,
+                    previous: previous?.reach,
+                    // Não há alcance diário (alcance não soma dia a dia), então sem minigráfico.
+                    sparkline: [],
+                    formatter: number,
+                  },
                   {
                     key: "conversions" as const,
                     label: t("Leads"),
@@ -847,14 +858,6 @@ export function TrafficDashboard() {
                     previous: previous?.cost_per_lead,
                     sparkline: costTrend,
                     formatter: (value: number) => money(value, group.currency),
-                  },
-                  {
-                    key: "conversions" as const,
-                    label: localText(idioma, "Vendas fechadas", "Ventas cerradas"),
-                    value: report.crm.closed_won,
-                    previous: report.crm.previous?.closed_won,
-                    sparkline: conversionTrend,
-                    formatter: number,
                   },
                 ];
 
@@ -890,11 +893,6 @@ export function TrafficDashboard() {
                 idioma,
                 "Do alcance à venda fechada",
                 "Del alcance a la venta cerrada",
-              )}
-              description={localText(
-                idioma,
-                "Uma jornada única conecta a mídia ao CRM. Passe sobre cada etapa para ver taxa e custo da passagem.",
-                "Un solo recorrido conecta los medios con el CRM. Pasa sobre cada etapa para ver tasa y costo.",
               )}
               stages={funnelStages}
               idioma={idioma}

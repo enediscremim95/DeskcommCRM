@@ -9,7 +9,7 @@ const messageRow = {
   channel_session_id: "session1",
   media_url: null as string | null,
   media_mime: "audio/ogg",
-  media_storage_path: "org1/conv1/msg1.ogg",
+  media_storage_path: "org1/conv1/msg1.ogg" as string | null,
   media_derived_status: null as string | null,
   metadata: {} as Record<string, unknown>,
 };

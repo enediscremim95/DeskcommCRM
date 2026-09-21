@@ -221,7 +221,8 @@ describe("colunas da tabela de campanhas", () => {
 
     const user = userEvent.setup();
     render(<TrafficDashboard />);
-    expect(await screen.findByText("Do alcance à venda fechada")).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Do alcance à venda fechada" })).toBeInTheDocument();
+    expect(screen.queryByText("Do alcance à venda fechada")).not.toBeInTheDocument();
     expect(screen.getAllByRole("region", { name: "Do alcance à venda fechada" })).toHaveLength(1);
     await user.click(screen.getByText("Colunas (2)"));
     await user.selectOptions(

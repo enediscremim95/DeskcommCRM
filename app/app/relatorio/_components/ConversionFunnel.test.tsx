@@ -143,7 +143,6 @@ describe("funil visual de conversão", () => {
     render(
       <ConversionFunnel
         title="Da entrada ao fechamento"
-        description="Estado atual"
         idioma="pt"
         stages={[
           { key: "entered", label: "Leads que entraram", value: 20, rate: null },
