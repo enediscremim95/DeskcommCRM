@@ -1,8 +1,13 @@
 "use client";
 
+import { useState } from "react";
+import { toast } from "sonner";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Warning } from "@/lib/ui/icons";
+import { apiClient } from "@/lib/api/client";
+import { deveGuardarMidiaRecebida } from "@/lib/messaging/media/retention";
 import type {
   TenantOrganization,
   TenantCounts,
@@ -187,6 +192,71 @@ export function TenantOverview({ organization, counts, integrations }: TenantOve
           </div>
         </div>
       </div>
+
+      <MediaStorageSetting
+        organizationId={organization.id}
+        settings={organization.settings}
+      />
+    </div>
+  );
+}
+
+function MediaStorageSetting({
+  organizationId,
+  settings,
+}: {
+  organizationId: string;
+  settings: Record<string, unknown> | null;
+}) {
+  const t = useT();
+  const configured = deveGuardarMidiaRecebida(settings);
+  const [enabled, setEnabled] = useState(configured);
+  const [saving, setSaving] = useState(false);
+
+  const change = async (next: boolean) => {
+    const previous = enabled;
+    setEnabled(next);
+    setSaving(true);
+    try {
+      await apiClient.patch(`/api/v1/admin/tenants/${organizationId}`, {
+        whatsapp_media_storage_enabled: next,
+      });
+      toast.success(
+        t(next ? "Arquivos de mídia passarão a ser guardados" : "Arquivos de mídia não serão guardados"),
+      );
+    } catch {
+      setEnabled(previous);
+      toast.error(t("Não foi possível salvar a configuração de mídia"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border bg-card p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+            {t("Mídia do WhatsApp")}
+          </h2>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            {t(
+              enabled
+                ? "Fotos, áudios, vídeos e documentos recebidos são guardados no Storage."
+                : "O CRM guarda apenas legenda, tipo, nome, horário e texto extraído. O arquivo é descartado.",
+            )}
+          </p>
+        </div>
+        <Switch
+          aria-label={t("Guardar arquivos de mídia recebidos")}
+          checked={enabled}
+          disabled={saving}
+          onCheckedChange={(next) => { void change(next); }}
+        />
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        {t("Padrão desligado. Arquivos já guardados não são apagados por esta opção.")}
+      </p>
     </div>
   );
 }

@@ -16,7 +16,7 @@
  *    falha que produziu este bug (o TypeScript não enxerga o CHECK).
  */
 import { describe, expect, it } from "vitest";
-import { render, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 
 import { badgeVariants } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -94,6 +94,20 @@ function classeDaVariante(
 }
 
 describe("TenantOverview — status da Nuvemshop", () => {
+  it("mostra a retenção de mídia desligada quando a organização não fez opt-in", () => {
+    render(
+      <TenantOverview
+        organization={ORG}
+        counts={COUNTS}
+        integrations={{ nuvemshop_status: null, nuvemshop_connected_at: null }}
+      />,
+    );
+    expect(screen.getByRole("switch", { name: "Guardar arquivos de mídia recebidos" }))
+      .not.toBeChecked();
+    expect(screen.getByText(/O CRM guarda apenas legenda, tipo, nome, horário e texto extraído/))
+      .toBeInTheDocument();
+  });
+
   it("integração saudável lê 'Conectado', não a string do banco", () => {
     const badge = badgeNuvemshop("healthy");
     expect(badge).toHaveTextContent("Conectado");

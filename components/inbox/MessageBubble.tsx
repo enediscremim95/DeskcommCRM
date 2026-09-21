@@ -7,6 +7,10 @@ import { ArrowBendUpLeft, Check, Checks, Robot, WarningOctagon } from "@/lib/ui/
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
+import {
+  midiaFoiDescartada,
+  nomeDoArquivoDeMidia,
+} from "@/lib/messaging/media/retention";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
@@ -60,7 +64,9 @@ export function MessageBubble({
   const isOutbound = message.direction === "outbound";
   const time = format(new Date(message.sent_at), "HH:mm", { locale: localeDaData });
   const isFailed = message.status === "failed";
-  const hasMedia = Boolean(message.media_url || message.media_storage_path);
+  const mediaDiscarded = midiaFoiDescartada(message.metadata);
+  const hasMedia = !mediaDiscarded && Boolean(message.media_url || message.media_storage_path);
+  const mediaFilename = nomeDoArquivoDeMidia(message.metadata);
   const isContact = message.type === "contact";
   // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
   const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
@@ -215,6 +221,15 @@ export function MessageBubble({
           </p>
         ) : (
           <>
+            {mediaDiscarded && (
+              <p
+                className={cn("italic leading-snug opacity-70", message.body && "mb-1")}
+                data-testid="media-not-stored"
+              >
+                {t(rotuloDeMidiaNaoGuardada(message.type))}
+                {mediaFilename ? `: ${mediaFilename}` : ""}
+              </p>
+            )}
             {hasMedia && (
               <div className={cn(message.body && "mb-1")}>
                 <MediaRenderer message={message} />
@@ -297,4 +312,15 @@ export function MessageBubble({
       )}
     </div>
   );
+}
+
+function rotuloDeMidiaNaoGuardada(type: string): string {
+  const labels: Record<string, string> = {
+    image: "Foto recebida, arquivo não guardado",
+    audio: "Áudio recebido, arquivo não guardado",
+    video: "Vídeo recebido, arquivo não guardado",
+    sticker: "Figurinha recebida, arquivo não guardado",
+    document: "Documento recebido, arquivo não guardado",
+  };
+  return labels[type] ?? "Mídia recebida, arquivo não guardado";
 }

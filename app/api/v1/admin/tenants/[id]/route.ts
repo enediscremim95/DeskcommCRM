@@ -4,10 +4,25 @@ import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import type { AuditAction } from "@/lib/audit/actions";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { WHATSAPP_MEDIA_STORAGE_SETTING } from "@/lib/messaging/media/retention";
 
-const reportUrlSchema = z.object({ report_url: z.string().url().startsWith("https://").nullable() });
+const tenantPatchSchema = z.union([
+  z.object({ report_url: z.string().url().startsWith("https://").nullable() }).strict(),
+  z.object({ whatsapp_media_storage_enabled: z.boolean() }).strict(),
+]);
+
+export function mesclarConfiguracaoDeMidia(
+  settings: unknown,
+  enabled: boolean,
+): Record<string, unknown> {
+  const current = settings && typeof settings === "object" && !Array.isArray(settings)
+    ? settings as Record<string, unknown>
+    : {};
+  return { ...current, [WHATSAPP_MEDIA_STORAGE_SETTING]: enabled };
+}
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/admin/tenants/[id]
@@ -176,12 +191,43 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const requestId = randomUUID();
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try { adminCtx = await requirePlatformAdmin(); } catch { return fail("forbidden", "Platform admin required", 403, { requestId }); }
-  const parsed = reportUrlSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return fail("validation_error", "URL de relatório inválida", 400, { requestId, details: parsed.error.flatten() });
+  const parsed = tenantPatchSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return fail("validation_error", "Configuração inválida", 400, { requestId, details: parsed.error.flatten() });
   const admin = createAdminClient();
-  const { data, error } = await admin.from("organizations").update({ report_url: parsed.data.report_url }).eq("id", id).select("id").maybeSingle();
-  if (error) return fail("internal_error", "Não foi possível salvar o relatório", 500, { requestId });
+  let patch: { report_url?: string | null; settings?: Record<string, unknown> };
+  let action: AuditAction;
+  let metadata: Record<string, unknown>;
+
+  if ("report_url" in parsed.data) {
+    patch = { report_url: parsed.data.report_url };
+    action = "platform_admin.tenant_report_updated";
+    metadata = { configured: !!parsed.data.report_url };
+  } else {
+    const { data: organization, error: loadError } = await admin
+      .from("organizations")
+      .select("settings")
+      .eq("id", id)
+      .maybeSingle();
+    if (loadError) return fail("internal_error", "Não foi possível ler a configuração", 500, { requestId });
+    if (!organization) return fail("not_found", "Tenant not found", 404, { requestId });
+    patch = {
+      settings: mesclarConfiguracaoDeMidia(
+        organization.settings,
+        parsed.data.whatsapp_media_storage_enabled,
+      ),
+    };
+    action = "platform_admin.tenant_whatsapp_media_storage_updated";
+    metadata = { enabled: parsed.data.whatsapp_media_storage_enabled };
+  }
+
+  const { data, error } = await admin
+    .from("organizations")
+    .update(patch)
+    .eq("id", id)
+    .select("id, settings, report_url")
+    .maybeSingle();
+  if (error) return fail("internal_error", "Não foi possível salvar a configuração", 500, { requestId });
   if (!data) return fail("not_found", "Tenant not found", 404, { requestId });
-  void audit({ action: "platform_admin.tenant_report_updated", actorUserId: adminCtx.user.id, actingAsPlatformAdmin: true, bypassedRls: true, organizationId: id, resourceType: "organization", resourceId: id, requestId, metadata: { configured: !!parsed.data.report_url } });
+  void audit({ action, actorUserId: adminCtx.user.id, actingAsPlatformAdmin: true, bypassedRls: true, organizationId: id, resourceType: "organization", resourceId: id, requestId, metadata });
   return ok(data, { requestId });
 }

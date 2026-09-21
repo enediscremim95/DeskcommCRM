@@ -280,6 +280,40 @@ export function mediaMimeOf(p: WahaPayload): string | null {
 }
 
 /**
+ * Nome é informação escrita e continua no CRM mesmo quando o binário é
+ * descartado. NOWEB varia a posição por tipo, então a leitura é defensiva e
+ * limitada aos envelopes conhecidos, sem apertar o contrato do webhook.
+ */
+export function mediaFilenameOf(p: WahaPayload): string | null {
+  if (p.media?.filename) return p.media.filename;
+
+  const raw = p._data?.message;
+  if (!raw || typeof raw !== "object") return null;
+  const message = raw as Record<string, unknown>;
+  const candidates: unknown[] = [
+    message.documentMessage,
+    message.imageMessage,
+    message.videoMessage,
+    message.audioMessage,
+  ];
+
+  const wrapped = message.documentWithCaptionMessage;
+  if (wrapped && typeof wrapped === "object") {
+    const inner = (wrapped as Record<string, unknown>).message;
+    if (inner && typeof inner === "object") {
+      candidates.push((inner as Record<string, unknown>).documentMessage);
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const fileName = (candidate as Record<string, unknown>).fileName;
+    if (typeof fileName === "string" && fileName.trim()) return fileName.trim();
+  }
+  return null;
+}
+
+/**
  * Mapeia o `type` cru do WAHA NOWEB para o vocabulário de messages.type do CRM
  * (check constraint messages_type_check). WAHA usa `chat` p/ texto, `ptt` p/
  * áudio de voz, `vcard` p/ contato, etc. Sem esse mapa o INSERT viola a
@@ -604,6 +638,7 @@ async function handleInbound(
   if (!conversationId) return;
 
   const now = new Date().toISOString();
+  const mediaFilename = mediaFilenameOf(p);
   const { data: insertedMessage, error: insertErr } = await admin
     .from("messages")
     .insert({
@@ -622,7 +657,11 @@ async function handleInbound(
       sent_via: "external_device",
       sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
       delivered_at: now,
-      metadata: { raw_type: p.type, ack_name: p.ackName },
+      metadata: {
+        raw_type: p.type,
+        ack_name: p.ackName,
+        ...(mediaFilename ? { media_filename: mediaFilename } : {}),
+      },
     })
     .select("id")
     .maybeSingle();
@@ -832,6 +871,7 @@ async function handleOutboundFromUserPhone(
   if (!conversationId) return;
 
   const now = new Date().toISOString();
+  const mediaFilename = mediaFilenameOf(p);
   const { data: insertedOutbound, error: insertErr } = await admin
     .from("messages")
     .insert({
@@ -849,7 +889,11 @@ async function handleOutboundFromUserPhone(
       media_mime: mediaMimeOf(p),
       sent_via: "external_device",
       sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
-      metadata: { raw_type: p.type, fromMe: true },
+      metadata: {
+        raw_type: p.type,
+        fromMe: true,
+        ...(mediaFilename ? { media_filename: mediaFilename } : {}),
+      },
     })
     .select("id")
     .maybeSingle();

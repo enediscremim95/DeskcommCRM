@@ -44,6 +44,7 @@ const booleano = z.boolean().nullish();
 const wahaMediaSchema = z.looseObject({
   url: texto,
   mimetype: texto,
+  filename: texto,
 });
 
 /**

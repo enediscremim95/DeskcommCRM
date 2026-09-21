@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Mídia recebida do WhatsApp com retenção opcional",
+    "subtitle": "o texto continua; o binário só permanece com opt-in explícito da organização",
+    "output": "midia-whatsapp-opcional.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "config", "label": "Configuração" },
+    { "id": "entrada", "label": "Entrada do canal" },
+    { "id": "processa", "label": "Processamento" },
+    { "id": "dados", "label": "Estado durável" },
+    { "id": "tela", "label": "O que a pessoa vê" }
+  ],
+  "mainPath": ["toggle", "settings", "ingest", "persist", "derive", "messages", "bubble"],
+  "nodes": [
+    { "id": "toggle", "lane": "config", "col": 1, "type": "frontend", "label": "TenantOverview", "sublabel": "platform admin liga ou desliga por organização" },
+    { "id": "patch", "lane": "config", "col": 2, "type": "api", "label": "PATCH /admin/tenants/[id]", "sublabel": "Zod, merge de settings e auditoria" },
+    { "id": "settings", "lane": "dados", "col": 2, "type": "database", "label": "organizations.settings", "sublabel": "whatsapp_media_storage_enabled; ausente significa desligado" },
+    { "id": "ingest", "lane": "entrada", "col": 1, "type": "service", "label": "ingestão dos canais", "sublabel": "grava legenda, tipo, MIME, nome e ponteiro temporário" },
+    { "id": "event", "lane": "entrada", "col": 2, "type": "messagebus", "label": "media.persist_requested", "sublabel": "uma mensagem, uma decisão de retenção" },
+    { "id": "persist", "lane": "processa", "col": 2, "type": "service", "label": "media-persist-worker", "sublabel": "opt-in grava; padrão marca not_stored" },
+    { "id": "storage", "lane": "dados", "col": 3, "type": "cloud", "label": "whatsapp-media", "sublabel": "recebe somente quando o opt-in é true" },
+    { "id": "derive", "lane": "processa", "col": 3, "type": "service", "label": "media-derive-worker", "sublabel": "Storage ou download transitório pelo adapter" },
+    { "id": "messages", "lane": "dados", "col": 4, "type": "database", "label": "messages", "sublabel": "media_derived_text + metadata.media_status; ponteiro transitório limpo" },
+    { "id": "mediaRoute", "lane": "tela", "col": 4, "type": "api", "label": "GET messages/[id]/media", "sublabel": "not_stored nunca alcança fallback do provider" },
+    { "id": "bubble", "lane": "tela", "col": 5, "type": "frontend", "label": "MessageBubble", "sublabel": "caption + aviso claro + nome, sem miniatura quebrada" },
+    { "id": "agent", "lane": "tela", "col": 5, "type": "service", "label": "contexto do agente", "sublabel": "lê media_derived_text depois da derivação" },
+    { "id": "audit", "lane": "dados", "col": 3, "type": "database", "label": "api_audit_log", "sublabel": "tenant_whatsapp_media_storage_updated" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "toggle", "to": "patch", "label": "booleano explícito" },
+    { "id": "e2", "from": "patch", "to": "settings", "label": "merge sem apagar outras chaves" },
+    { "id": "e3", "from": "patch", "to": "audit", "label": "registra enabled" },
+    { "id": "e4", "from": "ingest", "to": "event", "label": "message_id + organization_id" },
+    { "id": "e5", "from": "event", "to": "persist", "label": "consumer media_persist_v1" },
+    { "id": "e6", "from": "settings", "to": "persist", "label": "somente true autoriza retenção" },
+    { "id": "e7", "from": "persist", "to": "storage", "label": "ramo opt-in: upload" },
+    { "id": "e8", "from": "persist", "to": "derive", "label": "ramo padrão: derivação transitória" },
+    { "id": "e9", "from": "storage", "to": "derive", "label": "ramo opt-in: download persistido" },
+    { "id": "e10", "from": "derive", "to": "messages", "label": "texto pronto e descarte do ponteiro" },
+    { "id": "e11", "from": "messages", "to": "bubble", "label": "media_status decide aviso ou renderer" },
+    { "id": "e12", "from": "messages", "to": "mediaRoute", "label": "not_stored fecha o acesso" },
+    { "id": "e13", "from": "messages", "to": "agent", "label": "texto derivado alimenta o turno" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Living System Checklist",
+      "items": [
+        "entrada: webhooks de canal e toggle do platform admin",
+        "saída: MessageBubble e contexto textual do agente",
+        "registro: metadata.media_status e auditoria da configuração",
+        "porta: Visão Geral do tenant no painel administrativo",
+        "anti-morte: o drain repete a derivação e marca failed no limite",
+        "laço de retorno: o aviso visível explica o descarte; religar muda as próximas mensagens"
+      ]
+    }
+  ]
+}

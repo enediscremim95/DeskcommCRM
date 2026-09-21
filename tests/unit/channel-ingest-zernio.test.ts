@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 /**
  * Ingestão: webhook → contato, conversa, mensagem.
@@ -211,7 +211,9 @@ describe("o que a ingestão GRAVA", () => {
     const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
     expect(ins.type).toBe("image");
     // A url é endpoint AUTENTICADO e expira: guardar é ponteiro, não conteúdo.
-    expect(ins.metadata).toEqual({ provider_attachments: [{ type: "image", url: "https://z/media/1" }] });
+    expect(ins.metadata).toEqual({
+      provider_attachments: [{ type: "image", url: "https://z/media/1", filename: null }],
+    });
   });
 
   it("grava o TELEFONE mesmo quando a âncora é o id opaco", async () => {
