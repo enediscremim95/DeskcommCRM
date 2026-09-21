@@ -14,7 +14,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { setActiveOrg } from "@/app/actions/shell/setActiveOrg";
+
+/**
+ * Acima disto, a lista deixa de caber na tela e achar a organização pelo olho
+ * vira rolagem: a busca aparece. Abaixo, o campo só ocuparia espaço.
+ */
+const MINIMO_PARA_BUSCAR = 6;
 
 export function TenantSwitcher() {
   const t = useT();
@@ -22,6 +29,7 @@ export function TenantSwitcher() {
   const active = useActiveOrg();
   const transition = useOrganizationTransition();
   const [isPending, setPending] = useState(false);
+  const [busca, setBusca] = useState("");
   const switchTo = async (orgId: string) => {
     if (orgId === active?.orgId) return;
     flushSync(() => { setPending(true); transition.begin(t("Carregando organização…")); });
@@ -39,8 +47,17 @@ export function TenantSwitcher() {
 
   if (user.organizations.length <= 1 && !user.is_platform_admin) return null;
 
+  // Sem acento e sem caixa: quem digita "imobiliaria" acha "Imobiliária".
+  const semAcento = (texto: string) =>
+    texto.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+  const alvo = semAcento(busca.trim());
+  const organizacoes = alvo
+    ? user.organizations.filter((org) => semAcento(org.organization_name).includes(alvo))
+    : user.organizations;
+  const mostrarBusca = user.organizations.length >= MINIMO_PARA_BUSCAR;
+
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(aberto) => { if (!aberto) setBusca(""); }}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" disabled={isPending || !!user.support} className="gap-2" title={user.support ? "Saia do acompanhamento para trocar de organização" : undefined} data-testid="tenant-switcher">
           <Storefront size={16} weight="duotone" aria-hidden />
@@ -49,7 +66,25 @@ export function TenantSwitcher() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[220px]">
-        {user.organizations.map((org) => (
+        {mostrarBusca && (
+          <div className="px-2 pt-1 pb-2" onKeyDown={(event) => event.stopPropagation()}>
+            <Input
+              autoFocus
+              value={busca}
+              onChange={(event) => setBusca(event.target.value)}
+              placeholder={t("Buscar organização…")}
+              aria-label={t("Buscar organização")}
+              data-testid="tenant-switcher-busca"
+              className="h-8"
+            />
+          </div>
+        )}
+        {organizacoes.length === 0 && (
+          <p className="px-2 py-3 text-center text-xs text-muted-foreground">
+            {t("Nenhuma organização com esse nome")}
+          </p>
+        )}
+        {organizacoes.map((org) => (
           <DropdownMenuItem
             key={org.organization_id}
             data-testid={`tenant-switcher-item-${org.organization_id}`}
