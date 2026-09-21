@@ -1,14 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
-import { historicoEstruturado, rotuloDoCampo, valorLegivel } from "@/lib/leads/dados-completos";
+import { copyToClipboard } from "@/lib/clipboard";
+import {
+  apresentacaoDoValor,
+  historicoEstruturado,
+  linhasDaNota,
+  rotuloDoCampo,
+  valorLegivel,
+} from "@/lib/leads/dados-completos";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import type { Lead } from "@/lib/types/leads";
+import { CaretRight, Check, Copy } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -45,30 +54,136 @@ function dinheiroLegivel(centavos: number | null, moeda: string | null, locale: 
   }
 }
 
-/**
- * Uma linha rótulo → valor, como a ficha do Kommo: rótulo discreto à esquerda,
- * valor à direita, um fio fino entre as linhas. Vazio fica apagado, não some:
- * na ficha, saber que o campo EXISTE e está em branco é informação.
- */
-function Campo({ rotulo, valor }: { rotulo: string; valor: unknown }) {
+function estaVazio(valor: unknown): boolean {
   const texto = valorLegivel(valor);
-  const multilinha = typeof valor === "object" && valor !== null;
-  const vazio = texto === "-" || texto === "";
+  return texto === "-" || texto === "";
+}
+
+/** Botão discreto que copia o valor inteiro — para o que não cabe na linha. */
+function BotaoCopiar({ texto }: { texto: string }) {
+  const t = useT();
+  const [copiado, setCopiado] = useState(false);
+
+  useEffect(() => {
+    if (!copiado) return;
+    const timer = window.setTimeout(() => setCopiado(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [copiado]);
+
   return (
-    <div className="grid min-w-0 grid-cols-[6.5rem_minmax(0,1fr)] items-baseline gap-x-3 border-b border-border/60 py-1.5">
-      <dt className="truncate text-xs text-text-muted" title={rotulo}>
+    <Button
+      type="button"
+      size="icon"
+      variant="ghost"
+      className="h-6 w-6 shrink-0 text-text-muted hover:text-text"
+      aria-label={t("Copiar")}
+      title={copiado ? t("Copiado!") : t("Copiar")}
+      onClick={async () => {
+        if (await copyToClipboard(texto)) setCopiado(true);
+      }}
+    >
+      {copiado ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}
+    </Button>
+  );
+}
+
+/**
+ * Um valor de texto, com a quebra decidida pelo que ele é. Prosa quebra em
+ * palavra; e-mail, endereço e código ficam numa linha só, com o valor inteiro
+ * no tooltip e num botão de copiar — em painel estreito é isso ou partir
+ * "ferrernelson33@yahoo.com" em quatro linhas.
+ */
+function ValorDeTexto({ texto, nowrap }: { texto: string; nowrap?: boolean }) {
+  const apresentacao = apresentacaoDoValor(texto);
+
+  if (nowrap) {
+    return <span className="whitespace-nowrap tabular-nums">{texto}</span>;
+  }
+
+  if (apresentacao === "email" || apresentacao === "url") {
+    const href = apresentacao === "email" ? `mailto:${texto.trim()}` : texto.trim();
+    return (
+      <span className="flex min-w-0 items-center gap-1">
+        <a
+          className="min-w-0 truncate hover:underline"
+          href={href}
+          title={texto}
+          target={apresentacao === "url" ? "_blank" : undefined}
+          rel={apresentacao === "url" ? "noopener noreferrer" : undefined}
+        >
+          {texto}
+        </a>
+        <BotaoCopiar texto={texto.trim()} />
+      </span>
+    );
+  }
+
+  if (apresentacao === "codigo") {
+    return (
+      <span className="flex min-w-0 items-center gap-1">
+        <span className="min-w-0 truncate font-mono text-xs" title={texto}>
+          {texto}
+        </span>
+        <BotaoCopiar texto={texto.trim()} />
+      </span>
+    );
+  }
+
+  const linhas = linhasDaNota(texto);
+  if (linhas) {
+    return (
+      <span className="grid gap-0.5">
+        {linhas.map((linha, indice) => (
+          <span key={indice} className="min-w-0 break-words">
+            {linha.rotulo ? <span className="text-text-muted">{linha.rotulo}: </span> : null}
+            {linha.valor}
+          </span>
+        ))}
+      </span>
+    );
+  }
+
+  return <span className="break-words whitespace-pre-wrap">{texto}</span>;
+}
+
+interface CampoProps {
+  rotulo: string;
+  valor: unknown;
+  /** Data e hora não quebram no meio: "20/09/2026, 17:20" numa linha só. */
+  nowrap?: boolean;
+}
+
+/**
+ * Uma linha rótulo → valor, como a ficha do Kommo. A largura que manda é a do
+ * PAINEL (container query), não a da janela: no painel estreito o rótulo fica
+ * em cima e o valor embaixo, inteiro; a partir de 28rem os dois dividem a
+ * linha. Rótulo nunca é cortado com reticências.
+ */
+function Campo({ rotulo, valor, nowrap }: CampoProps) {
+  const texto = valorLegivel(valor);
+  const objeto = typeof valor === "object" && valor !== null && !Array.isArray(valor);
+
+  return (
+    <div className="grid min-w-0 gap-x-3 gap-y-0.5 border-b border-border/60 py-2 @md:grid-cols-[9rem_minmax(0,1fr)] @md:items-baseline">
+      <dt className="min-w-0 text-[11px] leading-4 break-words text-text-muted @md:text-xs @md:leading-5">
         {rotulo}
       </dt>
-      <dd
-        className={cn(
-          "min-w-0 break-words",
-          multilinha ? "font-mono text-xs whitespace-pre-wrap" : "text-[13px] leading-5",
-          vazio ? "text-text-subtle" : "text-text",
+      <dd className="min-w-0 text-[13px] leading-5 text-text">
+        {objeto ? (
+          <span className="block font-mono text-xs break-all whitespace-pre-wrap">{texto}</span>
+        ) : (
+          <ValorDeTexto texto={texto} nowrap={nowrap} />
         )}
-      >
-        {texto}
       </dd>
     </div>
+  );
+}
+
+function Titulo({ children }: { children: string }) {
+  return (
+    <h4 className="mb-1 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
+      {children}
+    </h4>
   );
 }
 
@@ -91,9 +206,12 @@ function Historico({ itens, fieldDefs }: { itens: unknown[]; fieldDefs: CustomFi
           >
             <dl className="grid gap-1.5">
               {entradas.map(([chave, valor]) => (
-                <div key={chave} className="grid grid-cols-[minmax(7rem,0.35fr)_1fr] gap-2">
+                <div
+                  key={chave}
+                  className="grid min-w-0 gap-x-2 @sm:grid-cols-[minmax(6rem,0.35fr)_1fr]"
+                >
                   <dt className="text-xs text-text-muted">{rotuloDoCampo(chave, fieldDefs)}</dt>
-                  <dd className="break-words whitespace-pre-wrap">{valorLegivel(valor)}</dd>
+                  <dd className="min-w-0 break-words whitespace-pre-wrap">{valorLegivel(valor)}</dd>
                 </div>
               ))}
             </dl>
@@ -104,11 +222,25 @@ function Historico({ itens, fieldDefs }: { itens: unknown[]; fieldDefs: CustomFi
   );
 }
 
+/** Campos declarados no funil vêm primeiro, na ordem do funil; o resto depois. */
+function ordenarCampos(campos: Array<[string, unknown]>, fieldDefs: CustomFieldDef[]) {
+  const posicao = new Map(fieldDefs.map((campo, indice) => [campo.key, indice]));
+  return [...campos].sort(([a], [b]) => {
+    const pa = posicao.get(a) ?? Number.MAX_SAFE_INTEGER;
+    const pb = posicao.get(b) ?? Number.MAX_SAFE_INTEGER;
+    return pa - pb;
+  });
+}
+
 /**
  * Uma apresentação única para a ficha do contato e o dossiê do Kanban.
  * Campos declarados ganham o rótulo do funil; os demais continuam visíveis com
  * rótulo derivado da chave. Assim importação, webhook e WhatsApp não dependem
  * de configuração posterior para o dado aparecer.
+ *
+ * Campo em branco não aparece: numa ficha lida dezenas de vezes por dia, o
+ * "-" repetido só empurra para baixo o que importa. O que tem valor está aqui;
+ * o que não tem, o formulário de edição mostra.
  */
 export function DadosCompletosDoLead({
   lead,
@@ -120,13 +252,48 @@ export function DadosCompletosDoLead({
   const t = useT();
   const locale = useTagDeIdioma();
   const historico = historicoEstruturado(lead.custom_fields?.historico);
-  const campos = Object.entries(lead.custom_fields ?? {}).filter(
-    ([chave]) => chave !== "historico",
+  const campos = ordenarCampos(
+    Object.entries(lead.custom_fields ?? {}).filter(
+      ([chave, valor]) => chave !== "historico" && !estaVazio(valor),
+    ),
+    fieldDefs,
   );
-  const origem = Object.entries(lead.source_metadata ?? {});
+  const origem = Object.entries(lead.source_metadata ?? {}).filter(
+    ([, valor]) => !estaVazio(valor),
+  );
+
+  const negocio: CampoProps[] = [
+    { rotulo: t("Título"), valor: lead.title },
+    { rotulo: t("Funil"), valor: pipelineName ?? t("Não informado") },
+    { rotulo: t("Etapa"), valor: stageName ?? t("Não informado") },
+    { rotulo: t("Valor"), valor: dinheiroLegivel(lead.value_cents, lead.currency, locale) },
+    { rotulo: t("Origem"), valor: lead.source },
+    { rotulo: t("Responsável"), valor: lead.owner_agent?.name ?? null },
+    { rotulo: t("Tags"), valor: lead.tags },
+    { rotulo: t("Descrição"), valor: lead.description },
+    {
+      rotulo: t("Previsão de fechamento"),
+      valor: dataLegivel(lead.expected_close_date, locale),
+      nowrap: true,
+    },
+    { rotulo: t("Fechado em"), valor: dataLegivel(lead.closed_at, locale), nowrap: true },
+    { rotulo: t("Motivo da perda"), valor: lead.lost_reason },
+  ].filter((campo) => !estaVazio(campo.valor));
+
+  const sistema: CampoProps[] = [
+    { rotulo: t("Identificador externo"), valor: lead.external_id },
+    { rotulo: t("Atribuído em"), valor: dataLegivel(lead.assigned_at, locale), nowrap: true },
+    { rotulo: t("Criado em"), valor: dataLegivel(lead.created_at, locale), nowrap: true },
+    { rotulo: t("Atualizado em"), valor: dataLegivel(lead.updated_at, locale), nowrap: true },
+    {
+      rotulo: t("Última atividade"),
+      valor: dataLegivel(lead.last_activity_at, locale),
+      nowrap: true,
+    },
+  ].filter((campo) => !estaVazio(campo.valor));
 
   return (
-    <div className="space-y-4" data-testid={`dados-completos-lead-${lead.id}`}>
+    <div className="@container space-y-5" data-testid={`dados-completos-lead-${lead.id}`}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">{stageName ?? t("Não informado")}</Badge>
         <Badge
@@ -157,36 +324,19 @@ export function DadosCompletosDoLead({
         </div>
       </div>
 
-      <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
-        <Campo rotulo={t("Título")} valor={lead.title} />
-        <Campo rotulo={t("Funil")} valor={pipelineName ?? t("Não informado")} />
-        <Campo rotulo={t("Etapa")} valor={stageName ?? t("Não informado")} />
-        <Campo
-          rotulo={t("Valor")}
-          valor={dinheiroLegivel(lead.value_cents, lead.currency, locale)}
-        />
-        <Campo rotulo={t("Origem")} valor={lead.source} />
-        <Campo rotulo={t("Atribuído em")} valor={dataLegivel(lead.assigned_at, locale)} />
-        <Campo
-          rotulo={t("Previsão de fechamento")}
-          valor={dataLegivel(lead.expected_close_date, locale)}
-        />
-        <Campo rotulo={t("Fechado em")} valor={dataLegivel(lead.closed_at, locale)} />
-        <Campo rotulo={t("Motivo da perda")} valor={lead.lost_reason} />
-        <Campo rotulo={t("Tags")} valor={lead.tags} />
-        <Campo rotulo={t("Descrição")} valor={lead.description} />
-        <Campo rotulo={t("Identificador externo")} valor={lead.external_id} />
-        <Campo rotulo={t("Criado em")} valor={dataLegivel(lead.created_at, locale)} />
-        <Campo rotulo={t("Atualizado em")} valor={dataLegivel(lead.updated_at, locale)} />
-        <Campo rotulo={t("Última atividade")} valor={dataLegivel(lead.last_activity_at, locale)} />
-      </dl>
+      <section>
+        <Titulo>{t("Negócio")}</Titulo>
+        <dl className="grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
+          {negocio.map((campo) => (
+            <Campo key={campo.rotulo} {...campo} />
+          ))}
+        </dl>
+      </section>
 
       <section>
-        <h4 className="mb-1.5 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
-          {t("Dados informados")}
-        </h4>
+        <Titulo>{t("Dados informados")}</Titulo>
         {campos.length > 0 ? (
-          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
             {campos.map(([chave, valor]) => (
               <Campo key={chave} rotulo={rotuloDoCampo(chave, fieldDefs)} valor={valor} />
             ))}
@@ -197,11 +347,9 @@ export function DadosCompletosDoLead({
       </section>
 
       <section>
-        <h4 className="mb-1.5 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
-          {t("Origem, campanha e anúncio")}
-        </h4>
+        <Titulo>{t("Origem, campanha e anúncio")}</Titulo>
         {origem.length > 0 ? (
-          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
             {origem.map(([chave, valor]) => (
               <Campo key={chave} rotulo={rotuloDoCampo(chave)} valor={valor} />
             ))}
@@ -213,9 +361,7 @@ export function DadosCompletosDoLead({
 
       {lead.custom_fields && Object.hasOwn(lead.custom_fields, "historico") && (
         <section>
-          <h4 className="mb-1.5 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
-            {t("Histórico de atendimento")}
-          </h4>
+          <Titulo>{t("Histórico de atendimento")}</Titulo>
           {historico ? (
             <Historico itens={historico} fieldDefs={fieldDefs} />
           ) : (
@@ -225,6 +371,29 @@ export function DadosCompletosDoLead({
           )}
         </section>
       )}
+
+      {sistema.length > 0 ? (
+        <details className="group">
+          <summary
+            className={cn(
+              "flex cursor-pointer list-none items-center gap-1 text-[11px] font-semibold tracking-[0.08em] text-text-subtle uppercase select-none",
+              "hover:text-text-muted [&::-webkit-details-marker]:hidden",
+            )}
+          >
+            <CaretRight
+              size={12}
+              aria-hidden
+              className="transition-transform group-open:rotate-90"
+            />
+            {t("Sistema")}
+          </summary>
+          <dl className="mt-1 grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
+            {sistema.map((campo) => (
+              <Campo key={campo.rotulo} {...campo} />
+            ))}
+          </dl>
+        </details>
+      ) : null}
     </div>
   );
 }
