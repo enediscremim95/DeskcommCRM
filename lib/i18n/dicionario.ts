@@ -4414,11 +4414,11 @@ export const DICIONARIO: Traducoes = {
   "As etapas que serviriam para este passo já estão sendo usadas por outros passos. Libere uma delas para poder escolhê-la aqui.": {
     es: "Las etapas que servirían para este paso ya están siendo usadas por otros pasos. Libera una de ellas para poder elegirla aquí.",
   },
-  "Este funil não tem nenhuma etapa marcada como fechamento, então não há para onde levar o card quando a pessoa fecha. Use «Marcar como venda fechada» em «Etapas deste funil».": {
-    es: "Este embudo no tiene ninguna etapa marcada como cierre, así que no hay adónde llevar la tarjeta cuando la persona cierra. Usa «Marcar como venta cerrada» en «Etapas de este embudo».",
+  "Este funil não tem nenhuma etapa marcada como fechamento, então não há para onde levar o card quando a pessoa fecha. Em «Etapas deste funil», escolha o tipo «Venda fechada» numa etapa.": {
+    es: "Este embudo no tiene ninguna etapa marcada como cierre, así que no hay adónde llevar la tarjeta cuando la persona cierra. En «Etapas de este embudo», elige el tipo «Venta cerrada» en una etapa.",
   },
-  "Este funil não tem nenhuma etapa marcada como perda, então não há para onde levar o card quando a pessoa desiste. Use «Marcar como perdido» em «Etapas deste funil».": {
-    es: "Este embudo no tiene ninguna etapa marcada como pérdida, así que no hay adónde llevar la tarjeta cuando la persona desiste. Usa «Marcar como perdido» en «Etapas de este embudo».",
+  "Este funil não tem nenhuma etapa marcada como perda, então não há para onde levar o card quando a pessoa desiste. Em «Etapas deste funil», escolha o tipo «Perdido» numa etapa.": {
+    es: "Este embudo no tiene ninguna etapa marcada como pérdida, así que no hay adónde llevar la tarjeta cuando la persona desiste. En «Etapas de este embudo», elige el tipo «Perdido» en una etapa.",
   },
   "Este funil só tem etapas de fechamento e de perda, então não há etapa comum para receber o card neste passo. Crie as etapas do meio do caminho em «Etapas deste funil».": {
     es: "Este embudo solo tiene etapas de cierre y de pérdida, así que no hay una etapa común para recibir la tarjeta en este paso. Crea las etapas intermedias en «Etapas de este embudo».",
@@ -4463,6 +4463,39 @@ export const DICIONARIO: Traducoes = {
   "Renomeie direto no campo, mude a ordem com as setas e use o menu de cada etapa para marcar venda fechada, perdido ou arquivar.": {
     es: "Renombra directo en el campo, cambia el orden con las flechas y usa el menú de cada etapa para marcar venta cerrada, perdido o archivar.",
   },
+  "Arraste pela alça para mudar a ordem, clique no nome para renomear, escolha o tipo de cada etapa e exclua as que não usa.": {
+    es: "Arrastra por el asa para cambiar el orden, haz clic en el nombre para renombrar, elige el tipo de cada etapa y elimina las que no uses.",
+  },
+  "Segure e arraste para mudar a ordem": { es: "Mantén presionado y arrastra para cambiar el orden" },
+  "Tipo da etapa": { es: "Tipo de la etapa" },
+  "Etapa normal": { es: "Etapa normal" },
+  "Venda fechada (aqui o lead vira cliente)": { es: "Venta cerrada (aquí el lead se vuelve cliente)" },
+  "Perdido (aqui o lead desistiu)": { es: "Perdido (aquí el lead desistió)" },
+  "Para mudar, escolha Venda fechada em outra etapa.": { es: "Para cambiar, elige Venta cerrada en otra etapa." },
+  "Para mudar, escolha Perdido em outra etapa.": { es: "Para cambiar, elige Perdido en otra etapa." },
+  "Etapas de venda fechada e perdido não podem ser excluídas: o funil precisa de uma de cada.": {
+    es: "Las etapas de venta cerrada y perdido no se pueden eliminar: el embudo necesita una de cada.",
+  },
+  "Excluir a etapa": { es: "Eliminar la etapa" },
+  "Ela sai do quadro e os leads que estiverem nela vão para a etapa que você escolher. O histórico de quem passou por ela continua guardado, mas": {
+    es: "Sale del tablero y los leads que estén en ella irán a la etapa que elijas. El historial de quienes pasaron por ella sigue guardado, pero",
+  },
+  "não dá para trazer a etapa de volta por aqui": { es: "no se puede traer la etapa de vuelta por aquí" },
+  "está nesta etapa e não há outra etapa normal para recebê-lo.": {
+    es: "está en esta etapa y no hay otra etapa normal para recibirlo.",
+  },
+  "estão nesta etapa e não há outra etapa normal para recebê-los.": {
+    es: "están en esta etapa y no hay otra etapa normal para recibirlos.",
+  },
+  "Crie uma etapa antes de excluir": { es: "Crea una etapa antes de eliminar" },
+  "O único lead dela vai para a etapa que você escolher.": { es: "El único lead de ella irá a la etapa que elijas." },
+  Os: { es: "Los" },
+  "leads dela vão para a etapa que você escolher.": { es: "leads de ella irán a la etapa que elijas." },
+  "Para onde vão os leads de": { es: "Adónde van los leads de" },
+  "Excluindo, ele para de mover o card nesse passo até você escolher outra etapa em": {
+    es: "Al eliminarla, deja de mover la tarjeta en ese paso hasta que elijas otra etapa en",
+  },
+  "Mover os leads e excluir": { es: "Mover los leads y eliminar" },
   "Venda fechada": { es: "Venta cerrada" },
   "Já é a primeira etapa": { es: "Ya es la primera etapa" },
   "Já é a última etapa": { es: "Ya es la última etapa" },

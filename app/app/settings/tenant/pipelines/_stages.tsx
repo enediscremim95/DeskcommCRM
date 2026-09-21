@@ -1,17 +1,18 @@
 "use client";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  DragDropContext,
+  Draggable,
+  Droppable,
+  type DraggableStateSnapshot,
+  type DropResult,
+} from "@hello-pangea/dnd";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -21,7 +22,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  chaveDoFunil,
   useAgentMapping,
+  type EstadoDoMapeamento,
   type EtapaDoFunil,
   type MapaDoAgente,
 } from "@/hooks/pipelines/useAgentMapping";
@@ -34,7 +37,8 @@ import {
 import { LEAD_STAGES, type LeadStage } from "@/lib/agent-engine/agent/lead-state";
 import { ApiError } from "@/lib/api/types";
 import { ROTULO_DO_PASSO } from "@/lib/leads/agent-mapping";
-import { Archive, CaretDown, CaretUp, Check, DotsThree, Plus, Warning } from "@/lib/ui/icons";
+import { cn } from "@/lib/utils";
+import { CaretDown, CaretUp, Check, DotsSixVertical, Plus, Trash, Warning } from "@/lib/ui/icons";
 import { SeloDeAutoria } from "@/components/operacao/SeloDeAutoria";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -54,18 +58,33 @@ import { mensagemDeErro } from "./_mapping";
  * diz é o servidor, e a frase dele (escrita para leigo, citando o nome da etapa)
  * vai inteira para a tela. O que a tela faz por conta própria é só o que ela
  * pode saber antes de perguntar: não OFERECER um destino que a API recusaria
- * (etapa de fechamento ou de perda receberia negócios e os daria por encerrados)
- * e avisar ANTES que marcar o fechamento aqui o tira de lá.
+ * (etapa de fechamento ou de perda receberia negócios e os daria por encerrados),
+ * não oferecer "voltar a etapa normal" (o funil precisa de uma de cada) e
+ * avisar ANTES que marcar o fechamento aqui o tira de lá.
  *
- * ⚠️ ARQUIVAR É O ÚNICO "REMOVER" QUE EXISTE, e não é eufemismo:
+ * ⚠️ "EXCLUIR" É ARQUIVAR, e não é eufemismo do lado do banco:
  * `crm_leads_stage_id_fkey` é `ON DELETE RESTRICT`. O histórico dos negócios
- * aponta para a etapa e apagá-la levaria o histórico junto.
+ * aponta para a etapa e apagá-la levaria o histórico junto. Para quem usa, a
+ * etapa some do quadro e os leads dela vão para a etapa que ele escolher; é
+ * isso que a tela promete, com a palavra que ele usa ("excluir"), e é isso que
+ * acontece. O que a tela NÃO promete é trazer a etapa de volta.
+ *
+ * ⚠️ A ORDEM MUDA ARRASTANDO, e o servidor recebe UMA chamada. O PATCH já sabe
+ * colocar uma etapa em qualquer posição a partir do vizinho da esquerda
+ * (`depois_de`); soltar a linha calcula esse vizinho (`vizinhoAoSoltar`) e manda.
+ * A lista já aparece na ordem nova antes da resposta (cache do React Query) e
+ * volta sozinha se o servidor recusar. As setas ▲▼ continuam para teclado e
+ * leitor de tela.
+ *
+ * ⚠️ O ITEM ARRASTADO É DESENHADO FORA DA ÁRVORE (`renderClone`). Esta seção
+ * vive dentro de uma janela lateral (`Sheet`) que anima com `transform`, e
+ * `@hello-pangea/dnd` posiciona o item arrastado com `position: fixed`: um
+ * ancestral com `transform` vira o contêiner desse `fixed` e a linha aparece
+ * longe do mouse. O clone vai para `document.body`, onde não há transform.
  *
  * ⚠️ A LISTA SE ADAPTA À LARGURA DO CONTÊINER, NÃO DA JANELA. Esta seção vive
  * em dois lugares: na página de configurações (larga) e numa janela lateral do
- * quadro (≈ 380 a 576 px). A primeira versão era uma tabela com cabeçalho e
- * larguras por `sm:`; dentro da janela o navegador é largo, o contêiner é
- * estreito, e o nome da etapa encolhia até sumir. Daí `@container` e `@md:`.
+ * quadro (≈ 380 a 576 px). Daí `@container` e `@md:`.
  */
 
 /** A âncora desta seção. O mapeamento linka para cá quando aponta uma lacuna do funil. */
@@ -74,14 +93,26 @@ export const ancoraDasEtapas = (pipelineId: string) => `etapas-${pipelineId}`;
 /** O papel de uma etapa no desfecho do negócio. `nenhum` é a maioria das colunas. */
 export type Papel = "nenhum" | "won" | "lost";
 
-/**
- * O selo que a etapa carrega ao lado do nome. Só quem tem papel especial
- * ganha selo: a maioria das colunas não tem nada a dizer, e um seletor
- * dizendo "Nada especial" em toda linha era ruído que escondia o nome.
- */
-export const ROTULO_DO_PAPEL: Readonly<Record<Exclude<Papel, "nenhum">, string>> = {
+/** Os três papéis, na ordem em que o seletor os oferece. */
+export const PAPEIS: readonly Papel[] = ["nenhum", "won", "lost"];
+
+/** O nome curto do papel: o que aparece fechado no seletor e no clone arrastado. */
+export const ROTULO_DO_PAPEL: Readonly<Record<Papel, string>> = {
+  nenhum: "Etapa normal",
   won: "Venda fechada",
   lost: "Perdido",
+};
+
+/**
+ * O que cada opção do seletor explica, em linguagem de dono de negócio. O
+ * rótulo curto sozinho ("Perdido") não diz o que a marcação FAZ; é aqui que a
+ * pessoa entende que escolher "Venda fechada" é dizer "nesta coluna o lead
+ * virou cliente".
+ */
+export const DESCRICAO_DO_PAPEL: Readonly<Record<Papel, string>> = {
+  nenhum: "Etapa normal",
+  won: "Venda fechada (aqui o lead vira cliente)",
+  lost: "Perdido (aqui o lead desistiu)",
 };
 
 export function papelDaEtapa(etapa: EtapaDoFunil): Papel {
@@ -109,7 +140,7 @@ export function patchDePapel(etapa: EtapaDoFunil, papel: Papel): PatchDeEtapa {
 }
 
 /**
- * As etapas que podem receber os negócios de uma que está sendo arquivada.
+ * As etapas que podem receber os negócios de uma que está sendo excluída.
  *
  * ⚠️ FECHAMENTO E PERDA FICAM DE FORA, e o motivo é grave o bastante para não
  * ser detalhe de lista: `fn_crm_lead_close_on_stage` fecha o negócio pelo
@@ -137,6 +168,34 @@ export function vizinhoAoMover(
   return etapas[i + 1]?.id ?? null;
 }
 
+/**
+ * O vizinho da ESQUERDA de quem foi arrastado de `origem` e solto em `destino`
+ * (índices na lista ANTES de mover; `null` = virou a primeira coluna).
+ *
+ * Descendo, a etapa que hoje ocupa `destino` sobe uma casa e fica à esquerda
+ * de quem chegou; subindo, quem hoje está em `destino - 1` não sai do lugar e
+ * continua à esquerda. É a mesma pergunta que as setas respondem, só que para
+ * qualquer distância, e o servidor recebe uma chamada só.
+ */
+export function vizinhoAoSoltar(
+  etapas: EtapaDoFunil[],
+  origem: number,
+  destino: number,
+): string | null {
+  if (destino <= 0) return null;
+  const vizinho = destino > origem ? etapas[destino] : etapas[destino - 1];
+  return vizinho?.id ?? null;
+}
+
+/** A lista como fica depois de arrastar `origem` para `destino`. Não muda a original. */
+export function moverNaLista<T>(lista: T[], origem: number, destino: number): T[] {
+  const nova = lista.slice();
+  const [item] = nova.splice(origem, 1);
+  if (item === undefined) return lista;
+  nova.splice(destino, 0, item);
+  return nova;
+}
+
 /** Passo do assistente que cada etapa representa: `mapeamento` do avesso. */
 function passoPorEtapa(mapa: MapaDoAgente): Map<string, LeadStage> {
   const m = new Map<string, LeadStage>();
@@ -147,16 +206,16 @@ function passoPorEtapa(mapa: MapaDoAgente): Map<string, LeadStage> {
   return m;
 }
 
-/** "1 negócio", "4 negócios": a tela recompõe a frase, então pluraliza como o servidor. */
-export function contagemDeNegocios(
+/** "1 lead", "4 leads": a tela recompõe a frase, então pluraliza como o servidor. */
+export function contagemDeLeads(
   n: number,
   t: (texto: string) => string = (texto) => texto,
 ): string {
-  return `${n} ${n === 1 ? t("negócio") : t("negócios")}`;
+  return `${n} ${n === 1 ? t("lead") : t("leads")}`;
 }
 
 /**
- * O que o 422 do arquivamento diz sobre o caso: contagem e QUAL regra recusou.
+ * O que o 422 da exclusão diz sobre o caso: contagem e QUAL regra recusou.
  *
  * ⚠️ `precisaDestino` VEM DO SERVIDOR, não é re-derivado aqui. A tela troca essa
  * recusa específica por uma pergunta; decidir isso por conta própria ("tem
@@ -171,10 +230,10 @@ function casoDoErro(e: unknown): { negocios: number | null; precisaDestino: bool
   };
 }
 
-/** O que o painel de arquivamento está esperando do usuário. */
-type Arquivamento = {
+/** O que o painel de exclusão está esperando do usuário. */
+type Exclusao = {
   etapaId: string;
-  /** `null` enquanto a tela ainda não perguntou ao servidor quantos negócios há. */
+  /** `null` enquanto a tela ainda não perguntou ao servidor quantos leads há. */
   negocios: number | null;
   destino: string | null;
   erro: string | null;
@@ -192,6 +251,7 @@ export function StagesSection({
   ancoraMapeamento: string;
 }) {
   const t = useT();
+  const qc = useQueryClient();
   const consulta = useAgentMapping(pipelineId);
   const criar = useCriarEtapa(pipelineId);
   const editar = useEditarEtapa(pipelineId);
@@ -201,7 +261,7 @@ export function StagesSection({
     { etapaId: string | null; texto: string; sobrePapel?: boolean } | null
   >(null);
   const [confirmacao, setConfirmacao] = useState<{ etapaId: string; papel: Papel; texto: string } | null>(null);
-  const [arquivamento, setArquivamento] = useState<Arquivamento | null>(null);
+  const [exclusao, setExclusao] = useState<Exclusao | null>(null);
   const [nova, setNova] = useState("");
   /** A etapa cujo nome acabou de ser gravado: mostra "Salvo" ao lado do campo por instantes. */
   const [salvo, setSalvo] = useState<string | null>(null);
@@ -221,11 +281,12 @@ export function StagesSection({
     );
   }
 
-  const etapas = consulta.data.etapas;
-  const passos = passoPorEtapa(consulta.data.mapeamento);
+  const estado = consulta.data;
+  const etapas = estado.etapas;
+  const passos = passoPorEtapa(estado.mapeamento);
   const ocupado = criar.isPending || editar.isPending || arquivar.isPending || consulta.isFetching;
 
-  function aplicar(etapaId: string, patch: PatchDeEtapa) {
+  function aplicar(etapaId: string, patch: PatchDeEtapa, aoFalhar?: () => void) {
     if (Object.keys(patch).length === 0) return;
     setErro(null);
     setConfirmacao(null);
@@ -249,8 +310,34 @@ export function StagesSection({
             toast.success(t("Etapa atualizada."));
           }
         },
-        onError: (e) => setErro({ etapaId, texto: mensagemDeErro(e, t), sobrePapel }),
+        onError: (e) => {
+          aoFalhar?.();
+          setErro({ etapaId, texto: mensagemDeErro(e, t), sobrePapel });
+        },
       },
+    );
+  }
+
+  /**
+   * Soltou a linha: a lista já muda de ordem (cache), e o servidor recebe o
+   * vizinho da esquerda da posição final. Recusa devolve a ordem anterior e
+   * mostra o motivo na linha que foi arrastada.
+   */
+  function aoSoltar(resultado: DropResult) {
+    const { source, destination } = resultado;
+    if (!destination || destination.index === source.index) return;
+    const etapa = etapas[source.index];
+    if (!etapa) return;
+
+    const anterior: EstadoDoMapeamento = estado;
+    qc.setQueryData<EstadoDoMapeamento>(chaveDoFunil(pipelineId), {
+      ...anterior,
+      etapas: moverNaLista(etapas, source.index, destination.index),
+    });
+    aplicar(
+      etapa.id,
+      { depois_de: vizinhoAoSoltar(etapas, source.index, destination.index) },
+      () => qc.setQueryData<EstadoDoMapeamento>(chaveDoFunil(pipelineId), anterior),
     );
   }
 
@@ -277,21 +364,21 @@ export function StagesSection({
     aplicar(etapa.id, patch);
   }
 
-  function pedirArquivamento(etapa: EtapaDoFunil, destino: string | null) {
+  function pedirExclusao(etapa: EtapaDoFunil, destino: string | null) {
     setErro(null);
     arquivar.mutate(
       { stageId: etapa.id, destinoId: destino },
       {
         onSuccess: () => {
-          setArquivamento(null);
+          setExclusao(null);
           toast.success(`«${etapa.name}» ${t("saiu do quadro.")}`);
         },
         onError: (e) => {
-          // Negócios parados na etapa não é recusa final: é a pergunta "para
+          // Leads parados na etapa não é recusa final: é a pergunta "para
           // onde eles vão?", e QUEM DIZ que é esse o caso é o servidor
           // (`precisa_destino`), não uma re-derivação daqui.
           const caso = casoDoErro(e);
-          setArquivamento({
+          setExclusao({
             etapaId: etapa.id,
             negocios: caso.negocios,
             destino: null,
@@ -323,315 +410,411 @@ export function StagesSection({
     >
       <div className="space-y-1">
         <h3 className="text-sm font-semibold">{t("Etapas deste funil")}</h3>
-        <p className="text-sm leading-relaxed text-text-muted">
+        <p className="text-sm leading-relaxed text-text-muted" data-testid="etapas-como-usar">
           {t(
-            "Renomeie direto no campo, mude a ordem com as setas e use o menu de cada etapa para marcar venda fechada, perdido ou arquivar.",
+            "Arraste pela alça para mudar a ordem, clique no nome para renomear, escolha o tipo de cada etapa e exclua as que não usa.",
           )}
         </p>
       </div>
 
-      <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-        {etapas.map((etapa, i) => {
-          const passo = passos.get(etapa.id) ?? null;
-          const papel = papelDaEtapa(etapa);
-          const primeira = i === 0;
-          const ultima = i === etapas.length - 1;
-          const erroDaLinha = erro?.etapaId === etapa.id ? erro.texto : null;
-          const confirmandoAqui = confirmacao?.etapaId === etapa.id ? confirmacao : null;
-          const arquivandoAqui = arquivamento?.etapaId === etapa.id ? arquivamento : null;
-          const destinos = destinosPossiveis(etapas, etapa.id);
-
-          return (
-            <li
-              key={`${etapa.id}:${etapa.name}`}
-              className="flex flex-col gap-2 p-3"
-              data-testid={`etapa-${etapa.id}`}
-            >
-              {/* Uma linha: número, nome (que ocupa TODO o espaço que sobra),
-                  selo do papel, setas e menu. Nada tem largura fixa além do
-                  que é ícone; no contêiner estreito o selo desce para baixo do
-                  nome (`@md:`), e o nome nunca encolhe abaixo do legível. */}
-              <div className="flex items-start gap-2">
-                <span className="mt-2 w-5 shrink-0 text-right text-xs tabular-nums text-text-muted">
-                  {i + 1}.
-                </span>
-
-                <div className="flex min-w-0 flex-1 flex-col gap-1.5 @md:flex-row @md:items-center @md:gap-2">
-                  <NomeDaEtapa
-                    etapa={etapa}
-                    desabilitado={ocupado}
-                    salvo={salvo === etapa.id}
-                    aoConfirmar={(nome) => aplicar(etapa.id, { name: nome })}
-                  />
-                  {papel !== "nenhum" && (
-                    <Badge
-                      variant={papel === "won" ? "success" : "neutral"}
-                      className="w-fit shrink-0"
-                      data-testid={`papel-${etapa.id}`}
-                    >
-                      {t(ROTULO_DO_PAPEL[papel])}
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="flex shrink-0 items-center gap-0.5">
-                  {/* `title` no invólucro, não no botão: botão desabilitado
-                      não dispara evento nenhum, e a dica precisa aparecer
-                      justamente quando ele está desabilitado. */}
-                  <span title={primeira ? t("Já é a primeira etapa") : undefined}>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      aria-label={`${t("Mover")} «${etapa.name}» ${t("uma coluna para trás")}`}
-                      data-testid={`subir-${etapa.id}`}
-                      disabled={primeira || ocupado}
-                      onClick={() =>
-                        aplicar(etapa.id, { depois_de: vizinhoAoMover(etapas, i, "subir") })
-                      }
-                    >
-                      <CaretUp size={16} aria-hidden />
-                    </Button>
-                  </span>
-                  <span title={ultima ? t("Já é a última etapa") : undefined}>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      aria-label={`${t("Mover")} «${etapa.name}» ${t("uma coluna para frente")}`}
-                      data-testid={`descer-${etapa.id}`}
-                      disabled={ultima || ocupado}
-                      onClick={() =>
-                        aplicar(etapa.id, { depois_de: vizinhoAoMover(etapas, i, "descer") })
-                      }
-                    >
-                      <CaretDown size={16} aria-hidden />
-                    </Button>
-                  </span>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        aria-label={`${t("Opções de")} «${etapa.name}»`}
-                        data-testid={`menu-${etapa.id}`}
-                        disabled={ocupado}
-                      >
-                        <DotsThree size={16} weight="bold" aria-hidden />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        data-testid={`marcar-won-${etapa.id}`}
-                        disabled={papel === "won"}
-                        onSelect={() => escolherPapel(etapa, "won")}
-                      >
-                        {t("Marcar como venda fechada")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        data-testid={`marcar-lost-${etapa.id}`}
-                        disabled={papel === "lost"}
-                        onSelect={() => escolherPapel(etapa, "lost")}
-                      >
-                        {t("Marcar como perdido")}
-                      </DropdownMenuItem>
-                      {/* Sem "tirar a marcação": todo funil precisa de uma etapa de
-                          venda e uma de perda, então a marcação só muda de lugar
-                          (marcar outra etapa). Opção que sempre falha confunde. */}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        data-testid={`arquivar-${etapa.id}`}
-                        onSelect={() => {
-                          setErro(null);
-                          setArquivamento({ etapaId: etapa.id, negocios: null, destino: null, erro: null });
-                        }}
-                      >
-                        <Archive size={14} className="mr-2" aria-hidden />
-                        {t("Arquivar etapa")}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+      <DragDropContext onDragEnd={aoSoltar}>
+        <Droppable
+          droppableId={`etapas-${pipelineId}`}
+          renderClone={(provided, snapshot, rubric) => {
+            const etapa = etapas[rubric.source.index];
+            return (
+              <div
+                ref={provided.innerRef}
+                {...provided.draggableProps}
+                {...provided.dragHandleProps}
+                className="rounded-md border border-border bg-background shadow-lg ring-1 ring-accent/40"
+              >
+                {etapa && (
+                  <ResumoDaLinha etapa={etapa} numero={rubric.source.index + 1} snapshot={snapshot} />
+                )}
               </div>
-
-              {/* Uma coluna que apareceu no quadro sem o dono ter criado precisa
-                  dizer de onde veio, senão o assistente muda o funil e a única
-                  pista fica no log que nenhuma tela lê. */}
-              <SeloDeAutoria
-                kind={etapa.last_change_actor_kind ?? null}
-                em={etapa.last_change_at ?? null}
-                className={`etapa-autoria-${etapa.id}`}
-              />
-
-              {passo && (
-                <p className="text-xs text-text-muted" data-testid={`passo-de-${etapa.id}`}>
-                  {t("O assistente usa esta etapa para")} «{t(ROTULO_DO_PASSO[passo])}».{" "}
-                  <a className="underline underline-offset-2" href={`#${ancoraMapeamento}`}>
-                    {t("Mudar isso")}
-                  </a>
-                </p>
+            );
+          }}
+        >
+          {(soltavel, estadoDaLista) => (
+            <ul
+              ref={soltavel.innerRef}
+              {...soltavel.droppableProps}
+              className={cn(
+                "flex flex-col divide-y divide-border rounded-md border border-border",
+                estadoDaLista.isDraggingOver && "border-accent/60",
               )}
+              data-testid="etapas-lista"
+            >
+              {etapas.map((etapa, i) => {
+                const passo = passos.get(etapa.id) ?? null;
+                const papel = papelDaEtapa(etapa);
+                const especial = papel !== "nenhum";
+                const primeira = i === 0;
+                const ultima = i === etapas.length - 1;
+                const erroDaLinha = erro?.etapaId === etapa.id ? erro.texto : null;
+                const confirmandoAqui = confirmacao?.etapaId === etapa.id ? confirmacao : null;
+                const excluindoAqui = exclusao?.etapaId === etapa.id ? exclusao : null;
+                const destinos = destinosPossiveis(etapas, etapa.id);
 
-              {confirmandoAqui && (
-                <Card
-                  className="flex flex-col gap-3 border-warning bg-warning-bg p-4"
-                  data-testid={`confirmar-papel-${etapa.id}`}
-                >
-                  <p className="text-sm leading-relaxed">{confirmandoAqui.texto}</p>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      data-testid={`confirmar-papel-sim-${etapa.id}`}
-                      onClick={() => aplicar(etapa.id, patchDePapel(etapa, confirmandoAqui.papel))}
-                    >
-                      {t("Marcar mesmo assim")}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setConfirmacao(null)}>
-                      {t("Cancelar")}
-                    </Button>
-                  </div>
-                </Card>
-              )}
-
-              {arquivandoAqui && (
-                <Card
-                  className="flex flex-col gap-3 border-border p-4"
-                  data-testid={`arquivar-painel-${etapa.id}`}
-                >
-                  {arquivandoAqui.erro ? (
-                    <p className="text-sm leading-relaxed" data-testid={`arquivar-erro-${etapa.id}`}>
-                      {arquivandoAqui.erro}
-                    </p>
-                  ) : arquivandoAqui.negocios === null ? (
-                    <p className="text-sm leading-relaxed">
-                      {t("Arquivar")} «{etapa.name}»?{" "}
-                      {t(
-                        "A coluna sai do quadro e para de receber negócios novos. Nada é apagado (o histórico de quem passou por ela continua guardado), mas",
-                      )}{" "}
-                      <strong>{t("não dá para trazer a coluna de volta por aqui")}</strong>.
-                    </p>
-                  ) : destinos.length === 0 ? (
-                    // Sem destino possível não há pergunta a fazer, e mandar
-                    // escolher entre nada seria um beco sem saída.
-                    <p className="text-sm leading-relaxed" data-testid={`arquivar-sem-destino-${etapa.id}`}>
-                      {contagemDeNegocios(arquivandoAqui.negocios, t)}{" "}
-                      {arquivandoAqui.negocios === 1
-                        ? t("está nesta etapa e não há outra coluna em aberto para recebê-lo.")
-                        : t(
-                            "estão nesta etapa e não há outra coluna em aberto para recebê-los.",
-                          )}{" "}
-                      {t("Crie uma etapa antes de arquivar")} «{etapa.name}».
-                    </p>
-                  ) : (
-                    <>
-                      <p className="text-sm leading-relaxed" data-testid={`arquivar-pergunta-${etapa.id}`}>
-                        {contagemDeNegocios(arquivandoAqui.negocios, t)}{" "}
-                        {arquivandoAqui.negocios === 1
-                          ? t("está nesta etapa. Para onde ele vai?")
-                          : t("estão nesta etapa. Para onde eles vão?")}
-                      </p>
-                      <div className="@sm:w-72">
-                        <Select
-                          value={arquivandoAqui.destino ?? ""}
-                          onValueChange={(v) =>
-                            setArquivamento({ ...arquivandoAqui, destino: v })
-                          }
-                        >
-                          <SelectTrigger
-                            aria-label={`${t("Para onde vão os negócios de")} «${etapa.name}»`}
-                            data-testid={`destino-${etapa.id}`}
-                          >
-                            <SelectValue placeholder={t("Escolha a etapa")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {destinos.map((d) => (
-                              <SelectItem key={d.id} value={d.id}>
-                                {d.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </>
-                  )}
-
-                  {/* ⚠️ A SEGUNDA IRREVERSIBILIDADE, e ela era silenciosa.
-                      `validarArquivamento` recusa arquivar a etapa de ganho/perda,
-                      mas NÃO olha `agent_stage_hint`, e o DELETE não limpa o hint:
-                      `resolveDestinoDoAgente` procura o alvo com `!is_archived`,
-                      então arquivar simplesmente desliga esse passo do assistente.
-                      O mapeamento volta sozinho para «não mover o card», ninguém é
-                      avisado, e como a coluna não volta o vínculo só se refaz
-                      escolhendo OUTRA etapa. Avisar da coluna e calar sobre isto era
-                      contar metade. */}
-                  {passo && !arquivandoAqui.erro && (
-                    <p
-                      className="text-sm leading-relaxed text-warning-fg"
-                      data-testid={`arquivar-perde-passo-${etapa.id}`}
-                    >
-                      {t("Esta etapa é a que o assistente usa para")} «{t(ROTULO_DO_PASSO[passo])}».{" "}
-                      {t(
-                        "Arquivando, ele para de mover o card nesse passo até você escolher outra etapa em",
-                      )}{" "}
-                      <a className="underline underline-offset-2" href={`#${ancoraMapeamento}`}>
-                        «{t("Para onde o card vai em cada passo")}»
-                      </a>
-                      .
-                    </p>
-                  )}
-
-                  <div className="flex gap-2">
-                    {!arquivandoAqui.erro && !(arquivandoAqui.negocios !== null && destinos.length === 0) && (
-                      <Button
-                        size="sm"
-                        data-testid={`arquivar-confirmar-${etapa.id}`}
-                        // Com negócios na etapa, arquivar sem destino não é
-                        // oferecido: perder o rastro deles não pode ser um
-                        // clique de distância.
-                        disabled={
-                          ocupado ||
-                          (arquivandoAqui.negocios !== null && !arquivandoAqui.destino)
-                        }
-                        onClick={() => pedirArquivamento(etapa, arquivandoAqui.destino)}
+                return (
+                  <Draggable
+                    key={etapa.id}
+                    draggableId={etapa.id}
+                    index={i}
+                    isDragDisabled={ocupado}
+                  >
+                    {(arrastavel, estadoDaLinha) => (
+                      <li
+                        ref={arrastavel.innerRef}
+                        {...arrastavel.draggableProps}
+                        className={cn(
+                          "flex flex-col gap-2 bg-background p-3",
+                          estadoDaLinha.isDragging && "opacity-40",
+                        )}
+                        data-testid={`etapa-${etapa.id}`}
                       >
-                        {arquivandoAqui.negocios === null
-                          ? t("Arquivar")
-                          : t("Mover os negócios e arquivar")}
-                      </Button>
-                    )}
-                    <Button size="sm" variant="ghost" onClick={() => setArquivamento(null)}>
-                      {arquivandoAqui.erro ? t("Fechar") : t("Cancelar")}
-                    </Button>
-                  </div>
-                </Card>
-              )}
+                        {/* Uma linha: alça, número, nome (que ocupa TODO o
+                            espaço que sobra), tipo, excluir e as setas. Nada
+                            tem largura fixa além do que é ícone; no contêiner
+                            estreito o tipo e o excluir descem para baixo do
+                            nome (`@md:`), e o nome nunca encolhe abaixo do
+                            legível. Arrastar é SÓ pela alça: o campo do nome
+                            precisa continuar selecionando texto. */}
+                        <div className="flex items-start gap-2">
+                          {/* ⚠️ A ALÇA NÃO É <button>: a biblioteca recusa
+                              começar um arraste de dentro de elemento
+                              interativo (button, input, select…), e é isso
+                              que protege o campo do nome. Os `dragHandleProps`
+                              já dão `role="button"` e `tabIndex`; o `span`
+                              só empresta o visual e o nome acessível. */}
+                          <span title={t("Segure e arraste para mudar a ordem")}>
+                            <span
+                              {...arrastavel.dragHandleProps}
+                              aria-label={`${t("Arrastar")} «${etapa.name}»`}
+                              aria-disabled={ocupado || undefined}
+                              data-testid={`alca-${etapa.id}`}
+                              className={cn(
+                                "flex h-8 w-6 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-md text-text-muted hover:bg-secondary hover:text-text active:cursor-grabbing",
+                                ocupado && "cursor-not-allowed opacity-50",
+                              )}
+                            >
+                              <DotsSixVertical size={16} weight="bold" aria-hidden />
+                            </span>
+                          </span>
+                          <span className="mt-2 w-5 shrink-0 text-right text-xs tabular-nums text-text-muted">
+                            {i + 1}.
+                          </span>
 
-              {erroDaLinha && (
-                <Card
-                  className="flex items-start gap-3 border-warning bg-warning-bg p-4"
-                  data-testid={`etapa-erro-${etapa.id}`}
-                >
-                  <Warning size={18} className="mt-0.5 shrink-0 text-warning-fg" aria-hidden />
-                  <p className="text-sm leading-relaxed">
-                    {erroDaLinha}
-                    {passo && erro?.sobrePapel && (
-                      <>
-                        {" "}
-                        <a className="underline underline-offset-2" href={`#${ancoraMapeamento}`}>
-                          {t("Ir para o mapeamento do assistente")}
-                        </a>
-                        .
-                      </>
+                          <div className="flex min-w-0 flex-1 flex-col gap-1.5 @md:flex-row @md:items-center @md:gap-2">
+                            <NomeDaEtapa
+                              key={`${etapa.id}:${etapa.name}`}
+                              etapa={etapa}
+                              desabilitado={ocupado}
+                              salvo={salvo === etapa.id}
+                              aoConfirmar={(nome) => aplicar(etapa.id, { name: nome })}
+                            />
+
+                            <div className="flex shrink-0 items-center gap-1">
+                              {/* `title` no invólucro, não no gatilho: a dica
+                                  precisa aparecer justamente sobre a opção que
+                                  a etapa não pode escolher. */}
+                              <span
+                                title={
+                                  especial
+                                    ? papel === "won"
+                                      ? t("Para mudar, escolha Venda fechada em outra etapa.")
+                                      : t("Para mudar, escolha Perdido em outra etapa.")
+                                    : undefined
+                                }
+                              >
+                                <Select
+                                  value={papel}
+                                  disabled={ocupado}
+                                  onValueChange={(v) => escolherPapel(etapa, v as Papel)}
+                                >
+                                  <SelectTrigger
+                                    className="h-8 w-auto gap-1 px-2 text-xs"
+                                    aria-label={`${t("Tipo da etapa")} «${etapa.name}»`}
+                                    data-testid={`tipo-${etapa.id}`}
+                                  >
+                                    <SelectValue>
+                                      <span className="flex items-center gap-1.5">
+                                        {especial && (
+                                          <span
+                                            aria-hidden
+                                            className={cn(
+                                              "h-2 w-2 rounded-full",
+                                              papel === "won" ? "bg-success-fg" : "bg-text-muted",
+                                            )}
+                                          />
+                                        )}
+                                        {t(ROTULO_DO_PAPEL[papel])}
+                                      </span>
+                                    </SelectValue>
+                                  </SelectTrigger>
+                                  <SelectContent align="end">
+                                    {PAPEIS.map((p) => (
+                                      <SelectItem
+                                        key={p}
+                                        value={p}
+                                        // Voltar a "normal" não existe: todo funil
+                                        // precisa de uma etapa de venda e uma de
+                                        // perda, então a marcação só muda de lugar.
+                                        disabled={p === "nenhum" && especial}
+                                        data-testid={`tipo-${p}-${etapa.id}`}
+                                      >
+                                        {t(DESCRICAO_DO_PAPEL[p])}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </span>
+
+                              <span
+                                title={
+                                  especial
+                                    ? t(
+                                        "Etapas de venda fechada e perdido não podem ser excluídas: o funil precisa de uma de cada.",
+                                      )
+                                    : undefined
+                                }
+                              >
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-text-muted hover:text-error-fg"
+                                  aria-label={`${t("Excluir")} «${etapa.name}»`}
+                                  data-testid={`excluir-${etapa.id}`}
+                                  disabled={ocupado || especial}
+                                  onClick={() => {
+                                    setErro(null);
+                                    setExclusao({ etapaId: etapa.id, negocios: null, destino: null, erro: null });
+                                  }}
+                                >
+                                  <Trash size={16} aria-hidden />
+                                </Button>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* As setas ficam como caminho de teclado e leitor de
+                              tela; discretas, porque o mouse tem a alça. */}
+                          <div className="flex shrink-0 items-center opacity-60 hover:opacity-100 focus-within:opacity-100">
+                            <span title={primeira ? t("Já é a primeira etapa") : undefined}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-6"
+                                aria-label={`${t("Mover")} «${etapa.name}» ${t("uma coluna para trás")}`}
+                                data-testid={`subir-${etapa.id}`}
+                                disabled={primeira || ocupado}
+                                onClick={() =>
+                                  aplicar(etapa.id, { depois_de: vizinhoAoMover(etapas, i, "subir") })
+                                }
+                              >
+                                <CaretUp size={14} aria-hidden />
+                              </Button>
+                            </span>
+                            <span title={ultima ? t("Já é a última etapa") : undefined}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-6"
+                                aria-label={`${t("Mover")} «${etapa.name}» ${t("uma coluna para frente")}`}
+                                data-testid={`descer-${etapa.id}`}
+                                disabled={ultima || ocupado}
+                                onClick={() =>
+                                  aplicar(etapa.id, { depois_de: vizinhoAoMover(etapas, i, "descer") })
+                                }
+                              >
+                                <CaretDown size={14} aria-hidden />
+                              </Button>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Uma coluna que apareceu no quadro sem o dono ter criado precisa
+                            dizer de onde veio, senão o assistente muda o funil e a única
+                            pista fica no log que nenhuma tela lê. */}
+                        <SeloDeAutoria
+                          kind={etapa.last_change_actor_kind ?? null}
+                          em={etapa.last_change_at ?? null}
+                          className={`etapa-autoria-${etapa.id}`}
+                        />
+
+                        {passo && (
+                          <p className="text-xs text-text-muted" data-testid={`passo-de-${etapa.id}`}>
+                            {t("O assistente usa esta etapa para")} «{t(ROTULO_DO_PASSO[passo])}».{" "}
+                            <a className="underline underline-offset-2" href={`#${ancoraMapeamento}`}>
+                              {t("Mudar isso")}
+                            </a>
+                          </p>
+                        )}
+
+                        {confirmandoAqui && (
+                          <Card
+                            className="flex flex-col gap-3 border-warning bg-warning-bg p-4"
+                            data-testid={`confirmar-papel-${etapa.id}`}
+                          >
+                            <p className="text-sm leading-relaxed">{confirmandoAqui.texto}</p>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                data-testid={`confirmar-papel-sim-${etapa.id}`}
+                                onClick={() => aplicar(etapa.id, patchDePapel(etapa, confirmandoAqui.papel))}
+                              >
+                                {t("Marcar mesmo assim")}
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setConfirmacao(null)}>
+                                {t("Cancelar")}
+                              </Button>
+                            </div>
+                          </Card>
+                        )}
+
+                        {excluindoAqui && (
+                          <Card
+                            className="flex flex-col gap-3 border-border p-4"
+                            data-testid={`excluir-painel-${etapa.id}`}
+                          >
+                            {excluindoAqui.erro ? (
+                              <p className="text-sm leading-relaxed" data-testid={`excluir-erro-${etapa.id}`}>
+                                {excluindoAqui.erro}
+                              </p>
+                            ) : excluindoAqui.negocios === null ? (
+                              <p className="text-sm leading-relaxed">
+                                {t("Excluir a etapa")} «{etapa.name}»?{" "}
+                                {t(
+                                  "Ela sai do quadro e os leads que estiverem nela vão para a etapa que você escolher. O histórico de quem passou por ela continua guardado, mas",
+                                )}{" "}
+                                <strong>{t("não dá para trazer a etapa de volta por aqui")}</strong>.
+                              </p>
+                            ) : destinos.length === 0 ? (
+                              // Sem destino possível não há pergunta a fazer, e mandar
+                              // escolher entre nada seria um beco sem saída.
+                              <p className="text-sm leading-relaxed" data-testid={`excluir-sem-destino-${etapa.id}`}>
+                                {contagemDeLeads(excluindoAqui.negocios, t)}{" "}
+                                {excluindoAqui.negocios === 1
+                                  ? t("está nesta etapa e não há outra etapa normal para recebê-lo.")
+                                  : t("estão nesta etapa e não há outra etapa normal para recebê-los.")}{" "}
+                                {t("Crie uma etapa antes de excluir")} «{etapa.name}».
+                              </p>
+                            ) : (
+                              <>
+                                <p className="text-sm leading-relaxed" data-testid={`excluir-pergunta-${etapa.id}`}>
+                                  {t("Excluir a etapa")} «{etapa.name}»?{" "}
+                                  {excluindoAqui.negocios === 1
+                                    ? t("O único lead dela vai para a etapa que você escolher.")
+                                    : `${t("Os")} ${excluindoAqui.negocios} ${t("leads dela vão para a etapa que você escolher.")}`}
+                                </p>
+                                <div className="@sm:w-72">
+                                  <Select
+                                    value={excluindoAqui.destino ?? ""}
+                                    onValueChange={(v) =>
+                                      setExclusao({ ...excluindoAqui, destino: v })
+                                    }
+                                  >
+                                    <SelectTrigger
+                                      aria-label={`${t("Para onde vão os leads de")} «${etapa.name}»`}
+                                      data-testid={`destino-${etapa.id}`}
+                                    >
+                                      <SelectValue placeholder={t("Escolha a etapa")} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {destinos.map((d) => (
+                                        <SelectItem key={d.id} value={d.id}>
+                                          {d.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </>
+                            )}
+
+                            {/* ⚠️ A SEGUNDA IRREVERSIBILIDADE, e ela era silenciosa.
+                                `validarArquivamento` recusa arquivar a etapa de ganho/perda,
+                                mas NÃO olha `agent_stage_hint`, e o DELETE não limpa o hint:
+                                `resolveDestinoDoAgente` procura o alvo com `!is_archived`,
+                                então excluir simplesmente desliga esse passo do assistente.
+                                O mapeamento volta sozinho para «não mover o card», ninguém é
+                                avisado, e como a coluna não volta o vínculo só se refaz
+                                escolhendo OUTRA etapa. Avisar da coluna e calar sobre isto era
+                                contar metade. */}
+                            {passo && !excluindoAqui.erro && (
+                              <p
+                                className="text-sm leading-relaxed text-warning-fg"
+                                data-testid={`excluir-perde-passo-${etapa.id}`}
+                              >
+                                {t("Esta etapa é a que o assistente usa para")} «{t(ROTULO_DO_PASSO[passo])}».{" "}
+                                {t(
+                                  "Excluindo, ele para de mover o card nesse passo até você escolher outra etapa em",
+                                )}{" "}
+                                <a className="underline underline-offset-2" href={`#${ancoraMapeamento}`}>
+                                  «{t("Para onde o card vai em cada passo")}»
+                                </a>
+                                .
+                              </p>
+                            )}
+
+                            <div className="flex gap-2">
+                              {!excluindoAqui.erro && !(excluindoAqui.negocios !== null && destinos.length === 0) && (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  data-testid={`excluir-confirmar-${etapa.id}`}
+                                  // Com leads na etapa, excluir sem destino não é
+                                  // oferecido: perder o rastro deles não pode ser um
+                                  // clique de distância.
+                                  disabled={
+                                    ocupado ||
+                                    (excluindoAqui.negocios !== null && !excluindoAqui.destino)
+                                  }
+                                  onClick={() => pedirExclusao(etapa, excluindoAqui.destino)}
+                                >
+                                  {excluindoAqui.negocios === null
+                                    ? t("Excluir")
+                                    : t("Mover os leads e excluir")}
+                                </Button>
+                              )}
+                              <Button size="sm" variant="ghost" onClick={() => setExclusao(null)}>
+                                {excluindoAqui.erro ? t("Fechar") : t("Cancelar")}
+                              </Button>
+                            </div>
+                          </Card>
+                        )}
+
+                        {erroDaLinha && (
+                          <Card
+                            className="flex items-start gap-3 border-warning bg-warning-bg p-4"
+                            data-testid={`etapa-erro-${etapa.id}`}
+                          >
+                            <Warning size={18} className="mt-0.5 shrink-0 text-warning-fg" aria-hidden />
+                            <p className="text-sm leading-relaxed">
+                              {erroDaLinha}
+                              {passo && erro?.sobrePapel && (
+                                <>
+                                  {" "}
+                                  <a className="underline underline-offset-2" href={`#${ancoraMapeamento}`}>
+                                    {t("Ir para o mapeamento do assistente")}
+                                  </a>
+                                  .
+                                </>
+                              )}
+                            </p>
+                          </Card>
+                        )}
+                      </li>
                     )}
-                  </p>
-                </Card>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+                  </Draggable>
+                );
+              })}
+              {soltavel.placeholder}
+            </ul>
+          )}
+        </Droppable>
+      </DragDropContext>
 
       {/* Sempre visível no fim da lista: quem quer uma etapa nova não precisa
           descobrir um botão que abre um campo. */}
@@ -679,13 +862,48 @@ export function StagesSection({
 }
 
 /**
+ * A linha que segue o mouse enquanto se arrasta: só o que identifica a etapa
+ * (alça, número, nome e tipo). Nada aqui é interativo, então nada de campo,
+ * seletor ou botão: o clone existe para mostrar O QUE está sendo movido.
+ */
+function ResumoDaLinha({
+  etapa,
+  numero,
+  snapshot,
+}: {
+  etapa: EtapaDoFunil;
+  numero: number;
+  snapshot: DraggableStateSnapshot;
+}) {
+  const t = useT();
+  const papel = papelDaEtapa(etapa);
+  return (
+    <div
+      className={cn("flex items-center gap-2 p-3", snapshot.isDragging && "cursor-grabbing")}
+      data-testid={`arrastando-${etapa.id}`}
+    >
+      <span className="flex h-8 w-6 shrink-0 items-center justify-center text-text-muted">
+        <DotsSixVertical size={16} weight="bold" aria-hidden />
+      </span>
+      <span className="w-5 shrink-0 text-right text-xs tabular-nums text-text-muted">{numero}.</span>
+      <span className="min-w-0 flex-1 truncate text-sm">{etapa.name}</span>
+      {papel !== "nenhum" && (
+        <Badge variant={papel === "won" ? "success" : "neutral"} className="shrink-0">
+          {t(ROTULO_DO_PAPEL[papel])}
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+/**
  * O nome da etapa, editado no lugar.
  *
  * ⚠️ SALVA AO CONFIRMAR (Enter ou sair do campo), NUNCA A CADA TECLA: um PATCH
  * por caractere gravaria "P", "Pr", "Pro"… no banco e faria a validação de nome
  * duplicado disparar no meio da digitação. O rascunho é local; a fonte da verdade
- * continua sendo o servidor. A linha inteira é remontada quando o nome gravado
- * muda (`key` da `li`), então uma edição feita em outra aba não fica escondida
+ * continua sendo o servidor. O campo é remontado quando o nome gravado muda
+ * (`key` no ponto de uso), então uma edição feita em outra aba não fica escondida
  * atrás de um rascunho velho.
  */
 function NomeDaEtapa({
