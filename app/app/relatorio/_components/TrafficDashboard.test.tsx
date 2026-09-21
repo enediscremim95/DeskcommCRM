@@ -7,7 +7,7 @@ import { TrafficDashboard } from "./TrafficDashboard";
 const { translate } = vi.hoisted(() => ({ translate: (value: string) => value }));
 
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => translate }));
-vi.mock("@/lib/i18n/IdiomaProvider", () => ({ useIdioma: () => "pt" }));
+vi.mock("@/lib/i18n/IdiomaProvider", () => ({ useIdioma: () => "pt-BR" }));
 vi.mock("@/components/ui/select", () => ({
   Select: ({
     value,
@@ -241,5 +241,69 @@ describe("colunas da tabela de campanhas", () => {
     const secondUrl = String(fetchMock.mock.calls[1]?.[0]);
     expect(secondUrl).toContain("/api/v1/reports/traffic?from=");
     expect(secondUrl).toContain("&to=");
+  });
+
+  it("baixa o PDF do período atual mesmo para quem não gerencia predefinições", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/v1/reports/traffic/pdf?")) {
+        return new Response(new Blob(["pdf"], { type: "application/pdf" }), {
+          status: 200,
+          headers: {
+            "Content-Disposition":
+              'attachment; filename="relatorio-resumido-2026-09-01-a-2026-09-30.pdf"',
+            "Content-Type": "application/pdf",
+          },
+        });
+      }
+      return Response.json({
+        data: {
+          model: "leads",
+          organization_key: "org-1",
+          viewer_key: "viewer-1",
+          default_columns: ["spend", "leads"],
+          default_preset_id: null,
+          column_presets: [],
+          can_manage_defaults: false,
+          sync: { status: "ready", last_succeeded_at: null, error: null },
+          crm: { leads_entered: 8, in_service: 5, closed_won: 3 },
+          currencies: [
+            {
+              currency: "BRL",
+              summary: metrics,
+              comparison: null,
+              daily: [],
+              platforms: [],
+              campaigns: [],
+            },
+          ],
+        },
+      });
+    });
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:relatorio"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    await user.click(await screen.findByRole("button", { name: "Baixar relatório" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/reports/traffic/pdf?"),
+        expect.objectContaining({ headers: { accept: "application/pdf" } }),
+      ),
+    );
+    const pdfUrl = String(fetchMock.mock.calls.find(([url]) => String(url).includes("/pdf?"))?.[0]);
+    expect(pdfUrl).toContain("from=");
+    expect(pdfUrl).toContain("to=");
+    expect(pdfUrl).toContain("language=pt-BR");
+    expect(click).toHaveBeenCalledOnce();
   });
 });
