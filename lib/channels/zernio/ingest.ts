@@ -492,7 +492,12 @@ async function insertMessage(
       ...(temAnexo && primeiro?.url
         ? { media_url: primeiro.url, media_mime: mimeDoAnexo(primeiro.type) }
         : {}),
-      metadata: temAnexo ? { provider_attachments: msg.attachments } : {},
+      metadata: temAnexo
+        ? {
+            provider_attachments: msg.attachments,
+            ...(primeiro?.filename ? { media_filename: primeiro.filename } : {}),
+          }
+        : {},
       ...(msg.sentAt ? { sent_at: msg.sentAt } : {}),
     })
     .select("id")

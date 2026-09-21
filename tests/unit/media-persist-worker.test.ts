@@ -7,10 +7,15 @@ const messageRow = {
   id: "msg1",
   organization_id: "org1",
   conversation_id: "conv1",
-  media_url: "http://localhost:3030/api/files/abc.jpg",
+  channel_session_id: "session1",
+  type: "image" as string,
+  media_url: "http://localhost:3030/api/files/abc.jpg" as string | null,
   media_mime: "image/jpeg",
   media_storage_path: null as string | null,
   metadata: { raw_type: "image" },
+};
+const organizationRow: { settings: Record<string, unknown> } = {
+  settings: { whatsapp_media_storage_enabled: true },
 };
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -22,7 +27,11 @@ vi.mock("@/lib/supabase/admin", () => ({
     // "canal sem mídia" achando que a sessão não existe.
     from: (tabela: string) => ({
       select: () => {
-        const linha = tabela === "channel_sessions" ? sessionRow : messageRow;
+        const linha = tabela === "channel_sessions"
+          ? sessionRow
+          : tabela === "organizations"
+            ? organizationRow
+            : messageRow;
         const resolvido = { maybeSingle: async () => ({ data: linha, error: null }) };
         return { eq: () => ({ ...resolvido, eq: () => resolvido }) };
       },
@@ -78,10 +87,46 @@ describe("persistMessageMedia", () => {
     updateEqMock.mockReset();
     rpcMock.mockReset().mockResolvedValue({ error: null });
     messageRow.media_storage_path = null;
+    messageRow.media_url = "http://localhost:3030/api/files/abc.jpg";
+    messageRow.type = "image";
+    organizationRow.settings = { whatsapp_media_storage_enabled: true };
     vi.mocked(fetchWahaMedia).mockResolvedValue({
       buffer: Buffer.from([1, 2, 3]),
       mime: "image/jpeg",
     });
+  });
+
+  it("por padrão não sobe o binário e pede somente a derivação transitória", async () => {
+    organizationRow.settings = {};
+    const result = await persistMessageMedia(eventRow());
+
+    expect(result.status).toBe("ok");
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        media_storage_path: null,
+        media_size_bytes: null,
+        metadata: expect.objectContaining({ media_status: "not_stored" }),
+      }),
+    );
+    expect(rpcMock).toHaveBeenCalledWith(
+      "emit_event",
+      expect.objectContaining({
+        p_event_type: "media.derive_requested",
+        p_metadata: expect.objectContaining({ transient: true }),
+      }),
+    );
+  });
+
+  it("descarta o ponteiro imediatamente quando o tipo não tem texto a extrair", async () => {
+    organizationRow.settings = { whatsapp_media_storage_enabled: false };
+    messageRow.type = "sticker";
+    const result = await persistMessageMedia(eventRow());
+
+    expect(result.status).toBe("ok");
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(updateEqMock).toHaveBeenCalledWith(expect.objectContaining({ media_url: null }));
   });
 
   it("baixa, sobe pro bucket e atualiza a mensagem", async () => {

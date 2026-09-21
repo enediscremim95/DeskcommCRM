@@ -6,10 +6,20 @@ const messageRow = {
   id: "msg1",
   organization_id: "org1",
   type: "audio" as string,
+  channel_session_id: "session1",
+  media_url: null as string | null,
   media_mime: "audio/ogg",
-  media_storage_path: "org1/conv1/msg1.ogg",
+  media_storage_path: "org1/conv1/msg1.ogg" as string | null,
   media_derived_status: null as string | null,
+  metadata: {} as Record<string, unknown>,
 };
+const sessionRow = {
+  provider: "waha",
+  waha_session_name: "default",
+  meta_phone_number_id: null,
+  zernio_account_id: null,
+};
+const { fetchWahaMediaMock } = vi.hoisted(() => ({ fetchWahaMediaMock: vi.fn() }));
 
 /**
  * O dublê PRECISA saber em que tabela está.
@@ -28,7 +38,11 @@ const bindingDeVisao: { provider: string; model_id: string; credential_id: strin
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: (tabela: string) => {
-      const linha = tabela === "ai_purpose_bindings" ? bindingDeVisao : messageRow;
+      const linha = tabela === "ai_purpose_bindings"
+        ? bindingDeVisao
+        : tabela === "channel_sessions"
+          ? sessionRow
+          : messageRow;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const terminais: any = {
         maybeSingle: async () => ({ data: linha, error: null }),
@@ -53,6 +67,10 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 vi.mock("@/lib/messaging/media/derive", () => ({
   deriveMediaText: vi.fn(async () => "transcrição do áudio real"),
+}));
+
+vi.mock("@/lib/messaging/media/waha-source", () => ({
+  fetchWahaMedia: fetchWahaMediaMock,
 }));
 
 // resolveOrgLlmConfig e generateText mockados: o worker precisa de credencial p/
@@ -92,7 +110,33 @@ describe("deriveMessageMedia", () => {
     updateEqMock.mockReset();
     messageRow.media_derived_status = null;
     messageRow.type = "audio";
+    messageRow.media_url = null;
+    messageRow.media_storage_path = "org1/conv1/msg1.ogg";
+    messageRow.metadata = {};
+    fetchWahaMediaMock.mockReset().mockResolvedValue({
+      buffer: Buffer.from([4, 5, 6]),
+      mime: "audio/ogg",
+    });
     vi.mocked(deriveMediaText).mockReset().mockResolvedValue("transcrição do áudio real");
+  });
+
+  it("deriva pelo provider em memória e limpa o ponteiro quando o Storage está desligado", async () => {
+    messageRow.media_storage_path = null;
+    messageRow.media_url = "http://waha/file";
+    messageRow.metadata = { media_status: "not_stored" };
+
+    const r = await deriveMessageMedia(eventRow());
+
+    expect(r.status).toBe("ok");
+    expect(downloadMock).not.toHaveBeenCalled();
+    expect(fetchWahaMediaMock).toHaveBeenCalled();
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        media_url: null,
+        media_derived_text: "transcrição do áudio real",
+        media_derived_status: "ready",
+      }),
+    );
   });
 
   it("baixa a mídia, deriva e grava ready", async () => {

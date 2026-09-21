@@ -20,6 +20,11 @@ import {
   type ChannelSessionRef,
 } from "@/lib/channels";
 import { storagePathFor } from "@/lib/messaging/media/types";
+import { TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
+import {
+  deveGuardarMidiaRecebida,
+  MEDIA_STATUS_NOT_STORED,
+} from "@/lib/messaging/media/retention";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -36,6 +41,7 @@ interface MessageMediaRow {
   id: string;
   organization_id: string;
   conversation_id: string;
+  type: string;
   media_url: string | null;
   media_mime: string | null;
   media_storage_path: string | null;
@@ -54,7 +60,7 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     // Sem a coluna, o worker não tem como pedir o adapter e voltaria a
     // depender de uma função fixa de um canal só.
     .select(
-      "id, organization_id, conversation_id, channel_session_id, media_url, media_mime, media_storage_path, metadata",
+      "id, organization_id, conversation_id, channel_session_id, type, media_url, media_mime, media_storage_path, metadata",
     )
     .eq("id", messageId)
     .eq("organization_id", row.organization_id)
@@ -64,6 +70,58 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
   const msg = data as MessageMediaRow | null;
   if (!msg?.media_url) return { consumer_key, status: "skipped", detail: "no media_url" };
   if (msg.media_storage_path) return { consumer_key, status: "skipped", detail: "already stored" };
+
+  const { data: organization, error: organizationError } = await admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", msg.organization_id)
+    .maybeSingle();
+
+  // Falha fechada: não conseguir ler a política nunca autoriza consumir
+  // Storage. A mídia ainda segue pelo caminho transitório, que preserva o
+  // texto sem reter o arquivo.
+  if (organizationError) {
+    logger.warn("[media-persist] não consegui ler a política; mídia não será guardada", {
+      organization_id: msg.organization_id,
+      message_id: msg.id,
+      detail: organizationError.message,
+    });
+  }
+
+  const storageEnabled = !organizationError && deveGuardarMidiaRecebida(organization?.settings);
+
+  if (!storageEnabled) {
+    const derivable = TIPOS_DERIVAVEIS.has(msg.type);
+    const { error: discardError } = await admin
+      .from("messages")
+      .update({
+        metadata: { ...(msg.metadata ?? {}), media_status: MEDIA_STATUS_NOT_STORED },
+        media_storage_path: null,
+        media_size_bytes: null,
+        // Tipos deriváveis conservam o ponteiro somente até o worker baixar os
+        // bytes em memória. Os demais o descartam já nesta operação.
+        ...(!derivable ? { media_url: null } : {}),
+      })
+      .eq("id", msg.id)
+      .eq("organization_id", msg.organization_id);
+    if (discardError) return { consumer_key, status: "error", detail: discardError.message };
+
+    if (!derivable) {
+      return { consumer_key, status: "ok", detail: "storage disabled; binary discarded" };
+    }
+
+    const { error: emitErr } = await admin.rpc("emit_event" as never, {
+      p_event_type: "media.derive_requested",
+      p_entity_kind: "message",
+      p_entity_id: msg.id,
+      p_payload: { message_id: msg.id },
+      p_metadata: { source: "media_persist", transient: true },
+      p_organization_id: msg.organization_id,
+    } as never);
+    if (emitErr) return { consumer_key, status: "error", detail: emitErr.message };
+
+    return { consumer_key, status: "ok", detail: "storage disabled; transient derivation requested" };
+  }
 
   const markStatus = async (media_status: "stored" | "failed", patch: Record<string, unknown> = {}) => {
     const { error: updErr } = await admin

@@ -22,6 +22,7 @@ import {
 } from "@/lib/channels";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { midiaFoiDescartada } from "@/lib/messaging/media/retention";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +55,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Filtro explícito de organization_id por doutrina (defense-in-depth).
   const { data: msg, error } = await supabase
     .from("messages")
-    .select("id, media_url, media_mime, media_storage_path, channel_session_id")
+    .select("id, media_url, media_mime, media_storage_path, channel_session_id, metadata")
     .eq("id", messageId)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -63,6 +64,13 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
   if (!msg || (!msg.media_storage_path && !msg.media_url)) {
     return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
+  }
+
+  // O ponteiro do provider pode existir por alguns segundos enquanto o worker
+  // extrai texto em memória. Ele não é uma autorização para reconstruir o
+  // arquivo na tela quando a política da organização mandou descartá-lo.
+  if (midiaFoiDescartada(msg.metadata)) {
+    return fail("not_found", t("Arquivo de mídia não guardado."), 404, { requestId });
   }
 
   if (msg.media_storage_path) {

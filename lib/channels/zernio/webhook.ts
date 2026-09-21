@@ -73,7 +73,7 @@ export interface ZernioInboundMessage {
   /** Conta conectada que recebeu — casa com `channel_sessions.zernio_account_id`. */
   accountId: string | null;
   text: string | null;
-  attachments: { type: string; url: string }[];
+  attachments: { type: string; url: string; filename: string | null }[];
   sentAt: string | null;
   identity: ZernioIdentity;
   /**
@@ -212,7 +212,12 @@ export function parseZernioInbound(payload: unknown): ZernioInboundMessage | nul
   const attachments = anexosBrutos
     .map((a) => obj(a))
     .filter((a): a is Bruto => a !== null)
-    .map((a) => ({ type: str(a.type) ?? "file", url: str(a.url) ?? "" }))
+    .map((a) => ({
+      type: str(a.type) ?? "file",
+      url: str(a.url) ?? "",
+      filename:
+        str(a.filename) ?? str(a.fileName) ?? str(a.name) ?? str(a.attachmentName),
+    }))
     .filter((a) => a.url.length > 0);
 
   const saida = str(m.direction) === "outgoing";

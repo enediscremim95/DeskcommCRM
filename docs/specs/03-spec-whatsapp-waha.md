@@ -1240,6 +1240,25 @@ function mapWahaType(t: string): MessageType {
 
 Mensagens `revoked`/`edited` atualizam o registro original via `external_id` em vez de inserir nova linha; histórico vai pra `metadata.previous_text` / `metadata.is_revoked=true`.
 
+### 6.5 Retenção do arquivo recebido
+
+O binário recebido é **opt-in por organização**. A fonte é
+`organizations.settings.whatsapp_media_storage_enabled`: somente o booleano
+`true` autoriza upload no bucket `whatsapp-media`. Campo ausente, `false` ou
+forma inválida significam desligado, inclusive para organizações criadas antes
+desta política.
+
+Com a retenção desligada, o evento continua passando pelo worker para preservar
+informação escrita. Tipos deriváveis são baixados pelo adapter em memória,
+transformados em `messages.media_derived_text` e descartados; os demais perdem
+o ponteiro do provider imediatamente. A mensagem conserva legenda, tipo, nome
+do arquivo, horário e mostra no Inbox que o arquivo não foi guardado. A rota
+`GET /api/v1/messages/[id]/media` não usa o fallback do provider nesse estado.
+
+Arquivos já existentes no Storage não são removidos por essa configuração.
+Mídia outbound anexada no composer também não entra nesta política, porque o
+upload é parte necessária do envio.
+
 ---
 
 ## 7. Send Pipeline (Outbound)

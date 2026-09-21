@@ -102,7 +102,14 @@ describe("parse — o que ACEITA", () => {
     const r = parseZernioInbound(
       payload({}, { attachments: [{ type: "image", url: "https://x/1" }, { type: "image" }, null] }),
     );
-    expect(r?.attachments).toEqual([{ type: "image", url: "https://x/1" }]);
+    expect(r?.attachments).toEqual([{ type: "image", url: "https://x/1", filename: null }]);
+  });
+
+  it("preserva o nome textual do anexo quando o provider o envia", () => {
+    const r = parseZernioInbound(
+      payload({}, { attachments: [{ type: "document", url: "https://x/1", fileName: "contrato.pdf" }] }),
+    );
+    expect(r?.attachments[0]?.filename).toBe("contrato.pdf");
   });
 });
 
