@@ -224,7 +224,7 @@ describe("StagesSection — a linha se explica sozinha", () => {
     expect(itens).toEqual(["Marcar como venda fechada", "Marcar como perdido", "Arquivar etapa"]);
   });
 
-  it("a etapa que já tem papel ganha «Tirar a marcação» e não pode ser marcada de novo", async () => {
+  it("a etapa que já tem papel não pode ser marcada de novo nem oferece desmarcar", async () => {
     const user = userEvent.setup();
     montar();
     await screen.findByTestId("nome-e1");
@@ -232,7 +232,7 @@ describe("StagesSection — a linha se explica sozinha", () => {
     await user.click(screen.getByTestId("menu-e3"));
     expect(await screen.findByTestId("marcar-won-e3")).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByTestId("marcar-lost-e3")).not.toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByTestId("desmarcar-e3")).toBeInTheDocument();
+    expect(screen.queryByTestId("desmarcar-e3")).not.toBeInTheDocument();
   });
 
   it("seta que não pode mover explica por quê", async () => {
@@ -372,34 +372,6 @@ describe("StagesSection — a marcação de fechamento", () => {
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
   });
 
-  it("tirar a marcação: a recusa do servidor chega inteira e o selo não mente", async () => {
-    const user = userEvent.setup();
-    vi.mocked(apiClient.patch).mockRejectedValue(
-      new ApiError(
-        422,
-        "unprocessable_entity",
-        undefined,
-        "r",
-        "A etapa «Pago» é a etapa de ganho deste funil e o funil precisa de uma. Marque OUTRA etapa como de ganho — a marcação se muda, não se apaga.",
-      ),
-    );
-    montar();
-    await screen.findByTestId("nome-e1");
-
-    await noMenu(user, "e3", "desmarcar-e3");
-
-    expect(await screen.findByTestId("etapa-erro-e3")).toHaveTextContent(
-      "a marcação se muda, não se apaga",
-    );
-    // O selo continua dizendo o que o BANCO tem — tirá-lo faria a tela afirmar
-    // um estado que não existe.
-    await waitFor(() =>
-      expect(screen.getByTestId("papel-e3")).toHaveTextContent(ROTULO_DO_PAPEL.won),
-    );
-    // E releu o servidor: reenviar sobre um funil que mudou é o que o 409 pede
-    // para evitar.
-    await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(2));
-  });
 
   /**
    * ⭐ O LINK É SOBRE O ERRO, NÃO SOBRE A LINHA. Condicionado a "esta linha tem

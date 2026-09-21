@@ -4468,7 +4468,6 @@ export const DICIONARIO: Traducoes = {
   "Já é a última etapa": { es: "Ya es la última etapa" },
   "Opções de": { es: "Opciones de" },
   "Marcar como venda fechada": { es: "Marcar como venta cerrada" },
-  "Tirar a marcação": { es: "Quitar la marca" },
   "Arquivar etapa": { es: "Archivar etapa" },
   "Adicionar etapa": { es: "Agregar etapa" },
   "de fechamento": { es: "de cierre" },

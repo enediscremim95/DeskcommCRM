@@ -437,18 +437,9 @@ export function StagesSection({
                       >
                         {t("Marcar como perdido")}
                       </DropdownMenuItem>
-                      {/* A API recusa tirar a marcação (o funil precisa de
-                          uma de cada) e explica como fazer. A opção fica
-                          para que a explicação chegue a quem procura por ela,
-                          em vez de a pessoa concluir que não existe jeito. */}
-                      {papel !== "nenhum" && (
-                        <DropdownMenuItem
-                          data-testid={`desmarcar-${etapa.id}`}
-                          onSelect={() => escolherPapel(etapa, "nenhum")}
-                        >
-                          {t("Tirar a marcação")}
-                        </DropdownMenuItem>
-                      )}
+                      {/* Sem "tirar a marcação": todo funil precisa de uma etapa de
+                          venda e uma de perda, então a marcação só muda de lugar
+                          (marcar outra etapa). Opção que sempre falha confunde. */}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         data-testid={`arquivar-${etapa.id}`}
