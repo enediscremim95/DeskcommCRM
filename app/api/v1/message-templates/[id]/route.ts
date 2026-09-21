@@ -13,12 +13,14 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok, noContent } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { updateTemplateSchema } from "@/lib/schemas/templates";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
-const COLS = "id, organization_id, owner_user_id, title, body, shortcut, created_by_user_id, created_at, updated_at";
+const COLS =
+  "id, organization_id, owner_user_id, title, body, shortcut, created_by_user_id, created_at, updated_at";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -71,7 +73,10 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams): Promis
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "message_templates" });
+  const authz = await requirePermission("resource.delete", {
+    requestId,
+    resource: "message_templates",
+  });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;

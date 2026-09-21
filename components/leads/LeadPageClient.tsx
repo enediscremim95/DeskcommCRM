@@ -13,7 +13,7 @@ import { LeadFieldsForm } from "@/components/kanban/LeadFieldsForm";
 import { ownerInitials } from "@/components/kanban/OwnerBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/hooks/auth/AuthProvider";
+import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
 import { useMarkAsRead } from "@/hooks/inbox/useMarkAsRead";
@@ -156,9 +156,7 @@ export function LeadPageClient({
     activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && !supportReadonly,
   );
   const podeConfigurar = activeOrg?.role === "admin" && !supportReadonly;
-  // A rota de lote exige agent+. A ficha usa o mesmo piso já calculado para
-  // edição e continua fail-closed no acompanhamento somente leitura.
-  const podeExcluir = podeEditar;
+  const podeExcluir = usePermission("resource.delete") && !supportReadonly;
   const timeline = useLeadTimeline(lead.id, lead.contact_id);
   const conversation = useConversation(conversationId, Boolean(conversationId));
   const selectedConversation = conversation.data ?? null;

@@ -23,6 +23,7 @@ import { Plus, PencilSimple, Trash } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
+import { usePermission } from "@/hooks/auth/AuthProvider";
 import { TemplateFormDialog } from "./TemplateFormDialog";
 
 const TEMPLATES_KEY = ["message-templates"];
@@ -35,6 +36,7 @@ interface Props {
 export function TemplatesClient({ canShare, currentUserId }: Props) {
   const t = useT();
   const { data: templates, isLoading } = useMessageTemplates();
+  const podeExcluir = usePermission("resource.delete");
   const qc = useQueryClient();
   const del = useMutation({
     mutationFn: async (id: string) => apiClient.delete(`/api/v1/message-templates/${id}`),
@@ -105,38 +107,40 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                     >
                       <PencilSimple />
                     </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={t("Excluir template")}
-                        >
-                          <Trash />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>{t("Excluir este template?")}</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {t("Essa ação não pode ser desfeita.")}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() =>
-                              del.mutate(template.id, {
-                                onSuccess: () => toast.success(t("Template excluído.")),
-                              })
-                            }
+                    {podeExcluir ? (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t("Excluir template")}
                           >
-                            {t("Excluir")}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                            <Trash />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t("Excluir este template?")}</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {t("Essa ação não pode ser desfeita.")}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() =>
+                                del.mutate(template.id, {
+                                  onSuccess: () => toast.success(t("Template excluído.")),
+                                })
+                              }
+                            >
+                              {t("Excluir")}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    ) : null}
                   </div>
                 )}
               </li>

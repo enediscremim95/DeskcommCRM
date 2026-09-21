@@ -2,6 +2,11 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
+const permissao = vi.hoisted(() => ({ podeExcluir: true }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  usePermission: () => permissao.podeExcluir,
+}));
+
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
   useMessageTemplates: () => ({
     data: [
@@ -21,6 +26,7 @@ function wrap(ui: React.ReactNode) {
 
 describe("TemplatesClient", () => {
   it("lista templates e abre o form de novo", () => {
+    permissao.podeExcluir = true;
     render(wrap(<TemplatesClient canShare={true} currentUserId="u1" />));
     expect(screen.getByText("Meu Pessoal")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /novo template/i }));
@@ -28,16 +34,18 @@ describe("TemplatesClient", () => {
   });
 
   it("agent (não-manager) só vê ações no próprio pessoal, não no compartilhado nem no de outro", () => {
+    permissao.podeExcluir = false;
     render(wrap(<TemplatesClient canShare={false} currentUserId="u1" />));
-    // 3 templates listados, mas só 1 editável → 1 par de ações editar/excluir.
+    // Atendente edita o próprio template, mas não recebe nenhuma ação de excluir.
     expect(screen.getByText("Meu Pessoal")).toBeInTheDocument();
     expect(screen.getByText("Política da Equipe")).toBeInTheDocument();
     expect(screen.getByText("Pessoal do Outro")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Editar template" })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "Excluir template" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Excluir template" })).not.toBeInTheDocument();
   });
 
   it("manager vê ações no próprio E no compartilhado, mas não no pessoal de outro", () => {
+    permissao.podeExcluir = true;
     render(wrap(<TemplatesClient canShare={true} currentUserId="u1" />));
     // próprio (u1) + compartilhado (null) editáveis; pessoal de u2 não → 2 pares.
     expect(screen.getAllByRole("button", { name: "Editar template" })).toHaveLength(2);

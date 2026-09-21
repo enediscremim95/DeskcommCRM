@@ -831,7 +831,15 @@ create unique index idx_recovery_unique on public.user_recovery_codes(user_id, c
 | **platform_admins** | read | ❌ | ❌ | ❌ | ❌ | ✅ |
 | platform_admins | mutate | ❌ | ❌ | ❌ | ❌ | ❌ (DBA only) |
 
-**Implementação**: middleware `requirePermission(resource, action)` checa role via `fn_user_role_in_org(orgId)` + `fn_is_platform_admin()`. Falha → 403 com `error.code='forbidden_role'`.
+**Regra transversal de exclusão:** o papel `agent` (Atendente) pode criar e atualizar
+recursos operacionais dentro do seu escopo, mas nunca excluir, cancelar ou desconectar
+um recurso persistente. Toda ação destrutiva exige `manager` ou `admin`, na API e na
+interface. Comandos sem exclusão de recurso, como encerrar a própria chamada de voz ou
+cancelar uma soneca, não entram nessa regra.
+
+**Implementação**: `requirePermission("resource.delete")` resolve a permissão semântica
+para `manager+` e reutiliza `requireRole`. Falha → 403 com
+`error.code='forbidden_role'`.
 
 ---
 

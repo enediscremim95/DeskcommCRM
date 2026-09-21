@@ -42,6 +42,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ROLES, type Role } from "@/lib/schemas/team";
+import { DESCRICAO_DO_PAPEL } from "@/lib/auth/types";
 import { DotsThree } from "@/lib/ui/icons";
 
 interface Props {
@@ -119,6 +120,12 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                   ) : (
                     <Badge variant="secondary">{m.role}</Badge>
                   )}
+                  <p className="mt-1 max-w-48 text-xs text-muted-foreground">
+                    {t(
+                      DESCRICAO_DO_PAPEL[m.role as Role] ??
+                        "Acesso definido pela configuração da empresa.",
+                    )}
+                  </p>
                 </TableCell>
                 <TableCell>
                   {canManage ? (

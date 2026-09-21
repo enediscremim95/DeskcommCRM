@@ -14,6 +14,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { ArrowsClockwise, CalendarBlank, ListChecks, Plus } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { useTasks } from "@/hooks/tasks/useTasks";
+import { usePermission } from "@/hooks/auth/AuthProvider";
 import type { NovaTarefa, SituacaoDaTarefa, Tarefa } from "@/lib/tarefas/tipos";
 
 import { CalendarioDeTarefas } from "./CalendarioDeTarefas";
@@ -35,6 +36,7 @@ export function TarefasClient({ podeEditar }: { podeEditar: boolean }) {
   // "Nova tarefa" precisa de uma chave NOVA — senão a segunda abertura traz o
   // que ficou digitado na primeira.
   const [aberturas, setAberturas] = useState(0);
+  const podeExcluir = usePermission("resource.delete");
 
   const {
     tarefas,
@@ -45,9 +47,7 @@ export function TarefasClient({ podeEditar }: { podeEditar: boolean }) {
     editarTarefa,
     apagarTarefa,
     alternarConcluida,
-  } = useTasks(
-    situacao === "aberto" ? { aberto: true } : { status: situacao },
-  );
+  } = useTasks(situacao === "aberto" ? { aberto: true } : { status: situacao });
 
   function abrirNova(dia?: string) {
     setEmEdicao(null);
@@ -81,10 +81,7 @@ export function TarefasClient({ podeEditar }: { podeEditar: boolean }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={situacao}
-            onValueChange={(v) => setSituacao(v as FiltroDeSituacao)}
-          >
+          <Select value={situacao} onValueChange={(v) => setSituacao(v as FiltroDeSituacao)}>
             <SelectTrigger className="h-9 w-[168px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -174,6 +171,7 @@ export function TarefasClient({ podeEditar }: { podeEditar: boolean }) {
         <ListaDeTarefas
           tarefas={tarefas}
           podeEditar={podeEditar}
+          podeExcluir={podeExcluir}
           aoAlternarConcluida={alternarConcluida}
           aoEditar={abrirEdicao}
           aoApagar={(tarefa) => apagarTarefa(tarefa.id)}

@@ -20,6 +20,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CartaoDaConexaoGoogle } from "@/app/app/agenda/_components/CartaoDaConexaoGoogle";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({ usePermission: () => true }));
 
 afterEach(cleanup);
 

@@ -260,6 +260,11 @@ Notas:
 Enforcement em **duas camadas obrigatórias**: RLS (fronteira) + helper único de
 rota (`require-role`, G2-01) — nunca só UI (anti-padrão 3).
 
+Para ações destrutivas, `write` não implica `delete`: o `agent` pode criar e atualizar
+o trabalho operacional permitido pela matriz, mas exclusão, cancelamento ou desconexão
+de recurso persistente exige `manager+`. A interface usa a mesma permissão semântica da
+API (`resource.delete`) para não oferecer uma ação que o servidor recusará.
+
 **DIRC — escopo `own` de `crm_leads` via RLS, não filtro server-side (G4-03).**
 O escopo `own` do agent (linha 220 da matriz) é aplicado na **RLS** por
 `fn_can_view_lead(p_org, p_owner_user_id)` (migration 0036), espelho exato de

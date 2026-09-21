@@ -57,6 +57,15 @@ export const ROTULO_DO_PAPEL: Record<Role, string> = {
   admin: "Administrador",
 };
 
+/** Explicação curta exibida onde quem administra escolhe o acesso de uma pessoa. */
+export const DESCRICAO_DO_PAPEL: Record<Role, string> = {
+  viewer: "Vê os dados, mas não cria nem altera.",
+  agent: "Cria e atualiza o trabalho, mas não exclui nada.",
+  ai_operator: "Executa as operações liberadas para o assistente publicado.",
+  manager: "Gerencia a operação e pode excluir itens operacionais.",
+  admin: "Administra a empresa, os acessos e pode excluir.",
+};
+
 /**
  * Escopo de visualização de conversas por atendente (G4-01, spec 13 §3.5).
  * Só restringe o role `agent`; viewer/manager/admin seguem org-wide.

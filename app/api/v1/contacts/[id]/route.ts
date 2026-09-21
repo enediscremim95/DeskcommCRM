@@ -12,6 +12,8 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail, noContent } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
+import { replacementRemovesValues } from "@/lib/auth/permissions";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { contactPatchSchema, validateRequest } from "@/lib/schemas";
@@ -96,6 +98,24 @@ export async function PATCH(
     throw err;
   }
 
+  if (input.tags !== undefined) {
+    const { data: current, error } = await supabase
+      .from("contacts")
+      .select("tags")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("id", id)
+      .maybeSingle();
+    if (error) return fail("internal_error", error.message, 500, { requestId });
+    const previous = (current as { tags?: string[] } | null)?.tags ?? [];
+    if (replacementRemovesValues(previous, input.tags)) {
+      const deleteAuthz = await requirePermission("resource.delete", {
+        requestId,
+        resource: "contact_tags",
+      });
+      if (!deleteAuthz.ok) return deleteAuthz.response;
+    }
+  }
+
   try {
     const contact = await patchContactHandler(
       supabase,
@@ -127,7 +147,7 @@ export async function DELETE(
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("agent", { requestId, resource: "contacts" });
+  const authz = await requirePermission("resource.delete", { requestId, resource: "contacts" });
   if (!authz.ok) return authz.response;
   const user = authz.user;
   const activeOrg = authz.org;

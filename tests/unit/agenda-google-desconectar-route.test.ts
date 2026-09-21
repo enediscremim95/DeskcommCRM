@@ -147,13 +147,18 @@ describe("DELETE /api/v1/agenda/google/desconectar", () => {
     expect(audit).not.toHaveBeenCalled();
   });
 
-  it("desconectar a agenda de OUTRA pessoa exige `manager`", async () => {
+  it("atendente não desconecta nem a agenda de outra pessoa", async () => {
     const { DELETE } = await import("@/app/api/v1/agenda/google/desconectar/route");
-    vi.mocked(requireRole)
-      .mockResolvedValueOnce({ ok: true, user: { id: ANA } as never, org: { orgId: ORG } as never })
-      .mockResolvedValueOnce({ ok: false, response: new Response(null, { status: 403 }) as never });
+    vi.mocked(requireRole).mockResolvedValueOnce({
+      ok: false,
+      response: new Response(null, { status: 403 }) as never,
+    });
     const r = await DELETE(pedido({ user_id: "44444444-4444-4444-8444-444444444444" }));
     expect(r.status).toBe(403);
+    expect(requireRole).toHaveBeenCalledWith(
+      "manager",
+      expect.objectContaining({ resource: "calendar_connections" }),
+    );
     expect(apagadas, "a checagem de papel falhou e a rota apagou mesmo assim").toEqual([]);
   });
 });
