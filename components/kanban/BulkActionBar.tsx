@@ -12,15 +12,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
+import { DeleteLeadDialog } from "@/components/leads/DeleteLeadDialog";
+import { useActiveOrg, usePermission, useUser } from "@/hooks/auth/AuthProvider";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { useBulkAction } from "@/hooks/kanban/useBulkAction";
@@ -52,6 +45,7 @@ export function BulkActionBar({
   const activeOrg = useActiveOrg();
   const vocab = resolveVocabulary(vocabulary);
   const bulk = useBulkAction(pipelineId);
+  const podeExcluir = usePermission("pipeline.move_card");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [tagInput, setTagInput] = useState("");
 
@@ -128,18 +122,6 @@ export function BulkActionBar({
       {
         onSuccess: () => {
           setTagInput("");
-          onClear();
-        },
-      },
-    );
-  };
-
-  const runDelete = () => {
-    bulk.mutate(
-      { action: "delete", lead_ids: selectedIds, params: {} },
-      {
-        onSuccess: () => {
-          setConfirmDelete(false);
           onClear();
         },
       },
@@ -232,42 +214,29 @@ export function BulkActionBar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={() => setConfirmDelete(true)}
-          disabled={bulk.isPending}
-        >
-          {t("Excluir")}
-        </Button>
+        {podeExcluir && (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => setConfirmDelete(true)}
+            disabled={bulk.isPending}
+          >
+            {t("Excluir")}
+          </Button>
+        )}
 
         <Button size="sm" variant="ghost" onClick={onClear}>
           {t("Cancelar")}
         </Button>
       </div>
 
-      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {selectedIds.length === 1
-                ? `${t("Excluir")} 1 ${vocab.lead}?`
-                : `${t("Excluir")} ${selectedIds.length} ${t("selecionados")}?`}
-            </DialogTitle>
-            <DialogDescription>
-              {t("Esta ação remove o que está selecionado. Não pode ser desfeita.")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-              {t("Cancelar")}
-            </Button>
-            <Button variant="destructive" onClick={runDelete} disabled={bulk.isPending}>
-              {t("Excluir")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteLeadDialog
+        open={podeExcluir && confirmDelete}
+        onOpenChange={setConfirmDelete}
+        pipelineId={pipelineId}
+        leadIds={selectedIds}
+        onDeleted={onClear}
+      />
     </>
   );
 }

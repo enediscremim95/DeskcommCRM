@@ -12,7 +12,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { DotsThree, PencilSimple, Users } from "@/lib/ui/icons";
+import { DeleteLeadDialog } from "@/components/leads/DeleteLeadDialog";
+import { DotsThree, PencilSimple, Trash, Users } from "@/lib/ui/icons";
 import { useWinLead, useEditLead } from "@/hooks/kanban/useUpdateLead";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAssignableAgents } from "@/hooks/kanban/useAssignableAgents";
@@ -30,11 +31,13 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
   const t = useT();
   const [loseOpen, setLoseOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const winMutation = useWinLead(pipelineId);
   const editMutation = useEditLead(pipelineId);
   // spec 13 §4: escrita no funil é agent+ — viewer não reatribui (a rota
   // PATCH também recusa; aqui é só não oferecer o que seria negado).
   const canAssign = usePermission("pipeline.move_card");
+  const canDelete = usePermission("pipeline.move_card");
   const { data: members } = useAssignableMembers(canAssign);
   // A rota já devolve só agente ativo e não arquivado — é o picker.
   const { data: agents } = useAssignableAgents(canAssign);
@@ -72,10 +75,7 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
             <DotsThree size={16} weight="bold" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
           <DropdownMenuItem
             onSelect={() => {
               setEditOpen(true);
@@ -141,6 +141,17 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
           >
             {t("Marcar como perdido")}
           </DropdownMenuItem>
+          {canDelete && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => setDeleteOpen(true)}
+              >
+                <Trash size={14} className="mr-2" /> {t("Excluir")}
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -155,6 +166,13 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
         onOpenChange={setEditOpen}
         lead={lead}
         pipelineId={pipelineId}
+      />
+      <DeleteLeadDialog
+        open={canDelete && deleteOpen}
+        onOpenChange={setDeleteOpen}
+        pipelineId={pipelineId}
+        leadIds={[lead.id]}
+        leadTitle={lead.title}
       />
     </>
   );
