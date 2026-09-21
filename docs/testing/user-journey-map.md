@@ -479,14 +479,16 @@ num job que já leva meia hora.
 | J12.5 | VAPID ausente NÃO desabilita o Push | com `granted` e sem chaves, nasce habilitado | PASS (unit) |
 | J12.4 | Com VAPID, anuncia a aba fechada | e para de mandar gerar o par que já existe | PASS (unit) |
 | J12.6 | E-mail fica fora da rotina | só existem controles para lead novo e ação urgente; Nova mensagem diz «Não enviado» | NÃO EXECUTADO (e2e) |
+| J12.7 | Rajada de leads não inunda a caixa | janela curta agrupa por organização e destinatário; lead isolado mantém assunto individual; reprocessamento não duplica item nem entrega | PASS (unit); invariante DB preparado, mas NÃO EXECUTADO sem Docker/Postgres; entrega real no provedor NÃO EXECUTADA |
 
 O canal de e-mail usa o mesmo outbox do produto, mas tem um consumidor separado.
 O evento nasce na captação do lead ou numa urgência já calculada pelo Radar e
 pelas tarefas vencidas. A falha desse consumidor não desfaz os consumidores de
 in-app e Push. O destinatário é o responsável ativo; sem responsável, são os
-administradores ativos. Cada pessoa pode desligar as duas categorias, que
-nascem ligadas para uma instalação nova. As categorias de rotina não entram
-nesse consumidor.
+administradores e gerentes ativos. Cada pessoa pode desligar as duas categorias.
+Elas nascem ligadas para membros comuns; o administrador da plataforma começa
+desligado em cada organização e acompanha somente as que marcar. As categorias
+de rotina não entram nesse consumidor.
 
 **Por que J12.5 não é `e2e`, medido e não suposto.** Ela nasceu como asserção
 `toBeEnabled()` na spec, e não podia viver lá. Medido no Chromium do Playwright,

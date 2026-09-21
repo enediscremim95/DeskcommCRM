@@ -28,9 +28,12 @@ function adminCom(respostas: Record<string, DbResponse[]>, emails: Record<string
     const response = respostas[table]?.shift() ?? { data: null, error: null };
     const builder = {
       select: vi.fn(() => builder),
+      update: vi.fn(() => builder),
       eq: vi.fn(() => builder),
+      lte: vi.fn(() => builder),
       is: vi.fn(() => builder),
       in: vi.fn(() => builder),
+      order: vi.fn(() => builder),
       maybeSingle: vi.fn(async () => response),
       then: (resolve: (value: DbResponse) => unknown, reject: (reason: unknown) => unknown) =>
         Promise.resolve(response).then(resolve, reject),
@@ -39,6 +42,7 @@ function adminCom(respostas: Record<string, DbResponse[]>, emails: Record<string
   });
   return {
     from,
+    rpc: vi.fn(async () => ({ data: [{ batch_id: "batch-1" }], error: null })),
     auth: {
       admin: {
         getUserById: vi.fn(async (userId: string) => ({
@@ -79,14 +83,18 @@ describe("handleLeadEmailEvent", () => {
     sendEmail.mockResolvedValue({ ok: true, id: "mail-1" });
   });
 
-  it("envia lead novo somente ao responsável ativo, com idempotência por pessoa", async () => {
+  it("enfileira lead novo somente ao responsável ativo, sem enviar antes da janela", async () => {
     const admin = adminCom(
       {
         crm_leads: [
-          { data: { id: "lead-1", owner_user_id: "owner-1", status: "open" }, error: null },
+          {
+            data: { id: "lead-1", owner_user_id: "owner-1", status: "open", title: "Jatobá" },
+            error: null,
+          },
         ],
         user_organizations: [{ data: { user_id: "owner-1" }, error: null }],
         notification_email_preferences: [{ data: [], error: null }],
+        platform_admins: [{ data: [], error: null }],
       },
       { "owner-1": "owner@example.com" },
     );
@@ -94,20 +102,71 @@ describe("handleLeadEmailEvent", () => {
     const result = await handleLeadEmailEvent(evento(), admin);
 
     expect(result.status).toBe("ok");
-    expect(sendEmail).toHaveBeenCalledOnce();
-    expect(sendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: "owner@example.com",
-        idempotencyKey: "event-1:owner-1",
-        fromName: "Marca do cliente",
-      }),
-    );
+    expect(admin.rpc).toHaveBeenCalledWith("fn_queue_lead_email_batch", {
+      p_event_id: "event-1",
+      p_recipient_user_id: "owner-1",
+      p_window_seconds: 30,
+    });
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 
-  it("sem responsável usa administradores e respeita o opt-out individual", async () => {
+  it("não inscreve administrador da plataforma por padrão, só após opt-in na organização", async () => {
+    const base = () => ({
+      crm_leads: [
+        {
+          data: { id: "lead-1", owner_user_id: null, status: "open", title: "Jatobá" },
+          error: null,
+        },
+      ],
+      user_organizations: [{ data: [{ user_id: "platform-1" }], error: null }],
+    });
+    const defaultOff = adminCom(
+      {
+        ...base(),
+        notification_email_preferences: [{ data: [], error: null }],
+        platform_admins: [{ data: [{ user_id: "platform-1" }], error: null }],
+      },
+      {},
+    );
+
+    const skipped = await handleLeadEmailEvent(evento(), defaultOff);
+
+    expect(skipped).toMatchObject({
+      status: "skipped",
+      detail: "sem destinatário com email ligado",
+    });
+    expect(defaultOff.rpc).not.toHaveBeenCalled();
+
+    const optedIn = adminCom(
+      {
+        ...base(),
+        notification_email_preferences: [
+          {
+            data: [
+              { user_id: "platform-1", new_lead: true, urgent_lead: true },
+            ],
+            error: null,
+          },
+        ],
+      },
+      {},
+    );
+
+    const queued = await handleLeadEmailEvent(evento(), optedIn);
+
+    expect(queued.status).toBe("ok");
+    expect(optedIn.rpc).toHaveBeenCalledOnce();
+  });
+
+  it("sem responsável usa administradores, respeita opt-out e identifica urgência", async () => {
     const admin = adminCom(
       {
-        crm_leads: [{ data: { id: "lead-1", owner_user_id: null, status: "open" }, error: null }],
+        crm_leads: [
+          {
+            data: { id: "lead-1", owner_user_id: null, status: "open", title: "Jatobá" },
+            error: null,
+          },
+        ],
         user_organizations: [
           { data: [{ user_id: "admin-1" }, { user_id: "admin-2" }], error: null },
         ],
@@ -117,6 +176,12 @@ describe("handleLeadEmailEvent", () => {
               { user_id: "admin-1", new_lead: true, urgent_lead: false },
               { user_id: "admin-2", new_lead: true, urgent_lead: true },
             ],
+            error: null,
+          },
+        ],
+        organizations: [
+          {
+            data: { display_name: "Bendito Ponto", legal_name: "Bendito Ponto Ltda" },
             error: null,
           },
         ],
@@ -131,7 +196,13 @@ describe("handleLeadEmailEvent", () => {
 
     expect(result.status).toBe("ok");
     expect(sendEmail).toHaveBeenCalledOnce();
-    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "two@example.com" }));
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "two@example.com",
+        subject: expect.stringContaining("Ação urgente na Bendito Ponto: Jatobá"),
+        idempotencyKey: "lead-email-event:event-1:admin-2",
+      }),
+    );
   });
 
   it("não dispara uma avalanche ao encontrar lead antigo no backlog", async () => {
@@ -147,6 +218,122 @@ describe("handleLeadEmailEvent", () => {
       detail: "lead antigo não gera aviso retroativo",
     });
     expect(admin.from).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("entrega uma rajada como um resumo e não reenvia um lote já concluído", async () => {
+    const due = new Date(Date.now() - 1_000).toISOString();
+    const items = Array.from({ length: 21 }, (_, index) => ({
+      lead_id: `lead-${index + 1}`,
+      lead_title: `Lead ${index + 1}`,
+      created_at: new Date(Date.now() + index).toISOString(),
+    }));
+    const admin = adminCom(
+      {
+        notification_email_batches: [
+          {
+            data: {
+              id: "batch-1",
+              recipient_user_id: "owner-1",
+              status: "pending",
+              due_at: due,
+              updated_at: due,
+            },
+            error: null,
+          },
+          {
+            data: {
+              id: "batch-1",
+              recipient_user_id: "owner-1",
+              status: "processing",
+              due_at: due,
+              updated_at: new Date().toISOString(),
+            },
+            error: null,
+          },
+          { data: null, error: null },
+        ],
+        notification_email_batch_items: [{ data: items, error: null }],
+        organizations: [
+          {
+            data: { display_name: "Bendito Ponto", legal_name: "Bendito Ponto Ltda" },
+            error: null,
+          },
+        ],
+      },
+      { "owner-1": "owner@example.com" },
+    );
+
+    const result = await handleLeadEmailEvent(
+      evento({ event_type: "notification.email_batch_due", entity_id: "batch-1" }),
+      admin,
+    );
+
+    expect(result.status).toBe("ok");
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "owner@example.com",
+        subject: "21 leads novos na Bendito Ponto | Marca do cliente",
+        idempotencyKey: "lead-email-batch:batch-1:owner-1",
+      }),
+    );
+
+    const alreadySent = adminCom(
+      {
+        notification_email_batches: [
+          {
+            data: {
+              id: "batch-1",
+              recipient_user_id: "owner-1",
+              status: "sent",
+              due_at: due,
+              updated_at: due,
+            },
+            error: null,
+          },
+        ],
+      },
+      { "owner-1": "owner@example.com" },
+    );
+    const retry = await handleLeadEmailEvent(
+      evento({ event_type: "notification.email_batch_due", entity_id: "batch-1" }),
+      alreadySent,
+    );
+
+    expect(retry).toMatchObject({ status: "skipped", detail: "lote já enviado" });
+    expect(sendEmail).toHaveBeenCalledOnce();
+  });
+
+  it("um segundo worker não envia enquanto o primeiro mantém o lease do lote", async () => {
+    const now = new Date().toISOString();
+    const admin = adminCom(
+      {
+        notification_email_batches: [
+          {
+            data: {
+              id: "batch-1",
+              recipient_user_id: "owner-1",
+              status: "processing",
+              due_at: now,
+              updated_at: now,
+            },
+            error: null,
+          },
+        ],
+      },
+      { "owner-1": "owner@example.com" },
+    );
+
+    const result = await handleLeadEmailEvent(
+      evento({ event_type: "notification.email_batch_due", entity_id: "batch-1" }),
+      admin,
+    );
+
+    expect(result).toMatchObject({
+      status: "retry",
+      detail: "outro worker está enviando o lote",
+    });
     expect(sendEmail).not.toHaveBeenCalled();
   });
 });
