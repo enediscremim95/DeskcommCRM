@@ -45,6 +45,12 @@ export type TrafficSummarySource = {
       impressions: number;
       clicks: number;
     } | null;
+    campaigns?: Array<{
+      name: string;
+      leads: number;
+      cost_per_lead: number | null;
+      conversion_rate: number | null;
+    }>;
   }>;
   delivery?: TrafficDelivery;
 };
@@ -201,6 +207,18 @@ const styles = StyleSheet.create({
   insightGrid: { flexDirection: "row", gap: 7, marginTop: 6 },
   insightColumn: { flex: 1 },
   situationMetrics: { flexDirection: "row", gap: 5, marginBottom: 6 },
+  championGrid: { flexDirection: "row", gap: 5, paddingHorizontal: 7, paddingBottom: 7 },
+  championCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 7,
+    minHeight: 54,
+  },
+  championLabel: { color: "#66736a", fontSize: 7, textTransform: "uppercase" },
+  championName: { marginTop: 4, fontSize: 8, fontWeight: "bold" },
+  championValue: { marginTop: 3, fontSize: 11, fontWeight: "bold" },
 });
 
 /** Largura do topo do funil e quanto cada nível afina, em pontos. */
@@ -245,6 +263,82 @@ function formatMoney(value: number | null, currency: string | null, language: La
     currency,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+type TrafficCampaign = NonNullable<TrafficSummarySource["currencies"][number]["campaigns"]>[number];
+
+export type TrafficCampaignChampion = {
+  label: string;
+  campaignName: string;
+  value: string | null;
+};
+
+function eligibleCampaigns(
+  campaigns: TrafficCampaign[],
+  minimumLeads: number,
+  metric: (campaign: TrafficCampaign) => number | null,
+  direction: "asc" | "desc",
+): TrafficCampaign[] {
+  return campaigns
+    .filter((campaign) => {
+      const value = metric(campaign);
+      return (
+        campaign.name.trim().length > 0 &&
+        Number.isFinite(campaign.leads) &&
+        campaign.leads >= minimumLeads &&
+        value != null &&
+        Number.isFinite(value) &&
+        value >= 0
+      );
+    })
+    .sort((a, b) => {
+      const aValue = metric(a) ?? 0;
+      const bValue = metric(b) ?? 0;
+      const difference = direction === "asc" ? aValue - bValue : bValue - aValue;
+      return difference || a.name.localeCompare(b.name, "pt-BR");
+    });
+}
+
+export function buildTrafficCampaignChampions(
+  campaigns: TrafficCampaign[],
+  currency: string | null,
+  language: Language,
+): TrafficCampaignChampion[] {
+  const insufficient = text(language, "Sem dados suficientes", "Sin datos suficientes");
+  const card = (
+    label: string,
+    winner: TrafficCampaign | undefined,
+    value: (campaign: TrafficCampaign) => string,
+  ): TrafficCampaignChampion => ({
+    label,
+    campaignName: winner?.name ?? insufficient,
+    value: winner ? value(winner) : null,
+  });
+  const mostLeads = eligibleCampaigns(campaigns, 0, (campaign) => campaign.leads, "desc")[0];
+  const lowestCost = eligibleCampaigns(
+    campaigns,
+    20,
+    (campaign) => campaign.cost_per_lead,
+    "asc",
+  )[0];
+  const bestConversion = eligibleCampaigns(
+    campaigns,
+    40,
+    (campaign) => campaign.conversion_rate,
+    "desc",
+  )[0];
+
+  return [
+    card(text(language, "Mais leads", "Más leads"), mostLeads, (campaign) =>
+      `${formatNumber(campaign.leads, language)} leads`,
+    ),
+    card(text(language, "Menor custo por lead", "Menor costo por lead"), lowestCost, (campaign) =>
+      formatMoney(campaign.cost_per_lead, currency, language),
+    ),
+    card(text(language, "Melhor conversão", "Mejor conversión"), bestConversion, (campaign) =>
+      `${formatPercentNumber(campaign.conversion_rate ?? 0, language)}%`,
+    ),
+  ];
 }
 
 function formatPeriod(window: TrafficSummarySource["window"], language: Language): string {
@@ -483,6 +577,39 @@ function Metric({
       <Text style={styles.metricLabel}>{label}</Text>
       <Text style={styles.metricValue}>{value}</Text>
       {comparison ? <Text style={styles.metricComparison}>{comparison}</Text> : null}
+    </View>
+  );
+}
+
+function CampaignChampionCards({
+  campaigns,
+  currency,
+  language,
+  accent,
+}: {
+  campaigns: TrafficCampaign[];
+  currency: string | null;
+  language: Language;
+  accent: string;
+}) {
+  const champions = buildTrafficCampaignChampions(campaigns, currency, language);
+  return (
+    <View style={styles.championGrid} wrap={false}>
+      {champions.map((champion) => (
+        <View
+          key={champion.label}
+          style={[
+            styles.championCard,
+            { borderColor: tint(accent, 0.28), backgroundColor: tint(accent, 0.07) },
+          ]}
+        >
+          <Text style={styles.championLabel}>{champion.label}</Text>
+          <Text style={styles.championName}>{champion.campaignName}</Text>
+          {champion.value ? (
+            <Text style={[styles.championValue, { color: accent }]}>{champion.value}</Text>
+          ) : null}
+        </View>
+      ))}
     </View>
   );
 }
@@ -826,6 +953,12 @@ export function TrafficSummaryPdf({
                   comparison={formatVariation(group.costPerLead, group.previous.costPerLead, language)}
                 />
               </View>
+              <CampaignChampionCards
+                campaigns={source.currencies[index]?.campaigns ?? []}
+                currency={group.currency}
+                language={language}
+                accent={brand.accent}
+              />
               {/* A linha de caixinhas do funil saiu: repetia o desenho logo abaixo
                   (pedido do dono, 21/09/2026). */}
               <FunnelDrawing group={group} brand={brand} language={language} />
