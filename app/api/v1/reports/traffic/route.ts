@@ -287,6 +287,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     conversionFields: typedConfig.conversion_fields,
     accounts: storedAccounts,
     facts: (facts ?? []) as unknown as StoredFact[],
+    window: parsed.data,
     campaignReach: currentReach.campaignReach,
     accountReach: currentReach.accountReach,
   });
@@ -295,6 +296,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     conversionFields: typedConfig.conversion_fields,
     accounts: storedAccounts,
     facts: (previousFacts ?? []) as unknown as StoredFact[],
+    window: previousRange,
     campaignReach: previousReach.campaignReach,
     accountReach: previousReach.accountReach,
   });

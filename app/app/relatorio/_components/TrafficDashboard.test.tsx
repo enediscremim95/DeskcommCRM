@@ -178,7 +178,7 @@ describe("colunas da tabela de campanhas", () => {
   });
 
   it("recarrega o funil quando o período muda", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       new Response(
         JSON.stringify({
           data: {
@@ -241,6 +241,65 @@ describe("colunas da tabela de campanhas", () => {
     const secondUrl = String(fetchMock.mock.calls[1]?.[0]);
     expect(secondUrl).toContain("/api/v1/reports/traffic?from=");
     expect(secondUrl).toContain("&to=");
+  });
+
+  it("não mantém os números da janela anterior visíveis enquanto o novo período carrega", async () => {
+    let finishSevenDays: ((response: Response) => void) | undefined;
+    const sevenDaysResponse = new Promise<Response>((resolve) => {
+      finishSevenDays = resolve;
+    });
+    const responseFor = (name: string, spend: number) =>
+      Response.json({
+        data: {
+          model: "leads",
+          organization_key: "org-1",
+          viewer_key: "viewer-1",
+          default_columns: ["spend"],
+          default_preset_id: null,
+          column_presets: [],
+          can_manage_defaults: false,
+          sync: { status: "ready", last_succeeded_at: null, error: null },
+          crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
+          currencies: [
+            {
+              currency: "BRL",
+              summary: { ...metrics, spend },
+              comparison: null,
+              daily: [],
+              platforms: [{ ...metrics, spend, platform: "meta_ads" }],
+              campaigns: [
+                {
+                  ...metrics,
+                  spend,
+                  name,
+                  platform: "meta_ads",
+                  campaign_status: "ACTIVE",
+                  adsets: [],
+                },
+              ],
+            },
+          ],
+        },
+      });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(responseFor("Campanha do período inteiro", 606.39))
+      .mockImplementationOnce(async () => sevenDaysResponse);
+
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    expect(await screen.findByText("Campanha do período inteiro")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Período" }), "7");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Carregando relatório…")).toBeInTheDocument();
+    expect(screen.queryByText("Campanha do período inteiro")).not.toBeInTheDocument();
+    expect(screen.queryByText(/606,39/)).not.toBeInTheDocument();
+
+    finishSevenDays?.(responseFor("Campanha dos últimos 7 dias", 19.89));
+    expect(await screen.findByText("Campanha dos últimos 7 dias")).toBeInTheDocument();
+    expect(screen.queryByText("Campanha do período inteiro")).not.toBeInTheDocument();
   });
 
   it("baixa o PDF do período atual mesmo para quem não gerencia predefinições", async () => {

@@ -197,6 +197,27 @@ function add(target: Bucket, fact: StoredFact, fields: string[]): void {
   target.video_p95 += n(fact.video_p95);
   rememberBudget(target, fact);
 }
+function hasDelivery(bucket: Bucket): boolean {
+  return [
+    bucket.spend,
+    bucket.conversions,
+    bucket.revenue,
+    bucket.impressions,
+    bucket.reach,
+    bucket.clicks,
+    bucket.link_clicks,
+    bucket.video_views,
+    bucket.video_p25,
+    bucket.video_p50,
+    bucket.video_p75,
+    bucket.video_p95,
+    bucket.landing_page_views,
+    bucket.add_to_cart,
+    bucket.initiate_checkout,
+    bucket.purchases,
+    bucket.messaging_conversations,
+  ].some((value) => value > 0);
+}
 function ratios(bucket: Bucket, model: DashboardModel, periodReach: number | null = null) {
   const budget = budgetOf(bucket);
   return {
@@ -230,21 +251,48 @@ export function buildTrafficReport(args: {
   conversionFields: string[];
   accounts: StoredAccount[];
   facts: StoredFact[];
+  window?: { from: string; to: string };
   campaignReach?: ReadonlyMap<string, number>;
   accountReach?: ReadonlyMap<string, number>;
 }) {
+  // A consulta já filtra a janela no banco. Este segundo limite mantém o
+  // agregador fiel ao contrato mesmo se uma fonte auxiliar entregar snapshot
+  // histórico ou se uma chamada futura deixar o filtro de fora.
+  const selectedWindow = args.window;
+  const facts = selectedWindow
+    ? args.facts.filter(
+        (fact) =>
+          fact.occurred_on >= selectedWindow.from && fact.occurred_on <= selectedWindow.to,
+      )
+    : args.facts;
   const accountById = new Map(args.accounts.map((account) => [account.account_id, account]));
-  const rollupKey = (fact: StoredFact) =>
+  const campaignRollupKey = (fact: StoredFact) =>
+    JSON.stringify([
+      fact.account_id,
+      fact.occurred_on,
+      fact.campaign_id ?? fact.campaign_name,
+    ]);
+  const adsetRollupKey = (fact: StoredFact) =>
     JSON.stringify([
       fact.account_id,
       fact.occurred_on,
       fact.campaign_id ?? fact.campaign_name,
       fact.adset_id ?? fact.adset_name,
     ]);
-  const metaSummaryKeys = new Set(
-    args.facts
-      .filter((fact) => fact.platform === "meta_ads" && !fact.ad_id && !fact.ad_name)
-      .map(rollupKey),
+  const hasAdset = (fact: StoredFact) => Boolean(fact.adset_id || fact.adset_name);
+  const isMetaDetail = (fact: StoredFact) =>
+    fact.platform === "meta_ads" && Boolean(fact.ad_id || fact.ad_name);
+  const metaCampaignSummaryKeys = new Set(
+    facts
+      .filter(
+        (fact) => fact.platform === "meta_ads" && !isMetaDetail(fact) && !hasAdset(fact),
+      )
+      .map(campaignRollupKey),
+  );
+  const metaAdsetSummaryKeys = new Set(
+    facts
+      .filter((fact) => fact.platform === "meta_ads" && !isMetaDetail(fact) && hasAdset(fact))
+      .map(adsetRollupKey),
   );
   const byCurrency = new Map<
     string,
@@ -283,7 +331,7 @@ export function buildTrafficReport(args: {
     }
   >();
 
-  for (const fact of args.facts) {
+  for (const fact of facts) {
     const account = accountById.get(fact.account_id);
     if (!account) continue;
     const currency = account.currency;
@@ -304,8 +352,13 @@ export function buildTrafficReport(args: {
       group.accountIds.set(fact.platform, accountIds);
     }
     accountIds.add(fact.account_id);
-    const isMetaDetail = fact.platform === "meta_ads" && Boolean(fact.ad_id || fact.ad_name);
-    const contributesToRollup = !(isMetaDetail && metaSummaryKeys.has(rollupKey(fact)));
+    const metaDetail = isMetaDetail(fact);
+    const campaignSummaryExists = metaCampaignSummaryKeys.has(campaignRollupKey(fact));
+    const isCampaignSummary =
+      fact.platform === "meta_ads" && !metaDetail && !hasAdset(fact);
+    const contributesToRollup = campaignSummaryExists
+      ? isCampaignSummary
+      : !(metaDetail && metaAdsetSummaryKeys.has(adsetRollupKey(fact)));
     if (contributesToRollup) add(group.total, fact, args.conversionFields);
     let daily = group.daily.get(fact.occurred_on);
     if (!daily) {
@@ -347,6 +400,9 @@ export function buildTrafficReport(args: {
       campaign.status_occurred_on = fact.occurred_on;
     }
     if (contributesToRollup) add(campaign.total, fact, args.conversionFields);
+    // Uma linha agregada no nível da campanha alimenta os KPIs da campanha,
+    // mas não representa um conjunto real no drill-down.
+    if (fact.platform === "meta_ads" && !metaDetail && !hasAdset(fact)) continue;
     const adsetName = fact.adset_name || "Sem conjunto";
     const adsetKey = fact.adset_id ?? adsetName;
     let adset = campaign.adsets.get(adsetKey);
@@ -354,8 +410,10 @@ export function buildTrafficReport(args: {
       adset = { name: adsetName, total: empty(), ads: new Map() };
       campaign.adsets.set(adsetKey, adset);
     }
-    if (contributesToRollup) add(adset.total, fact, args.conversionFields);
-    if (fact.platform === "meta_ads" && !isMetaDetail) continue;
+    const contributesToAdset =
+      !(metaDetail && metaAdsetSummaryKeys.has(adsetRollupKey(fact)));
+    if (contributesToAdset) add(adset.total, fact, args.conversionFields);
+    if (fact.platform === "meta_ads" && !metaDetail) continue;
     const adName = fact.ad_name || "Sem anúncio";
     const adKey = fact.ad_id ?? adName;
     let ad = adset.ads.get(adKey);
@@ -411,6 +469,7 @@ export function buildTrafficReport(args: {
           ),
         })),
         campaigns: [...group.campaigns.values()]
+          .filter((campaign) => hasDelivery(campaign.total))
           .sort((a, b) => b.total.spend - a.total.spend)
           .map((campaign) => ({
             name: campaign.name,
