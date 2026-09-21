@@ -4414,14 +4414,14 @@ export const DICIONARIO: Traducoes = {
   "As etapas que serviriam para este passo já estão sendo usadas por outros passos. Libere uma delas para poder escolhê-la aqui.": {
     es: "Las etapas que servirían para este paso ya están siendo usadas por otros pasos. Libera una de ellas para poder elegirla aquí.",
   },
-  "Este funil não tem nenhuma etapa marcada como fechamento, então não há para onde levar o card quando a pessoa fecha. Em «Etapas deste funil», escolha o tipo «Venda fechada» numa etapa.": {
-    es: "Este embudo no tiene ninguna etapa marcada como cierre, así que no hay adónde llevar la tarjeta cuando la persona cierra. En «Etapas de este embudo», elige el tipo «Venta cerrada» en una etapa.",
+  "Este funil não tem nenhuma etapa marcada como fechamento, então não há para onde levar o card quando a pessoa fecha. Em «Editar etapas», escolha o tipo «Venda fechada» numa etapa.": {
+    es: "Este embudo no tiene ninguna etapa marcada como cierre, así que no hay adónde llevar la tarjeta cuando la persona cierra. En «Editar etapas», elige el tipo «Venta cerrada» en una etapa.",
   },
-  "Este funil não tem nenhuma etapa marcada como perda, então não há para onde levar o card quando a pessoa desiste. Em «Etapas deste funil», escolha o tipo «Perdido» numa etapa.": {
-    es: "Este embudo no tiene ninguna etapa marcada como pérdida, así que no hay adónde llevar la tarjeta cuando la persona desiste. En «Etapas de este embudo», elige el tipo «Perdido» en una etapa.",
+  "Este funil não tem nenhuma etapa marcada como perda, então não há para onde levar o card quando a pessoa desiste. Em «Editar etapas», escolha o tipo «Perdido» numa etapa.": {
+    es: "Este embudo no tiene ninguna etapa marcada como pérdida, así que no hay adónde llevar la tarjeta cuando la persona desiste. En «Editar etapas», elige el tipo «Perdido» en una etapa.",
   },
-  "Este funil só tem etapas de fechamento e de perda, então não há etapa comum para receber o card neste passo. Crie as etapas do meio do caminho em «Etapas deste funil».": {
-    es: "Este embudo solo tiene etapas de cierre y de pérdida, así que no hay una etapa común para recibir la tarjeta en este paso. Crea las etapas intermedias en «Etapas de este embudo».",
+  "Este funil só tem etapas de fechamento e de perda, então não há etapa comum para receber o card neste passo. Crie as etapas do meio do caminho em «Editar etapas».": {
+    es: "Este embudo solo tiene etapas de cierre y de pérdida, así que no hay una etapa común para recibir la tarjeta en este paso. Crea las etapas intermedias en «Editar etapas».",
   },
   "Sua sessão expirou. Entre de novo para salvar suas escolhas.": {
     es: "Tu sesión expiró. Vuelve a entrar para guardar tus elecciones.",
