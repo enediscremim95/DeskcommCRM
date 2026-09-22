@@ -4,6 +4,13 @@ import { useState } from "react";
 import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { GripVertical, Settings2, X } from "lucide-react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
@@ -53,6 +60,7 @@ export function PriorityMetricSelector({
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const label = (metric: PriorityMetricColumn) => {
     const meta = PRIORITY_METRIC_META[metric];
     return idioma === "es" ? meta.labelEs : meta.label;
@@ -86,6 +94,7 @@ export function PriorityMetricSelector({
           ? t("Padrão restaurado para esta organização.")
           : t("Métricas prioritárias salvas."),
       );
+      setOpen(false);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -102,13 +111,20 @@ export function PriorityMetricSelector({
   if (!canManage) return null;
 
   return (
-    <details className="relative">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium">
-        <Settings2 className="size-3.5" aria-hidden="true" />
-        {t("Escolher métricas")}
-      </summary>
-      <div className="absolute right-0 z-20 mt-2 w-[min(88vw,30rem)] rounded-xl border bg-card p-4 shadow-xl">
-        <p className="text-sm font-semibold">{t("Métricas prioritárias")}</p>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium"
+        >
+          <Settings2 className="size-3.5" aria-hidden="true" />
+          {t("Escolher métricas")}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[85dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-2xl p-5">
+        <DialogHeader>
+          <DialogTitle className="text-sm">{t("Métricas prioritárias")}</DialogTitle>
+        </DialogHeader>
         <DragDropContext onDragEnd={handleDragEnd}>
           <Droppable droppableId="priority-metrics">
             {(provided) => (
@@ -191,7 +207,7 @@ export function PriorityMetricSelector({
           </button>
         </div>
         {message && <p className="mt-3 text-xs text-muted-foreground">{message}</p>}
-      </div>
-    </details>
+      </DialogContent>
+    </Dialog>
   );
 }

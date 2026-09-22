@@ -37,7 +37,6 @@ import { PriorityMetricSelector } from "./PriorityMetricSelector";
 import {
   CreativePerformance,
   MonthByMonth,
-  PlatformComparison,
   TrafficTimeline,
 } from "./RichReportSections";
 
@@ -1676,7 +1675,6 @@ export function TrafficDashboard() {
 
             <TrafficTimeline daily={group.daily} currency={group.currency} idioma={idioma} />
 
-            <PlatformComparison group={group} crm={richCrm} idioma={idioma} />
 
             {meta && (
               <details
