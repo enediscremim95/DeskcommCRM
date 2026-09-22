@@ -1247,6 +1247,8 @@ export function TrafficDashboard() {
             .join("|")}
           initial={report.cost_thresholds ?? []}
           canManage={report.can_manage_defaults}
+          model={report.model}
+          currency={report.currencies[0]?.currency}
           onSaved={(costThresholds) =>
             setReport((current) =>
               current ? { ...current, cost_thresholds: costThresholds } : current,
