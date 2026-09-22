@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { Gear } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
-import { sidebarGroups } from "@/lib/navigation/registry";
+import { itemAtivo, sidebarGroups } from "@/lib/navigation/registry";
 
 const DESTINOS_DIARIOS = ["/app/inbox", "/app/radar", "/app/kanban", "/app/tasks"] as const;
 
@@ -44,7 +44,7 @@ export function MobileDock() {
       style={{ gridTemplateColumns: `repeat(${atalhos.length + 1}, minmax(0, 1fr))` }}
     >
       {atalhos.map((item) => {
-        const ativo = pathname === item.href || pathname.startsWith(`${item.href}/`);
+        const ativo = itemAtivo(item, pathname);
         const Icon = item.icon;
         return (
           <Link
