@@ -25,7 +25,7 @@ import { serializeTrafficColumnPresets } from "@/lib/windsor/column-presets";
 import { buildTrafficDelivery } from "@/lib/windsor/delivery";
 import { clientCanViewIntegration } from "@/lib/integrations/access";
 import {
-  buildTrafficLeadSituation,
+  buildTrafficRichCrmInsights,
   type TrafficLeadRow,
   type TrafficStageRow,
 } from "@/lib/windsor/traffic-insights";
@@ -41,8 +41,8 @@ const querySchema = z
     const from = new Date(`${value.from}T00:00:00Z`);
     const to = new Date(`${value.to}T00:00:00Z`);
     const days = (to.getTime() - from.getTime()) / 86_400_000;
-    if (days < 0 || days > 92)
-      context.addIssue({ code: "custom", message: "Período deve ter até 92 dias." });
+    if (days < 0 || days > 731)
+      context.addIssue({ code: "custom", message: "Período deve ter até 731 dias." });
   });
 const columnsSchema = z.object({
   columns: z
@@ -51,6 +51,25 @@ const columnsSchema = z.object({
     .max(CAMPAIGN_METRIC_COLUMNS.length)
     .refine((columns) => new Set(columns).size === columns.length, "Colunas duplicadas."),
 });
+const thresholdsSchema = z.object({
+  cost_thresholds: z
+    .array(
+      z
+        .object({
+          platform: z.enum(["meta_ads", "google_ads"]),
+          good_until: z.number().finite().nonnegative(),
+          acceptable_until: z.number().finite().nonnegative(),
+        })
+        .refine((value) => value.acceptable_until >= value.good_until, {
+          message: "O limite aceitável deve ser maior ou igual ao limite bom.",
+        }),
+    )
+    .max(2)
+    .refine((rows) => new Set(rows.map((row) => row.platform)).size === rows.length, {
+      message: "Plataformas duplicadas.",
+    }),
+});
+const patchSchema = z.union([columnsSchema, thresholdsSchema]);
 const reachResponseSchema = z
   .object({
     data: z.array(z.record(z.string(), z.unknown())).optional(),
@@ -152,7 +171,9 @@ export async function GET(request: NextRequest): Promise<Response> {
     for (let offset = 0; ; offset += pageSize) {
       const result = await admin
         .from("crm_leads" as never)
-        .select("id,status,stage_id,lost_reason,created_at")
+        .select(
+          "id,status,stage_id,pipeline_id,lost_reason,created_at,closed_at,value_cents,currency,source,source_metadata",
+        )
         .eq("organization_id", organizationId)
         .gte("created_at", from.toISOString())
         .lt("created_at", to.toISOString())
@@ -174,6 +195,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     currentLeadRowsResult,
     previousLeadRowsResult,
     { data: presetRows, error: presetError },
+    { data: thresholdRows, error: thresholdError },
   ] = await Promise.all([
     admin
       .from("traffic_dashboard_accounts" as never)
@@ -215,7 +237,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       : Promise.resolve({ data: [], error: null }),
     admin
       .from("crm_stages" as never)
-      .select("id,name,position,is_won,is_lost")
+      .select("id,name,position,pipeline_id,is_won,is_lost")
       .eq("organization_id", organizationId),
     fetchLeadSituationRows(new Date(fromCreatedAt), exclusiveTo),
     fetchLeadSituationRows(previousFrom, previousExclusiveTo),
@@ -224,6 +246,10 @@ export async function GET(request: NextRequest): Promise<Response> {
       .select("id,name,metric_columns")
       .eq("organization_id", organizationId)
       .order("name"),
+    admin
+      .from("traffic_report_cost_thresholds" as never)
+      .select("platform,good_until,acceptable_until")
+      .eq("organization_id", organizationId),
   ]);
   const factError = factsResult.error;
   const deliveryFactError = deliveryFactsResult.error;
@@ -236,13 +262,23 @@ export async function GET(request: NextRequest): Promise<Response> {
     crmStagesError ||
     currentLeadRowsResult.error ||
     previousLeadRowsResult.error ||
-    presetError
+    presetError ||
+    thresholdError
   ) {
     return fail("internal_error", "Não foi possível ler o relatório.", 500, { requestId });
   }
   const stages = (crmStages ?? []) as unknown as TrafficStageRow[];
-  const crm = buildTrafficLeadSituation(currentLeadRowsResult.data ?? [], stages);
-  const previousCrm = buildTrafficLeadSituation(previousLeadRowsResult.data ?? [], stages);
+  const crm = buildTrafficRichCrmInsights({
+    leads: currentLeadRowsResult.data ?? [],
+    previousLeads: previousLeadRowsResult.data ?? [],
+    stages,
+    window: parsed.data,
+  });
+  const previousCrm = buildTrafficRichCrmInsights({
+    leads: previousLeadRowsResult.data ?? [],
+    stages,
+    window: previousRange,
+  });
   const facts = factsResult.data;
   const previousFacts = previousFactsResult.data;
   const storedAccounts = (accounts ?? []) as unknown as StoredAccount[];
@@ -319,6 +355,18 @@ export async function GET(request: NextRequest): Promise<Response> {
       default_preset_id: defaultPreset?.id ?? null,
       column_presets: columnPresets,
       can_manage_defaults: authz.user.is_platform_admin && !authz.user.support,
+      cost_thresholds: (thresholdRows ?? []).map((row) => {
+        const typed = row as unknown as {
+          platform: "meta_ads" | "google_ads";
+          good_until: number | string;
+          acceptable_until: number | string;
+        };
+        return {
+          platform: typed.platform,
+          good_until: Number(typed.good_until),
+          acceptable_until: Number(typed.acceptable_until),
+        };
+      }),
       sync: {
         status: typedConfig.sync_status,
         last_succeeded_at: typedConfig.last_sync_succeeded_at,
@@ -354,7 +402,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       requestId,
     });
   }
-  const parsed = columnsSchema.safeParse(await request.json().catch(() => null));
+  const parsed = patchSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return fail("validation_error", "Colunas inválidas.", 400, {
       requestId,
@@ -363,6 +411,52 @@ export async function PATCH(request: NextRequest): Promise<Response> {
   }
   const organizationId = authz.org.orgId;
   const admin = createAdminClient();
+  if ("cost_thresholds" in parsed.data) {
+    if (parsed.data.cost_thresholds.length > 0) {
+      const { error: insertError } = await admin
+        .from("traffic_report_cost_thresholds" as never)
+        .upsert(
+          parsed.data.cost_thresholds.map((row) => ({
+            organization_id: organizationId,
+            platform: row.platform,
+            good_until: row.good_until,
+            acceptable_until: row.acceptable_until,
+            updated_by: authz.user.id,
+          })) as never,
+          { onConflict: "organization_id,platform" },
+        );
+      if (insertError) {
+        return fail("internal_error", "Não foi possível salvar os limites de custo.", 500, {
+          requestId,
+        });
+      }
+    }
+    const configured = new Set(parsed.data.cost_thresholds.map((row) => row.platform));
+    for (const platform of ["meta_ads", "google_ads"] as const) {
+      if (configured.has(platform)) continue;
+      const { error: deleteError } = await admin
+        .from("traffic_report_cost_thresholds" as never)
+        .delete()
+        .eq("organization_id", organizationId)
+        .eq("platform", platform);
+      if (deleteError) {
+        return fail("internal_error", "Não foi possível salvar os limites de custo.", 500, {
+          requestId,
+        });
+      }
+    }
+    await audit({
+      action: "traffic_dashboard.cost_thresholds_updated",
+      actorUserId: authz.user.id,
+      organizationId,
+      resourceType: "traffic_report_cost_thresholds",
+      resourceId: organizationId,
+      bypassedRls: true,
+      actingAsPlatformAdmin: true,
+      metadata: { platforms: parsed.data.cost_thresholds.map((row) => row.platform) },
+    });
+    return ok({ cost_thresholds: parsed.data.cost_thresholds }, { requestId });
+  }
   const { error } = await admin
     .from("traffic_dashboard_configs" as never)
     .update({ campaign_metric_columns: parsed.data.columns } as never)
