@@ -25495,6 +25495,13 @@ end $$;
 comment on column public.crm_leads.qualification is
   'Nota humana de qualificação de 1 a 5, independente do score da IA.';
 
+-- ---- Métricas prioritárias do Relatório (migration 0257) ----
+alter table public.traffic_dashboard_configs
+  add column if not exists priority_metric_columns text[];
+
+comment on column public.traffic_dashboard_configs.priority_metric_columns is
+  'Métricas prioritárias do topo do Relatório, na ordem escolhida; null usa o padrão do modelo.';
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

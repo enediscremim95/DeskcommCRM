@@ -25,10 +25,12 @@
     { "id": "facts", "lane": "banco", "col": 4, "type": "service", "label": "Fatos diários por tenant, conta e moeda" },
     { "id": "presets", "lane": "banco", "col": 4, "type": "service", "label": "Predefinições ordenadas de colunas por organização" },
     { "id": "thresholds", "lane": "banco", "col": 4, "type": "service", "label": "Limites de custo por organização e plataforma" },
+    { "id": "prioritycards", "lane": "banco", "col": 4, "type": "service", "label": "Cartões prioritários ordenados por organização" },
     { "id": "crm", "lane": "banco", "col": 4, "type": "service", "label": "Coorte de leads, etapas, perdas e vendas" },
     { "id": "runs", "lane": "banco", "col": 3, "type": "service", "label": "Runs, erro sanitizado e último dado bom" },
     { "id": "report", "lane": "execucao", "col": 5, "type": "service", "label": "API autenticada agrega sem misturar moedas" },
-    { "id": "screen", "lane": "tenant", "col": 6, "type": "service", "label": "Relatório responsivo e drill campanha > conjunto > anúncio" }
+    { "id": "screen", "lane": "tenant", "col": 6, "type": "service", "label": "Relatório responsivo e drill campanha > conjunto > anúncio" },
+    { "id": "pdf", "lane": "tenant", "col": 6, "type": "service", "label": "PDF do período com os mesmos cartões do topo" }
   ],
   "edges": [
     { "id": "e1", "from": "config", "to": "configdb", "label": "RPC atômica e auditada" },
@@ -46,6 +48,9 @@
     { "id": "e13", "from": "config", "to": "thresholds", "label": "platform admin grava pela rota auditada" },
     { "id": "e14", "from": "thresholds", "to": "report", "label": "semáforo por plataforma; ausência não colore" },
     { "id": "e15", "from": "facts", "to": "screen", "label": "granularidade, criativos e mês a mês no período" },
-    { "id": "e16", "from": "crm", "to": "report", "label": "coorte filtrada pela entrada no período" }
+    { "id": "e16", "from": "crm", "to": "report", "label": "coorte filtrada pela entrada no período" },
+    { "id": "e17", "from": "screen", "to": "prioritycards", "label": "platform admin escolhe e ordena pela rota auditada" },
+    { "id": "e18", "from": "prioritycards", "to": "report", "label": "seleção tenant-scoped; ausência usa o padrão do modelo" },
+    { "id": "e19", "from": "report", "to": "pdf", "label": "mesma seleção, ordem e período da tela" }
   ]
 }

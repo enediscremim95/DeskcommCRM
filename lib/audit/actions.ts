@@ -500,6 +500,7 @@ export const AUDIT_ACTIONS = [
   "tenant.owner_access_dispatched",
   "traffic_dashboard.configuration_updated",
   "traffic_dashboard.cost_thresholds_updated",
+  "traffic_dashboard.priority_metrics_updated",
   "integrations.configuration_updated",
   "traffic_dashboard.sync_succeeded",
   "traffic_dashboard.sync_failed",

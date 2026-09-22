@@ -20,9 +20,16 @@ import { tagDeIdioma } from "@/lib/i18n/datas";
 import type { CampaignMetricColumn } from "@/lib/windsor/types";
 import type { TrafficColumnPreset } from "@/lib/windsor/column-presets";
 import type { TrafficRichCrmInsights } from "@/lib/windsor/traffic-insights";
+import {
+  PRIORITY_METRIC_META,
+  defaultPriorityMetrics,
+  priorityMetricValue,
+  type PriorityMetricColumn,
+} from "@/lib/windsor/priority-metrics";
 import { ColumnPresetMenu } from "./ColumnPresetMenu";
 import { buildTrafficFunnelStages, ConversionFunnel, type FunnelStage } from "./ConversionFunnel";
 import { CostSignal, CostThresholdControl, type CostThreshold } from "./CostThresholds";
+import { PriorityMetricSelector } from "./PriorityMetricSelector";
 import {
   CreativePerformance,
   MonthByMonth,
@@ -113,6 +120,7 @@ interface ReportResponse {
     default_preset_id: string | null;
     column_presets: TrafficColumnPreset[];
     can_manage_defaults: boolean;
+    priority_metrics?: PriorityMetricColumn[];
     cost_thresholds?: CostThreshold[];
     sync: { status: string; last_succeeded_at: string | null; error: string | null };
     crm: Partial<TrafficRichCrmInsights> &
@@ -1056,9 +1064,7 @@ export function TrafficDashboard() {
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [selectedColumns, setSelectedColumns] = useState<CampaignMetricColumn[]>([]);
-  const [activeMetric, setActiveMetric] = useState<"spend" | "conversions" | "revenue">(
-    "conversions",
-  );
+  const [activeMetric, setActiveMetric] = useState<PriorityMetricColumn | "conversions">("leads");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1071,7 +1077,12 @@ export function TrafficDashboard() {
         const body = (await response.json()) as ReportResponse;
         if (!response.ok)
           throw new Error(body.error?.message ?? t("Não foi possível carregar o relatório."));
-        if (active) setReport(body.data);
+        if (active) {
+          setReport(body.data);
+          setActiveMetric(
+            body.data.priority_metrics?.[0] ?? defaultPriorityMetrics(body.data.model)[0] ?? "spend",
+          );
+        }
       })
       .catch((cause: unknown) => {
         if (active && (cause as { name?: string }).name !== "AbortError") {
@@ -1379,7 +1390,7 @@ export function TrafficDashboard() {
           formatter: number,
           betterWhen: "up" as const,
         };
-        const heroMetrics =
+        const legacyHeroMetrics =
           report.model === "ecommerce"
             ? [
                 {
@@ -1476,6 +1487,66 @@ export function TrafficDashboard() {
                     betterWhen: "down" as const,
                   },
                 ];
+        const priorityMetrics = report.priority_metrics;
+        const configuredHeroMetrics = (priorityMetrics ?? []).map((metric) => {
+          const meta = PRIORITY_METRIC_META[metric];
+          const value = priorityMetricValue(metric, group.summary, richCrm.closed_won) ?? 0;
+          let previousValue: number | null | undefined;
+          if (metric === "crm_closed_won") {
+            previousValue = previousRichCrm?.closed_won;
+          } else if (metric === "cost_per_crm_closed_won") {
+            previousValue =
+              previous && previousRichCrm
+                ? priorityMetricValue(metric, previous, previousRichCrm.closed_won)
+                : undefined;
+          } else {
+            previousValue = previous
+              ? priorityMetricValue(metric, previous, previousRichCrm?.closed_won ?? 0)
+              : undefined;
+          }
+          const sparkline = (() => {
+            if (metric === "spend") return spendTrend;
+            if (metric === "revenue") return revenueTrend;
+            if (metric === "roas") {
+              return group.daily.map((day) => {
+                const spend = day.spend_meta + day.spend_google;
+                return spend > 0 ? day.revenue / spend : 0;
+              });
+            }
+            if (
+              (metric === "leads" && report.model === "leads") ||
+              (metric === "messaging_conversations" && report.model === "messages") ||
+              (metric === "purchases" && report.model === "ecommerce")
+            ) {
+              return conversionTrend;
+            }
+            if (
+              (metric === "cost_per_lead" && report.model === "leads") ||
+              (metric === "cost_per_messaging_conversation" && report.model === "messages") ||
+              (metric === "cost_per_purchase" && report.model === "ecommerce")
+            ) {
+              return costTrend;
+            }
+            return [];
+          })();
+          const formatter = (metricValue: number) => {
+            if (meta.format === "money") return money(metricValue, group.currency);
+            if (meta.format === "percent") return percent(metricValue, "0%");
+            if (meta.format === "ratio") return `${number(metricValue)}x`;
+            return number(metricValue);
+          };
+          return {
+            key: metric,
+            label: t(meta.label),
+            hint: t(meta.hint),
+            value,
+            previous: previousValue,
+            sparkline,
+            formatter,
+            betterWhen: meta.betterWhen,
+          };
+        });
+        const heroMetrics = priorityMetrics ? configuredHeroMetrics : legacyHeroMetrics;
         // Retenção de vídeo, fórmulas do painel antigo (`generate_tratorval.py`,
         // linhas 783 e 804 a 808): Hook = reproduções de 3s ÷ impressões,
         // Body = quem passou de 75% ÷ impressões, e as barras 50/75/95 têm a
@@ -1509,8 +1580,30 @@ export function TrafficDashboard() {
                       : localText(idioma, "O que move o resultado", "Lo que mueve el resultado")}
                   </h2>
                 </div>
+                <PriorityMetricSelector
+                  key={`${report.organization_key}:${(
+                    report.priority_metrics ?? defaultPriorityMetrics(report.model)
+                  ).join("|")}`}
+                  model={report.model}
+                  initial={report.priority_metrics ?? defaultPriorityMetrics(report.model)}
+                  canManage={report.can_manage_defaults}
+                  onSaved={(priorityMetrics) => {
+                    setActiveMetric(priorityMetrics[0] ?? "spend");
+                    setReport((current) =>
+                      current ? { ...current, priority_metrics: priorityMetrics } : current,
+                    );
+                  }}
+                />
               </div>
-              <div className="relative grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div
+                className={`relative grid gap-3 sm:grid-cols-2 ${
+                  heroMetrics.length <= 4
+                    ? "xl:grid-cols-4"
+                    : heroMetrics.length === 5
+                      ? "xl:grid-cols-5"
+                      : "xl:grid-cols-6"
+                }`}
+              >
                 {heroMetrics.map(({ key: series, ...metric }, index) => (
                   <HeroMetric
                     key={`${metric.label}-${index}`}

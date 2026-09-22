@@ -12,8 +12,18 @@ import React from "react";
 
 import type { MarcaDeSaida } from "@/lib/branding/saida";
 import type { TrafficDelivery, TrafficDeliveryCampaign } from "@/lib/windsor/delivery";
+import {
+  PRIORITY_METRIC_META,
+  priorityMetricValue,
+  validPriorityMetrics,
+  type PriorityMetricColumn,
+  type PriorityMetricValues,
+} from "@/lib/windsor/priority-metrics";
+import type { DashboardModel } from "@/lib/windsor/types";
 
 export type TrafficSummarySource = {
+  model?: DashboardModel;
+  priority_metrics?: PriorityMetricColumn[];
   window: { from: string; to: string };
   crm: {
     leads_entered: number;
@@ -33,14 +43,12 @@ export type TrafficSummarySource = {
   };
   currencies: Array<{
     currency: string;
-    summary: {
-      spend: number;
+    summary: PriorityMetricValues & {
       reach: number | null;
       impressions: number;
       clicks: number;
     };
-    comparison?: {
-      spend: number;
+    comparison?: PriorityMetricValues & {
       reach: number | null;
       impressions: number;
       clicks: number;
@@ -574,6 +582,60 @@ function formatVariation(
   }).format(value)}% ${text(language, "vs. período anterior", "vs. período anterior")}`;
 }
 
+export type TrafficPriorityMetricCard = {
+  key: PriorityMetricColumn;
+  label: string;
+  value: string;
+  comparison: string | null;
+};
+
+export function buildTrafficPriorityMetricCards(
+  source: TrafficSummarySource,
+  currencyIndex: number,
+  language: Language,
+): TrafficPriorityMetricCard[] {
+  const model = source.model ?? "leads";
+  const selected = validPriorityMetrics(source.priority_metrics, model);
+  const currencyGroup = source.currencies[currencyIndex];
+  const currentSummary = currencyGroup?.summary;
+  const previousSummary = currencyGroup?.comparison ?? null;
+  const closedWon = source.crm.closed_won;
+  const previousClosedWon = source.crm.previous?.closed_won;
+
+  return selected.map((metric) => {
+    const meta = PRIORITY_METRIC_META[metric];
+    const current = currentSummary
+      ? priorityMetricValue(metric, currentSummary, closedWon)
+      : metric === "crm_closed_won"
+        ? closedWon
+        : null;
+    let previous: number | null | undefined;
+    if (metric === "crm_closed_won") {
+      previous = previousClosedWon;
+    } else if (previousSummary) {
+      previous = priorityMetricValue(metric, previousSummary, previousClosedWon ?? 0);
+    }
+    const value = (() => {
+      if (meta.format === "money") {
+        return formatMoney(current, currencyGroup?.currency ?? null, language);
+      }
+      if (meta.format === "percent") {
+        return current == null ? "0%" : `${formatPercentNumber(current, language)}%`;
+      }
+      if (meta.format === "ratio") {
+        return current == null ? "0x" : `${formatNumber(current, language)}x`;
+      }
+      return formatNumber(current, language);
+    })();
+    return {
+      key: metric,
+      label: language === "es" ? meta.labelEs : meta.label,
+      value,
+      comparison: formatVariation(current, previous, language),
+    };
+  });
+}
+
 function Metric({
   label,
   value,
@@ -936,6 +998,7 @@ export function TrafficSummaryPdf({
         </View>
 
         {groups.map((group, index) => {
+          const priorityCards = buildTrafficPriorityMetricCards(source, index, language);
           return (
             <View key={group.currency ?? `crm-${index}`} style={styles.group} wrap={false}>
               <Text
@@ -947,27 +1010,36 @@ export function TrafficSummaryPdf({
                 {group.currency ?? text(language, "Dados do CRM", "Datos del CRM")}
               </Text>
               <View style={styles.metrics}>
-                <Metric
-                  label={text(language, "Investimento", "Inversión")}
-                  value={formatMoney(group.spend, group.currency, language)}
-                  comparison={formatVariation(group.spend, group.previous.spend, language)}
-                />
-                <Metric
-                  label={text(language, "Alcance", "Alcance")}
-                  value={formatNumber(group.reach, language)}
-                  comparison={formatVariation(group.reach, group.previous.reach, language)}
-                />
-                <Metric
-                  label={text(language, "Cliques", "Clics")}
-                  value={formatNumber(group.clicks, language)}
-                  comparison={formatVariation(group.clicks, group.previous.clicks, language)}
-                />
-                <Metric label="Leads" value={formatNumber(group.leads, language)} comparison={formatVariation(group.leads, group.previous.leads, language)} />
-                <Metric
-                  label={text(language, "Custo por lead", "Costo por lead")}
-                  value={formatMoney(group.costPerLead, group.currency, language)}
-                  comparison={formatVariation(group.costPerLead, group.previous.costPerLead, language)}
-                />
+                {priorityCards.map((metric) =>
+                  // No PDF, "Leads" e "Custo por lead" continuam contando quem ENTROU no
+                  // CRM (decisão do dono, 21/09/2026), e não o lead que a plataforma conta.
+                  metric.key === "leads" ? (
+                    <Metric
+                      key={metric.key}
+                      label={metric.label}
+                      value={formatNumber(group.leads, language)}
+                      comparison={formatVariation(group.leads, group.previous.leads, language)}
+                    />
+                  ) : metric.key === "cost_per_lead" ? (
+                    <Metric
+                      key={metric.key}
+                      label={metric.label}
+                      value={formatMoney(group.costPerLead, group.currency, language)}
+                      comparison={formatVariation(
+                        group.costPerLead,
+                        group.previous.costPerLead,
+                        language,
+                      )}
+                    />
+                  ) : (
+                    <Metric
+                      key={metric.key}
+                      label={metric.label}
+                      value={metric.value}
+                      comparison={metric.comparison}
+                    />
+                  ),
+                )}
               </View>
               {/* A linha de caixinhas do funil saiu: repetia o desenho logo abaixo
                   (pedido do dono, 21/09/2026). */}
