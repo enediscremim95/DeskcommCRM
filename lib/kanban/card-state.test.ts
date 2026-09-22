@@ -16,15 +16,21 @@ import {
 
 describe("stageAgeTooltip: data/hora exata ao passar o mouse no '21h'", () => {
   it("sem data não mostra nada", () => {
-    expect(stageAgeTooltip(null)).toBe("");
+    expect(stageAgeTooltip(null, "pt-BR")).toBe("");
   });
   it("mostra dia e hora de Brasília", () => {
-    expect(stageAgeTooltip("2026-09-22T11:00:00Z").replace(/ /g, " ")).toBe(
+    expect(stageAgeTooltip("2026-09-22T11:00:00Z", "pt-BR").replace(/ /g, " ")).toBe(
       "22/09/2026 08:00",
     );
   });
+  it("data sem hora (previsão de fechamento) não volta um dia pelo fuso", () => {
+    expect(stageAgeTooltip("2026-09-30", "pt-BR")).toBe("30/09/2026");
+  });
+  it("segue o idioma de quem vê", () => {
+    expect(stageAgeTooltip("2026-09-30", "es")).toBe("30/9/26");
+  });
   it("data inválida não quebra o card", () => {
-    expect(stageAgeTooltip("não é data")).toBe("");
+    expect(stageAgeTooltip("não é data", "pt-BR")).toBe("");
   });
 });
 

@@ -34,6 +34,7 @@ interface StageColumnProps {
   onSelectMany?: (leadIds: string[], marcar: boolean) => void;
   /** Abrir o dossiê — atravessa o board até o card, como `pulses`. */
   onOpen?: (leadId: string) => void;
+  onSummary?: (leadId: string) => void;
 }
 
 function formatBRL(cents: number): string {
@@ -67,6 +68,7 @@ export function StageColumn({
   pulses,
   onSelectMany,
   onOpen,
+  onSummary,
 }: StageColumnProps) {
   const t = useT();
   const totalCents = leads.reduce((sum, l) => sum + (l.value_cents ?? 0), 0);
@@ -186,6 +188,7 @@ export function StageColumn({
                 pulseCount={pulses?.get(lead.id) ?? 0}
                 onSelect={aoSelecionar}
                 onOpen={onOpen}
+                onSummary={onSummary}
               />
             ))}
             {provided.placeholder}

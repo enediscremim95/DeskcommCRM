@@ -260,16 +260,22 @@ export function coolingLabel(
   return t("Sem resposta");
 }
 
-/** "22/09/2026 08:00": quando o lead entrou na etapa, em horário de Brasília. */
-export function stageAgeTooltip(stageEnteredAt: string | null): string {
-  if (!stageEnteredAt) return "";
-  const date = new Date(stageEnteredAt);
+/**
+ * "22/09/2026 08:00" no idioma de quem vê, em horário de Brasília.
+ * Data sem hora ("2026-09-30", ex.: previsão de fechamento) sai só como data e sem
+ * converter fuso, senão "30/09" viraria "29/09 21:00".
+ */
+export function stageAgeTooltip(value: string | null | undefined, locale: string): string {
+  if (!value) return "";
+  const soData = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const date = new Date(soData ? `${value}T00:00:00Z` : value);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone: "America/Sao_Paulo",
-  })
+  return new Intl.DateTimeFormat(
+    locale,
+    soData
+      ? { dateStyle: "short", timeZone: "UTC" }
+      : { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" },
+  )
     .format(date)
     .replace(",", "");
 }

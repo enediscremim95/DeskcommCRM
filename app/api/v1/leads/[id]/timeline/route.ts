@@ -91,7 +91,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   let q = supabase
     .from("crm_lead_activities")
-    .select(TIMELINE_COLS)
+    .select(TIMELINE_COLS, { count: "exact" })
     .order("performed_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(limit + 1);
@@ -109,7 +109,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     );
   }
 
-  const { data, error } = await q;
+  const { data, error, count } = await q;
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
   const rows = (data ?? []) as unknown as TimelineItem[];
@@ -122,6 +122,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     requestId,
     meta: {
       has_more: hasMore,
+      total: count ?? page.length,
       cursor: hasMore && last ? encodeCursor({ performed_at: last.performed_at, id: last.id }) : null,
     },
   });

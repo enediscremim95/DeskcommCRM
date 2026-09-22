@@ -25474,6 +25474,27 @@ create trigger trg_crm_leads_stage_entered_at
 comment on column public.crm_leads.stage_entered_at is
   'Instante em que o lead entrou na etapa atual; atualizado pelo trigger de stage_id.';
 
+-- ---- Qualificação humana do lead (migration 0256) ----
+alter table public.crm_leads
+  add column if not exists qualification smallint;
+
+do $$
+begin
+  if not exists (
+    select 1
+      from pg_constraint
+     where conname = 'crm_leads_qualification_check'
+       and conrelid = 'public.crm_leads'::regclass
+  ) then
+    alter table public.crm_leads
+      add constraint crm_leads_qualification_check
+      check (qualification between 1 and 5);
+  end if;
+end $$;
+
+comment on column public.crm_leads.qualification is
+  'Nota humana de qualificação de 1 a 5, independente do score da IA.';
+
 -- ---- Métricas prioritárias do Relatório (migration 0257) ----
 alter table public.traffic_dashboard_configs
   add column if not exists priority_metric_columns text[];

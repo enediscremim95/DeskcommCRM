@@ -1,6 +1,6 @@
 "use client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api/client";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
@@ -22,6 +22,7 @@ import type { TimelineItemView } from "@/lib/types/contacts";
  */
 export interface TimelineAoVivo {
   itens: TimelineItemView[];
+  total: number;
   isLoading: boolean;
   isError: boolean;
   /**
@@ -43,14 +44,23 @@ export interface TimelineAoVivo {
   seguranca: RefetchDeSeguranca;
 }
 
-async function fetchTimeline(leadId: string): Promise<TimelineItemView[]> {
-  const res = await apiClient.get<{ data: TimelineItemView[] }>(
+interface TimelinePage {
+  itens: TimelineItemView[];
+  total: number;
+}
+
+async function fetchTimeline(leadId: string): Promise<TimelinePage> {
+  const res = await apiClient.get<{
+    data: TimelineItemView[];
+    meta?: { total?: number };
+  }>(
     `/api/v1/leads/${leadId}/timeline`,
   );
   if (res && typeof res === "object" && "data" in res) {
-    return (res as { data: TimelineItemView[] }).data;
+    return { itens: res.data, total: res.meta?.total ?? res.data.length };
   }
-  return res as unknown as TimelineItemView[];
+  const itens = res as unknown as TimelineItemView[];
+  return { itens, total: itens.length };
 }
 
 /** O id da atividade dentro do payload do postgres_changes. */
@@ -65,7 +75,7 @@ export function useLeadTimeline(
   contactId: string | null,
 ): TimelineAoVivo {
   const qc = useQueryClient();
-  const queryKey = ["timeline", leadId] as const;
+  const queryKey = useMemo(() => ["timeline", leadId] as const, [leadId]);
   const [chegouAoVivo, setChegouAoVivo] = useState<Set<string>>(new Set());
   // `useRef` para o Set não virar dependência do callback e o canal não
   // re-assinar a cada evento — re-assinar perderia eventos na janela.
@@ -125,15 +135,16 @@ export function useLeadTimeline(
   // A assinatura é a contagem mais o id do item mais recente: sensível a
   // exatamente o que o canal deveria ter trazido (atividade nova), e insensível
   // a reordenação — que não é perda.
-  const seguranca = useRefetchDeSeguranca<TimelineItemView[]>({
+  const seguranca = useRefetchDeSeguranca<TimelinePage>({
     queryKey,
-    assinatura: (d) => `${d?.length ?? 0}:${d?.[0]?.id ?? ""}`,
+    assinatura: (d) => `${d?.total ?? 0}:${d?.itens[0]?.id ?? ""}`,
     ultimaEntrega,
     enabled: !!leadId,
   });
 
   return {
-    itens: query.data ?? [],
+    itens: query.data?.itens ?? [],
+    total: query.data?.total ?? 0,
     isLoading: query.isLoading,
     isError: query.isError,
     chegouAoVivo,
