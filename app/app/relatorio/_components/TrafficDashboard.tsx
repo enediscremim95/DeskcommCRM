@@ -24,7 +24,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
+import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
+import { tagDeIdioma } from "@/lib/i18n/datas";
 import type { CampaignMetricColumn } from "@/lib/windsor/types";
 import type { TrafficColumnPreset } from "@/lib/windsor/column-presets";
 import { ColumnPresetMenu } from "./ColumnPresetMenu";
@@ -145,8 +147,51 @@ function money(value: number, currency: string): string {
 function number(value: number): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
 }
-function percent(value: number | null): string {
-  return value == null ? "—" : `${number(value)}%`;
+// Valor vazio nunca vira travessão (regra do dono): quem chama diz o que mostrar.
+function percent(value: number | null, blank = ""): string {
+  return value == null ? blank : `${number(value)}%`;
+}
+
+/**
+ * Descrição leiga embaixo do nome da campanha, derivada do próprio nome
+ * (regra `_desc_map` do painel antigo da Veritas). Nome que não bate em
+ * nenhuma chave fica sem descrição: não se inventa o que a campanha faz.
+ */
+const CAMPAIGN_DESCRIPTIONS: Array<[needle: string, description: string]> = [
+  ["RMKT", "Remarketing: quem já viu"],
+  ["REMARKETING", "Remarketing: quem já viu"],
+  ["CONVERSÃO", "Conversão: busca o resultado direto"],
+  ["CONVERSAO", "Conversão: busca o resultado direto"],
+  ["DISTRIBUIÇÃO", "Alcance para público novo"],
+  ["DISTRIBUICAO", "Alcance para público novo"],
+  ["PESQUISA", "Pesquisa no Google"],
+  ["ADVANTAGE", "Advantage+: público escolhido pela Meta"],
+  ["CATÁLOGO", "Catálogo de produtos"],
+  ["CATALOGO", "Catálogo de produtos"],
+];
+export function campaignDescription(name: string): string | null {
+  const upper = name.toUpperCase();
+  return CAMPAIGN_DESCRIPTIONS.find(([needle]) => upper.includes(needle))?.[1] ?? null;
+}
+
+/**
+ * O `story_id` do Meta vem como `pageId_postId`; o painel antigo montava
+ * `https://www.facebook.com/{pageId}/posts/{postId}/` para abrir o post.
+ * Sem o `_` fica o endereço curto, que o Facebook também resolve.
+ */
+export function postUrl(storyId: string): string {
+  const [pageId, postId] = storyId.split("_");
+  if (pageId && postId) {
+    return `https://www.facebook.com/${encodeURIComponent(pageId)}/posts/${encodeURIComponent(postId)}/`;
+  }
+  return `https://www.facebook.com/${encodeURIComponent(storyId)}`;
+}
+
+/** Iniciais para a miniatura quando o anúncio não tem imagem (painel antigo). */
+export function initials(name: string): string {
+  const words = name.replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/).filter(Boolean);
+  const letters = words.slice(0, 2).map((word) => word[0] ?? "").join("").toUpperCase();
+  return letters || "?";
 }
 
 export function metricDelta(current: number, previous: number | null | undefined): number | null {
@@ -216,6 +261,7 @@ function Sparkline({
 
 function HeroMetric({
   label,
+  hint,
   value,
   previous,
   sparkline,
@@ -223,8 +269,11 @@ function HeroMetric({
   active,
   onSelect,
   comparisonLabel,
+  betterWhen = "up",
 }: {
   label: string;
+  /** Frase de uma linha em linguagem simples ("pessoas únicas que viram"). */
+  hint: string;
   value: number;
   previous?: number | null;
   sparkline: number[];
@@ -232,9 +281,12 @@ function HeroMetric({
   active: boolean;
   onSelect: () => void;
   comparisonLabel: string;
+  /** Custo caindo é bom: a cor da variação segue "melhor quando", não o sinal. */
+  betterWhen?: "up" | "down";
 }) {
   const animated = useAnimatedNumber(value);
   const delta = metricDelta(value, previous);
+  const improved = delta != null && (betterWhen === "up" ? delta >= 0 : delta <= 0);
   return (
     <button
       type="button"
@@ -253,16 +305,13 @@ function HeroMetric({
       <span className="mt-2 block truncate text-2xl font-semibold tracking-[-0.04em] text-foreground sm:text-3xl">
         {formatter(animated)}
       </span>
+      <span className="mt-0.5 block text-xs text-muted-foreground">{hint}</span>
       <span className="mt-2 flex min-h-5 items-center gap-1.5 text-xs">
         {delta == null ? (
           <span className="text-muted-foreground">{comparisonLabel}</span>
         ) : (
           <span
-            className={
-              delta >= 0
-                ? "font-semibold text-emerald-600 dark:text-emerald-400"
-                : "font-semibold text-red-600 dark:text-red-400"
-            }
+            className={improved ? "font-semibold text-success-fg" : "font-semibold text-error-fg"}
           >
             {delta >= 0 ? "↑" : "↓"} {number(Math.abs(delta))}%
           </span>
@@ -341,13 +390,14 @@ function metricValue(
   currency: string,
   platform: "meta_ads" | "google_ads",
 ): string {
-  if (platform === "google_ads" && META_ONLY_COLUMNS.has(column)) return "—";
+  // Célula sem dado fica vazia; travessão nunca (regra do dono).
+  if (platform === "google_ads" && META_ONLY_COLUMNS.has(column)) return "";
   if (column === "budget") {
-    if (metrics.budget == null) return "—";
+    if (metrics.budget == null) return "";
     return `${money(metrics.budget, currency)}${metrics.budget_type === "daily" ? "/dia" : " total"}`;
   }
   const value = metrics[column];
-  if (typeof value !== "number") return "—";
+  if (typeof value !== "number") return "";
   if (MONEY_COLUMNS.has(column)) return money(value, currency);
   if (column === "ctr") return percent(value);
   if (column === "roas") return `${number(value)}x`;
@@ -491,6 +541,114 @@ function PlatformMark({ platform }: { platform: "meta_ads" | "google_ads" }) {
   );
 }
 
+/** Custo por resultado do conjunto/anúncio no período: gasto ÷ conversões. */
+function costPerResult(metrics: Pick<Metrics, "spend" | "conversions">): number | null {
+  return metrics.conversions > 0 ? metrics.spend / metrics.conversions : null;
+}
+
+function AdThumbnail({ ad, label }: { ad: Campaign["adsets"][number]["ads"][number]; label: string }) {
+  const frame = "grid size-13 shrink-0 place-items-center overflow-hidden rounded-lg border bg-muted text-xs font-bold text-muted-foreground shadow-xs";
+  const content = ad.thumbnail_url ? (
+    <span
+      aria-hidden="true"
+      className="size-full bg-cover bg-center"
+      style={{ backgroundImage: `url(${ad.thumbnail_url})` }}
+    />
+  ) : (
+    <span aria-hidden="true">{initials(ad.name)}</span>
+  );
+  if (!ad.story_id) return <span className={frame}>{content}</span>;
+  return (
+    <a
+      href={postUrl(ad.story_id)}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`${label}: ${ad.name}`}
+      className={`${frame} focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden`}
+    >
+      {content}
+    </a>
+  );
+}
+
+/**
+ * Detalhamento conjunto → anúncio como o painel antigo mostrava: o conjunto
+ * abre com gasto, conversões, custo por resultado e quantos anúncios tem; cada
+ * anúncio traz miniatura (ou as iniciais), gasto, conversões, custo e o botão
+ * que abre o post no Facebook.
+ */
+function AdsetDrill({
+  adset,
+  currency,
+  conversionsLabel,
+}: {
+  adset: Campaign["adsets"][number];
+  currency: string;
+  conversionsLabel: string;
+}) {
+  const t = useT();
+  const adsetCost = costPerResult(adset);
+  const adsCount = adset.ads.length;
+  const stat = (label: string, value: string, tone = "text-foreground") => (
+    <span className="flex flex-col items-end leading-tight">
+      <span className="text-[10px] tracking-[0.08em] text-muted-foreground uppercase">{label}</span>
+      <span className={`text-sm font-semibold tabular-nums ${tone}`}>{value}</span>
+    </span>
+  );
+  return (
+    <details className="border-b last:border-b-0">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-4 gap-y-1 py-2.5">
+        <span className="min-w-0 flex-1 basis-40 truncate text-sm font-medium">{adset.name}</span>
+        <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {stat(t("Gasto"), money(adset.spend, currency), "text-warning-fg")}
+          {stat(conversionsLabel, number(adset.conversions), "text-success-fg")}
+          {stat(
+            t("Custo por resultado"),
+            adsetCost == null ? t("sem dado") : money(adsetCost, currency),
+            "text-info-fg",
+          )}
+          <span className="rounded-full border bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
+            {adsCount} {adsCount === 1 ? t("anúncio") : t("anúncios")}
+          </span>
+        </span>
+      </summary>
+      <ul className="space-y-2 pb-3 sm:pl-3">
+        {adset.ads.map((ad) => {
+          const adCost = costPerResult(ad);
+          return (
+            <li
+              key={ad.name}
+              className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-card px-3 py-2"
+            >
+              <AdThumbnail ad={ad} label={t("Ver anúncio")} />
+              <span className="min-w-0 flex-1 basis-40 truncate text-sm">{ad.name}</span>
+              <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                {stat(t("Gasto"), money(ad.spend, currency))}
+                {stat(conversionsLabel, number(ad.conversions))}
+                {stat(
+                  t("Custo por resultado"),
+                  adCost == null ? t("sem dado") : money(adCost, currency),
+                )}
+                {ad.story_id && (
+                  <a
+                    href={postUrl(ad.story_id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                  >
+                    <span aria-hidden="true">👁</span>
+                    {t("Ver anúncio")}
+                  </a>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
 function CampaignTable({
   campaigns,
   currency,
@@ -509,7 +667,6 @@ function CampaignTable({
   labels: {
     campaign: string;
     total: string;
-    openMedia: string;
     conversions: string;
   };
 }) {
@@ -668,6 +825,7 @@ function CampaignTable({
             {visibleCampaigns.map((campaign) => {
               const key = `${campaign.platform}:${campaign.name}`;
               const status = campaignStatus(campaign.campaign_status);
+              const description = campaignDescription(campaign.name);
               const isOpen = isMeta && expanded.has(key);
               return (
                 <Fragment key={key}>
@@ -699,6 +857,11 @@ function CampaignTable({
                       ) : (
                         <span className="block truncate">{campaign.name}</span>
                       )}
+                      {description && (
+                        <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
+                          {t(description)}
+                        </span>
+                      )}
                     </td>
                     {showStatus && (
                       <td className="px-4 py-3">
@@ -714,52 +877,14 @@ function CampaignTable({
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td colSpan={columnCount} className="bg-muted/15 px-4 py-2">
+                      <td colSpan={columnCount} className="bg-muted/15 px-2 py-2 sm:px-4">
                         {campaign.adsets.map((adset) => (
-                          <details key={adset.name} className="border-b last:border-b-0">
-                            <summary className="cursor-pointer py-2 text-sm font-medium">
-                              {adset.name}
-                            </summary>
-                            <div className="space-y-1 pb-3 pl-3 sm:pl-5">
-                              {adset.ads.map((ad) => (
-                                <div
-                                  key={ad.name}
-                                  className="grid grid-cols-[minmax(220px,1fr)_120px_100px] items-center gap-3 py-1.5 text-xs text-muted-foreground"
-                                >
-                                  <span className="flex min-w-0 items-center gap-2">
-                                    {ad.thumbnail_url && (
-                                      <a
-                                        href={ad.thumbnail_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        aria-label={`${labels.openMedia}: ${ad.name}`}
-                                        className="size-9 shrink-0 rounded-md border bg-cover bg-center shadow-xs"
-                                        style={{ backgroundImage: `url(${ad.thumbnail_url})` }}
-                                      />
-                                    )}
-                                    {ad.story_id ? (
-                                      <a
-                                        href={`https://www.facebook.com/${encodeURIComponent(ad.story_id)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="truncate hover:underline"
-                                      >
-                                        {ad.name}
-                                      </a>
-                                    ) : (
-                                      <span className="truncate">{ad.name}</span>
-                                    )}
-                                  </span>
-                                  <span className="text-right tabular-nums">
-                                    {money(ad.spend, currency)}
-                                  </span>
-                                  <span className="text-right tabular-nums">
-                                    {number(ad.conversions)}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </details>
+                          <AdsetDrill
+                            key={adset.name}
+                            adset={adset}
+                            currency={currency}
+                            conversionsLabel={labels.conversions}
+                          />
                         ))}
                       </td>
                     </tr>
@@ -784,6 +909,7 @@ function CampaignTable({
 export function TrafficDashboard() {
   const t = useT();
   const idioma = useIdioma();
+  const activeOrg = useActiveOrg();
   const [preset, setPreset] = useState("30");
   const [window, setWindow] = useState(() => range(30));
   const [report, setReport] = useState<ReportResponse["data"] | null>(null);
@@ -825,12 +951,12 @@ export function TrafficDashboard() {
     };
   }, [window, t]);
 
-  const updatedAt = useMemo(
+  // "Dados até dd/mm/aaaa" (painel antigo): a data da última sincronização que
+  // a resposta já traz, sem hora, porque é o que o cliente quer saber.
+  const dataUntil = useMemo(
     () =>
       report?.sync.last_succeeded_at
-        ? new Date(report.sync.last_succeeded_at).toLocaleString(
-            idioma === "es" ? "es-ES" : "pt-BR",
-          )
+        ? new Date(report.sync.last_succeeded_at).toLocaleDateString(tagDeIdioma(idioma))
         : null,
     [idioma, report],
   );
@@ -893,12 +1019,21 @@ export function TrafficDashboard() {
     <div className="flex flex-col gap-5 p-4 sm:p-6">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            {t("Relatório de desempenho")}
-          </h1>
+          {activeOrg?.name ? (
+            <>
+              <p className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
+                {t("Relatório de desempenho")}
+              </p>
+              <h1 className="mt-1 text-3xl font-semibold tracking-tight">{activeOrg.name}</h1>
+            </>
+          ) : (
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+              {t("Relatório de desempenho")}
+            </h1>
+          )}
           <p className="mt-1 text-sm text-muted-foreground">
-            {updatedAt
-              ? `${t("Última atualização")}: ${updatedAt}`
+            {dataUntil
+              ? `${t("Dados até")} ${dataUntil}`
               : t("Aguardando a primeira sincronização.")}
           </p>
         </div>
@@ -1015,7 +1150,6 @@ export function TrafficDashboard() {
           campaign: t("Campanha"),
           total: t("Total"),
           conversions: conversionLabel,
-          openMedia: t("Abrir mídia"),
         };
         const trafficStages = buildTrafficFunnelStages(group.summary, report.model, idioma);
         const lastTrafficValue = trafficStages.at(-1)?.value ?? 0;
@@ -1028,6 +1162,9 @@ export function TrafficDashboard() {
             rate: lastTrafficValue > 0 ? (report.crm.leads_entered / lastTrafficValue) * 100 : null,
             cost:
               report.crm.leads_entered > 0 ? group.summary.spend / report.crm.leads_entered : null,
+            asSource: localText(idioma, "que entraram no CRM", "que ingresaron al CRM"),
+            asTarget: localText(idioma, "entraram no CRM", "ingresaron al CRM"),
+            costLabel: localText(idioma, "por lead no CRM", "por lead en el CRM"),
           },
           {
             key: "crm-service",
@@ -1038,6 +1175,9 @@ export function TrafficDashboard() {
                 ? (report.crm.in_service / report.crm.leads_entered) * 100
                 : null,
             cost: report.crm.in_service > 0 ? group.summary.spend / report.crm.in_service : null,
+            asSource: localText(idioma, "em atendimento", "en atención"),
+            asTarget: localText(idioma, "foram atendidos", "fueron atendidos"),
+            costLabel: localText(idioma, "por atendimento", "por atención"),
           },
           {
             key: "crm-won",
@@ -1048,6 +1188,9 @@ export function TrafficDashboard() {
                 ? (report.crm.closed_won / report.crm.in_service) * 100
                 : null,
             cost: report.crm.closed_won > 0 ? group.summary.spend / report.crm.closed_won : null,
+            asSource: localText(idioma, "que fecharam", "que cerraron"),
+            asTarget: localText(idioma, "fecharam venda", "cerraron venta"),
+            costLabel: localText(idioma, "por venda", "por venta"),
           },
         ];
         const costPerClosed =
@@ -1059,114 +1202,143 @@ export function TrafficDashboard() {
           day.conversions > 0 ? (day.spend_meta + day.spend_google) / day.conversions : 0,
         );
         const previous = group.comparison;
+        const investmentHero = {
+          key: "spend" as const,
+          label: t("Investimento"),
+          hint: t("Meta + Google"),
+          value: group.summary.spend,
+          previous: previous?.spend,
+          sparkline: spendTrend,
+          formatter: (value: number) => money(value, group.currency),
+          betterWhen: "up" as const,
+        };
+        const closedHero = {
+          key: "conversions" as const,
+          label: localText(idioma, "Fechadas no CRM", "Cerradas en el CRM"),
+          hint: t("vendas fechadas no CRM"),
+          value: report.crm.closed_won,
+          previous: report.crm.previous?.closed_won,
+          sparkline: conversionTrend,
+          formatter: number,
+          betterWhen: "up" as const,
+        };
         const heroMetrics =
           report.model === "ecommerce"
             ? [
                 {
                   key: "revenue" as const,
                   label: t("Faturamento"),
+                  hint: t("receita rastreada pelos anúncios"),
                   value: group.summary.revenue,
                   previous: previous?.revenue,
                   sparkline: revenueTrend,
                   formatter: (value: number) => money(value, group.currency),
+                  betterWhen: "up" as const,
                 },
                 {
                   key: "revenue" as const,
                   label: "ROAS",
+                  hint: t("receita ÷ investimento"),
                   value: group.summary.roas ?? 0,
                   previous: previous?.roas,
                   sparkline: revenueTrend,
                   formatter: (value: number) => `${number(value)}x`,
+                  betterWhen: "up" as const,
                 },
                 {
                   key: "conversions" as const,
                   label: localText(idioma, "Vendas", "Ventas"),
+                  hint: t("compras pelos anúncios"),
                   value: group.summary.purchases || group.summary.conversions,
                   previous: previous?.purchases || previous?.conversions,
                   sparkline: conversionTrend,
                   formatter: number,
+                  betterWhen: "up" as const,
                 },
-                {
-                  key: "conversions" as const,
-                  label: localText(idioma, "Fechadas no CRM", "Cerradas en el CRM"),
-                  value: report.crm.closed_won,
-                  previous: report.crm.previous?.closed_won,
-                  sparkline: conversionTrend,
-                  formatter: number,
-                },
+                closedHero,
               ]
             : report.model === "messages"
               ? [
-                  {
-                    key: "spend" as const,
-                    label: t("Investimento"),
-                    value: group.summary.spend,
-                    previous: previous?.spend,
-                    sparkline: spendTrend,
-                    formatter: (value: number) => money(value, group.currency),
-                  },
+                  investmentHero,
                   {
                     key: "conversions" as const,
                     label: localText(idioma, "Conversas iniciadas", "Conversaciones iniciadas"),
+                    hint: t("conversas que começaram pelo anúncio"),
                     value: group.summary.messaging_conversations,
                     previous: previous?.messaging_conversations,
                     sparkline: conversionTrend,
                     formatter: number,
+                    betterWhen: "up" as const,
                   },
                   {
                     key: "spend" as const,
                     label: localText(idioma, "Custo por conversa", "Costo por conversación"),
+                    hint: t("custo por conversa"),
                     value: group.summary.cost_per_messaging_conversation ?? 0,
                     previous: previous?.cost_per_messaging_conversation,
                     sparkline: costTrend,
                     formatter: (value: number) => money(value, group.currency),
+                    betterWhen: "down" as const,
                   },
-                  {
-                    key: "conversions" as const,
-                    label: localText(idioma, "Fechadas no CRM", "Cerradas en el CRM"),
-                    value: report.crm.closed_won,
-                    previous: report.crm.previous?.closed_won,
-                    sparkline: conversionTrend,
-                    formatter: number,
-                  },
+                  closedHero,
                 ]
               : [
-                  {
-                    key: "spend" as const,
-                    label: t("Investimento"),
-                    value: group.summary.spend,
-                    previous: previous?.spend,
-                    sparkline: spendTrend,
-                    formatter: (value: number) => money(value, group.currency),
-                  },
+                  investmentHero,
                   // Ordem pedida pelo dono (21/09/2026): investimento, alcance, leads, custo
                   // por lead. Vendas fechadas seguem no funil logo abaixo.
                   {
                     key: "spend" as const,
                     label: localText(idioma, "Alcance", "Alcance"),
+                    hint: t("pessoas únicas que viram"),
                     value: group.summary.reach ?? 0,
                     previous: previous?.reach,
-                    // Não há alcance diário (alcance não soma dia a dia), então sem minigráfico.
+                    // A resposta não traz alcance por dia (alcance não soma dia a dia),
+                    // então segue sem minigráfico: não se inventa série.
                     sparkline: [],
                     formatter: number,
+                    betterWhen: "up" as const,
                   },
                   {
                     key: "conversions" as const,
                     label: t("Leads"),
+                    hint: t("pessoas que deixaram contato"),
                     value: group.summary.leads,
                     previous: previous?.leads,
                     sparkline: conversionTrend,
                     formatter: number,
+                    betterWhen: "up" as const,
                   },
                   {
                     key: "spend" as const,
                     label: localText(idioma, "Custo por lead", "Costo por lead"),
+                    hint: t("custo por lead"),
                     value: group.summary.cost_per_lead ?? 0,
                     previous: previous?.cost_per_lead,
                     sparkline: costTrend,
                     formatter: (value: number) => money(value, group.currency),
+                    betterWhen: "down" as const,
                   },
                 ];
+        // Retenção de vídeo, fórmulas do painel antigo (`generate_tratorval.py`,
+        // linhas 783 e 804 a 808): Hook = reproduções de 3s ÷ impressões,
+        // Body = quem passou de 75% ÷ impressões, e as barras 50/75/95 têm a
+        // largura relativa à de 25%, que é sempre 100%. `video_views` aqui é o
+        // `actions_video_view` do Windsor (3s), o mesmo campo do painel antigo.
+        const videoHook =
+          meta && meta.impressions > 0 ? (meta.video_views / meta.impressions) * 100 : null;
+        const videoBody =
+          meta && meta.impressions > 0 ? (meta.video_p75 / meta.impressions) * 100 : null;
+        const videoBars = meta
+          ? [
+              { label: "View 25%", value: meta.video_p25, tone: "bg-success" },
+              { label: "View 50%", value: meta.video_p50, tone: "bg-info" },
+              { label: "View 75%", value: meta.video_p75, tone: "bg-warning" },
+              { label: "View 95%", value: meta.video_p95, tone: "bg-error" },
+            ].map((bar) => ({
+              ...bar,
+              width: meta.video_p25 > 0 ? Math.min(100, (bar.value / meta.video_p25) * 100) : 0,
+            }))
+          : [];
 
         return (
           <section key={group.currency} className="space-y-6">
@@ -1213,7 +1385,7 @@ export function TrafficDashboard() {
                 },
                 {
                   label: localText(idioma, "Custo por venda fechada", "Costo por venta cerrada"),
-                  value: costPerClosed == null ? "—" : money(costPerClosed, group.currency),
+                  value: costPerClosed == null ? t("sem dado") : money(costPerClosed, group.currency),
                   emphasis: true,
                 },
               ]}
@@ -1329,50 +1501,115 @@ export function TrafficDashboard() {
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     <Kpi
                       label={t("Alcance")}
-                      value={meta.reach == null ? "—" : number(meta.reach)}
+                      value={meta.reach == null ? t("sem dado") : number(meta.reach)}
+                      hint={t("pessoas únicas que viram")}
                     />
-                    <Kpi label={t("Impressões")} value={number(meta.impressions)} />
+                    <Kpi
+                      label={t("Impressões")}
+                      value={number(meta.impressions)}
+                      hint={t("exibições totais")}
+                    />
                     <Kpi
                       label={t("Frequência")}
-                      value={meta.frequency == null ? "—" : `${number(meta.frequency)}x`}
+                      value={meta.frequency == null ? t("sem dado") : `${number(meta.frequency)}x`}
+                      hint={t("média por pessoa")}
                     />
                     <Kpi
                       label="CPM"
-                      value={meta.cpm == null ? "—" : money(meta.cpm, group.currency)}
+                      value={meta.cpm == null ? t("sem dado") : money(meta.cpm, group.currency)}
+                      hint={t("custo por 1.000 exibições")}
                     />
-                    <Kpi label="CTR" value={percent(meta.ctr)} />
-                    <Kpi label={t("Cliques no link")} value={number(meta.link_clicks)} />
+                    <Kpi label="CTR" value={percent(meta.ctr, t("sem dado"))} hint={t("taxa de clique")} />
+                    <Kpi
+                      label={t("Cliques no link")}
+                      value={number(meta.link_clicks)}
+                      hint={t("visitas ao site")}
+                    />
                     <Kpi
                       label="CPC"
-                      value={meta.cpc == null ? "—" : money(meta.cpc, group.currency)}
+                      value={meta.cpc == null ? t("sem dado") : money(meta.cpc, group.currency)}
+                      hint={t("custo por clique")}
                     />
-                    <Kpi label={conversionLabel} value={number(meta.conversions)} />
+                    <Kpi
+                      label={conversionLabel}
+                      value={number(meta.conversions)}
+                      hint={
+                        report.model === "ecommerce"
+                          ? t("compras pelos anúncios")
+                          : report.model === "messages"
+                            ? t("conversas que começaram pelo anúncio")
+                            : t("pessoas que deixaram contato")
+                      }
+                    />
                     <Kpi
                       label={t("Custo por conversão")}
                       value={
                         meta.cost_per_conversion == null
-                          ? "—"
+                          ? t("sem dado")
                           : money(meta.cost_per_conversion, group.currency)
                       }
+                      hint={report.model === "leads" ? t("custo por lead") : t("custo por resultado")}
                     />
-                    <Kpi label={t("Investimento")} value={money(meta.spend, group.currency)} />
+                    <Kpi
+                      label={t("Investimento")}
+                      value={money(meta.spend, group.currency)}
+                      hint={t("total no período")}
+                    />
                   </div>
                   {meta.video_views > 0 && (
                     <div className="rounded-xl border bg-muted/20 p-4">
                       <h4 className="font-semibold">{t("Retenção de vídeo")}</h4>
-                      <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
-                        {[
-                          [t("Visualizações"), meta.video_views],
-                          ["25%", meta.video_p25],
-                          ["50%", meta.video_p50],
-                          ["75%", meta.video_p75],
-                          ["95%", meta.video_p95],
-                        ].map(([label, value]) => (
-                          <div key={String(label)}>
-                            <p className="text-muted-foreground">{label}</p>
-                            <p className="font-semibold">{number(Number(value))}</p>
+                      <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="rounded-lg border bg-card p-3">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                                Hook
+                              </span>
+                              <span className="text-[11px] text-muted-foreground">
+                                {t("3s ÷ impressões")}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-2xl font-semibold tracking-tight text-success-fg">
+                              {percent(videoHook, "0%")}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {t("pararam para assistir")}
+                            </p>
                           </div>
-                        ))}
+                          <div className="rounded-lg border bg-card p-3">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                                Body
+                              </span>
+                              <span className="text-[11px] text-muted-foreground">
+                                {t("75% ÷ impressões")}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-2xl font-semibold tracking-tight text-success-fg">
+                              {percent(videoBody, "0%")}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {t("viram até o fim")}
+                            </p>
+                          </div>
+                        </div>
+                        <ul className="space-y-2.5" aria-label={t("Retenção de vídeo")}>
+                          {videoBars.map((bar) => (
+                            <li key={bar.label}>
+                              <div className="mb-1 flex items-center justify-between text-xs">
+                                <span className="text-muted-foreground">{bar.label}</span>
+                                <span className="font-semibold tabular-nums">{number(bar.value)}</span>
+                              </div>
+                              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className={`h-full rounded-full ${bar.tone} transition-[width] motion-reduce:transition-none`}
+                                  style={{ width: `${bar.width}%` }}
+                                />
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     </div>
                   )}
@@ -1408,24 +1645,54 @@ export function TrafficDashboard() {
                 </summary>
                 <div className="space-y-5 p-4 sm:p-5">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <Kpi label={t("Impressões")} value={number(google.impressions)} />
-                    <Kpi label={t("Cliques no link")} value={number(google.clicks)} />
-                    <Kpi label="CTR" value={percent(google.ctr)} />
+                    <Kpi
+                      label={t("Impressões")}
+                      value={number(google.impressions)}
+                      hint={t("vezes exibido")}
+                    />
+                    <Kpi
+                      label={t("Cliques no link")}
+                      value={number(google.clicks)}
+                      hint={t("visitas ao site")}
+                    />
+                    <Kpi
+                      label="CTR"
+                      value={percent(google.ctr, t("sem dado"))}
+                      hint={t("taxa de clique")}
+                    />
                     <Kpi
                       label="CPC"
-                      value={google.cpc == null ? "—" : money(google.cpc, group.currency)}
+                      value={google.cpc == null ? t("sem dado") : money(google.cpc, group.currency)}
+                      hint={t("custo por clique")}
                     />
-                    <Kpi label={t("Investimento")} value={money(google.spend, group.currency)} />
-                    <Kpi label={conversionLabel} value={number(google.conversions)} />
+                    <Kpi
+                      label={t("Investimento")}
+                      value={money(google.spend, group.currency)}
+                      hint={t("total no período")}
+                    />
+                    <Kpi
+                      label={conversionLabel}
+                      value={number(google.conversions)}
+                      hint={
+                        report.model === "ecommerce"
+                          ? t("compras pelos anúncios")
+                          : t("resultados pelos anúncios")
+                      }
+                    />
                     <Kpi
                       label="CPA"
                       value={
                         google.cost_per_conversion == null
-                          ? "—"
+                          ? t("sem dado")
                           : money(google.cost_per_conversion, group.currency)
                       }
+                      hint={t("custo por resultado")}
                     />
-                    <Kpi label="CVR" value={percent(google.conversion_rate)} />
+                    <Kpi
+                      label="CVR"
+                      value={percent(google.conversion_rate, t("sem dado"))}
+                      hint={t("cliques que viraram resultado")}
+                    />
                   </div>
                   <CampaignTable
                     campaigns={googleCampaigns}
