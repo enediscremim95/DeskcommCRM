@@ -8,19 +8,40 @@ import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  columnsBelongToPlatform,
   serializeTrafficColumnPresets,
   trafficColumnPresetColumnsSchema,
   trafficColumnPresetNameSchema,
+  trafficColumnPresetPlatformSchema,
 } from "@/lib/windsor/column-presets";
 
 export const dynamic = "force-dynamic";
 
 const idSchema = z.string().uuid();
-const updateSchema = z.union([
-  z.object({ name: trafficColumnPresetNameSchema }).strict(),
-  z.object({ columns: trafficColumnPresetColumnsSchema }).strict(),
-  z.object({ make_default: z.literal(true) }).strict(),
-]);
+const updateSchema = z
+  .union([
+    z
+      .object({ platform: trafficColumnPresetPlatformSchema, name: trafficColumnPresetNameSchema })
+      .strict(),
+    z
+      .object({
+        platform: trafficColumnPresetPlatformSchema,
+        columns: trafficColumnPresetColumnsSchema,
+      })
+      .strict(),
+    z
+      .object({ platform: trafficColumnPresetPlatformSchema, make_default: z.literal(true) })
+      .strict(),
+  ])
+  .superRefine((value, context) => {
+    if ("columns" in value && !columnsBelongToPlatform(value.platform, value.columns)) {
+      context.addIssue({
+        code: "custom",
+        path: ["columns"],
+        message: "Há colunas incompatíveis com a plataforma.",
+      });
+    }
+  });
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -58,23 +79,33 @@ export async function PATCH(request: NextRequest, context: Context): Promise<Res
   const admin = createAdminClient();
   const { data: current, error: currentError } = await admin
     .from("traffic_dashboard_column_presets" as never)
-    .select("id,name,metric_columns")
+    .select("id,name,metric_columns,platform")
     .eq("id", parsedId.data)
     .eq("organization_id", organizationId)
+    .eq("platform", parsed.data.platform)
     .maybeSingle();
   if (currentError) {
     return fail("internal_error", "Não foi possível ler a predefinição.", 500, { requestId });
   }
   if (!current) return fail("not_found", "Predefinição não encontrada.", 404, { requestId });
 
-  let row = current as unknown as { id: string; name: string; metric_columns: unknown };
+  let row = current as unknown as {
+    id: string;
+    name: string;
+    metric_columns: unknown;
+    platform: unknown;
+  };
   let action:
     "traffic_dashboard.column_preset_updated" | "traffic_dashboard.column_preset_defaulted" =
     "traffic_dashboard.column_preset_updated";
   if ("make_default" in parsed.data) {
+    const defaultColumn =
+      parsed.data.platform === "meta_ads"
+        ? "default_meta_column_preset_id"
+        : "default_google_column_preset_id";
     const { data: config, error } = await admin
       .from("traffic_dashboard_configs" as never)
-      .update({ default_column_preset_id: parsedId.data, updated_by: authz.user.id } as never)
+      .update({ [defaultColumn]: parsedId.data, updated_by: authz.user.id } as never)
       .eq("organization_id", organizationId)
       .eq("enabled", true)
       .select("organization_id")
@@ -95,7 +126,8 @@ export async function PATCH(request: NextRequest, context: Context): Promise<Res
       .update(changes as never)
       .eq("id", parsedId.data)
       .eq("organization_id", organizationId)
-      .select("id,name,metric_columns")
+      .eq("platform", parsed.data.platform)
+      .select("id,name,metric_columns,platform")
       .maybeSingle();
     if (error?.code === "23505") {
       return fail("conflict", "Já existe uma predefinição com este nome.", 409, { requestId });
@@ -105,7 +137,12 @@ export async function PATCH(request: NextRequest, context: Context): Promise<Res
         requestId,
       });
     }
-    row = data as unknown as { id: string; name: string; metric_columns: unknown };
+    row = data as unknown as {
+      id: string;
+      name: string;
+      metric_columns: unknown;
+      platform: unknown;
+    };
   }
 
   const preset = serializeTrafficColumnPresets(
@@ -124,12 +161,15 @@ export async function PATCH(request: NextRequest, context: Context): Promise<Res
     requestId,
     bypassedRls: true,
     actingAsPlatformAdmin: true,
-    metadata: "make_default" in parsed.data ? { name: preset.name } : parsed.data,
+    metadata:
+      "make_default" in parsed.data
+        ? { name: preset.name, platform: preset.platform }
+        : parsed.data,
   });
   return ok({ preset }, { requestId });
 }
 
-export async function DELETE(_request: NextRequest, context: Context): Promise<Response> {
+export async function DELETE(request: NextRequest, context: Context): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
@@ -137,7 +177,10 @@ export async function DELETE(_request: NextRequest, context: Context): Promise<R
   if (!authz.ok) return authz.response;
   const { id } = await context.params;
   const parsedId = idSchema.safeParse(id);
-  if (!parsedId.success) {
+  const platform = trafficColumnPresetPlatformSchema.safeParse(
+    new URL(request.url).searchParams.get("platform"),
+  );
+  if (!parsedId.success || !platform.success) {
     return fail("validation_error", "Predefinição inválida.", 400, { requestId });
   }
   const organizationId = authz.org.orgId;
@@ -147,13 +190,14 @@ export async function DELETE(_request: NextRequest, context: Context): Promise<R
     .delete()
     .eq("id", parsedId.data)
     .eq("organization_id", organizationId)
-    .select("id,name")
+    .eq("platform", platform.data)
+    .select("id,name,platform")
     .maybeSingle();
   if (error) {
     return fail("internal_error", "Não foi possível excluir a predefinição.", 500, { requestId });
   }
   if (!data) return fail("not_found", "Predefinição não encontrada.", 404, { requestId });
-  const deleted = data as unknown as { id: string; name: string };
+  const deleted = data as unknown as { id: string; name: string; platform: string };
   await audit({
     action: "traffic_dashboard.column_preset_deleted",
     actorUserId: authz.user.id,
@@ -163,7 +207,7 @@ export async function DELETE(_request: NextRequest, context: Context): Promise<R
     requestId,
     bypassedRls: true,
     actingAsPlatformAdmin: true,
-    metadata: { name: deleted.name },
+    metadata: { name: deleted.name, platform: deleted.platform },
   });
   return ok({ deleted: true }, { requestId });
 }

@@ -18,14 +18,13 @@ import {
 } from "@/lib/windsor/report";
 import {
   CAMPAIGN_METRIC_COLUMNS,
+  campaignMetricColumnsForPlatform,
   defaultCampaignColumns,
+  type AdPlatform,
   type CampaignMetricColumn,
   type DashboardModel,
 } from "@/lib/windsor/types";
-import {
-  PRIORITY_METRIC_COLUMNS,
-  validPriorityMetrics,
-} from "@/lib/windsor/priority-metrics";
+import { PRIORITY_METRIC_COLUMNS, validPriorityMetrics } from "@/lib/windsor/priority-metrics";
 import { serializeTrafficColumnPresets } from "@/lib/windsor/column-presets";
 import { buildTrafficDelivery } from "@/lib/windsor/delivery";
 import { clientCanViewIntegration } from "@/lib/integrations/access";
@@ -119,9 +118,18 @@ async function fetchWindsorAccountReach(
   return values.length > 0 ? Math.max(...values) : null;
 }
 
-function validColumns(value: unknown, model: DashboardModel): CampaignMetricColumn[] {
+function validColumns(
+  value: unknown,
+  model: DashboardModel,
+  platform: AdPlatform,
+): CampaignMetricColumn[] {
   const parsed = z.array(z.enum(CAMPAIGN_METRIC_COLUMNS)).safeParse(value);
-  return parsed.success && parsed.data.length > 0 ? parsed.data : defaultCampaignColumns(model);
+  if (parsed.success) {
+    const allowed = new Set(campaignMetricColumnsForPlatform(platform));
+    const compatible = parsed.data.filter((column) => allowed.has(column));
+    if (compatible.length > 0) return compatible;
+  }
+  return defaultCampaignColumns(model, platform);
 }
 
 export async function GET(request: NextRequest): Promise<Response> {
@@ -146,7 +154,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { data: config, error: configError } = await admin
     .from("traffic_dashboard_configs" as never)
     .select(
-      "model,conversion_fields,sync_status,last_sync_succeeded_at,last_sync_error,published_generation,campaign_metric_columns,default_column_preset_id,priority_metric_columns",
+      "model,conversion_fields,sync_status,last_sync_succeeded_at,last_sync_error,published_generation,campaign_metric_columns,default_meta_column_preset_id,default_google_column_preset_id,priority_metric_columns",
     )
     .eq("organization_id", organizationId)
     .eq("enabled", true)
@@ -163,7 +171,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     last_sync_error: string | null;
     published_generation: string | null;
     campaign_metric_columns: unknown;
-    default_column_preset_id: string | null;
+    default_meta_column_preset_id: string | null;
+    default_google_column_preset_id: string | null;
     priority_metric_columns: unknown;
   };
   const fromCreatedAt = `${parsed.data.from}T00:00:00.000Z`;
@@ -257,7 +266,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     fetchLeadSituationRows(previousFrom, previousExclusiveTo),
     admin
       .from("traffic_dashboard_column_presets" as never)
-      .select("id,name,metric_columns")
+      .select("id,name,metric_columns,platform")
       .eq("organization_id", organizationId)
       .order("name"),
     admin
@@ -355,20 +364,43 @@ export async function GET(request: NextRequest): Promise<Response> {
   const previousByCurrency = new Map(
     previousCurrencies.map((group) => [group.currency, group] as const),
   );
-  const columnPresets = serializeTrafficColumnPresets(
-    presetRows as unknown as Array<{ id: string; name: string; metric_columns: unknown }>,
-    typedConfig.default_column_preset_id,
-  );
-  const defaultPreset = columnPresets.find((preset) => preset.is_default) ?? null;
+  const typedPresetRows = presetRows as unknown as Array<{
+    id: string;
+    name: string;
+    metric_columns: unknown;
+    platform: unknown;
+  }>;
+  const columnPresets = {
+    meta_ads: serializeTrafficColumnPresets(
+      typedPresetRows.filter((preset) => preset.platform === "meta_ads"),
+      typedConfig.default_meta_column_preset_id,
+    ),
+    google_ads: serializeTrafficColumnPresets(
+      typedPresetRows.filter((preset) => preset.platform === "google_ads"),
+      typedConfig.default_google_column_preset_id,
+    ),
+  };
+  const defaultPresets = {
+    meta_ads: columnPresets.meta_ads.find((preset) => preset.is_default) ?? null,
+    google_ads: columnPresets.google_ads.find((preset) => preset.is_default) ?? null,
+  };
   return ok(
     {
       model: typedConfig.model,
       organization_key: organizationId,
       viewer_key: authz.user.id,
-      default_columns:
-        defaultPreset?.columns ??
-        validColumns(typedConfig.campaign_metric_columns, typedConfig.model),
-      default_preset_id: defaultPreset?.id ?? null,
+      default_columns: {
+        meta_ads:
+          defaultPresets.meta_ads?.columns ??
+          validColumns(typedConfig.campaign_metric_columns, typedConfig.model, "meta_ads"),
+        google_ads:
+          defaultPresets.google_ads?.columns ??
+          validColumns(typedConfig.campaign_metric_columns, typedConfig.model, "google_ads"),
+      },
+      default_preset_ids: {
+        meta_ads: defaultPresets.meta_ads?.id ?? null,
+        google_ads: defaultPresets.google_ads?.id ?? null,
+      },
       column_presets: columnPresets,
       can_manage_defaults: authz.user.is_platform_admin && !authz.user.support,
       priority_metrics: validPriorityMetrics(
@@ -398,10 +430,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         ...crm,
         previous: previousCrm,
       },
-      delivery: buildTrafficDelivery(
-        (facts ?? []) as unknown as StoredFact[],
-        deliveryFacts,
-      ),
+      delivery: buildTrafficDelivery((facts ?? []) as unknown as StoredFact[], deliveryFacts),
       currencies: currentCurrencies.map((group) => ({
         ...group,
         comparison: previousByCurrency.get(group.currency)?.summary ?? null,

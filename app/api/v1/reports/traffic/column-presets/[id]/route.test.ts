@@ -40,7 +40,7 @@ describe("PATCH /api/v1/reports/traffic/column-presets/:id", () => {
   it("nega mutação a quem não é admin da plataforma", async () => {
     auth(false);
     const { PATCH } = await import("./route");
-    const response = await PATCH(patch({ name: "Outro" }), {
+    const response = await PATCH(patch({ platform: "meta_ads", name: "Outro" }), {
       params: Promise.resolve({ id: PRESET }),
     });
     expect(response.status).toBe(403);
@@ -64,13 +64,18 @@ describe("PATCH /api/v1/reports/traffic/column-presets/:id", () => {
         return chain;
       },
       maybeSingle: vi.fn(async () => ({
-        data: { id: PRESET, name: phase === "read" ? "KPI" : "Novo", metric_columns: ["spend"] },
+        data: {
+          id: PRESET,
+          name: phase === "read" ? "KPI" : "Novo",
+          metric_columns: ["spend"],
+          platform: "meta_ads",
+        },
         error: null,
       })),
     };
     vi.mocked(createAdminClient).mockReturnValue({ from: () => chain } as never);
     const { PATCH } = await import("./route");
-    const response = await PATCH(patch({ name: "Novo" }), {
+    const response = await PATCH(patch({ platform: "meta_ads", name: "Novo" }), {
       params: Promise.resolve({ id: PRESET }),
     });
     expect(response.status).toBe(200);
@@ -78,8 +83,10 @@ describe("PATCH /api/v1/reports/traffic/column-presets/:id", () => {
       expect.arrayContaining([
         ["read:id", PRESET],
         ["read:organization_id", ORG],
+        ["read:platform", "meta_ads"],
         ["update:id", PRESET],
         ["update:organization_id", ORG],
+        ["update:platform", "meta_ads"],
       ]),
     );
     expect(audit).toHaveBeenCalledWith(

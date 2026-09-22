@@ -1,6 +1,7 @@
 export const DASHBOARD_MODELS = ["leads", "messages", "ecommerce"] as const;
 export type DashboardModel = (typeof DASHBOARD_MODELS)[number];
-export type AdPlatform = "meta_ads" | "google_ads";
+export const AD_PLATFORMS = ["meta_ads", "google_ads"] as const;
+export type AdPlatform = (typeof AD_PLATFORMS)[number];
 
 export const CONVERSION_FIELDS = [
   "actions_lead",
@@ -33,6 +34,15 @@ export const CAMPAIGN_METRIC_COLUMNS = [
 ] as const;
 export type CampaignMetricColumn = (typeof CAMPAIGN_METRIC_COLUMNS)[number];
 
+const CAMPAIGN_METRIC_COLUMNS_BY_PLATFORM: Record<AdPlatform, readonly CampaignMetricColumn[]> = {
+  meta_ads: CAMPAIGN_METRIC_COLUMNS,
+  google_ads: CAMPAIGN_METRIC_COLUMNS.filter(
+    (column) => column !== "reach"
+      && column !== "messaging_conversations"
+      && column !== "cost_per_messaging_conversation",
+  ),
+};
+
 const DEFAULT_CAMPAIGN_COLUMNS: Record<DashboardModel, readonly CampaignMetricColumn[]> = {
   leads: ["spend", "impressions", "ctr", "link_clicks", "cpc", "leads", "cost_per_lead"],
   messages: [
@@ -46,8 +56,20 @@ const DEFAULT_CAMPAIGN_COLUMNS: Record<DashboardModel, readonly CampaignMetricCo
   ],
 };
 
-export function defaultCampaignColumns(model: DashboardModel): CampaignMetricColumn[] {
-  return [...DEFAULT_CAMPAIGN_COLUMNS[model]];
+export function campaignMetricColumnsForPlatform(platform: AdPlatform): CampaignMetricColumn[] {
+  return [...CAMPAIGN_METRIC_COLUMNS_BY_PLATFORM[platform]];
+}
+
+export function defaultCampaignColumns(
+  model: DashboardModel,
+  platform: AdPlatform,
+): CampaignMetricColumn[] {
+  if (model === "messages" && platform === "google_ads") {
+    return ["spend", "impressions", "ctr", "link_clicks", "cpc", "leads", "cost_per_lead"];
+  }
+  const allowed = new Set(CAMPAIGN_METRIC_COLUMNS_BY_PLATFORM[platform]);
+  const columns = DEFAULT_CAMPAIGN_COLUMNS[model].filter((column) => allowed.has(column));
+  return columns.length > 0 ? [...columns] : ["spend", "impressions", "ctr", "link_clicks", "cpc"];
 }
 
 export interface WindsorAccount {

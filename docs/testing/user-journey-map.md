@@ -2025,9 +2025,10 @@ A spec `organizacoes-criacao-convite-e-cache.spec.ts` cobre criação padrão co
 | W7 | Período, plataforma e drill | 7/14/30/90 dias e intervalo manual atualizam KPI, gráfico e campanha > conjunto > anúncio sem overflow em 375 px |
 | W8 | Organização ainda não configurada | `/app/relatorio` mantém o `report_url` legado; sem os dois, mantém o estado vazio anterior |
 | W9 | Uma conta expira ou falha no Windsor | Só as organizações que dependem da conta falham; nenhuma geração parcial é publicada e as demais podem concluir |
-| W10 | Dono personaliza as colunas por negócio | Cria uma predefinição com nome, reordena por arrastar, remove métricas, salva, renomeia, marca como padrão e exclui; Meta e Google usam a mesma ordem |
-| W11 | Cliente consulta as predefinições liberadas | Viewer troca entre predefinições da própria organização sem receber controles ou permissão de escrita |
-| W12 | Organização atualiza sem criar preset | `campaign_metric_columns` continua sendo o fallback até o dono marcar uma nova predefinição como padrão |
+| W10 | Dono personaliza as colunas por negócio e plataforma | Em cada tabela, cria uma predefinição com nome, reordena por arrastar, remove métricas, salva, renomeia, marca como padrão e exclui; mudar Meta não altera Google, nem o contrário |
+| W11 | Cliente consulta as predefinições liberadas | Viewer troca entre predefinições da própria organização e plataforma sem receber controles ou permissão de escrita |
+| W12 | Organização atualiza sem criar preset | `campaign_metric_columns` continua sendo o fallback, filtrado por plataforma, até o dono marcar uma nova predefinição como padrão |
+| W13 | Organização já tinha predefinições | A atualização conserva a linha original no Meta e cria uma cópia idempotente no Google, removendo apenas métricas sem dado nessa plataforma |
 
 Prova atual: normalizador e agregador têm testes unitários focados; migration segue a
 tripla migration + baseline + MANIFEST. A execução Playwright com Windsor real não é
@@ -2035,8 +2036,9 @@ alegada por esta entrega e precisa ser feita pelo operador depois de configurar 
 conta de teste e rodar a primeira sincronização.
 
 Predefinições de colunas: `TrafficDashboard.test.tsx` prova a seleção e a
-persistência ordenada pela UI; os testes das rotas provam o gate exclusivo de
-platform admin e o filtro explícito por organização; o invariante
+persistência ordenada e independente por plataforma; os testes das rotas provam
+o gate exclusivo de platform admin e o filtro explícito por organização e
+plataforma; o invariante
 `traffic-column-presets-rls.test.ts` prova leitura própria, isolamento,
 escrita direta negada e FK composta contra padrão cross-tenant. A prova
 Playwright ficou pendente nesta execução porque o ambiente exige carregar

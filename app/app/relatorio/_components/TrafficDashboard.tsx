@@ -17,7 +17,11 @@ import { useT } from "@/hooks/i18n/useT";
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { tagDeIdioma } from "@/lib/i18n/datas";
-import type { CampaignMetricColumn } from "@/lib/windsor/types";
+import {
+  campaignMetricColumnsForPlatform,
+  type AdPlatform,
+  type CampaignMetricColumn,
+} from "@/lib/windsor/types";
 import type { TrafficColumnPreset } from "@/lib/windsor/column-presets";
 import type { TrafficRichCrmInsights } from "@/lib/windsor/traffic-insights";
 import {
@@ -116,9 +120,10 @@ interface ReportResponse {
     model: "leads" | "messages" | "ecommerce";
     organization_key: string;
     viewer_key: string;
-    default_columns: CampaignMetricColumn[];
-    default_preset_id: string | null;
-    column_presets: TrafficColumnPreset[];
+    default_columns: CampaignMetricColumn[] | Record<AdPlatform, CampaignMetricColumn[]>;
+    default_preset_id?: string | null;
+    default_preset_ids?: Record<AdPlatform, string | null>;
+    column_presets: TrafficColumnPreset[] | Record<AdPlatform, TrafficColumnPreset[]>;
     can_manage_defaults: boolean;
     priority_metrics?: PriorityMetricColumn[];
     cost_thresholds?: CostThreshold[];
@@ -131,6 +136,33 @@ interface ReportResponse {
     currencies: CurrencyGroup[];
   };
   error?: { message?: string };
+}
+
+function columnsForPlatform(
+  report: ReportResponse["data"],
+  platform: AdPlatform,
+): CampaignMetricColumn[] {
+  const raw = Array.isArray(report.default_columns)
+    ? report.default_columns
+    : report.default_columns[platform];
+  const allowed = new Set(campaignMetricColumnsForPlatform(platform));
+  const compatible = raw.filter((column) => allowed.has(column));
+  return compatible.length > 0 ? compatible : campaignMetricColumnsForPlatform(platform);
+}
+
+function presetsForPlatform(
+  report: ReportResponse["data"],
+  platform: AdPlatform,
+): TrafficColumnPreset[] {
+  if (Array.isArray(report.column_presets)) return report.column_presets;
+  return report.column_presets[platform];
+}
+
+function defaultPresetForPlatform(
+  report: ReportResponse["data"],
+  platform: AdPlatform,
+): string | null {
+  return report.default_preset_ids?.[platform] ?? report.default_preset_id ?? null;
 }
 
 function normalizeCrm(
@@ -522,7 +554,8 @@ function summarizeCampaigns(campaigns: Campaign[]): Metrics {
     .map((campaign) => campaign.budget)
     .filter((value): value is number => value != null);
   const budgetType = budgetTypes.size === 1 ? [...budgetTypes][0]! : null;
-  const budget = budgetType && budgets.length ? budgets.reduce((total, value) => total + value, 0) : null;
+  const budget =
+    budgetType && budgets.length ? budgets.reduce((total, value) => total + value, 0) : null;
 
   return {
     budget,
@@ -564,9 +597,7 @@ function summarizeCampaigns(campaigns: Campaign[]): Metrics {
       (campaign) => campaign.landing_page_views_available,
     ),
     add_to_cart_available: campaigns.some((campaign) => campaign.add_to_cart_available),
-    initiate_checkout_available: campaigns.some(
-      (campaign) => campaign.initiate_checkout_available,
-    ),
+    initiate_checkout_available: campaigns.some((campaign) => campaign.initiate_checkout_available),
     purchases_available: campaigns.some((campaign) => campaign.purchases_available),
     messaging_conversations_available: campaigns.some(
       (campaign) => campaign.messaging_conversations_available,
@@ -795,6 +826,7 @@ function CampaignTable({
   columns,
   idioma,
   threshold,
+  columnMenu,
 }: {
   campaigns: Campaign[];
   currency: string;
@@ -803,6 +835,7 @@ function CampaignTable({
   columns: CampaignMetricColumn[];
   idioma: string;
   threshold?: CostThreshold;
+  columnMenu: ReactNode;
   labels: {
     campaign: string;
     total: string;
@@ -923,34 +956,37 @@ function CampaignTable({
   );
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-card">
-      {showStatus && (
-        <div
-          role="group"
-          aria-label={t("Filtrar campanhas por status")}
-          className="flex flex-wrap items-center gap-1 border-b px-3 py-2"
-        >
-          <span className="mr-1 text-xs font-medium text-muted-foreground">{t("Status")}</span>
-          {(
-            [
-              ["all", t("Todas")],
-              ["active", t("Ativas")],
-              ["paused", t("Pausadas")],
-            ] as const
-          ).map(([value, label]) => (
-            <Button
-              key={value}
-              type="button"
-              size="sm"
-              variant={statusFilter === value ? "secondary" : "ghost"}
-              aria-pressed={statusFilter === value}
-              onClick={() => changeStatusFilter(value)}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-      )}
+    <div className="rounded-xl border bg-card">
+      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
+        {showStatus && (
+          <div
+            role="group"
+            aria-label={t("Filtrar campanhas por status")}
+            className="flex flex-wrap items-center gap-1"
+          >
+            <span className="mr-1 text-xs font-medium text-muted-foreground">{t("Status")}</span>
+            {(
+              [
+                ["all", t("Todas")],
+                ["active", t("Ativas")],
+                ["paused", t("Pausadas")],
+              ] as const
+            ).map(([value, label]) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={statusFilter === value ? "secondary" : "ghost"}
+                aria-pressed={statusFilter === value}
+                onClick={() => changeStatusFilter(value)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        )}
+        <div className="ml-auto">{columnMenu}</div>
+      </div>
       <DragScroll className="overflow-x-auto">
         <table className="w-full min-w-max text-sm">
           <thead className="border-b bg-muted/35">
@@ -1063,7 +1099,9 @@ export function TrafficDashboard() {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const [selectedColumns, setSelectedColumns] = useState<CampaignMetricColumn[]>([]);
+  const [selectedColumns, setSelectedColumns] = useState<
+    Record<AdPlatform, CampaignMetricColumn[]>
+  >({ meta_ads: [], google_ads: [] });
   const [activeMetric, setActiveMetric] = useState<PriorityMetricColumn | "conversions">("leads");
 
   useEffect(() => {
@@ -1080,7 +1118,9 @@ export function TrafficDashboard() {
         if (active) {
           setReport(body.data);
           setActiveMetric(
-            body.data.priority_metrics?.[0] ?? defaultPriorityMetrics(body.data.model)[0] ?? "spend",
+            body.data.priority_metrics?.[0] ??
+              defaultPriorityMetrics(body.data.model)[0] ??
+              "spend",
           );
         }
       })
@@ -1235,19 +1275,6 @@ export function TrafficDashboard() {
               </div>
             </>
           )}
-          {report && (
-            <ColumnPresetMenu
-              organizationKey={report.organization_key}
-              viewerKey={report.viewer_key}
-              model={report.model}
-              initialPresets={report.column_presets}
-              defaultPresetId={report.default_preset_id}
-              defaultColumns={report.default_columns}
-              canManage={report.can_manage_defaults}
-              columnLabel={columnLabel}
-              onColumnsChange={setSelectedColumns}
-            />
-          )}
         </div>
       </header>
 
@@ -1319,7 +1346,12 @@ export function TrafficDashboard() {
           (item) => item.platform === "google_ads",
         );
         const conversionLabel = report.model === "ecommerce" ? t("Compras") : t("Conversões");
-        const visibleColumns = selectedColumns.length ? selectedColumns : report.default_columns;
+        const metaColumns = selectedColumns.meta_ads.length
+          ? selectedColumns.meta_ads
+          : columnsForPlatform(report, "meta_ads");
+        const googleColumns = selectedColumns.google_ads.length
+          ? selectedColumns.google_ads
+          : columnsForPlatform(report, "google_ads");
         const campaignLabels = {
           campaign: t("Campanha"),
           total: t("Total"),
@@ -1649,7 +1681,7 @@ export function TrafficDashboard() {
             {meta && (
               <details
                 open
-                className="group overflow-hidden rounded-2xl border border-[#1877F2]/30 bg-card shadow-sm"
+                className="group rounded-2xl border border-[#1877F2]/30 bg-card shadow-sm"
               >
                 <summary className="flex cursor-pointer list-none items-center gap-3 border-b border-[#1877F2]/20 bg-[#1877F2]/[0.06] px-4 py-4 sm:px-5">
                   <PlatformMark platform="meta_ads" />
@@ -1794,16 +1826,33 @@ export function TrafficDashboard() {
                     total={meta}
                     platform="meta_ads"
                     labels={campaignLabels}
-                    columns={visibleColumns}
+                    columns={metaColumns}
                     idioma={idioma}
                     threshold={metaThreshold}
+                    columnMenu={
+                      <ColumnPresetMenu
+                        organizationKey={report.organization_key}
+                        viewerKey={report.viewer_key}
+                        model={report.model}
+                        platform="meta_ads"
+                        initialPresets={presetsForPlatform(report, "meta_ads")}
+                        defaultPresetId={defaultPresetForPlatform(report, "meta_ads")}
+                        defaultColumns={columnsForPlatform(report, "meta_ads")}
+                        availableColumns={campaignMetricColumnsForPlatform("meta_ads")}
+                        canManage={report.can_manage_defaults}
+                        columnLabel={columnLabel}
+                        onColumnsChange={(columns) =>
+                          setSelectedColumns((current) => ({ ...current, meta_ads: columns }))
+                        }
+                      />
+                    }
                   />
                 </div>
               </details>
             )}
 
             {google && (
-              <details open className="group overflow-hidden rounded-2xl border bg-card shadow-sm">
+              <details open className="group rounded-2xl border bg-card shadow-sm">
                 <summary className="flex cursor-pointer list-none items-center gap-3 border-b px-4 py-4 sm:px-5">
                   <PlatformMark platform="google_ads" />
                   <div>
@@ -1876,9 +1925,26 @@ export function TrafficDashboard() {
                     total={google}
                     platform="google_ads"
                     labels={campaignLabels}
-                    columns={visibleColumns}
+                    columns={googleColumns}
                     idioma={idioma}
                     threshold={googleThreshold}
+                    columnMenu={
+                      <ColumnPresetMenu
+                        organizationKey={report.organization_key}
+                        viewerKey={report.viewer_key}
+                        model={report.model}
+                        platform="google_ads"
+                        initialPresets={presetsForPlatform(report, "google_ads")}
+                        defaultPresetId={defaultPresetForPlatform(report, "google_ads")}
+                        defaultColumns={columnsForPlatform(report, "google_ads")}
+                        availableColumns={campaignMetricColumnsForPlatform("google_ads")}
+                        canManage={report.can_manage_defaults}
+                        columnLabel={columnLabel}
+                        onColumnsChange={(columns) =>
+                          setSelectedColumns((current) => ({ ...current, google_ads: columns }))
+                        }
+                      />
+                    }
                   />
                   {googleThreshold &&
                     googleCampaigns.filter((campaign) => {

@@ -23,7 +23,7 @@ describe("migration 0250, predefinições de colunas", () => {
   it("isola por organização e impede padrão cross-tenant", () => {
     for (const sql of [migration, baseline]) {
       expect(sql).toContain("tenant_isolation_traffic_dashboard_column_presets_all");
-      expect(sql).toContain("organization_id = any(public.fn_user_org_ids())");
+      expect(sql).toContain("organization_id in (select public.fn_user_org_ids())");
       expect(sql).toContain("foreign key (organization_id, default_column_preset_id)");
       expect(sql).toContain("on delete set null (default_column_preset_id)");
     }

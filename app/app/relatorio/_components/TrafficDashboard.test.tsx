@@ -163,7 +163,9 @@ describe("colunas da tabela de campanhas", () => {
     expect(screen.getByRole("button", { name: "Renomear predefinição" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "+ Impressões" }));
     expect(
-      JSON.parse(localStorage.getItem("traffic-campaign-columns:org-1:user-1:leads") ?? "[]"),
+      JSON.parse(
+        localStorage.getItem("traffic-campaign-columns:org-1:user-1:leads:meta_ads") ?? "[]",
+      ),
     ).toEqual(["spend", "leads", "impressions"]);
 
     await user.click(screen.getByRole("button", { name: "Salvar" }));
@@ -176,8 +178,65 @@ describe("colunas da tabela de campanhas", () => {
     );
     expect(patchCall?.[1]).toMatchObject({
       method: "PATCH",
-      body: JSON.stringify({ columns: ["spend", "leads", "impressions"] }),
+      body: JSON.stringify({
+        platform: "meta_ads",
+        columns: ["spend", "leads", "impressions"],
+      }),
     });
+  });
+
+  it("alterar colunas do Meta não muda a tabela nem o rascunho do Google", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        data: {
+          model: "leads",
+          organization_key: "org-1",
+          viewer_key: "user-1",
+          default_columns: { meta_ads: ["spend"], google_ads: ["spend"] },
+          default_preset_ids: { meta_ads: null, google_ads: null },
+          column_presets: { meta_ads: [], google_ads: [] },
+          can_manage_defaults: true,
+          sync: { status: "ready", last_succeeded_at: null, error: null },
+          crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
+          currencies: [
+            {
+              currency: "BRL",
+              summary: metrics,
+              daily: [],
+              platforms: [
+                { ...metrics, platform: "meta_ads" },
+                { ...metrics, platform: "google_ads" },
+              ],
+              campaigns: [
+                { ...metrics, name: "Meta A", platform: "meta_ads", adsets: [] },
+                { ...metrics, name: "Google A", platform: "google_ads", adsets: [] },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    await screen.findByText("Meta A");
+
+    const menus = screen.getAllByText("Colunas (1)");
+    await user.click(menus[0]!);
+    await user.click(screen.getByRole("button", { name: "+ Alcance" }));
+
+    const metaSection = screen.getByRole("heading", { name: "Meta Ads" }).closest("details")!;
+    const googleSection = screen.getByRole("heading", { name: "Google Ads" }).closest("details")!;
+    expect(within(metaSection).getByRole("columnheader", { name: /Alcance/ })).toBeInTheDocument();
+    expect(
+      within(googleSection).queryByRole("columnheader", { name: /Alcance/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      localStorage.getItem("traffic-campaign-columns:org-1:user-1:leads:meta_ads"),
+    ).toBe('["spend","reach"]');
+    expect(
+      localStorage.getItem("traffic-campaign-columns:org-1:user-1:leads:google_ads"),
+    ).toBeNull();
   });
 
   it("busca de métrica filtra a lista, sem ligar para acento", async () => {
@@ -256,8 +315,10 @@ describe("colunas da tabela de campanhas", () => {
                 currency: "BRL",
                 summary: metrics,
                 daily: [],
-                platforms: [],
-                campaigns: [],
+                  platforms: [{ ...metrics, platform: "meta_ads" }],
+                  campaigns: [
+                    { ...metrics, name: "Campanha A", platform: "meta_ads", adsets: [] },
+                  ],
               },
             ],
           },
@@ -276,7 +337,7 @@ describe("colunas da tabela de campanhas", () => {
       screen.getByRole("combobox", { name: "Predefinição de colunas" }),
       "22222222-2222-4222-8222-222222222222",
     );
-    expect(localStorage.getItem("traffic-campaign-preset:org-1:user-1:leads")).toBe(
+    expect(localStorage.getItem("traffic-campaign-preset:org-1:user-1:leads:meta_ads")).toBe(
       "22222222-2222-4222-8222-222222222222",
     );
     expect(screen.queryByRole("button", { name: /^Salvar$/ })).not.toBeInTheDocument();
@@ -534,8 +595,8 @@ describe("colunas da tabela de campanhas", () => {
     const groups = screen.getAllByRole("group", { name: "Filtrar campanhas por status" });
     const metaGroup = groups[0]!;
     const googleGroup = groups[1]!;
-    const metaTable = metaGroup.parentElement!.querySelector("table")!;
-    const googleTable = googleGroup.parentElement!.querySelector("table")!;
+    const metaTable = metaGroup.parentElement!.parentElement!.querySelector("table")!;
+    const googleTable = googleGroup.parentElement!.parentElement!.querySelector("table")!;
 
     expect(metaTable.tBodies[0]?.rows).toHaveLength(3);
     expect(googleTable.tBodies[0]?.rows).toHaveLength(2);
