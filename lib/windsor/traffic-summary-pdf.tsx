@@ -929,7 +929,6 @@ export function TrafficSummaryPdf({
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={[styles.header, { borderBottomColor: brand.accent }]}>
-          <Text style={styles.brand}>{brand.nome}</Text>
           <Text style={styles.title}>
             {text(language, "Relatório", "Informe")}
           </Text>
