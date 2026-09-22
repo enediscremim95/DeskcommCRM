@@ -9,7 +9,7 @@ interface InviteResult {
     sent: Array<{
       email: string;
       invite_id: string;
-      expires_at: string;
+      expires_at: string | null;
       email_dispatched: boolean;
       accept_url: string;
     }>;

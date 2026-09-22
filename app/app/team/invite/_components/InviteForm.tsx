@@ -25,7 +25,12 @@ import { DESCRICAO_DO_PAPEL, ROTULO_DO_PAPEL } from "@/lib/auth/types";
 import { descreverMotivoDaFalha } from "./motivo-da-falha";
 
 interface ResultState {
-  sent: Array<{ email: string; accept_url: string; email_dispatched: boolean; expires_at: string }>;
+  sent: Array<{
+    email: string;
+    accept_url: string;
+    email_dispatched: boolean;
+    expires_at: string | null;
+  }>;
   failed: Array<{ email: string; reason: string }>;
 }
 

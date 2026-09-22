@@ -159,8 +159,8 @@ fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Ga
 
 | # | Caso | Expectativa |
 |---|------|-------------|
-| J5.1 | Admin convida atendente pela UI (sem Resend) | UI diz a verdade + accept_url copiável |
-| J5.2 | Convidado abre link, cria sessão, aceita | vira membro agent, cai no inbox |
+| J5.1 | Admin convida atendente pela UI (sem e-mail configurado) | falha claramente antes de criar usuário ou vínculo |
+| J5.2 | Convidado novo recebe o e-mail e entra com a senha provisória | conta confirmada e vínculo ativo já existem; senha só aparece no e-mail |
 | J5.3 | Atendente vê APENAS fila + suas conversas | escopo RLS na prática |
 | J5.4 | Atendente dá claim numa conversa da fila | claim ok; 2º atendente levando 409 amigável |
 | J5.5 | Transferir conversa pra colega | imediata, contador de não-lidas zera pro novo dono |
@@ -168,6 +168,7 @@ fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Ga
 | J5.7 | Revogar atendente | perde acesso na hora (próxima navegação) |
 | J5.8 | Revogar último admin | bloqueado com explicação |
 | J5.9 | Link de convite expirado/adulterado | tela clara, sem stack |
+| J5.10 | E-mail já pertence a uma conta | senha e MFA existentes são preservados; convite por link continua funcionando |
 
 ## J6 — Webhooks: receber, automatizar, provar `[P0]`
 
@@ -1235,7 +1236,7 @@ software que ele não contratou. Não há gravidade média nisso.
 |---|---|---|
 | `M1` `[P0]` | Instalação com a marca do revendedor: a **aba** mostra o nome dele e o **ícone** carrega **deslogado** | **PASS por comportamento** (2026-08-13, build de produção): com `app_name='Vendas Turbo'` e `accent_hex='#f2c94c'` gravados, o ícone virou **V sobre `#6e5c28`** — o accent DERIVADO, não a semente crua — e o título trocou. Spec `tests/e2e/icone-da-marca.spec.ts` no disco **e inscrita** em `SPECS_PARTE_1` (`.github/workflows/e2e.yml:106`). **NÃO medido: a primeira execução dela no CI** |
 | `M2` `[P0]` | O **e-mail de confirmação de conta** chega com a marca do revendedor — ou, sem `SUPABASE_ACCESS_TOKEN`, o passo manual é impresso e a instalação segue | **PARCIAL.** O mecanismo foi medido contra a API real num projeto descartável: `PATCH /v1/projects/{ref}/config/auth` com `mailer_templates_*` **é aceito e PERSISTE sem SMTP customizado** (releitura por `GET`, estado restaurado). Achado do rig: **projeto pausado responde 400 "Project is paused."** — modo de falha que um script confiando em 2xx reportaria como sucesso, e por isso `marca-emails.sh` relê o que gravou. **NÃO medido: um e-mail efetivamente entregue numa caixa de entrada** |
-| `M3` `[P0]` | **Convite de time**: assunto e corpo com a marca; sem `RESEND_*`, a tela mostra o `accept_url` em vez de falhar calada | **COBERTO POR TESTE, NÃO PROVADO NA TELA.** `tests/unit/email-marca-e-remetente.test.ts` e `tests/unit/branding-saida.test.ts` guardam a resolução e o remetente; `RESEND_FROM_EMAIL` vazio passa a significar `not_configured`, que cai no caminho que já existia (`accept_url` na tela, `pending_review` no worker de LGPD). Falta dirigir o browser num ambiente fresco **sem** `RESEND_API_KEY` |
+| `M3` `[P0]` | **Convite de time**: acesso novo chega com marca, e-mail e senha provisória; sem `RESEND_*`, nenhum acesso nasce | **COBERTO POR TESTE, NÃO PROVADO COM ENTREGA EXTERNA.** `lib/email/templates/invite.test.ts`, `lib/auth/provision-team-access.test.ts` e `app/api/v1/team/invite/route.test.ts` guardam conteúdo, não vazamento da senha e falha antes da criação. Contas existentes conservam senha/MFA e seguem pelo link legado. Falta provar recebimento numa caixa real e entrada pelo navegador com a credencial recebida. |
 | `M4` `[P1]` | **Cadastro de MFA**: o app autenticador registra a marca da instalação | **ENTREGUE, PROVA CONTRA GoTrue REAL NÃO LOCALIZADA.** `app/actions/auth/enrollMfa.ts:59` passa `issuer: marca.nome` — o campo que de fato grava no celular (`friendlyName` **não** entra na URI `otpauth://`, medido contra GoTrue v2.188.1). O plano exigia repetir o rig de enroll real antes de fechar; não achei registro dessa execução. **Vale só para quem enrolar depois: trocar o `issuer` não reescreve fator já cadastrado** |
 | `M5` `[P1]` | **Export de LGPD**: o PDF nomeia o **controlador** (`legal_name`) e o DPO — **nunca** a marca do revendedor | **COBERTO POR TESTE.** O teste isola o rodapé e exige que o texto entre `Controlador:` e `· Relatório LGPD` seja **exatamente** o `legal_name` (a primeira versão só checava `/deskcomm/i` e teria deixado passar a marca de um revendedor). Vigiado também no mapa de arquitetura, que reprova quem ligar o PDF ao resolvedor de marca. **Armadilha viva:** `legal_name` nasce igual ao nome fantasia — o caso ruim é o valor plausível e errado, e quem resolve é a tela `/app/settings/tenant` |
 | `M6` `[P1]` | **Marca por organização**: a cor da org pinta `/app` e **não** vaza para o `/login` | **PASS na tela** (2026-08-13), com admin de tenant PURO — a precondição falhou primeiro e era a armadilha prevista (`e2e-admin` **era** `platform_admin`; medi `count=1`, revoguei, reafirmei `count=0`, só então testei). `#b3261e` no claro, `#f16051` no escuro, persistido no reload, e **ausente** em `/login` sem sessão. Evidência: `evidence/org-1-tela.png`, `evidence/org-2-digitado.png`, `evidence/org-3-salvo.png`, `evidence/org-4-recarregado.png`, `evidence/org-5-login.png` |

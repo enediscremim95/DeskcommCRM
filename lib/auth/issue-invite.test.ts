@@ -4,7 +4,7 @@ vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "http://localhost:3013
 vi.mock("@/lib/email/resend", () => ({ sendEmail: h.send }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
 vi.mock("@/lib/branding/saida", () => ({ marcaDaSaida: async () => ({ nome: "Local", cor: "#000000" }) }));
-vi.mock("@/lib/email/templates/invite", () => ({ buildInviteEmail: () => ({ subject: "Convite", html: "Convite", text: "Convite" }) }));
+vi.mock("@/lib/email/templates/invite", () => ({ buildInviteLinkEmail: () => ({ subject: "Convite", html: "Convite", text: "Convite" }) }));
 import { issueInvite } from "./issue-invite";
 import { verifyInviteToken } from "./invite-token";
 const input = { email: "guest@example.test", role: "admin" as const,

@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { env } from "@/lib/env";
 import { audit } from "@/lib/audit";
 import { signInviteToken, INVITE_TTL_SECONDS } from "@/lib/auth/invite-token";
-import { buildInviteEmail } from "@/lib/email/templates/invite";
+import { buildInviteLinkEmail } from "@/lib/email/templates/invite";
 import { sendEmail } from "@/lib/email/resend";
 import { marcaDaSaida } from "@/lib/branding/saida";
 
@@ -51,7 +51,7 @@ export async function issueInvite(input: {
   if (input.dispatch !== false) {
     try {
       const marca = await marcaDaSaida(input.organizationId);
-      const message = buildInviteEmail({
+      const message = buildInviteLinkEmail({
         inviterName: input.inviterName,
         orgName: input.orgName,
         acceptUrl,

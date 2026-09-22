@@ -17,8 +17,8 @@
  * opaca — o operador vai caçar rede, contêiner e chave, quando o problema é uma
  * variável em branco. Tratar como não-configurado joga o fluxo no caminho que
  * JÁ existe e JÁ é bom: `EmailNotConfigured` → `pending_review` no worker de
- * LGPD (`workers/lgpd-export-worker.ts:254-289`) e o convite mostrando o
- * `accept_url` na tela (`app/api/v1/team/invite/route.ts`).
+ * LGPD (`workers/lgpd-export-worker.ts:254-289`). No convite de time, a rota
+ * recusa antes de criar uma conta cuja senha ninguém receberia.
  *
  * As duas chaves saíram do `process.env` cru e entraram no Zod (`lib/env.ts`).
  * Fora dele elas ficavam fora do `.env.example` e fora do `install.sh`, e o
