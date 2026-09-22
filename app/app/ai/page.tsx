@@ -21,7 +21,7 @@ export default async function AiHubPage() {
       isPlatformAdmin={user.is_platform_admin && !user.support}
       role={activeOrg?.role ?? null}
       interfaceSettings={activeOrg?.interface_settings}
-      title="Agente de IA"
+      title="Automação"
       subtitle="Tudo que define quem atende por você — e como acompanhar o que ele faz."
     />
   );
