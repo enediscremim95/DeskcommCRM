@@ -5,6 +5,7 @@ import {
   buildTrafficDeliverySections,
   buildTrafficFunnelReading,
   buildTrafficHighlights,
+  buildTrafficPriorityMetricCards,
   buildTrafficSummaryGroups,
   trafficVariation,
 } from "./traffic-summary-pdf";
@@ -185,6 +186,51 @@ describe("resumo do relatório para PDF", () => {
       closedWon: 2,
       closedLost: 1,
     });
+  });
+
+  it("usa no topo do PDF as métricas escolhidas, na mesma ordem e no período recebido", () => {
+    const cards = buildTrafficPriorityMetricCards(
+      {
+        model: "ecommerce",
+        priority_metrics: ["roas", "revenue", "crm_closed_won"],
+        window: { from: "2026-09-15", to: "2026-09-21" },
+        crm: {
+          leads_entered: 12,
+          in_service: 7,
+          closed_won: 3,
+          previous: { leads_entered: 8, in_service: 5, closed_won: 2 },
+        },
+        currencies: [
+          {
+            currency: "BRL",
+            summary: {
+              spend: 500,
+              revenue: 2_000,
+              roas: 4,
+              reach: 1_000,
+              impressions: 1_500,
+              clicks: 80,
+            },
+            comparison: {
+              spend: 400,
+              revenue: 1_200,
+              roas: 3,
+              reach: 900,
+              impressions: 1_300,
+              clicks: 70,
+            },
+          },
+        ],
+      },
+      0,
+      "pt-BR",
+    );
+
+    expect(cards.map((card) => [card.key, card.label, card.value])).toEqual([
+      ["roas", "ROAS", "4x"],
+      ["revenue", "Faturamento", "R$ 2.000,00"],
+      ["crm_closed_won", "Fechadas no CRM", "3"],
+    ]);
   });
 
   it("gera destaques factuais e prioriza o principal motivo de perda", () => {

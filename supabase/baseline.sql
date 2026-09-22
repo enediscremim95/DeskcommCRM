@@ -25474,6 +25474,13 @@ create trigger trg_crm_leads_stage_entered_at
 comment on column public.crm_leads.stage_entered_at is
   'Instante em que o lead entrou na etapa atual; atualizado pelo trigger de stage_id.';
 
+-- ---- Métricas prioritárias do Relatório (migration 0257) ----
+alter table public.traffic_dashboard_configs
+  add column if not exists priority_metric_columns text[];
+
+comment on column public.traffic_dashboard_configs.priority_metric_columns is
+  'Métricas prioritárias do topo do Relatório, na ordem escolhida; null usa o padrão do modelo.';
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

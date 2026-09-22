@@ -22,6 +22,10 @@ import {
   type CampaignMetricColumn,
   type DashboardModel,
 } from "@/lib/windsor/types";
+import {
+  PRIORITY_METRIC_COLUMNS,
+  validPriorityMetrics,
+} from "@/lib/windsor/priority-metrics";
 import { serializeTrafficColumnPresets } from "@/lib/windsor/column-presets";
 import { buildTrafficDelivery } from "@/lib/windsor/delivery";
 import { clientCanViewIntegration } from "@/lib/integrations/access";
@@ -70,7 +74,15 @@ const thresholdsSchema = z.object({
       message: "Plataformas duplicadas.",
     }),
 });
-const patchSchema = z.union([columnsSchema, thresholdsSchema]);
+const priorityMetricsSchema = z.object({
+  priority_metrics: z
+    .array(z.enum(PRIORITY_METRIC_COLUMNS))
+    .min(1)
+    .max(6)
+    .refine((columns) => new Set(columns).size === columns.length, "Métricas duplicadas.")
+    .nullable(),
+});
+const patchSchema = z.union([columnsSchema, thresholdsSchema, priorityMetricsSchema]);
 const reachResponseSchema = z
   .object({
     data: z.array(z.record(z.string(), z.unknown())).optional(),
@@ -134,7 +146,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { data: config, error: configError } = await admin
     .from("traffic_dashboard_configs" as never)
     .select(
-      "model,conversion_fields,sync_status,last_sync_succeeded_at,last_sync_error,published_generation,campaign_metric_columns,default_column_preset_id",
+      "model,conversion_fields,sync_status,last_sync_succeeded_at,last_sync_error,published_generation,campaign_metric_columns,default_column_preset_id,priority_metric_columns",
     )
     .eq("organization_id", organizationId)
     .eq("enabled", true)
@@ -152,6 +164,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     published_generation: string | null;
     campaign_metric_columns: unknown;
     default_column_preset_id: string | null;
+    priority_metric_columns: unknown;
   };
   const fromCreatedAt = `${parsed.data.from}T00:00:00.000Z`;
   const exclusiveTo = new Date(`${parsed.data.to}T00:00:00.000Z`);
@@ -358,6 +371,10 @@ export async function GET(request: NextRequest): Promise<Response> {
       default_preset_id: defaultPreset?.id ?? null,
       column_presets: columnPresets,
       can_manage_defaults: authz.user.is_platform_admin && !authz.user.support,
+      priority_metrics: validPriorityMetrics(
+        typedConfig.priority_metric_columns,
+        typedConfig.model,
+      ),
       cost_thresholds: (thresholdRows ?? []).map((row) => {
         const typed = row as unknown as {
           platform: "meta_ads" | "google_ads";
@@ -407,13 +424,36 @@ export async function PATCH(request: NextRequest): Promise<Response> {
   }
   const parsed = patchSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return fail("validation_error", "Colunas inválidas.", 400, {
+    return fail("validation_error", "Configuração inválida.", 400, {
       requestId,
       details: parsed.error.flatten(),
     });
   }
   const organizationId = authz.org.orgId;
   const admin = createAdminClient();
+  if ("priority_metrics" in parsed.data) {
+    const { error } = await admin
+      .from("traffic_dashboard_configs" as never)
+      .update({ priority_metric_columns: parsed.data.priority_metrics } as never)
+      .eq("organization_id", organizationId)
+      .eq("enabled", true);
+    if (error) {
+      return fail("internal_error", "Não foi possível salvar as métricas prioritárias.", 500, {
+        requestId,
+      });
+    }
+    await audit({
+      action: "traffic_dashboard.priority_metrics_updated",
+      actorUserId: authz.user.id,
+      organizationId,
+      resourceType: "traffic_dashboard_config",
+      resourceId: organizationId,
+      bypassedRls: true,
+      actingAsPlatformAdmin: true,
+      metadata: { metrics: parsed.data.priority_metrics },
+    });
+    return ok({ priority_metrics: parsed.data.priority_metrics }, { requestId });
+  }
   if ("cost_thresholds" in parsed.data) {
     if (parsed.data.cost_thresholds.length > 0) {
       const { error: insertError } = await admin
