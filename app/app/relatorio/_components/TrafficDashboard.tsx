@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { DragScroll } from "@/components/ui/drag-scroll";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -942,7 +943,7 @@ function CampaignTable({
           ))}
         </div>
       )}
-      <div className="overflow-x-auto">
+      <DragScroll className="overflow-x-auto">
         <table className="w-full min-w-max text-sm">
           <thead className="border-b bg-muted/35">
             <tr>
@@ -1038,7 +1039,7 @@ function CampaignTable({
             </tr>
           </tfoot>
         </table>
-      </div>
+      </DragScroll>
     </div>
   );
 }
