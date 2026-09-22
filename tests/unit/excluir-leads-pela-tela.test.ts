@@ -40,6 +40,6 @@ describe("exclusão de leads pela tela", () => {
   });
 
   it("volta ao funil depois de excluir pela ficha", () => {
-    expect(ficha).toContain("router.replace(`/app/pipelines/${lead.pipeline_id}`)");
+    expect(ficha).toContain("router.replace(`/app/pipelines/${leadAtual.pipeline_id}`)");
   });
 });

@@ -47,14 +47,14 @@ export function StageSelector({
   return (
     <div className="mt-3" data-testid="lead-stage-selector">
       <ol
-        className="hidden min-w-0 gap-1 overflow-x-auto pb-1 md:flex"
+        className="hidden min-w-0 gap-1 md:grid md:grid-cols-[repeat(auto-fill,minmax(7rem,1fr))]"
         aria-label={t("Etapas do funil")}
       >
         {ordered.map((stage, index) => {
           const active = stage.id === stageId;
           const completed = currentIndex >= 0 && index < currentIndex;
           return (
-            <li key={stage.id} className="flex min-w-28 flex-1">
+            <li key={stage.id} className="flex">
               <button
                 type="button"
                 onClick={() => choose(stage)}
