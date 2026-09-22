@@ -520,20 +520,24 @@ describe("colunas da tabela de campanhas", () => {
     const pending: Array<() => void> = [];
     let captureStatusRestore = false;
     const nativeGetItem = Storage.prototype.getItem;
-    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (key) {
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key: string) {
       const value = nativeGetItem.call(this, key);
       if (key === "traffic-campaign-status-filter:meta_ads") captureStatusRestore = true;
       return value;
     });
     const nativeSetTimeout = window.setTimeout.bind(window);
-    const timeout = vi.spyOn(window, "setTimeout").mockImplementation((handler, delay, ...args) => {
+    const timeout = vi.spyOn(window, "setTimeout").mockImplementation(((
+      handler: TimerHandler,
+      delay?: number,
+      ...args: unknown[]
+    ) => {
       if (captureStatusRestore && delay === 0 && typeof handler === "function") {
         captureStatusRestore = false;
         pending.push(() => handler(...args));
         return 99;
       }
       return nativeSetTimeout(handler, delay, ...args);
-    });
+    }) as unknown as typeof window.setTimeout);
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       Response.json(
         baseResponse([
