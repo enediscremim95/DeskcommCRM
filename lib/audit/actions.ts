@@ -499,6 +499,7 @@ export const AUDIT_ACTIONS = [
   "voice.session_unpaired",
   "tenant.owner_access_dispatched",
   "traffic_dashboard.configuration_updated",
+  "traffic_dashboard.cost_thresholds_updated",
   "integrations.configuration_updated",
   "traffic_dashboard.sync_succeeded",
   "traffic_dashboard.sync_failed",
