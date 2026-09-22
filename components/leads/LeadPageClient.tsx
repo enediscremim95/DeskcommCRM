@@ -359,7 +359,7 @@ export function LeadPageClient({
 
         {/* ── Direita: a linha do tempo com a conversa ────────────────────── */}
         <section className="flex min-h-[42rem] min-w-0 flex-col bg-surface lg:min-h-0">
-          {conversation.isPending ? (
+          {conversation.isLoading ? (
             <div className="flex flex-1 items-center justify-center text-sm text-text-muted">
               {t("Carregando conversa…")}
             </div>
