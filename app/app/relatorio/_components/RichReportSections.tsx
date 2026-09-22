@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { DragScroll } from "@/components/ui/drag-scroll";
 import {
   Area,
   Bar,
@@ -333,7 +334,7 @@ export function PlatformComparison({
   return (
     <section className="overflow-hidden rounded-2xl border bg-card">
       <h3 className="px-5 py-4 text-lg font-semibold">Meta × Google</h3>
-      <div className="overflow-x-auto">
+      <DragScroll className="overflow-x-auto">
         <table className="w-full min-w-max text-sm">
           <thead className="border-y bg-muted/35 text-left">
             <tr>
@@ -377,7 +378,7 @@ export function PlatformComparison({
             })}
           </tbody>
         </table>
-      </div>
+      </DragScroll>
     </section>
   );
 }
@@ -483,7 +484,7 @@ export function CreativePerformance({
           <option value="spend">{t("Investimento")}</option>
         </select>
       </div>
-      <div className="mt-2 overflow-x-auto">
+      <DragScroll className="mt-2 overflow-x-auto">
         <table className="w-full min-w-max text-sm">
           <thead className="border-y bg-muted/35">
             <tr>
@@ -566,7 +567,7 @@ export function CreativePerformance({
             ))}
           </tbody>
         </table>
-      </div>
+      </DragScroll>
       {sorted.length > 10 && (
         <Button
           className="mt-3"
@@ -598,7 +599,7 @@ export function CrmInsights({
   return (
     <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
       <h3 className="text-lg font-semibold">{t("Leads no CRM: etapas e perdas")}</h3>
-      <div className="overflow-x-auto">
+      <DragScroll className="overflow-x-auto">
         <table className="w-full min-w-max text-sm">
           <thead className="border-y bg-muted/35">
             <tr>
@@ -642,7 +643,7 @@ export function CrmInsights({
             ))}
           </tbody>
         </table>
-      </div>
+      </DragScroll>
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
           <h4 className="font-semibold">{t("Motivos de perda")}</h4>
@@ -724,7 +725,7 @@ export function MonthByMonth({
   return (
     <section className="overflow-hidden rounded-2xl border bg-card">
       <h3 className="px-5 py-4 text-lg font-semibold">{t("Mês a mês")}</h3>
-      <div className="overflow-x-auto">
+      <DragScroll className="overflow-x-auto">
         <table className="w-full min-w-max text-sm">
           <thead className="border-y bg-muted/35">
             <tr>
@@ -777,7 +778,7 @@ export function MonthByMonth({
             ))}
           </tbody>
         </table>
-      </div>
+      </DragScroll>
     </section>
   );
 }
