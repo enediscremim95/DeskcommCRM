@@ -8825,6 +8825,9 @@ export const DICIONARIO: Traducoes = {
   "Oi!": { es: "¡Hola!" },
   "Passando pra lembrar do seu compromisso:": { es: "Te recuerdo tu cita:" },
   "Endereço": { es: "Dirección" },
+  "Escolher etapa": { es: "Elegir etapa" },
+  "dia nesta etapa": { es: "día en esta etapa" },
+  "dias nesta etapa": { es: "días en esta etapa" },
 
   // ─── lib/ai/pontos/resolver.ts (avisos do painel de Provedores de IA) ───
   "Este ponto usa o modelo definido na versão publicada do agente; a escolha do painel não se aplica.": {

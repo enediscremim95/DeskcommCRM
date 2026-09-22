@@ -13,6 +13,7 @@ import { LeadFieldsForm } from "@/components/kanban/LeadFieldsForm";
 import { ownerInitials } from "@/components/kanban/OwnerBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
@@ -27,11 +28,14 @@ import { activityLabel, actorName } from "@/lib/leads/activity-vocabulary";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import type { Lead } from "@/lib/types/leads";
 import type { Message } from "@/lib/types/messaging";
+import type { Stage } from "@/lib/kanban/types";
+import { apiClient } from "@/lib/api/client";
 import { ChatCircle, Gear, Phone, Trash } from "@/lib/ui/icons";
-import { cn } from "@/lib/utils";
 import { DadosCompletosDoLead } from "./DadosCompletosDoLead";
 import { FollowupsDoLead } from "./FollowupsDoLead";
 import { DeleteLeadDialog } from "./DeleteLeadDialog";
+import { StageSelector } from "./StageSelector";
+import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
 
 interface ContactSummary {
   id: string;
@@ -73,69 +77,6 @@ function valorDoNegocio(
   }
 }
 
-/**
- * A barra de progresso do funil, no cabeçalho do lead (formato Kommo): um
- * segmento por etapa, preenchidos até a etapa atual, na cor de cada etapa.
- *
- * As etapas vêm de `usePipelineStages`, o mesmo hook que o editor de webhooks
- * já usa — nenhuma consulta nova no servidor. Enquanto não chegam, a barra
- * não aparece: um esqueleto aqui prometeria um dado que pode nunca vir (funil
- * sem etapas), e o cabeçalho continua inteiro sem ela.
- */
-function ProgressoDoFunil({
-  pipelineId,
-  stageId,
-  status,
-}: {
-  pipelineId: string;
-  stageId: string;
-  status: Lead["status"];
-}) {
-  const t = useT();
-  const { data } = usePipelineStages(pipelineId);
-  const etapas = useMemo(
-    () => [...(data?.data?.stages ?? [])].sort((a, b) => a.position - b.position),
-    [data],
-  );
-  if (etapas.length === 0) return null;
-
-  const atual = etapas.findIndex((s) => s.id === stageId);
-  // Negócio ganho preenche o funil inteiro; perdido para onde parou.
-  const preenchidas = status === "won" ? etapas.length - 1 : atual;
-
-  return (
-    <div className="mt-3" data-testid="lead-progresso-funil">
-      <ol
-        className="flex gap-1"
-        aria-label={`${t("Etapa")} ${Math.max(atual, 0) + 1} ${t("de")} ${etapas.length}`}
-      >
-        {etapas.map((etapa, i) => {
-          const feita = i <= preenchidas;
-          return (
-            <li
-              key={etapa.id}
-              title={etapa.name}
-              className={cn(
-                "h-1.5 min-w-0 flex-1 rounded-full transition-colors",
-                !feita && "bg-border",
-                feita && status === "lost" && "bg-error/60",
-              )}
-              style={
-                feita && status !== "lost"
-                  ? { backgroundColor: etapa.color ?? "var(--color-accent)" }
-                  : undefined
-              }
-            />
-          );
-        })}
-      </ol>
-      <p className="mt-1.5 text-[11px] text-text-muted tabular-nums">
-        {t("Etapa")} {Math.max(atual, 0) + 1} {t("de")} {etapas.length}
-      </p>
-    </div>
-  );
-}
-
 export function LeadPageClient({
   lead,
   pipelineName,
@@ -150,7 +91,12 @@ export function LeadPageClient({
   const locale = useTagDeIdioma();
   const { activeOrg, user } = useAuth();
   const router = useRouter();
+  const [leadAtual, setLeadAtual] = useState(lead);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [loseOpen, setLoseOpen] = useState(false);
+  const [etapaPerdida, setEtapaPerdida] = useState<Stage | null>(null);
+  const [movendoEtapa, setMovendoEtapa] = useState(false);
+  const rollbackPerda = useRef<Lead | null>(null);
   const supportReadonly = user.support?.access_mode === "support_readonly";
   const podeEditar = Boolean(
     activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && !supportReadonly,
@@ -163,6 +109,11 @@ export function LeadPageClient({
   const [respondendo, setRespondendo] = useState<Message | null>(null);
   const composerRef = useRef<ComposerHandle | null>(null);
   const [agoraJanela, setAgoraJanela] = useState(() => new Date());
+  const stagesQuery = usePipelineStages(leadAtual.pipeline_id);
+  const etapas = useMemo(
+    () => [...(stagesQuery.data?.data?.stages ?? [])].sort((a, b) => a.position - b.position),
+    [stagesQuery.data],
+  );
 
   useMarkAsRead(
     selectedConversation?.id ?? null,
@@ -224,8 +175,52 @@ export function LeadPageClient({
     !selectedConversation &&
     isNotFound(conversation.error);
 
-  const valor = valorDoNegocio(lead.value_cents, lead.currency, locale);
+  const valor = valorDoNegocio(leadAtual.value_cents, leadAtual.currency, locale);
   const nome = nomeDoContato(contact);
+  const stageAtual = etapas.find((stage) => stage.id === leadAtual.stage_id);
+  const nomeDaEtapa = stageAtual?.name ?? stageName;
+  const diasNaEtapa = Math.max(
+    0,
+    Math.floor(
+      (agoraJanela.getTime() -
+        new Date(leadAtual.stage_entered_at ?? leadAtual.created_at).getTime()) /
+        86_400_000,
+    ),
+  );
+
+  const moverParaEtapa = async (stage: Stage) => {
+    if (!podeEditar || movendoEtapa || stage.id === leadAtual.stage_id) return;
+    if (stage.is_lost) {
+      setEtapaPerdida(stage);
+      setLoseOpen(true);
+      return;
+    }
+
+    const anterior = leadAtual;
+    setMovendoEtapa(true);
+    setLeadAtual({
+      ...leadAtual,
+      stage_id: stage.id,
+      status: stage.is_won ? "won" : "open",
+      stage_entered_at: new Date().toISOString(),
+    });
+
+    try {
+      const result = stage.is_won
+        ? await apiClient.post<{ data: Lead }>(`/api/v1/leads/${leadAtual.id}/win`, {})
+        : await apiClient.post<{ data: Lead }>(`/api/v1/leads/${leadAtual.id}/move`, {
+            stage_id: stage.id,
+            expected_updated_at: anterior.updated_at,
+          });
+      setLeadAtual(result.data);
+      router.refresh();
+    } catch (error) {
+      setLeadAtual(anterior);
+      showApiError(error);
+    } finally {
+      setMovendoEtapa(false);
+    }
+  };
 
   return (
     <OpenConversationProvider conversationId={conversationId}>
@@ -243,7 +238,7 @@ export function LeadPageClient({
             </p>
             <div className="mt-1 flex items-start justify-between gap-3">
               <h1 className="min-w-0 text-lg leading-tight font-semibold text-text">
-                {lead.title}
+                {leadAtual.title}
               </h1>
               {podeExcluir ? (
                 <Button
@@ -268,26 +263,33 @@ export function LeadPageClient({
               )}
               <Badge
                 variant={
-                  lead.status === "lost"
+                  leadAtual.status === "lost"
                     ? "destructive"
-                    : lead.status === "won"
+                    : leadAtual.status === "won"
                       ? "success"
                       : "default"
                 }
               >
-                {lead.status === "won"
+                {leadAtual.status === "won"
                   ? t("Ganho")
-                  : lead.status === "lost"
+                  : leadAtual.status === "lost"
                     ? t("Perdido")
-                    : stageName}
+                    : nomeDaEtapa}
               </Badge>
             </div>
 
-            <ProgressoDoFunil
-              pipelineId={lead.pipeline_id}
-              stageId={lead.stage_id}
-              status={lead.status}
+            <StageSelector
+              stages={etapas}
+              stageId={leadAtual.stage_id}
+              canEdit={podeEditar}
+              isPending={movendoEtapa}
+              onSelect={moverParaEtapa}
             />
+            <p className="mt-1.5 text-[11px] text-text-muted tabular-nums">
+              {diasNaEtapa === 1
+                ? `${t("há")} 1 ${t("dia nesta etapa")}`
+                : `${t("há")} ${diasNaEtapa} ${t("dias nesta etapa")}`}
+            </p>
 
             {/* A pessoa do outro lado: avatar com iniciais, nome, e os dois
                 jeitos de falar com ela fora do WhatsApp. */}
@@ -330,18 +332,26 @@ export function LeadPageClient({
 
           <div className="space-y-6 p-4">
             <DadosCompletosDoLead
-              lead={lead}
+              lead={leadAtual}
               pipelineName={pipelineName}
-              stageName={stageName}
+              stageName={nomeDaEtapa}
               fieldDefs={fieldDefs}
             />
-            <FollowupsDoLead leadId={lead.id} contactId={lead.contact_id} podeEditar={podeEditar} />
+            <FollowupsDoLead
+              leadId={leadAtual.id}
+              contactId={leadAtual.contact_id}
+              podeEditar={podeEditar}
+            />
             {podeEditar ? (
               <section className="border-t border-border pt-4">
                 <h2 className="mb-3 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
                   {t("Dados do negócio")}
                 </h2>
-                <LeadFieldsForm lead={lead} pipelineId={lead.pipeline_id} fieldDefs={fieldDefs} />
+                <LeadFieldsForm
+                  lead={leadAtual}
+                  pipelineId={leadAtual.pipeline_id}
+                  fieldDefs={fieldDefs}
+                />
               </section>
             ) : null}
           </div>
@@ -448,10 +458,36 @@ export function LeadPageClient({
       <DeleteLeadDialog
         open={podeExcluir && deleteOpen}
         onOpenChange={setDeleteOpen}
-        pipelineId={lead.pipeline_id}
-        leadIds={[lead.id]}
-        leadTitle={lead.title}
-        onDeleted={() => router.replace(`/app/pipelines/${lead.pipeline_id}`)}
+        pipelineId={leadAtual.pipeline_id}
+        leadIds={[leadAtual.id]}
+        leadTitle={leadAtual.title}
+        onDeleted={() => router.replace(`/app/pipelines/${leadAtual.pipeline_id}`)}
+      />
+      <LoseLeadDialog
+        open={podeEditar && loseOpen}
+        onOpenChange={setLoseOpen}
+        leadId={leadAtual.id}
+        pipelineId={leadAtual.pipeline_id}
+        onBeforeSubmit={() => {
+          if (!etapaPerdida) return;
+          rollbackPerda.current = leadAtual;
+          setLeadAtual({
+            ...leadAtual,
+            stage_id: etapaPerdida.id,
+            status: "lost",
+            stage_entered_at: new Date().toISOString(),
+          });
+        }}
+        onLost={(updated) => {
+          rollbackPerda.current = null;
+          setLeadAtual(updated);
+          setEtapaPerdida(null);
+          router.refresh();
+        }}
+        onError={() => {
+          if (rollbackPerda.current) setLeadAtual(rollbackPerda.current);
+          rollbackPerda.current = null;
+        }}
       />
     </OpenConversationProvider>
   );

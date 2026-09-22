@@ -312,3 +312,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260921170000` | `0252_lote_email_leads` | Outbox durável por organização e destinatário agrupa rajadas de lead novo numa janela curta; item único por evento impede reentrada e o flush reaproveita o event_log com idempotência. |
 | `20260921190000` | `0253_status_e_paginas_relatorio` | Persiste no snapshot Windsor o status da campanha e as URLs de destino para o PDF listar campanhas ativas e páginas em teste sem nova chamada externa. |
 | `20260922010000` | `0254_limites_custo_relatorio` | Guarda limites de custo bom e aceitável por organização e plataforma, com leitura tenant-aware e escrita somente pelas rotas administrativas auditadas. |
+| `20260922100000` | `0255_stage_entered_at` | Registra quando cada lead entrou na etapa atual; o backfill usa a última atividade de mudança ou a criação, e um trigger cobre todos os caminhos de movimento. |

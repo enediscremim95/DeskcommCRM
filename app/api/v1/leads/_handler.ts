@@ -570,6 +570,8 @@ export interface MoveLeadAdminInput {
   to_stage_id: string;
   /** Optional fractional position. If omitted, append at end (max + 1000). */
   position_in_stage?: number;
+  /** OCC explícita da porta HTTP; integrações internas usam o valor lido pelo handler. */
+  expected_updated_at?: string;
   reason?: string;
 }
 
@@ -630,6 +632,7 @@ export async function moveLeadHandler(
     const { data: maxRow } = await supabase
       .from("crm_leads")
       .select("position_in_stage")
+      .eq("organization_id", ctx.organization_id)
       .eq("stage_id", input.to_stage_id)
       .order("position_in_stage", { ascending: false })
       .limit(1)
@@ -647,7 +650,8 @@ export async function moveLeadHandler(
       updated_at: nowIso,
     })
     .eq("id", leadId)
-    .eq("updated_at", lead.updated_at)
+    .eq("organization_id", ctx.organization_id)
+    .eq("updated_at", input.expected_updated_at ?? lead.updated_at)
     .select("*")
     .maybeSingle();
 
@@ -655,10 +659,16 @@ export async function moveLeadHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
   }
   if (!updated) {
+    const { data: current } = await supabase
+      .from("crm_leads")
+      .select("updated_at")
+      .eq("id", leadId)
+      .eq("organization_id", ctx.organization_id)
+      .maybeSingle();
     throw new ApiError(
       409,
       "lead_stage_changed_concurrent",
-      undefined,
+      { current_updated_at: current?.updated_at ?? null },
       ctx.requestId,
       traduzir("Lead foi modificado concorrentemente.", ctx.idioma ?? "pt-BR"),
     );

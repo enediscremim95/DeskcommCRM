@@ -22,6 +22,7 @@ interface KanbanCardProps {
   lead: Lead;
   index: number;
   pipelineId: string;
+  canMove?: boolean;
   isSelected?: boolean;
   /**
    * Há seleção viva no quadro. Só muda a VISIBILIDADE da caixa (que fora disso
@@ -86,6 +87,7 @@ export function KanbanCard({
   lead,
   index,
   pipelineId,
+  canMove = false,
   isSelected,
   isSelecting = false,
   pulseCount = 0,
@@ -138,7 +140,7 @@ export function KanbanCard({
   const handleClick = (e: MouseEvent<HTMLDivElement>) => decidirClique(e);
 
   return (
-    <Draggable draggableId={card.id} index={index}>
+    <Draggable draggableId={card.id} index={index} isDragDisabled={!canMove}>
       {(provided, snapshot) => (
         <div
           ref={provided.innerRef}

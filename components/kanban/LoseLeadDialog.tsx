@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useLoseLead } from "@/hooks/kanban/useUpdateLead";
 import { CANONICAL_LOST_REASONS } from "@/lib/schemas/leads";
+import type { Lead } from "@/lib/types/leads";
 
 const REASON_LABELS: Record<(typeof CANONICAL_LOST_REASONS)[number], string> = {
   requested_by_customer: "Cliente solicitou cancelamento",
@@ -31,6 +32,9 @@ interface LoseLeadDialogProps {
   onOpenChange: (open: boolean) => void;
   leadId: string;
   pipelineId: string;
+  onBeforeSubmit?: () => void;
+  onLost?: (lead: Lead) => void;
+  onError?: () => void;
 }
 
 const MAX_LEN = 500;
@@ -40,6 +44,9 @@ export function LoseLeadDialog({
   onOpenChange,
   leadId,
   pipelineId,
+  onBeforeSubmit,
+  onLost,
+  onError,
 }: LoseLeadDialogProps) {
   const t = useT();
   const [reasonCode, setReasonCode] = useState<string>("");
@@ -51,12 +58,15 @@ export function LoseLeadDialog({
 
   const handleSubmit = async () => {
     if (disabled) return;
+    onBeforeSubmit?.();
     try {
-      await mutation.mutateAsync({ leadId, lostReason: finalReason });
+      const result = await mutation.mutateAsync({ leadId, lostReason: finalReason });
       setReasonCode("");
       setOtherText("");
       onOpenChange(false);
+      onLost?.(result.data);
     } catch {
+      onError?.();
       // error already toasted
     }
   };

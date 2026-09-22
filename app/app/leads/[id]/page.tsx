@@ -68,6 +68,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
     <div className="flex min-h-0 flex-col gap-4">
       <Voltar href={`/app/pipelines/${lead.pipeline_id}`}>Voltar ao funil</Voltar>
       <LeadPageClient
+        key={lead.updated_at}
         lead={lead as Lead}
         pipelineName={pipeline.name}
         stageName={stageResult.data?.name ?? "Etapa não informada"}
