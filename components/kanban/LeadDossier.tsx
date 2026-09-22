@@ -149,13 +149,13 @@ export function LeadDossier({
               t("Última anotação"),
               timeline.itens.find((item) => item.type === "note")?.reason || t("Não informado"),
             ],
-            [t("Criado em"), stageAgeTooltip(lead.created_at) || t("Não informado")],
-            [t("Na etapa desde"), stageAgeTooltip(lead.stage_entered_at) || t("Não informado")],
+            [t("Criado em"), stageAgeTooltip(lead.created_at, tagDoIdioma) || t("Não informado")],
+            [t("Na etapa desde"), stageAgeTooltip(lead.stage_entered_at, tagDoIdioma) || t("Não informado")],
             [
               t("Último contato"),
-              stageAgeTooltip(lead.conversa?.last_message_at ?? lead.last_activity_at) || t("Não informado"),
+              stageAgeTooltip(lead.conversa?.last_message_at ?? lead.last_activity_at, tagDoIdioma) || t("Não informado"),
             ],
-            [t("Previsão de fechamento"), stageAgeTooltip(lead.expected_close_date) || t("Não informado")],
+            [t("Previsão de fechamento"), stageAgeTooltip(lead.expected_close_date, tagDoIdioma) || t("Não informado")],
             ...(lead.status === "lost"
               ? [[t("Motivo da perda"), lead.lost_reason || t("Não informado")]]
               : []),

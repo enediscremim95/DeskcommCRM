@@ -2,6 +2,7 @@
 import { Draggable } from "@hello-pangea/dnd";
 import type { MouseEvent } from "react";
 import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
 import {
@@ -105,10 +106,11 @@ export function KanbanCard({
   onSummary,
 }: KanbanCardProps) {
   const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const value = formatBRL(card.valueCents, card.currency);
   const state = resolveCardState(card, t);
   const age = stageAgeLabel(card.hoursInStage, t);
-  const ageTooltip = stageAgeTooltip(card.stageEnteredAt ?? null);
+  const ageTooltip = stageAgeTooltip(card.stageEnteredAt, tagDoIdioma);
   const mostraIdade = state.showStageAge && age !== "";
   const temSinalNaLinha3 = state.slot.type === "meter" || state.slot.type === "cooling";
 

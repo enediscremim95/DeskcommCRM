@@ -322,10 +322,10 @@ export function LeadPageClient({
                 : `${t("há")} ${diasNaEtapa} ${t("dias nesta etapa")}`}
             </p>
             <p className="mt-0.5 text-[11px] text-text-muted tabular-nums">
-              {t("Na etapa desde")}: {stageAgeTooltip(leadAtual.stage_entered_at) ?? t("Não informado")}
+              {t("Na etapa desde")}: {stageAgeTooltip(leadAtual.stage_entered_at, locale) || t("Não informado")}
             </p>
             <p className="mt-0.5 text-[11px] text-text-muted tabular-nums">
-              {t("Criado em")}: {stageAgeTooltip(leadAtual.created_at) ?? t("Não informado")}
+              {t("Criado em")}: {stageAgeTooltip(leadAtual.created_at, locale) || t("Não informado")}
             </p>
 
             {/* A pessoa do outro lado: avatar com iniciais, nome, e os dois

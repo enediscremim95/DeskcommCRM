@@ -37,8 +37,8 @@ describe("pacote RD no quadro e na ficha do lead", () => {
     expect(page).toContain("<ProximasTarefasDoLead");
     expect(page).toContain("<LeadQualification");
     expect(page).toContain('t("Retomar negociação")');
-    expect(page).toContain("stageAgeTooltip(leadAtual.stage_entered_at)");
-    expect(page).toContain("stageAgeTooltip(leadAtual.created_at)");
+    expect(page).toContain("stageAgeTooltip(leadAtual.stage_entered_at, locale)");
+    expect(page).toContain("stageAgeTooltip(leadAtual.created_at, locale)");
   });
 
   it("leva a qualificação para migration, baseline e manifest", () => {
