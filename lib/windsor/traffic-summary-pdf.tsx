@@ -204,6 +204,17 @@ const styles = StyleSheet.create({
   deliverySection: { marginTop: 7 },
   deliverySectionTitle: { fontSize: 9, fontWeight: "bold", marginBottom: 3 },
   deliveryItem: { color: "#344139", fontSize: 8, marginTop: 2 },
+  deliveryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 3,
+    borderBottomWidth: 1,
+    borderColor: "#eef2ef",
+  },
+  deliveryName: { flex: 1, color: "#344139", fontSize: 8, maxLines: 1, textOverflow: "ellipsis" },
+  deliveryPlatform: { color: "#66736a", fontSize: 7, textTransform: "uppercase" },
   insightGrid: { flexDirection: "row", gap: 7, marginTop: 6 },
   insightColumn: { flex: 1 },
   situationMetrics: { flexDirection: "row", gap: 5, marginBottom: 6 },
@@ -581,38 +592,6 @@ function Metric({
   );
 }
 
-function CampaignChampionCards({
-  campaigns,
-  currency,
-  language,
-  accent,
-}: {
-  campaigns: TrafficCampaign[];
-  currency: string | null;
-  language: Language;
-  accent: string;
-}) {
-  const champions = buildTrafficCampaignChampions(campaigns, currency, language);
-  return (
-    <View style={styles.championGrid} wrap={false}>
-      {champions.map((champion) => (
-        <View
-          key={champion.label}
-          style={[
-            styles.championCard,
-            { borderColor: tint(accent, 0.28), backgroundColor: tint(accent, 0.07) },
-          ]}
-        >
-          <Text style={styles.championLabel}>{champion.label}</Text>
-          <Text style={styles.championName}>{champion.campaignName}</Text>
-          {champion.value ? (
-            <Text style={[styles.championValue, { color: accent }]}>{champion.value}</Text>
-          ) : null}
-        </View>
-      ))}
-    </View>
-  );
-}
 
 const DELIVERY_LIMIT = 10;
 
@@ -664,6 +643,105 @@ export function buildTrafficDeliverySections(
   ];
 }
 
+/**
+ * Pontos de melhoria tirados dos próprios números, curtos e objetivos (pedido do dono,
+ * 21/09/2026: "com base nos dados... não enfeita muito"). Só afirma "estamos testando"
+ * quando o dado prova o teste (mais de uma página recebendo tráfego no período).
+ */
+export function buildImprovementPoints(
+  group: TrafficSummaryGroup,
+  pagesInTest: number,
+  language: Language,
+): string[] {
+  const pontos: string[] = [];
+  const pct = (parte: number, todo: number) =>
+    `${formatPercentNumber((parte / todo) * 100, language)}%`;
+
+  if (group.clicks >= 50 && group.leads / group.clicks < 0.1) {
+    const taxa = pct(group.leads, group.clicks);
+    pontos.push(
+      pagesInTest >= 2
+        ? text(
+            language,
+            `Conversão de clique em lead está em ${taxa}. Estamos testando ${pagesInTest} páginas para aumentar.`,
+            `La conversión de clic en lead está en ${taxa}. Estamos probando ${pagesInTest} páginas para aumentarla.`,
+          )
+        : text(
+            language,
+            `Conversão de clique em lead está em ${taxa}. Próximo passo: testar outra página.`,
+            `La conversión de clic en lead está en ${taxa}. Próximo paso: probar otra página.`,
+          ),
+    );
+  }
+  if (group.mediaValue && group.mediaValue >= 1000 && group.clicks / group.mediaValue < 0.01) {
+    const taxa = pct(group.clicks, group.mediaValue);
+    pontos.push(
+      text(
+        language,
+        `Taxa de clique está em ${taxa}. Próximo passo: testar novos criativos.`,
+        `La tasa de clic está en ${taxa}. Próximo paso: probar nuevos creativos.`,
+      ),
+    );
+  }
+  if (group.leads >= 20 && group.closedWon / group.leads < 0.05) {
+    const taxa = pct(group.closedWon, group.leads);
+    pontos.push(
+      text(
+        language,
+        `Conversão de lead em venda está em ${taxa} (${formatNumber(group.closedWon, language)} de ${formatNumber(group.leads, language)}). Próximo passo: revisar o atendimento dos leads.`,
+        `La conversión de lead en venta está en ${taxa} (${formatNumber(group.closedWon, language)} de ${formatNumber(group.leads, language)}). Próximo paso: revisar la atención de los leads.`,
+      ),
+    );
+  }
+  return pontos.slice(0, 3);
+}
+
+function ImprovementBlock({
+  groups,
+  pagesInTest,
+  language,
+  accent,
+}: {
+  groups: TrafficSummaryGroup[];
+  pagesInTest: number;
+  language: Language;
+  accent: string;
+}) {
+  const pontos = groups.flatMap((group) => buildImprovementPoints(group, pagesInTest, language));
+  if (pontos.length === 0) return null;
+  return (
+    <View style={styles.delivery} wrap={false}>
+      <Text style={[styles.deliveryTitle, { color: accent }]}>
+        {text(language, "Pontos de melhoria", "Puntos de mejora")}
+      </Text>
+      {[...new Set(pontos)].map((ponto) => (
+        <Text key={ponto} style={styles.deliveryItem}>
+          • {ponto}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
+/** "Nome · Meta" vira { nome, plataforma }; página (sem plataforma) fica só com o nome. */
+export function separarPlataforma(item: string): { nome: string; plataforma: string | null } {
+  const corte = item.lastIndexOf(" · ");
+  if (corte < 0) return { nome: item, plataforma: null };
+  return { nome: item.slice(0, corte), plataforma: item.slice(corte + 3) };
+}
+
+/**
+ * A fonte do PDF (Helvetica) não tem emoji: nome de campanha que começa com emoji saía
+ * como "€P1" (print do dono, 21/09/2026). O emoji sai e sobra o nome limpo.
+ */
+export function limparNomeParaPdf(nome: string): string {
+  return nome
+    .replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}️‍⃣]/gu, "")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s\-|·]+/, "")
+    .trim();
+}
+
 function DeliveryBlock({
   delivery,
   language,
@@ -682,9 +760,15 @@ function DeliveryBlock({
       {sections.map((section) => (
         <View key={section.title} style={styles.deliverySection}>
           <Text style={styles.deliverySectionTitle}>{section.title}</Text>
-          {section.items.map((item) => (
-            <Text key={item} style={styles.deliveryItem}>• {item}</Text>
-          ))}
+          {section.items.map((item) => {
+            const { nome, plataforma } = separarPlataforma(item);
+            return (
+              <View key={item} style={styles.deliveryRow} wrap={false}>
+                <Text style={styles.deliveryName}>{limparNomeParaPdf(nome)}</Text>
+                {plataforma ? <Text style={styles.deliveryPlatform}>{plataforma}</Text> : null}
+              </View>
+            );
+          })}
         </View>
       ))}
     </View>
@@ -829,73 +913,6 @@ export function buildTrafficFunnelReading(
   return readings;
 }
 
-function InsightsBlock({
-  source,
-  groups,
-  language,
-  accent,
-}: {
-  source: TrafficSummarySource;
-  groups: TrafficSummaryGroup[];
-  language: Language;
-  accent: string;
-}) {
-  const highlights = buildTrafficHighlights(source, groups, language);
-  const readings = buildTrafficFunnelReading(groups, language);
-  const stages = limitedItems(
-    (source.crm.stages ?? []).map((stage) => `${stage.name}: ${formatNumber(stage.count, language)}`),
-    language,
-  );
-  const losses = limitedItems(
-    (source.crm.loss_reasons ?? []).map(
-      (item) => `${item.reason}: ${formatNumber(item.count, language)}`,
-    ),
-    language,
-  );
-  const stageItems = stages.length > 0 ? stages : [text(language, "Nenhuma", "Ninguna")];
-  const lossItems = losses.length > 0 ? losses : [text(language, "Nenhum", "Ninguno")];
-  return (
-    <>
-      {highlights.length > 0 ? (
-        <View style={styles.delivery}>
-          <Text style={[styles.deliveryTitle, { color: accent }]}>
-            {text(language, "Destaques do período", "Destacados del período")}
-          </Text>
-          {highlights.map((item) => <Text key={item} style={styles.deliveryItem}>• {item}</Text>)}
-        </View>
-      ) : null}
-      <View style={styles.delivery} wrap={false}>
-        <Text style={[styles.deliveryTitle, { color: accent }]}>
-          {text(language, "Situação dos leads", "Situación de los leads")}
-        </Text>
-        <View style={styles.situationMetrics}>
-          <Metric label={text(language, "Recebidos", "Recibidos")} value={formatNumber(source.crm.leads_entered, language)} comparison={formatVariation(source.crm.leads_entered, source.crm.previous?.leads_entered, language)} />
-          <Metric label={text(language, "Em atendimento", "En atención")} value={formatNumber(source.crm.in_service, language)} comparison={formatVariation(source.crm.in_service, source.crm.previous?.in_service, language)} />
-          <Metric label={text(language, "Ganhos", "Ganados")} value={formatNumber(source.crm.closed_won, language)} comparison={formatVariation(source.crm.closed_won, source.crm.previous?.closed_won, language)} />
-          <Metric label={text(language, "Perdidos", "Perdidos")} value={formatNumber(source.crm.closed_lost ?? 0, language)} comparison={formatVariation(source.crm.closed_lost ?? 0, source.crm.previous?.closed_lost, language)} />
-        </View>
-        <View style={styles.insightGrid}>
-          <View style={styles.insightColumn}>
-            <Text style={styles.deliverySectionTitle}>{text(language, "Etapas atuais", "Etapas actuales")}</Text>
-            {stageItems.map((item) => <Text key={item} style={styles.deliveryItem}>• {item}</Text>)}
-          </View>
-          <View style={styles.insightColumn}>
-            <Text style={styles.deliverySectionTitle}>{text(language, "Motivos de perda", "Motivos de pérdida")}</Text>
-            {lossItems.map((item) => <Text key={item} style={styles.deliveryItem}>• {item}</Text>)}
-          </View>
-        </View>
-      </View>
-      {readings.length > 0 ? (
-        <View style={styles.delivery}>
-          <Text style={[styles.deliveryTitle, { color: accent }]}>
-            {text(language, "Leitura do funil", "Lectura del embudo")}
-          </Text>
-          {readings.map((item) => <Text key={item} style={styles.deliveryItem}>• {item}</Text>)}
-        </View>
-      ) : null}
-    </>
-  );
-}
 
 export function TrafficSummaryPdf({
   source,
@@ -914,7 +931,7 @@ export function TrafficSummaryPdf({
         <View style={[styles.header, { borderBottomColor: brand.accent }]}>
           <Text style={styles.brand}>{brand.nome}</Text>
           <Text style={styles.title}>
-            {text(language, "Relatório resumido de desempenho", "Informe resumido de rendimiento")}
+            {text(language, "Relatório", "Informe")}
           </Text>
           <Text style={styles.muted}>{formatPeriod(source.window, language)}</Text>
         </View>
@@ -953,12 +970,6 @@ export function TrafficSummaryPdf({
                   comparison={formatVariation(group.costPerLead, group.previous.costPerLead, language)}
                 />
               </View>
-              <CampaignChampionCards
-                campaigns={source.currencies[index]?.campaigns ?? []}
-                currency={group.currency}
-                language={language}
-                accent={brand.accent}
-              />
               {/* A linha de caixinhas do funil saiu: repetia o desenho logo abaixo
                   (pedido do dono, 21/09/2026). */}
               <FunnelDrawing group={group} brand={brand} language={language} />
@@ -967,7 +978,12 @@ export function TrafficSummaryPdf({
             </View>
           );
         })}
-        <InsightsBlock source={source} groups={groups} language={language} accent={brand.accent} />
+        <ImprovementBlock
+          groups={groups}
+          pagesInTest={source.delivery?.pages.length ?? 0}
+          language={language}
+          accent={brand.accent}
+        />
         <DeliveryBlock delivery={source.delivery} language={language} accent={brand.accent} />
       </Page>
     </Document>

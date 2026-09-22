@@ -79,7 +79,7 @@ export const NAV_GROUPS: NavGroup[] = [
   // Tarefas, e nada mais.
   { id: "crm", label: "CRM" },
   // Sem hub por decisão do dono (17/09/2026).
-  { id: "ia", label: "Agente de IA" },
+  { id: "ia", label: "Automação" },
   { id: "canais", label: "Canais" },
   // Sem hub por decisão do dono (18/09/2026): o grupo mostra só o Relatório.
   { id: "analise", label: "Análise" },

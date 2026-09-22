@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -434,6 +434,136 @@ describe("colunas da tabela de campanhas", () => {
     await waitFor(() => expect(screen.queryByText("Alpha")).not.toBeInTheDocument());
   });
 
+  it("filtra Meta e Google separadamente no formato real da rota e recalcula o total visível", async () => {
+    const campaign = (
+      name: string,
+      platform: "meta_ads" | "google_ads",
+      campaign_status: string | null,
+      spend: number,
+    ) => ({ ...metrics, name, platform, campaign_status, spend, adsets: [] });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        data: {
+          model: "leads",
+          organization_key: "org-1",
+          viewer_key: "viewer-1",
+          default_columns: ["spend"],
+          default_preset_id: null,
+          column_presets: [],
+          can_manage_defaults: false,
+          sync: { status: "ready", last_succeeded_at: "2026-09-21T20:00:00Z", error: null },
+          window: { from: "2026-09-15", to: "2026-09-21" },
+          previous_window: { from: "2026-09-08", to: "2026-09-14" },
+          crm: {
+            leads_entered: 0,
+            in_service: 0,
+            closed_won: 0,
+            previous: { leads_entered: 0, in_service: 0, closed_won: 0 },
+          },
+          delivery: { campaigns: [] },
+          currencies: [
+            {
+              currency: "BRL",
+              summary: { ...metrics, spend: 150 },
+              comparison: null,
+              daily: [],
+              platforms: [
+                { ...metrics, platform: "meta_ads", spend: 60 },
+                { ...metrics, platform: "google_ads", spend: 90 },
+              ],
+              campaigns: [
+                campaign("Meta ativa", "meta_ads", "ACTIVE", 10),
+                campaign("Meta pausada", "meta_ads", "PAUSED", 30),
+                campaign("Meta sem status", "meta_ads", null, 20),
+                campaign("Google ativa", "google_ads", "ENABLED", 40),
+                campaign("Google pausada", "google_ads", "PAUSED", 50),
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    await screen.findByText("Meta ativa");
+    const groups = screen.getAllByRole("group", { name: "Filtrar campanhas por status" });
+    const metaGroup = groups[0]!;
+    const googleGroup = groups[1]!;
+    const metaTable = metaGroup.parentElement!.querySelector("table")!;
+    const googleTable = googleGroup.parentElement!.querySelector("table")!;
+
+    expect(metaTable.tBodies[0]?.rows).toHaveLength(3);
+    expect(googleTable.tBodies[0]?.rows).toHaveLength(2);
+
+    await user.click(within(metaGroup).getByRole("button", { name: "Ativas" }));
+    expect(metaTable.tBodies[0]?.rows).toHaveLength(1);
+    expect(within(metaTable).getByText("Meta ativa")).toBeInTheDocument();
+    expect(within(metaTable).getByText("Total").closest("tr")).toHaveTextContent("R$ 10,00");
+    expect(googleTable.tBodies[0]?.rows).toHaveLength(2);
+
+    await user.click(within(metaGroup).getByRole("button", { name: "Pausadas" }));
+    expect(metaTable.tBodies[0]?.rows).toHaveLength(1);
+    expect(within(metaTable).getByText("Meta pausada")).toBeInTheDocument();
+    expect(within(metaTable).getByText("Total").closest("tr")).toHaveTextContent("R$ 30,00");
+
+    await user.click(within(googleGroup).getByRole("button", { name: "Pausadas" }));
+    expect(googleTable.tBodies[0]?.rows).toHaveLength(1);
+    expect(within(googleTable).getByText("Google pausada")).toBeInTheDocument();
+    expect(within(googleTable).getByText("Total").closest("tr")).toHaveTextContent("R$ 50,00");
+    expect(localStorage.getItem("traffic-campaign-status-filter:meta_ads")).toBe("paused");
+    expect(localStorage.getItem("traffic-campaign-status-filter:google_ads")).toBe("paused");
+  });
+
+  it("não deixa a restauração atrasada do filtro salvo desfazer o clique atual", async () => {
+    localStorage.setItem("traffic-campaign-status-filter:meta_ads", "all");
+    const pending: Array<() => void> = [];
+    let captureStatusRestore = false;
+    const nativeGetItem = Storage.prototype.getItem;
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key: string) {
+      const value = nativeGetItem.call(this, key);
+      if (key === "traffic-campaign-status-filter:meta_ads") captureStatusRestore = true;
+      return value;
+    });
+    const nativeSetTimeout = window.setTimeout.bind(window);
+    const timeout = vi.spyOn(window, "setTimeout").mockImplementation(((
+      handler: TimerHandler,
+      delay?: number,
+      ...args: unknown[]
+    ) => {
+      if (captureStatusRestore && delay === 0 && typeof handler === "function") {
+        captureStatusRestore = false;
+        pending.push(() => handler(...args));
+        return 99;
+      }
+      return nativeSetTimeout(handler, delay, ...args);
+    }) as unknown as typeof window.setTimeout);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json(
+        baseResponse([
+          campaignWithStatus("Meta ativa", "ACTIVE", 10),
+          campaignWithStatus("Meta pausada", "PAUSED", 30),
+        ], ["spend"]),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    await screen.findByText("Meta ativa");
+    getItem.mockRestore();
+    timeout.mockRestore();
+    await user.click(screen.getByRole("button", { name: "Pausadas" }));
+    expect(screen.queryByText("Meta ativa")).not.toBeInTheDocument();
+    expect(screen.getByText("Meta pausada")).toBeInTheDocument();
+
+    await act(async () => {
+      for (const run of pending) run();
+    });
+
+    expect(screen.queryByText("Meta ativa")).not.toBeInTheDocument();
+    expect(screen.getByText("Meta pausada")).toBeInTheDocument();
+  });
+
   const baseResponse = (campaigns: unknown[], columns = ["spend", "leads", "impressions"]) => ({
     data: {
       model: "leads", organization_key: "org-1", viewer_key: "viewer-1",
@@ -448,12 +578,67 @@ describe("colunas da tabela de campanhas", () => {
       }],
     },
   });
+  const campaignWithStatus = (name: string, campaign_status: string | null, spend: number) => ({
+    ...metrics,
+    name,
+    platform: "meta_ads",
+    campaign_status,
+    spend,
+    adsets: [],
+  });
   const headerNames = (table: HTMLTableElement) =>
     Array.from(table.tHead?.rows[0]?.cells ?? []).map((cell) =>
       (cell.textContent ?? "").replace(/[▼▲]/g, "").trim(),
     );
   const columnIndex = (table: HTMLTableElement, header: string) =>
     headerNames(table).findIndex((name) => name.includes(header));
+
+  it("campanhas com o MESMO nome ordenam certo e não se repetem (print do dono, 21/09/2026)", async () => {
+    const mesmoNome = (id: string, spend: number) => ({
+      ...metrics, id: `meta_ads:${id}`, spend, name: "Nova campanha de Leads",
+      platform: "meta_ads", campaign_status: "ACTIVE", adsets: [],
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse([mesmoNome("1", 599.65), mesmoNome("2", 499.86), mesmoNome("3", 199.06), mesmoNome("4", 21.27)], ["spend"]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findAllByText("Nova campanha de Leads"))[0]!.closest("table") as HTMLTableElement;
+    const gastos = () =>
+      Array.from(table.tBodies[0]?.rows ?? []).map((row) => (row.cells[row.cells.length - 1]?.textContent ?? "").replace(/ /g, " "));
+
+    expect(gastos()).toEqual(["R$ 599,65", "R$ 499,86", "R$ 199,06", "R$ 21,27"]);
+    await user.click(within(table).getByRole("button", { name: /Ordenar por Valor gasto/i }));
+    expect(gastos()).toEqual(["R$ 21,27", "R$ 199,06", "R$ 499,86", "R$ 599,65"]);
+  });
+
+  it("todo cabeçalho de métrica ordena, não só o valor gasto (dono, 21/09/2026)", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [
+            { ...metrics, spend: 30, impressions: 10, ctr: 1, cpc: 3, link_clicks: 5, name: "Gasta mais", platform: "meta_ads", campaign_status: "ACTIVE", adsets: [] },
+            { ...metrics, spend: 10, impressions: 500, ctr: 5, cpc: 1, link_clicks: 50, name: "Gasta menos", platform: "meta_ads", campaign_status: "ACTIVE", adsets: [] },
+          ],
+          ["spend", "impressions", "ctr", "link_clicks", "cpc"],
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Gasta mais")).closest("table") as HTMLTableElement;
+    const primeira = () => table.tBodies[0]?.rows[0]?.textContent ?? "";
+
+    expect(primeira()).toContain("Gasta mais");
+    for (const coluna of ["Impressões", "CTR", "Cliques no link"]) {
+      await user.click(within(table).getByRole("button", { name: new RegExp(`Ordenar por ${coluna}`, "i") }));
+      expect(primeira(), coluna).toContain("Gasta menos");
+      await user.click(within(table).getByRole("button", { name: new RegExp(`Ordenar por ${coluna}`, "i") }));
+      expect(primeira(), `${coluna} ao contrário`).toContain("Gasta mais");
+    }
+  });
 
   it("cada valor fica sob o seu cabeçalho: nome, status e as métricas na ordem da predefinição", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
