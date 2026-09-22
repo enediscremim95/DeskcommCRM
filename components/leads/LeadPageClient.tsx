@@ -306,7 +306,10 @@ export function LeadPageClient({
                   {contact?.phone_number ? (
                     <a
                       className="inline-flex min-w-0 items-center gap-1 hover:text-text hover:underline"
-                      href={`tel:${contact.phone_number}`}
+                      href={`https://wa.me/${contact.phone_number.replace(/\D/g, "")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={t("Abrir no WhatsApp")}
                     >
                       <Phone size={12} aria-hidden />
                       <span className="truncate tabular-nums">{contact.phone_number}</span>
