@@ -36,7 +36,6 @@ import { CostSignal, CostThresholdControl, type CostThreshold } from "./CostThre
 import { PriorityMetricSelector } from "./PriorityMetricSelector";
 import {
   CreativePerformance,
-  MonthByMonth,
   TrafficTimeline,
 } from "./RichReportSections";
 
@@ -1970,7 +1969,6 @@ export function TrafficDashboard() {
               threshold={metaThreshold}
               idioma={idioma}
             />
-            <MonthByMonth group={group} crm={richCrm} model={report.model} idioma={idioma} />
           </section>
         );
       })}
