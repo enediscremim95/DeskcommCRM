@@ -18,6 +18,9 @@ import { DadosCompletosDoLead } from "@/components/leads/DadosCompletosDoLead";
 import { FollowupsDoLead } from "@/components/leads/FollowupsDoLead";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { stageAgeTooltip } from "@/lib/kanban/card-state";
 
 interface Props {
   open: boolean;
@@ -41,6 +44,15 @@ function formatBRL(cents: number | null, currency: string | null): string {
   } catch {
     return `R$ ${(cents / 100).toFixed(0)}`;
   }
+}
+
+function campaignOf(lead: Lead): string | null {
+  const metadata = lead.source_metadata ?? {};
+  for (const key of ["utm_campaign", "campaign_name", "campaign"]) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
 }
 
 /**
@@ -89,7 +101,8 @@ export function LeadDossier({
         data-refetch-divergencias={timeline.seguranca.divergencias}
       >
         <SheetHeader className="pb-3">
-          <SheetTitle className="text-base leading-6">{lead.title}</SheetTitle>
+          <SheetTitle className="text-base leading-6">{t("Resumo do lead")}</SheetTitle>
+          <p className="text-sm font-medium text-text">{lead.title}</p>
         </SheetHeader>
 
         {/* ① cabeçalho vivo */}
@@ -126,6 +139,38 @@ export function LeadDossier({
             {t("Editar campos")}
           </button>
         </div>
+
+        <dl className="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-2 border-b border-border py-3 text-xs">
+          {[
+            [t("Origem"), lead.source || t("Não informado")],
+            [t("Campanha"), campaignOf(lead) || t("Não informado")],
+            [t("Interações"), String(timeline.total)],
+            [
+              t("Última anotação"),
+              timeline.itens.find((item) => item.type === "note")?.reason || t("Não informado"),
+            ],
+            [t("Criado em"), stageAgeTooltip(lead.created_at) || t("Não informado")],
+            [t("Na etapa desde"), stageAgeTooltip(lead.stage_entered_at) || t("Não informado")],
+            [
+              t("Último contato"),
+              stageAgeTooltip(lead.conversa?.last_message_at ?? lead.last_activity_at) || t("Não informado"),
+            ],
+            [t("Previsão de fechamento"), stageAgeTooltip(lead.expected_close_date) || t("Não informado")],
+            ...(lead.status === "lost"
+              ? [[t("Motivo da perda"), lead.lost_reason || t("Não informado")]]
+              : []),
+            [t("Responsável"), owner.name || t("Não informado")],
+          ].map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-text-muted">{label}</dt>
+              <dd className="min-w-0 break-words text-right text-text">{value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <Button asChild className="my-3 min-h-11 w-full">
+          <Link href={`/app/leads/${lead.id}`}>{t("Abrir lead")}</Link>
+        </Button>
 
         {/* O score NÃO aparece na timeline: recálculo é telemetria e não emite
             atividade (silêncio para telemetria, pulso para mudança de estado).

@@ -36,6 +36,9 @@ import { FollowupsDoLead } from "./FollowupsDoLead";
 import { DeleteLeadDialog } from "./DeleteLeadDialog";
 import { StageSelector } from "./StageSelector";
 import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
+import { LeadQualification } from "./LeadQualification";
+import { ProximasTarefasDoLead } from "./ProximasTarefasDoLead";
+import { stageAgeTooltip } from "@/lib/kanban/card-state";
 
 interface ContactSummary {
   id: string;
@@ -96,6 +99,7 @@ export function LeadPageClient({
   const [loseOpen, setLoseOpen] = useState(false);
   const [etapaPerdida, setEtapaPerdida] = useState<Stage | null>(null);
   const [movendoEtapa, setMovendoEtapa] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const rollbackPerda = useRef<Lead | null>(null);
   const supportReadonly = user.support?.access_mode === "support_readonly";
   const podeEditar = Boolean(
@@ -222,6 +226,20 @@ export function LeadPageClient({
     }
   };
 
+  const retomarNegociacao = async () => {
+    if (!podeEditar || reopening || leadAtual.status !== "lost") return;
+    setReopening(true);
+    try {
+      const result = await apiClient.post<{ data: Lead }>(`/api/v1/leads/${leadAtual.id}/reopen`, {});
+      setLeadAtual(result.data);
+      router.refresh();
+    } catch (error) {
+      showApiError(error);
+    } finally {
+      setReopening(false);
+    }
+  };
+
   return (
     <OpenConversationProvider conversationId={conversationId}>
       <div
@@ -276,6 +294,19 @@ export function LeadPageClient({
                     ? t("Perdido")
                     : nomeDaEtapa}
               </Badge>
+              <LeadQualification lead={leadAtual} canEdit={podeEditar} onUpdated={setLeadAtual} />
+              {leadAtual.status === "lost" && podeEditar ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="min-h-11 sm:min-h-8"
+                  disabled={reopening}
+                  onClick={() => void retomarNegociacao()}
+                >
+                  {t("Retomar negociação")}
+                </Button>
+              ) : null}
             </div>
 
             <StageSelector
@@ -289,6 +320,12 @@ export function LeadPageClient({
               {diasNaEtapa === 1
                 ? `${t("há")} 1 ${t("dia nesta etapa")}`
                 : `${t("há")} ${diasNaEtapa} ${t("dias nesta etapa")}`}
+            </p>
+            <p className="mt-0.5 text-[11px] text-text-muted tabular-nums">
+              {t("Na etapa desde")}: {stageAgeTooltip(leadAtual.stage_entered_at) ?? t("Não informado")}
+            </p>
+            <p className="mt-0.5 text-[11px] text-text-muted tabular-nums">
+              {t("Criado em")}: {stageAgeTooltip(leadAtual.created_at) ?? t("Não informado")}
             </p>
 
             {/* A pessoa do outro lado: avatar com iniciais, nome, e os dois
@@ -331,6 +368,11 @@ export function LeadPageClient({
           </header>
 
           <div className="space-y-6 p-4">
+            <ProximasTarefasDoLead
+              leadId={leadAtual.id}
+              contactId={leadAtual.contact_id}
+              canEdit={podeEditar}
+            />
             <DadosCompletosDoLead
               lead={leadAtual}
               pipelineName={pipelineName}

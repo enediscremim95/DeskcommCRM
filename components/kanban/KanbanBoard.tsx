@@ -15,6 +15,8 @@ import { midpoint } from "@/lib/kanban/fractional-indexing";
 import type { Lead } from "@/lib/types/leads";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
+import { LeadDossier } from "./LeadDossier";
+import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 
 interface KanbanBoardProps {
   pipelineId: string;
@@ -125,6 +127,7 @@ export function KanbanBoard({
     if (leadInicial) router.replace(`/app/leads/${leadInicial}`);
   }, [leadInicial, router]);
   const [internalSelected, setInternalSelected] = useState<Set<string>>(new Set());
+  const [summaryLeadId, setSummaryLeadId] = useState<string | null>(null);
   const selectedLeadIds = useMemo(
     () => (selectedIds ? new Set(selectedIds) : internalSelected),
     [selectedIds, internalSelected],
@@ -236,7 +239,13 @@ export function KanbanBoard({
     );
   }
 
+  const summaryLead = data.leads.find((lead) => lead.id === summaryLeadId) ?? null;
+  const summaryStage = summaryLead
+    ? data.stages.find((stage) => stage.id === summaryLead.stage_id)
+    : null;
+
   return (
+    <>
     <DragDropContext onDragEnd={handleDragEnd}>
       <div className="flex min-h-[480px] flex-1 gap-3 overflow-x-auto p-4">
         {data.stages.map((stage) => (
@@ -254,9 +263,25 @@ export function KanbanBoard({
             selectedLeadIds={selectedLeadIds}
             onSelectMany={handleSelectMany}
             onOpen={(leadId) => router.push(`/app/leads/${leadId}`)}
+            onSummary={setSummaryLeadId}
           />
         ))}
       </div>
     </DragDropContext>
+    {summaryLead && (
+      <LeadDossier
+        open
+        onOpenChange={(open) => {
+          if (!open) setSummaryLeadId(null);
+        }}
+        lead={summaryLead}
+        pipelineId={pipelineId}
+        pipelineName={data.pipeline.name}
+        fieldDefs={camposDoFunil(data.pipeline.settings ?? null)}
+        stageName={summaryStage?.name ?? t("Não informado")}
+        ownerNames={ownerNames}
+      />
+    )}
+    </>
   );
 }

@@ -16,6 +16,9 @@ import { ReactivationSlot } from "./ReactivationSlot";
 import { ConversaSlot } from "./ConversaSlot";
 import { ScoreSlot } from "./ScoreSlot";
 import { OwnerBadge } from "./OwnerBadge";
+import { Badge } from "@/components/ui/badge";
+import { LeadQualification } from "@/components/leads/LeadQualification";
+import { Info } from "@/lib/ui/icons";
 
 /** Os dois gestos de seleção que o card sabe relatar. */
 export type GestoDeSelecao = "alterna" | "intervalo";
@@ -49,6 +52,7 @@ interface KanbanCardProps {
   onSelect?: (leadId: string, gesto: GestoDeSelecao) => void;
   /** Abrir a tela do lead. Separado de `onSelect`: são gestos e intenções diferentes. */
   onOpen?: (leadId: string) => void;
+  onSummary?: (leadId: string) => void;
 }
 
 function formatBRL(cents: number | null, currency: string | null): string | null {
@@ -98,6 +102,7 @@ export function KanbanCard({
   pulseCount = 0,
   onSelect,
   onOpen,
+  onSummary,
 }: KanbanCardProps) {
   const t = useT();
   const value = formatBRL(card.valueCents, card.currency);
@@ -256,6 +261,17 @@ export function KanbanCard({
                 {age}
               </span>
             )}
+            <button
+              type="button"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-surface-elevated hover:text-text sm:h-7 sm:w-7"
+              aria-label={t("Resumo do lead")}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSummary?.(lead.id);
+              }}
+            >
+              <Info size={16} aria-hidden />
+            </button>
             <KanbanCardActions lead={lead} pipelineId={pipelineId} />
           </div>
 
@@ -286,6 +302,26 @@ export function KanbanCard({
               {card.title}
             </button>
           </h3>
+
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <Badge
+              variant={
+                lead.status === "lost"
+                  ? "destructive"
+                  : lead.status === "won"
+                    ? "success"
+                    : "default"
+              }
+              className="px-1.5 py-0 text-[10px]"
+            >
+              {lead.status === "lost"
+                ? t("Perdida")
+                : lead.status === "won"
+                  ? t("Ganha")
+                  : t("Em andamento")}
+            </Badge>
+            <LeadQualification lead={lead} canEdit={canMove} compact />
+          </div>
 
           {/* ③ valor · sinal — só existe quando há algo a mostrar. */}
           {(value || temSinalNaLinha3) && (

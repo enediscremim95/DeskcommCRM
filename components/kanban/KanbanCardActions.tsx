@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { DeleteLeadDialog } from "@/components/leads/DeleteLeadDialog";
-import { DotsThree, PencilSimple, Trash, Users } from "@/lib/ui/icons";
+import { DotsThree, PencilSimple, Plus, Trash, Users } from "@/lib/ui/icons";
 import { useWinLead, useEditLead } from "@/hooks/kanban/useUpdateLead";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAssignableAgents } from "@/hooks/kanban/useAssignableAgents";
@@ -21,6 +21,10 @@ import { usePermission } from "@/hooks/auth/AuthProvider";
 import { LoseLeadDialog } from "./LoseLeadDialog";
 import { EditLeadDialog } from "./EditLeadDialog";
 import type { Lead } from "@/lib/types/leads";
+import { FormularioDeTarefa } from "@/app/app/tasks/_components/FormularioDeTarefa";
+import { apiClient } from "@/lib/api/client";
+import { useQueryClient } from "@tanstack/react-query";
+import type { NovaTarefa } from "@/lib/tarefas/tipos";
 
 interface KanbanCardActionsProps {
   lead: Lead;
@@ -32,6 +36,8 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
   const [loseOpen, setLoseOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [taskOpen, setTaskOpen] = useState(false);
+  const queryClient = useQueryClient();
   const winMutation = useWinLead(pipelineId);
   const editMutation = useEditLead(pipelineId);
   // spec 13 §4: escrita no funil é agent+ — viewer não reatribui (a rota
@@ -59,6 +65,12 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
       leadId: lead.id,
       patch: lead.owner_agent_id ? { owner_agent_id: null } : { owner_user_id: null },
     });
+  };
+
+  const createTask = async (input: NovaTarefa) => {
+    const response = await apiClient.post("/api/v1/tasks", input);
+    await queryClient.invalidateQueries({ queryKey: ["crm_tasks"] });
+    return response;
   };
 
   return (
@@ -141,6 +153,11 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
           >
             {t("Marcar como perdido")}
           </DropdownMenuItem>
+          {canAssign && (
+            <DropdownMenuItem onSelect={() => setTaskOpen(true)}>
+              <Plus size={14} className="mr-2" /> {t("Criar tarefa")}
+            </DropdownMenuItem>
+          )}
           {canDelete && (
             <>
               <DropdownMenuSeparator />
@@ -173,6 +190,15 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
         pipelineId={pipelineId}
         leadIds={[lead.id]}
         leadTitle={lead.title}
+      />
+      <FormularioDeTarefa
+        key={taskOpen ? `new-${lead.id}` : `closed-${lead.id}`}
+        aberto={taskOpen}
+        aoMudarAbertura={setTaskOpen}
+        aoSalvar={createTask}
+        leadId={lead.id}
+        contactId={lead.contact_id}
+        tituloDaCriacao={t("Nova tarefa")}
       />
     </>
   );
