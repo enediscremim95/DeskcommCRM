@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { renderTrafficSummaryPdf } from "./traffic-summary-pdf";
 
 describe("PDF do relatório enriquecido", () => {
-  it("renderiza variações, destaques, situação dos leads e leitura do funil sem nota explicativa", async () => {
+  it("renderiza variações, pontos de melhoria e o que está rodando, sem nota explicativa", async () => {
     const buffer = await renderTrafficSummaryPdf({
       brand: {
         nome: "Marca Exemplo",
@@ -76,16 +76,12 @@ describe("PDF do relatório enriquecido", () => {
     const text = pages.join(" ");
 
     expect(text).toContain("+20% vs. período anterior");
-    expect(text).toContain("MAIS LEADS");
-    expect(text).toContain("MENOR CUSTO POR LEAD");
-    expect(text).toContain("MELHOR CONVERSÃO");
-    expect(text).toContain("Captação principal");
-    expect(text).toContain("R$ 75,00");
-    expect(text).toContain("12,5%");
-    expect(text).toContain("Destaques do período");
-    expect(text).toContain("Situação dos leads");
-    expect(text).toContain("Sem orçamento: 10");
-    expect(text).toContain("Leitura do funil");
+    // Enxugado a pedido do dono (21/09/2026): sem campeãs, destaques, situação e leitura.
+    for (const removido of ["MAIS LEADS", "Destaques do período", "Situação dos leads", "Leitura do funil", "resumido de desempenho"]) {
+      expect(text).not.toContain(removido);
+    }
+    expect(text).toContain("Pontos de melhoria");
+    expect(text).toContain("Conversão de clique em lead está em 2,3%");
     expect(text).toContain("O que está rodando");
     expect(text.toLocaleLowerCase("pt-BR")).not.toContain("metodologia");
     expect(text.toLocaleLowerCase("pt-BR")).not.toContain("nota explicativa");
