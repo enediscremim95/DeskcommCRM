@@ -457,7 +457,9 @@ export function CreativePerformance({
               ? percent((bestRate.conversions / bestRate.clicks) * 100, idioma)
               : t("Sem dados suficientes"),
           ],
-        ].map(([label, creative, value]) => (
+        ]
+          .filter(([, creative]) => creative && typeof creative === "object")
+          .map(([label, creative, value]) => (
           <div key={String(label)} className="rounded-xl border p-4">
             <p className="text-sm text-muted-foreground">{label as string}</p>
             <p className="mt-1 font-semibold">

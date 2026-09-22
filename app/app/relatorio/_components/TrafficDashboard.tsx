@@ -24,8 +24,6 @@ import { buildTrafficFunnelStages, ConversionFunnel, type FunnelStage } from "./
 import { CostSignal, CostThresholdControl, type CostThreshold } from "./CostThresholds";
 import {
   CreativePerformance,
-  CrmInsights,
-  FunnelAndSituation,
   MonthByMonth,
   PlatformComparison,
   TrafficTimeline,
@@ -1222,9 +1220,6 @@ export function TrafficDashboard() {
           conversions: conversionLabel,
         };
         const trafficStages = buildTrafficFunnelStages(group.summary, report.model, idioma);
-        const previousTrafficStages = group.comparison
-          ? buildTrafficFunnelStages(group.comparison, report.model, idioma)
-          : [];
         const lastTrafficValue = trafficStages.at(-1)?.value ?? 0;
         const funnelStages: FunnelStage[] = [
           ...trafficStages,
@@ -1260,47 +1255,6 @@ export function TrafficDashboard() {
             costLabel: localText(idioma, "por venda", "por venta"),
           },
         ];
-        const previousFunnelStages: FunnelStage[] = previousRichCrm
-          ? [
-              ...previousTrafficStages,
-              {
-                key: "crm-entered",
-                label: localText(idioma, "Entraram no CRM", "Ingresaron al CRM"),
-                value: previousRichCrm.leads_entered,
-                rate: null,
-                cost: null,
-                asSource: "",
-                asTarget: "",
-                costLabel: "",
-              },
-              {
-                key: "crm-service",
-                label: localText(idioma, "Em atendimento", "En atención"),
-                value: previousRichCrm.in_service,
-                rate:
-                  previousRichCrm.leads_entered > 0
-                    ? (previousRichCrm.in_service / previousRichCrm.leads_entered) * 100
-                    : null,
-                cost: null,
-                asSource: "",
-                asTarget: "",
-                costLabel: "",
-              },
-              {
-                key: "crm-won",
-                label: localText(idioma, "Vendas fechadas", "Ventas cerradas"),
-                value: previousRichCrm.closed_won,
-                rate:
-                  previousRichCrm.in_service > 0
-                    ? (previousRichCrm.closed_won / previousRichCrm.in_service) * 100
-                    : null,
-                cost: null,
-                asSource: "",
-                asTarget: "",
-                costLabel: "",
-              },
-            ]
-          : [];
         const costPerClosed =
           richCrm.closed_won > 0 ? group.summary.spend / richCrm.closed_won : null;
         const spendTrend = group.daily.map((day) => day.spend_meta + day.spend_google);
@@ -1498,13 +1452,6 @@ export function TrafficDashboard() {
                   emphasis: true,
                 },
               ]}
-            />
-
-            <FunnelAndSituation
-              stages={funnelStages}
-              previousStages={previousFunnelStages}
-              crm={richCrm}
-              idioma={idioma}
             />
 
             <TrafficTimeline daily={group.daily} currency={group.currency} idioma={idioma} />
@@ -1771,7 +1718,6 @@ export function TrafficDashboard() {
               threshold={metaThreshold}
               idioma={idioma}
             />
-            <CrmInsights crm={richCrm} currency={group.currency} idioma={idioma} />
             <MonthByMonth group={group} crm={richCrm} model={report.model} idioma={idioma} />
           </section>
         );
