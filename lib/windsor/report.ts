@@ -493,6 +493,9 @@ export function buildTrafficReport(args: {
           .filter((campaign) => hasDelivery(campaign.total))
           .sort((a, b) => b.total.spend - a.total.spend)
           .map((campaign) => ({
+            // Identificador único: várias campanhas podem ter o MESMO nome
+            // ("Nova campanha de Leads"), e a tela precisa distinguir as linhas.
+            id: campaignReportKey(campaign.platform, campaign.id, campaign.name),
             name: campaign.name,
             platform: campaign.platform,
             campaign_status: campaign.campaign_status,

@@ -593,6 +593,27 @@ describe("colunas da tabela de campanhas", () => {
   const columnIndex = (table: HTMLTableElement, header: string) =>
     headerNames(table).findIndex((name) => name.includes(header));
 
+  it("campanhas com o MESMO nome ordenam certo e não se repetem (print do dono, 21/09/2026)", async () => {
+    const mesmoNome = (id: string, spend: number) => ({
+      ...metrics, id: `meta_ads:${id}`, spend, name: "Nova campanha de Leads",
+      platform: "meta_ads", campaign_status: "ACTIVE", adsets: [],
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse([mesmoNome("1", 599.65), mesmoNome("2", 499.86), mesmoNome("3", 199.06), mesmoNome("4", 21.27)], ["spend"]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findAllByText("Nova campanha de Leads"))[0]!.closest("table") as HTMLTableElement;
+    const gastos = () =>
+      Array.from(table.tBodies[0]?.rows ?? []).map((row) => (row.cells[row.cells.length - 1]?.textContent ?? "").replace(/ /g, " "));
+
+    expect(gastos()).toEqual(["R$ 599,65", "R$ 499,86", "R$ 199,06", "R$ 21,27"]);
+    await user.click(within(table).getByRole("button", { name: /Ordenar por Valor gasto/i }));
+    expect(gastos()).toEqual(["R$ 21,27", "R$ 199,06", "R$ 499,86", "R$ 599,65"]);
+  });
+
   it("todo cabeçalho de métrica ordena, não só o valor gasto (dono, 21/09/2026)", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json(
