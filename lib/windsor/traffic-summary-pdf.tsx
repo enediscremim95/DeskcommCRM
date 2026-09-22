@@ -1010,14 +1010,36 @@ export function TrafficSummaryPdf({
                 {group.currency ?? text(language, "Dados do CRM", "Datos del CRM")}
               </Text>
               <View style={styles.metrics}>
-                {priorityCards.map((metric) => (
-                  <Metric
-                    key={metric.key}
-                    label={metric.label}
-                    value={metric.value}
-                    comparison={metric.comparison}
-                  />
-                ))}
+                {priorityCards.map((metric) =>
+                  // No PDF, "Leads" e "Custo por lead" continuam contando quem ENTROU no
+                  // CRM (decisão do dono, 21/09/2026), e não o lead que a plataforma conta.
+                  metric.key === "leads" ? (
+                    <Metric
+                      key={metric.key}
+                      label={metric.label}
+                      value={formatNumber(group.leads, language)}
+                      comparison={formatVariation(group.leads, group.previous.leads, language)}
+                    />
+                  ) : metric.key === "cost_per_lead" ? (
+                    <Metric
+                      key={metric.key}
+                      label={metric.label}
+                      value={formatMoney(group.costPerLead, group.currency, language)}
+                      comparison={formatVariation(
+                        group.costPerLead,
+                        group.previous.costPerLead,
+                        language,
+                      )}
+                    />
+                  ) : (
+                    <Metric
+                      key={metric.key}
+                      label={metric.label}
+                      value={metric.value}
+                      comparison={metric.comparison}
+                    />
+                  ),
+                )}
               </View>
               {/* A linha de caixinhas do funil saiu: repetia o desenho logo abaixo
                   (pedido do dono, 21/09/2026). */}
