@@ -74,6 +74,8 @@ interface Metrics {
   messaging_conversations_available: boolean;
 }
 interface Campaign extends Metrics {
+  /** Chave única da campanha (plataforma + id); nomes se repetem entre campanhas. */
+  id?: string;
   name: string;
   platform: "meta_ads" | "google_ads";
   campaign_status: string | null;
@@ -694,11 +696,11 @@ function AdsetDrill({
         </span>
       </summary>
       <ul className="space-y-2 pb-3 sm:pl-3">
-        {adset.ads.map((ad) => {
+        {adset.ads.map((ad, adIndex) => {
           const adCost = costPerResult(ad);
           return (
             <li
-              key={ad.name}
+              key={`${ad.name}-${adIndex}`}
               className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-card px-3 py-2"
             >
               <AdThumbnail ad={ad} label={t("Ver anúncio")} />
@@ -913,7 +915,7 @@ function CampaignTable({
           </thead>
           <tbody className="divide-y">
             {visibleCampaigns.map((campaign) => {
-              const key = `${campaign.platform}:${campaign.name}`;
+              const key = campaign.id ?? `${campaign.platform}:${campaign.name}`;
               const status = campaignStatus(campaign.campaign_status);
               const description = campaignDescription(campaign.name);
               const isOpen = isMeta && expanded.has(key);
@@ -968,9 +970,9 @@ function CampaignTable({
                   {isOpen && (
                     <tr>
                       <td colSpan={columnCount} className="bg-muted/15 px-2 py-2 sm:px-4">
-                        {campaign.adsets.map((adset) => (
+                        {campaign.adsets.map((adset, adsetIndex) => (
                           <AdsetDrill
-                            key={adset.name}
+                            key={`${adset.name}-${adsetIndex}`}
                             adset={adset}
                             currency={currency}
                             conversionsLabel={labels.conversions}
