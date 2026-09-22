@@ -593,6 +593,32 @@ describe("colunas da tabela de campanhas", () => {
   const columnIndex = (table: HTMLTableElement, header: string) =>
     headerNames(table).findIndex((name) => name.includes(header));
 
+  it("todo cabeçalho de métrica ordena, não só o valor gasto (dono, 21/09/2026)", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [
+            { ...metrics, spend: 30, impressions: 10, ctr: 1, cpc: 3, link_clicks: 5, name: "Gasta mais", platform: "meta_ads", campaign_status: "ACTIVE", adsets: [] },
+            { ...metrics, spend: 10, impressions: 500, ctr: 5, cpc: 1, link_clicks: 50, name: "Gasta menos", platform: "meta_ads", campaign_status: "ACTIVE", adsets: [] },
+          ],
+          ["spend", "impressions", "ctr", "link_clicks", "cpc"],
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Gasta mais")).closest("table") as HTMLTableElement;
+    const primeira = () => table.tBodies[0]?.rows[0]?.textContent ?? "";
+
+    expect(primeira()).toContain("Gasta mais");
+    for (const coluna of ["Impressões", "CTR", "Cliques no link"]) {
+      await user.click(within(table).getByRole("button", { name: new RegExp(`Ordenar por ${coluna}`, "i") }));
+      expect(primeira(), coluna).toContain("Gasta menos");
+      await user.click(within(table).getByRole("button", { name: new RegExp(`Ordenar por ${coluna}`, "i") }));
+      expect(primeira(), `${coluna} ao contrário`).toContain("Gasta mais");
+    }
+  });
+
   it("cada valor fica sob o seu cabeçalho: nome, status e as métricas na ordem da predefinição", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json(
