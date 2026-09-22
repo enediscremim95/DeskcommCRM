@@ -20,6 +20,8 @@ export interface CardInput {
   stageName: string;
   /** Horas paradas no estágio (board calcula; null = sem sinal). */
   hoursInStage: number | null;
+  /** `crm_leads.stage_entered_at` (ISO), para mostrar a data/hora exata ao passar o mouse. */
+  stageEnteredAt?: string | null;
   /**
    * Esfriou pela janela DO ESTÁGIO. Quem classifica é o board, via
    * `resolveStageWindow` (lib/leads/risk-radar.ts) — o card não classifica nada:
@@ -108,6 +110,7 @@ export function buildCardInput(
     owner: resolveLeadOwner(lead, opts.ownerNames),
     stageName: opts.stageName,
     hoursInStage,
+    stageEnteredAt: reference ?? null,
     isCooling: opts.coolingIds?.has(lead.id) ?? false,
     // Proposta viva do negócio, se houver. `undefined` e não `null` porque a
     // ausência aqui é "não há proposta", não "há uma proposta vazia".
@@ -255,6 +258,20 @@ export function coolingLabel(
   if (hours >= 48) return `${t("Sem resposta há")} ${Math.floor(hours / 24)} ${t("dias")}`;
   if (hours >= 1) return `${t("Sem resposta há")} ${hours}h`;
   return t("Sem resposta");
+}
+
+/** "22/09/2026 08:00": quando o lead entrou na etapa, em horário de Brasília. */
+export function stageAgeTooltip(stageEnteredAt: string | null): string {
+  if (!stageEnteredAt) return "";
+  const date = new Date(stageEnteredAt);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
+  })
+    .format(date)
+    .replace(",", "");
 }
 
 /** "3d" / "5h" / "agora" — o tempo parado no estágio, no rodapé do card. */

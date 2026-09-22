@@ -6,7 +6,27 @@
  */
 import { describe, it, expect } from "vitest";
 
-import { resolveCardState, coolingLabel, stageAgeLabel, type CardInput } from "./card-state";
+import {
+  resolveCardState,
+  coolingLabel,
+  stageAgeLabel,
+  stageAgeTooltip,
+  type CardInput,
+} from "./card-state";
+
+describe("stageAgeTooltip: data/hora exata ao passar o mouse no '21h'", () => {
+  it("sem data não mostra nada", () => {
+    expect(stageAgeTooltip(null)).toBe("");
+  });
+  it("mostra dia e hora de Brasília", () => {
+    expect(stageAgeTooltip("2026-09-22T11:00:00Z").replace(/ /g, " ")).toBe(
+      "22/09/2026 08:00",
+    );
+  });
+  it("data inválida não quebra o card", () => {
+    expect(stageAgeTooltip("não é data")).toBe("");
+  });
+});
 
 const base: CardInput = {
   id: "l-1",

@@ -4,7 +4,12 @@ import type { MouseEvent } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
-import { resolveCardState, stageAgeLabel, type CardInput } from "@/lib/kanban/card-state";
+import {
+  resolveCardState,
+  stageAgeLabel,
+  stageAgeTooltip,
+  type CardInput,
+} from "@/lib/kanban/card-state";
 import { KanbanCardActions } from "./KanbanCardActions";
 import { NextActionSlot } from "./NextActionSlot";
 import { ReactivationSlot } from "./ReactivationSlot";
@@ -98,6 +103,7 @@ export function KanbanCard({
   const value = formatBRL(card.valueCents, card.currency);
   const state = resolveCardState(card, t);
   const age = stageAgeLabel(card.hoursInStage, t);
+  const ageTooltip = stageAgeTooltip(card.stageEnteredAt ?? null);
   const mostraIdade = state.showStageAge && age !== "";
   const temSinalNaLinha3 = state.slot.type === "meter" || state.slot.type === "cooling";
 
@@ -243,7 +249,9 @@ export function KanbanCard({
             {mostraIdade && (
               <span
                 className="shrink-0 whitespace-nowrap text-[11px] leading-4 tabular-nums text-text-subtle"
-                title={`${t("Última atividade")}: ${age}`}
+                title={
+                  ageTooltip ? `${t("Nesta etapa desde")} ${ageTooltip}` : undefined
+                }
               >
                 {age}
               </span>
