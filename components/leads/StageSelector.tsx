@@ -4,12 +4,12 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { useT } from "@/hooks/i18n/useT";
 import type { Stage } from "@/lib/kanban/types";
 import { Check, CaretDown } from "@/lib/ui/icons";
@@ -79,8 +79,8 @@ export function StageSelector({
 
       <div className="md:hidden">
         {canEdit ? (
-          <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
               <Button
                 type="button"
                 variant="outline"
@@ -90,12 +90,12 @@ export function StageSelector({
                 <span>{t("Etapa")}: {current?.name ?? t("Não informada")}</span>
                 <CaretDown size={16} aria-hidden className="shrink-0" />
               </Button>
-            </SheetTrigger>
-            <SheetContent side="bottom" className="max-h-[80dvh] overflow-y-auto rounded-t-2xl">
-              <SheetHeader>
-                <SheetTitle>{t("Escolher etapa")}</SheetTitle>
-              </SheetHeader>
-              <div className="mt-4 grid gap-2">
+            </DialogTrigger>
+            <DialogContent className="max-h-[80dvh] w-[calc(100%-2rem)] max-w-sm overflow-y-auto rounded-2xl p-5">
+              <DialogHeader>
+                <DialogTitle>{t("Escolher etapa")}</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-2">
                 {ordered.map((stage) => {
                   const active = stage.id === stageId;
                   return (
@@ -118,8 +118,8 @@ export function StageSelector({
                   );
                 })}
               </div>
-            </SheetContent>
-          </Sheet>
+            </DialogContent>
+          </Dialog>
         ) : (
           <div className="flex min-h-11 w-full items-center rounded-md border border-border bg-surface px-3 text-sm text-text">
             {t("Etapa")}: {current?.name ?? t("Não informada")}
