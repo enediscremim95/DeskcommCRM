@@ -85,6 +85,7 @@ export type CreateLeadInput = z.infer<typeof createLeadSchema>;
  * Stage/pipeline transitions go through /move /win /lose endpoints.
  */
 export const updateLeadSchema = z.object({
+  qualification: z.number().int().min(1).max(5).nullable().optional(),
   title: z.string().min(2).max(200).optional(),
   description: z.string().max(2000).nullable().optional(),
   contact_id: z.string().uuid().nullable().optional(),

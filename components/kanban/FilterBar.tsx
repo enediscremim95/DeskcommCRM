@@ -32,10 +32,10 @@ interface FilterBarProps {
 }
 
 const STATUS_OPTIONS: Array<{ value: NonNullable<LeadFilters["status"]>; label: string }> = [
-  { value: "all", label: "Todos" },
-  { value: "open", label: "Abertos" },
-  { value: "won", label: "Ganhos" },
-  { value: "lost", label: "Perdidos" },
+  { value: "all", label: "Todas" },
+  { value: "open", label: "Em andamento" },
+  { value: "won", label: "Ganhas" },
+  { value: "lost", label: "Perdidas" },
 ];
 
 export function FilterBar({ filters, onChange, leads, extra }: FilterBarProps) {
@@ -101,11 +101,11 @@ export function FilterBar({ filters, onChange, leads, extra }: FilterBarProps) {
     filters.owner === "unassigned"
       ? t("Sem responsável")
       : !filters.owner || filters.owner === "any"
-        ? t("Todos")
+        ? t("Todas")
         : filteredAgentId
           ? (agents?.find((a) => a.agent_id === filteredAgentId)?.name ?? t("Agente"))
           : filters.owner === user.id
-            ? t("Eu")
+            ? t("Minhas negociações")
             : (members?.find((m) => m.user_id === filters.owner)?.full_name ??
               t("Responsável"));
 
@@ -128,20 +128,20 @@ export function FilterBar({ filters, onChange, leads, extra }: FilterBarProps) {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm">
-            {t("Responsável")}: {ownerLabel}
+            {t("Negociações")}: {ownerLabel}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuLabel>{t("Responsável")}</DropdownMenuLabel>
+          <DropdownMenuLabel>{t("Negociações")}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => onChange({ ...filters, owner: "any" })}>
-            {t("Todos")}
+            {t("Todas")}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onChange({ ...filters, owner: "unassigned" })}>
             {t("Sem responsável")}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onChange({ ...filters, owner: user.id })}>
-            {t("Eu")}
+            {t("Minhas negociações")}
           </DropdownMenuItem>
           {/*
             Humanos e agentes numa lista SÓ, ordenados juntos por nome. Não existe
@@ -173,7 +173,7 @@ export function FilterBar({ filters, onChange, leads, extra }: FilterBarProps) {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm">
-            {t("Status")}: {statusLabel}
+            {t("Situação")}: {statusLabel}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">

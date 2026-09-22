@@ -41,6 +41,8 @@ export interface Lead {
   title: string;
   description: string | null;
   status: LeadStatus;
+  /** Nota humana, separada do score calculado pela IA. */
+  qualification: number | null;
   lost_reason: string | null;
   position_in_stage: number;
   value_cents: number | null;

@@ -27,6 +27,30 @@ export interface LeadFilters {
   overdueOnly?: boolean;
 }
 
+export type BoardFilterPreference = Pick<LeadFilters, "owner" | "status">;
+
+export function parseBoardFilterPreference(raw: string | null): BoardFilterPreference | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Record<string, unknown>;
+    const owner = typeof value.owner === "string" ? value.owner : undefined;
+    const status =
+      value.status === "all" ||
+      value.status === "open" ||
+      value.status === "won" ||
+      value.status === "lost"
+        ? value.status
+        : undefined;
+    return { owner, status };
+  } catch {
+    return null;
+  }
+}
+
+export function serializeBoardFilterPreference(filters: LeadFilters): string {
+  return JSON.stringify({ owner: filters.owner, status: filters.status ?? "all" });
+}
+
 /**
  * Serializa/deserializa os filtros do board em query params (deep-linkável).
  * Só os controles expostos na FilterBar: owner, status, tag, busca, atrasados.

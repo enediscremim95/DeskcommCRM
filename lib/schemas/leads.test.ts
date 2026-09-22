@@ -1,8 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { moveLeadSchema, loseLeadSchema, bulkLeadActionSchema } from "./leads";
+import { moveLeadSchema, loseLeadSchema, bulkLeadActionSchema, updateLeadSchema } from "./leads";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
 const UUID2 = "22222222-2222-4222-8222-222222222222";
+
+describe("updateLeadSchema qualification", () => {
+  it("aceita estrelas de 1 a 5 e rejeita valores fora do intervalo", () => {
+    expect(updateLeadSchema.safeParse({ qualification: 1 }).success).toBe(true);
+    expect(updateLeadSchema.safeParse({ qualification: 5 }).success).toBe(true);
+    expect(updateLeadSchema.safeParse({ qualification: 0 }).success).toBe(false);
+    expect(updateLeadSchema.safeParse({ qualification: 6 }).success).toBe(false);
+  });
+});
 
 describe("moveLeadSchema", () => {
   it("accepts a valid move payload", () => {

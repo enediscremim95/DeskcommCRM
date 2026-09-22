@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/hooks/i18n/useT";
 import { useBoard } from "@/hooks/kanban/useBoard";
@@ -38,7 +38,13 @@ import { StagesSection } from "@/app/app/settings/tenant/pipelines/_stages";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { PencilSimple, Plus } from "@/lib/ui/icons";
 import type { LeadFilters } from "@/lib/kanban/filters";
-import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
+import {
+  applyFilters,
+  filtersFromParams,
+  filtersToParams,
+  parseBoardFilterPreference,
+  serializeBoardFilterPreference,
+} from "@/lib/kanban/filters";
 
 export function PipelinePageClient({
   pipelineId,
@@ -52,17 +58,28 @@ export function PipelinePageClient({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { activeOrg, user } = useAuth();
+  const preferenceKey = `crm:board-filters:${user.id}`;
   const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
   const setFilters = useCallback(
     (next: LeadFilters) => {
+      window.localStorage.setItem(preferenceKey, serializeBoardFilterPreference(next));
       const qs = filtersToParams(next);
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
-    [router, pathname],
+    [router, pathname, preferenceKey],
   );
+  useEffect(() => {
+    if (searchParams.has("owner") || searchParams.has("status")) return;
+    const saved = parseBoardFilterPreference(window.localStorage.getItem(preferenceKey));
+    if (!saved?.owner && !saved?.status) return;
+    const next = { ...filters, ...saved };
+    const qs = filtersToParams(next);
+    if (!qs) return;
+    router.replace(`${pathname}?${qs}`, { scroll: false });
+  }, [filters, pathname, preferenceKey, router, searchParams]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [newOpen, setNewOpen] = useState(false);
-  const { activeOrg, user } = useAuth();
   // Mesmo piso da tela "Etapas do funil" (minRole manager no catálogo): quem não
   // pode editar não vê o botão, em vez de cair numa tela que recusa.
   const podeEditarEtapas = Boolean(
