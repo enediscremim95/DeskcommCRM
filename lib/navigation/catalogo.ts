@@ -51,6 +51,11 @@ export interface NavMetadata {
    * abre pelo endereço). Esconder em vez de apagar: volta com uma linha.
    */
   oculto?: boolean;
+  /**
+   * Outros endereços que "moram" dentro deste item: o menu fica marcado neles
+   * também (ex.: Funis segue marcado dentro de um funil ou de um lead).
+   */
+  ativoTambemEm?: string[];
 }
 
 /**
@@ -186,6 +191,7 @@ export const NAV_CATALOG = [
     group: "crm",
     section: "O dia a dia da venda",
     sidebar: true,
+    ativoTambemEm: ["/app/pipelines", "/app/leads"],
   },
   {
     href: "/app/contacts",

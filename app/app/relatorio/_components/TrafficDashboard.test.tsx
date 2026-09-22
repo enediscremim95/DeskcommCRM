@@ -180,6 +180,50 @@ describe("colunas da tabela de campanhas", () => {
     });
   });
 
+  it("busca de métrica filtra a lista, sem ligar para acento", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            model: "leads",
+            organization_key: "org-1",
+            viewer_key: "user-1",
+            default_columns: ["spend", "leads"],
+            default_preset_id: "11111111-1111-4111-8111-111111111111",
+            column_presets: [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                name: "Captação",
+                columns: ["spend", "leads"],
+                is_default: true,
+              },
+            ],
+            can_manage_defaults: true,
+            sync: { status: "ready", last_succeeded_at: "2026-09-18T20:00:00Z", error: null },
+            crm: { leads_entered: 8, in_service: 5, closed_won: 3 },
+            currencies: [
+              {
+                currency: "BRL",
+                summary: metrics,
+                daily: [],
+                platforms: [{ ...metrics, platform: "meta_ads" }],
+                campaigns: [{ ...metrics, name: "Campanha A", platform: "meta_ads", adsets: [] }],
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    expect(await screen.findByText("Campanha A")).toBeInTheDocument();
+    await user.click(screen.getByText("Colunas (2)"));
+    await user.type(screen.getByRole("textbox", { name: "Buscar métrica" }), "VISUALIZA");
+    expect(screen.getByRole("button", { name: "+ Visualizações da página" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ Impressões" })).not.toBeInTheDocument();
+  });
+
   it("recarrega o funil quando o período muda", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       new Response(

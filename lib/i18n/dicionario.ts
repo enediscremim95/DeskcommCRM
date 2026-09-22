@@ -5655,6 +5655,7 @@ export const DICIONARIO: Traducoes = {
   "Visão geral": { es: "Visión general" },
   "Última atividade": { es: "Última actividad" },
   "Nesta etapa desde": { es: "En esta etapa desde" },
+  "Abrir no WhatsApp": { es: "Abrir en WhatsApp" },
   "Direito ao esquecimento (LGPD)": { es: "Derecho al olvido (LGPD)" },
   "A anonimização é irreversível. Use somente após confirmação formal do titular ou ordem judicial.": {
     es: "La anonimización es irreversible. Úsala solo después de confirmación formal del titular u orden judicial.",
@@ -8775,6 +8776,7 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma predefinição foi liberada. O padrão anterior continua em uso.": { es: "No hay predefiniciones disponibles. El valor anterior sigue en uso." },
   "Nome atualizado.": { es: "Nombre actualizado." },
   "Nome da nova predefinição": { es: "Nombre de la nueva predefinición" },
+  "Buscar métrica": { es: "Buscar métrica" },
   "Nome da predefinição": { es: "Nombre de la predefinición" },
   "Nova predefinição salva.": { es: "Nueva predefinición guardada." },
   "Padrão salvo para esta organização.": { es: "Valor predeterminado guardado para esta organización." },
