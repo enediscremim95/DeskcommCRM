@@ -41,6 +41,25 @@ export function campaignReportKey(
 ): string {
   return `${platform}:${campaignId ?? (campaignName || "Sem campanha")}`;
 }
+export interface CampaignStatusSnapshot {
+  status: string;
+  occurred_on: string;
+}
+export function latestCampaignStatuses(
+  facts: StoredFact[],
+): Map<string, CampaignStatusSnapshot> {
+  const statuses = new Map<string, CampaignStatusSnapshot>();
+  for (const fact of facts) {
+    const status = fact.campaign_status?.trim();
+    if (!status) continue;
+    const key = campaignReportKey(fact.platform, fact.campaign_id, fact.campaign_name);
+    const current = statuses.get(key);
+    if (!current || fact.occurred_on >= current.occurred_on) {
+      statuses.set(key, { status, occurred_on: fact.occurred_on });
+    }
+  }
+  return statuses;
+}
 interface Bucket {
   spend: number;
   conversions: number;
@@ -254,6 +273,7 @@ export function buildTrafficReport(args: {
   window?: { from: string; to: string };
   campaignReach?: ReadonlyMap<string, number>;
   accountReach?: ReadonlyMap<string, number>;
+  campaignStatuses?: ReadonlyMap<string, CampaignStatusSnapshot>;
 }) {
   // A consulta já filtra a janela no banco. Este segundo limite mantém o
   // agregador fiel ao contrato mesmo se uma fonte auxiliar entregar snapshot
@@ -380,12 +400,13 @@ export function buildTrafficReport(args: {
     const campaignKey = campaignReportKey(fact.platform, fact.campaign_id, fact.campaign_name);
     let campaign = group.campaigns.get(campaignKey);
     if (!campaign) {
+      const latestStatus = args.campaignStatuses?.get(campaignKey);
       campaign = {
         id: fact.campaign_id,
         name: fact.campaign_name || "Sem campanha",
         platform: fact.platform,
-        campaign_status: null,
-        status_occurred_on: null,
+        campaign_status: latestStatus?.status ?? null,
+        status_occurred_on: latestStatus?.occurred_on ?? null,
         total: empty(),
         adsets: new Map(),
       };
