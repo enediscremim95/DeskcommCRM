@@ -8776,6 +8776,7 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma predefinição foi liberada. O padrão anterior continua em uso.": { es: "No hay predefiniciones disponibles. El valor anterior sigue en uso." },
   "Nome atualizado.": { es: "Nombre actualizado." },
   "Nome da nova predefinição": { es: "Nombre de la nueva predefinición" },
+  "Buscar métrica": { es: "Buscar métrica" },
   "Nome da predefinição": { es: "Nombre de la predefinición" },
   "Nova predefinição salva.": { es: "Nueva predefinición guardada." },
   "Padrão salvo para esta organização.": { es: "Valor predeterminado guardado para esta organización." },

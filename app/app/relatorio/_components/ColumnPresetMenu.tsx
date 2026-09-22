@@ -31,6 +31,11 @@ interface PresetResponse {
   error?: { message?: string };
 }
 
+/** "Visualização" acha "visualizacao": busca sem acento e sem maiúscula. */
+function semAcento(texto: string) {
+  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
 export function reorderColumns(
   columns: CampaignMetricColumn[],
   from: number,
@@ -63,6 +68,7 @@ export function ColumnPresetMenu({
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [columns, setColumns] = useState(defaultColumns);
   const [busy, setBusy] = useState(false);
+  const [buscaMetrica, setBuscaMetrica] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -395,8 +401,19 @@ export function ColumnPresetMenu({
             <p className="mt-4 text-xs font-medium text-muted-foreground">
               {t("Adicionar métrica")}
             </p>
+            <Input
+              className="mt-2 h-8 text-xs"
+              aria-label={t("Buscar métrica")}
+              placeholder={t("Buscar métrica")}
+              value={buscaMetrica}
+              onChange={(event) => setBuscaMetrica(event.target.value)}
+            />
             <div className="mt-2 flex max-h-28 flex-wrap gap-2 overflow-y-auto">
-              {CAMPAIGN_METRIC_COLUMNS.filter((column) => !columns.includes(column)).map(
+              {CAMPAIGN_METRIC_COLUMNS.filter(
+                (column) =>
+                  !columns.includes(column) &&
+                  semAcento(columnLabel(column, idioma)).includes(semAcento(buscaMetrica.trim())),
+              ).map(
                 (column) => (
                   <button
                     key={column}
