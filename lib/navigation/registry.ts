@@ -92,6 +92,13 @@ const ICONS = {
 export interface NavDestination extends Omit<NavMetadata, "icon"> {
   icon: PhosphorIcon;
 }
+/** O item do menu está ativo neste endereço? (o próprio href ou um dos `ativoTambemEm`). */
+export function itemAtivo(item: Pick<NavMetadata, "href" | "ativoTambemEm">, pathname: string): boolean {
+  return [item.href, ...(item.ativoTambemEm ?? [])].some(
+    (base) => pathname === base || pathname.startsWith(`${base}/`),
+  );
+}
+
 export const NAV_DESTINATIONS: NavDestination[] = NAV_CATALOG.map((d) => ({
   ...d,
   icon: ICONS[d.icon],
