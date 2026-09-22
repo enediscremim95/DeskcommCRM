@@ -14,7 +14,7 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { signInviteToken, INVITE_TTL_SECONDS } from "@/lib/auth/invite-token";
-import { buildInviteEmail } from "@/lib/email/templates/invite";
+import { buildInviteLinkEmail } from "@/lib/email/templates/invite";
 import { sendEmail } from "@/lib/email/resend";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { inviteOnboardingSchema } from "@/lib/schemas/onboarding";
@@ -92,7 +92,7 @@ export async function sendOnboardingInvites(payload: InvitePayload): Promise<Sen
     });
     const acceptUrl = `${baseUrl.replace(/\/$/, "")}/team/accept-invite/${token}`;
     const expiresAt = new Date(exp * 1000);
-    const { subject, html, text } = buildInviteEmail({
+    const { subject, html, text } = buildInviteLinkEmail({
       inviterName,
       orgName: ctx.orgName,
       acceptUrl,

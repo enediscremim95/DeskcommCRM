@@ -37,6 +37,17 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Olá": { es: "Hola" },
+  "Seu acesso foi liberado": { es: "Tu acceso fue habilitado" },
+  "Seu acesso foi liberado.": { es: "Tu acceso fue habilitado." },
+  "Seus dados de acesso:": { es: "Tus datos de acceso:" },
+  "Troque a senha depois do primeiro acesso, no seu perfil.": {
+    es: "Cambia la contraseña después del primer acceso, en tu perfil.",
+  },
+  "Acessar a plataforma": { es: "Acceder a la plataforma" },
+  "Se você não reconhece este e-mail, é só ignorar.": {
+    es: "Si no reconoces este correo, puedes ignorarlo.",
+  },
   "N8N": { es: "N8N" },
   "Não foi possível carregar os workflows agora.": { es: "No se pudieron cargar los workflows ahora." },
   "Carregando workflows...": { es: "Cargando workflows..." },

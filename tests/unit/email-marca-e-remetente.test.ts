@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NEUTROS_DE_SAIDA, type MarcaDeSaida } from "@/lib/branding/saida";
-import { buildInviteEmail } from "@/lib/email/templates/invite";
+import { buildInviteLinkEmail } from "@/lib/email/templates/invite";
 
 const MARCA: MarcaDeSaida = {
   nome: "Vendas Turbo",
@@ -22,7 +22,7 @@ const MARCA: MarcaDeSaida = {
 
 describe("convite de time", () => {
   const convite = () =>
-    buildInviteEmail({
+    buildInviteLinkEmail({
       inviterName: "Ana",
       orgName: "Clínica Bem Viver",
       acceptUrl: "https://crm.exemplo.com.br/team/accept-invite/tok",
@@ -66,7 +66,7 @@ describe("convite de time", () => {
     // renderizado por ninguém — meia marca no e-mail que a pessoa abre ANTES de
     // ter visto qualquer tela. A dimensão vai também no atributo porque Outlook
     // desktop descarta `height` de style e desenharia a arte no tamanho original.
-    const { html } = buildInviteEmail({
+    const { html } = buildInviteLinkEmail({
       inviterName: "Ana",
       orgName: "Clínica Bem Viver",
       acceptUrl: "https://crm.exemplo.com.br/team/accept-invite/tok",
@@ -92,7 +92,7 @@ describe("convite de time", () => {
   it("URL de logo com aspas não escapa do atributo", () => {
     // `platform_branding.logo_url` é `text` livre no banco e a tela de marca
     // ainda não o edita — o valor pode ter vindo de SQL ou de um `.env` colado.
-    const { html } = buildInviteEmail({
+    const { html } = buildInviteLinkEmail({
       inviterName: "Ana",
       orgName: "Acme",
       acceptUrl: "https://x/y",
@@ -108,7 +108,7 @@ describe("convite de time", () => {
   it("marca com HTML dentro é escapada no corpo", () => {
     // O nome vem de um campo que o operador digita numa tela; antes desta fase
     // o pior caso era o literal "DeskcommCRM" e a questão não existia.
-    const { html } = buildInviteEmail({
+    const { html } = buildInviteLinkEmail({
       inviterName: "Ana",
       orgName: "Acme",
       acceptUrl: "https://x/y",

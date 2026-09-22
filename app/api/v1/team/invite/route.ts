@@ -1,16 +1,14 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { issueInvite } from "@/lib/auth/issue-invite";
+import { provisionTeamAccess } from "@/lib/auth/provision-team-access";
 import { isServiceRoleConfigured } from "@/lib/audit";
+import { isEmailConfigured } from "@/lib/email/resend";
 /**
  * POST /api/v1/team/invite — bulk-invite up to 20 emails.
  *
- * Pragmatic MVP: invitations are stateless HMAC tokens (no team_invites table).
- * If a user with that email already has an active membership in the org, we
- * skip with reason `already_member`. Otherwise we sign a 24h token containing
- * a fresh invite_id (uuid) + email + org_id + role and email the link.
- *
- * Membership row is created at /accept-invite time (Server Action) — that's
- * also when audit emits `member.accepted`. Here we audit `member.invited`.
+ * Contas novas recebem senha provisória e vínculo ativo. Contas existentes
+ * preservam senha/MFA e usam o convite legado assinado. A rota de aceite
+ * continua válida para convites que já estavam em andamento.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -27,7 +25,7 @@ export const dynamic = "force-dynamic";
 interface SentItem {
   email: string;
   invite_id: string;
-  expires_at: string;
+  expires_at: string | null;
   email_dispatched: boolean;
   accept_url: string;
 }
@@ -61,6 +59,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   const sent: SentItem[] = [];
   const failed: FailedItem[] = [];
 
+  if (!isEmailConfigured()) {
+    return fail("unavailable", "Configure o envio de e-mail antes de convidar uma pessoa.", 503, {
+      requestId,
+    });
+  }
+
   const admin = isServiceRoleConfigured() ? createAdminClient() : null;
   const inviterName = authUser.full_name ?? authUser.email ?? "Um colega";
   // Emails com membership ATIVA na org — para pular o reconvite de quem já é membro.
@@ -90,18 +94,46 @@ export async function POST(req: NextRequest): Promise<Response> {
       continue;
     }
 
-    sent.push(
-      await issueInvite({
+    const access = await provisionTeamAccess({
+      email,
+      role: inv.role,
+      interfaceSettings: inv.interface_settings ?? { preset: "completa" },
+      organizationId: activeOrg.orgId,
+      orgName: activeOrg.name,
+      inviterId: authUser.id,
+      requestId,
+      idioma: authUser.idioma,
+    });
+
+    if (access.ok) {
+      sent.push({
         email,
-        role: inv.role,
-        interfaceSettings: inv.interface_settings,
-        organizationId: activeOrg.orgId,
-        orgName: activeOrg.name,
-        inviterId: authUser.id,
-        inviterName,
-        requestId,
-      }),
-    );
+        invite_id: access.inviteId,
+        expires_at: null,
+        email_dispatched: true,
+        accept_url: access.loginUrl,
+      });
+      continue;
+    }
+
+    // Conta anterior conserva senha e MFA: recebe o convite legado, sem reset.
+    if (access.reason === "existing_user") {
+      sent.push(
+        await issueInvite({
+          email,
+          role: inv.role,
+          interfaceSettings: inv.interface_settings,
+          organizationId: activeOrg.orgId,
+          orgName: activeOrg.name,
+          inviterId: authUser.id,
+          inviterName,
+          requestId,
+        }),
+      );
+      continue;
+    }
+
+    failed.push({ email, reason: access.reason });
   }
 
   return ok({ sent, failed }, { status: 201, requestId });
