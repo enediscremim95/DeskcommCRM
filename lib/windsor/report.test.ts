@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTrafficReport, type StoredFact } from "./report";
+import { buildTrafficReport, latestCampaignStatuses, type StoredFact } from "./report";
 
 const fact = (overrides: Partial<StoredFact>): StoredFact => ({
   account_id: "meta", platform: "meta_ads", occurred_on: "2026-09-18",
@@ -117,6 +117,20 @@ describe("relatório de tráfego", () => {
         fact({ occurred_on: "2026-09-17", campaign_status: "ACTIVE" }),
         fact({ occurred_on: "2026-09-18", campaign_status: "PAUSED" }),
       ],
+    });
+    expect(group?.campaigns[0]?.campaign_status).toBe("PAUSED");
+  });
+
+  it("leva à resposta o status mais recente da geração quando o fato do período não o traz", () => {
+    const [group] = buildTrafficReport({
+      model: "leads", conversionFields: ["actions_lead"],
+      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      facts: [fact({ occurred_on: "2026-09-21", campaign_status: null })],
+      campaignStatuses: latestCampaignStatuses([
+        fact({ occurred_on: "2026-09-19", campaign_status: "ACTIVE" }),
+        fact({ occurred_on: "2026-09-20", campaign_status: "PAUSED" }),
+        fact({ occurred_on: "2026-09-21", campaign_status: null }),
+      ]),
     });
     expect(group?.campaigns[0]?.campaign_status).toBe("PAUSED");
   });

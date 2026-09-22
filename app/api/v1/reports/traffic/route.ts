@@ -12,6 +12,7 @@ import { buildWindsorUrl, WINDSOR_REQUEST_TIMEOUT_MS } from "@/lib/windsor/reque
 import {
   buildTrafficReport,
   campaignReportKey,
+  latestCampaignStatuses,
   type StoredAccount,
   type StoredFact,
 } from "@/lib/windsor/report";
@@ -244,6 +245,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const crm = buildTrafficLeadSituation(currentLeadRowsResult.data ?? [], stages);
   const previousCrm = buildTrafficLeadSituation(previousLeadRowsResult.data ?? [], stages);
   const facts = factsResult.data;
+  const deliveryFacts = (deliveryFactsResult.data ?? []) as unknown as StoredFact[];
   const previousFacts = previousFactsResult.data;
   const storedAccounts = (accounts ?? []) as unknown as StoredAccount[];
   async function loadPeriodReach(range: { from: string; to: string }) {
@@ -290,6 +292,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     window: parsed.data,
     campaignReach: currentReach.campaignReach,
     accountReach: currentReach.accountReach,
+    campaignStatuses: latestCampaignStatuses(deliveryFacts),
   });
   const previousCurrencies = buildTrafficReport({
     model: typedConfig.model,
@@ -332,7 +335,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       },
       delivery: buildTrafficDelivery(
         (facts ?? []) as unknown as StoredFact[],
-        (deliveryFactsResult.data ?? []) as unknown as StoredFact[],
+        deliveryFacts,
       ),
       currencies: currentCurrencies.map((group) => ({
         ...group,

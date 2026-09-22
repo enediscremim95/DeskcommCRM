@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   Bar,
@@ -407,6 +407,87 @@ function campaignStatus(status: string | null | undefined) {
   };
 }
 
+function summarizeCampaigns(campaigns: Campaign[]): Metrics {
+  const sum = (key: keyof Metrics) =>
+    campaigns.reduce((total, campaign) => {
+      const value = campaign[key];
+      return total + (typeof value === "number" ? value : 0);
+    }, 0);
+  const spend = sum("spend");
+  const conversions = sum("conversions");
+  const leads = sum("leads");
+  const landingPageViews = sum("landing_page_views");
+  const addToCart = sum("add_to_cart");
+  const initiateCheckout = sum("initiate_checkout");
+  const purchases = sum("purchases");
+  const messagingConversations = sum("messaging_conversations");
+  const revenue = sum("revenue");
+  const impressions = sum("impressions");
+  const clicks = sum("clicks");
+  const linkClicks = sum("link_clicks");
+  const reaches = campaigns
+    .map((campaign) => campaign.reach)
+    .filter((value): value is number => value != null);
+  const reach = reaches.length ? reaches.reduce((total, value) => total + value, 0) : null;
+  const budgetTypes = new Set(
+    campaigns.map((campaign) => campaign.budget_type).filter((value) => value != null),
+  );
+  const budgets = campaigns
+    .map((campaign) => campaign.budget)
+    .filter((value): value is number => value != null);
+  const budgetType = budgetTypes.size === 1 ? [...budgetTypes][0]! : null;
+  const budget = budgetType && budgets.length ? budgets.reduce((total, value) => total + value, 0) : null;
+
+  return {
+    budget,
+    budget_type: budgetType,
+    spend,
+    conversions,
+    leads,
+    landing_page_views: landingPageViews,
+    cost_per_landing_page_view: landingPageViews > 0 ? spend / landingPageViews : null,
+    add_to_cart: addToCart,
+    cost_per_add_to_cart: addToCart > 0 ? spend / addToCart : null,
+    initiate_checkout: initiateCheckout,
+    cost_per_initiate_checkout: initiateCheckout > 0 ? spend / initiateCheckout : null,
+    purchases,
+    cost_per_purchase: purchases > 0 ? spend / purchases : null,
+    messaging_conversations: messagingConversations,
+    cost_per_messaging_conversation:
+      messagingConversations > 0 ? spend / messagingConversations : null,
+    revenue,
+    impressions,
+    reach,
+    frequency: reach && reach > 0 ? impressions / reach : null,
+    clicks,
+    link_clicks: linkClicks,
+    cost_per_conversion: conversions > 0 ? spend / conversions : null,
+    cost_per_lead: leads > 0 ? spend / leads : null,
+    cpm: impressions > 0 ? (spend / impressions) * 1000 : null,
+    ctr: impressions > 0 ? (linkClicks / impressions) * 100 : null,
+    cpc: linkClicks > 0 ? spend / linkClicks : null,
+    conversion_rate: linkClicks > 0 ? (conversions / linkClicks) * 100 : null,
+    roas: spend > 0 ? revenue / spend : null,
+    average_order_value: conversions > 0 ? revenue / conversions : null,
+    video_views: sum("video_views"),
+    video_p25: sum("video_p25"),
+    video_p50: sum("video_p50"),
+    video_p75: sum("video_p75"),
+    video_p95: sum("video_p95"),
+    landing_page_views_available: campaigns.some(
+      (campaign) => campaign.landing_page_views_available,
+    ),
+    add_to_cart_available: campaigns.some((campaign) => campaign.add_to_cart_available),
+    initiate_checkout_available: campaigns.some(
+      (campaign) => campaign.initiate_checkout_available,
+    ),
+    purchases_available: campaigns.some((campaign) => campaign.purchases_available),
+    messaging_conversations_available: campaigns.some(
+      (campaign) => campaign.messaging_conversations_available,
+    ),
+  };
+}
+
 function compareCampaigns(
   first: Campaign,
   second: Campaign,
@@ -520,6 +601,7 @@ function CampaignTable({
   const [sortKey, setSortKey] = useState<CampaignSortKey>("spend");
   const [sortDirection, setSortDirection] = useState<SortDirection>("descending");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const statusChangedByUser = useRef(false);
   // Antes da primeira sincronização que traz o status, nenhuma campanha o conhece.
   // Nesse caso a coluna e o filtro somem em vez de mostrar "Não informada" em tudo.
   const showStatus = campaigns.some((campaign) => campaignStatus(campaign.campaign_status).known);
@@ -527,9 +609,12 @@ function CampaignTable({
   const columnCount = columns.length + (showStatus ? 2 : 1);
 
   useEffect(() => {
+    statusChangedByUser.current = false;
     const stored = window.localStorage.getItem(storageKey);
     if (stored === "all" || stored === "active" || stored === "paused") {
-      const timeout = window.setTimeout(() => setStatusFilter(stored), 0);
+      const timeout = window.setTimeout(() => {
+        if (!statusChangedByUser.current) setStatusFilter(stored);
+      }, 0);
       return () => window.clearTimeout(timeout);
     }
     return undefined;
@@ -548,6 +633,10 @@ function CampaignTable({
         ),
     [activeFilter, campaigns, idioma, sortDirection, sortKey],
   );
+  const visibleTotal = useMemo(
+    () => (activeFilter === "all" ? total : summarizeCampaigns(visibleCampaigns)),
+    [activeFilter, total, visibleCampaigns],
+  );
 
   const changeSort = (key: CampaignSortKey) => {
     if (key === sortKey) {
@@ -561,6 +650,7 @@ function CampaignTable({
   };
 
   const changeStatusFilter = (filter: CampaignStatusFilter) => {
+    statusChangedByUser.current = true;
     setStatusFilter(filter);
     window.localStorage.setItem(storageKey, filter);
   };
@@ -772,7 +862,7 @@ function CampaignTable({
             <tr className="border-t bg-muted/45 font-semibold">
               <td className="px-4 py-3">{labels.total}</td>
               {showStatus && <td className="px-4 py-3" />}
-              {columns.map((column) => metricCell(total, column))}
+              {columns.map((column) => metricCell(visibleTotal, column))}
             </tr>
           </tfoot>
         </table>
