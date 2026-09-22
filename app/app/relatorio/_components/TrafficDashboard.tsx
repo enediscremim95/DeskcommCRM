@@ -1,17 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
-import {
-  Area,
-  Bar,
-  CartesianGrid,
-  ComposedChart,
-  Line,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -29,8 +18,18 @@ import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import type { CampaignMetricColumn } from "@/lib/windsor/types";
 import type { TrafficColumnPreset } from "@/lib/windsor/column-presets";
+import type { TrafficRichCrmInsights } from "@/lib/windsor/traffic-insights";
 import { ColumnPresetMenu } from "./ColumnPresetMenu";
 import { buildTrafficFunnelStages, ConversionFunnel, type FunnelStage } from "./ConversionFunnel";
+import { CostSignal, CostThresholdControl, type CostThreshold } from "./CostThresholds";
+import {
+  CreativePerformance,
+  CrmInsights,
+  FunnelAndSituation,
+  MonthByMonth,
+  PlatformComparison,
+  TrafficTimeline,
+} from "./RichReportSections";
 
 interface Metrics {
   budget: number | null;
@@ -113,16 +112,36 @@ interface ReportResponse {
     default_preset_id: string | null;
     column_presets: TrafficColumnPreset[];
     can_manage_defaults: boolean;
+    cost_thresholds?: CostThreshold[];
     sync: { status: string; last_succeeded_at: string | null; error: string | null };
-    crm: {
-      leads_entered: number;
-      in_service: number;
-      closed_won: number;
-      previous?: { leads_entered: number; in_service: number; closed_won: number };
-    };
+    crm: Partial<TrafficRichCrmInsights> &
+      Pick<TrafficRichCrmInsights, "leads_entered" | "in_service" | "closed_won"> & {
+        previous?: Partial<TrafficRichCrmInsights> &
+          Pick<TrafficRichCrmInsights, "leads_entered" | "in_service" | "closed_won">;
+      };
     currencies: CurrencyGroup[];
   };
   error?: { message?: string };
+}
+
+function normalizeCrm(
+  crm: Partial<TrafficRichCrmInsights> &
+    Pick<TrafficRichCrmInsights, "leads_entered" | "in_service" | "closed_won">,
+): TrafficRichCrmInsights {
+  return {
+    leads_entered: crm.leads_entered,
+    in_service: crm.in_service,
+    closed_won: crm.closed_won,
+    closed_lost: crm.closed_lost ?? 0,
+    stages: crm.stages ?? [],
+    loss_reasons: crm.loss_reasons ?? [],
+    stage_conversion: crm.stage_conversion ?? [],
+    leads_timeline: crm.leads_timeline ?? [],
+    sales_timeline: crm.sales_timeline ?? [],
+    sales_values: crm.sales_values ?? [],
+    leads_by_origin: crm.leads_by_origin ?? { meta_ads: null, google_ads: null },
+    won_by_origin: crm.won_by_origin ?? { meta_ads: null, google_ads: null },
+  };
 }
 
 // Data local (fuso do navegador), não UTC: `toISOString()` virava o dia seguinte
@@ -189,8 +208,16 @@ export function postUrl(storyId: string): string {
 
 /** Iniciais para a miniatura quando o anúncio não tem imagem (painel antigo). */
 export function initials(name: string): string {
-  const words = name.replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/).filter(Boolean);
-  const letters = words.slice(0, 2).map((word) => word[0] ?? "").join("").toUpperCase();
+  const words = name
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const letters = words
+    .slice(0, 2)
+    .map((word) => word[0] ?? "")
+    .join("")
+    .toUpperCase();
   return letters || "?";
 }
 
@@ -546,8 +573,22 @@ function costPerResult(metrics: Pick<Metrics, "spend" | "conversions">): number 
   return metrics.conversions > 0 ? metrics.spend / metrics.conversions : null;
 }
 
-function AdThumbnail({ ad, label }: { ad: Campaign["adsets"][number]["ads"][number]; label: string }) {
-  const frame = "grid size-13 shrink-0 place-items-center overflow-hidden rounded-lg border bg-muted text-xs font-bold text-muted-foreground shadow-xs";
+function costColumnValue(metrics: Metrics, column: CampaignMetricColumn): number | null {
+  if (column === "cost_per_lead") return metrics.cost_per_lead;
+  if (column === "cost_per_purchase") return metrics.cost_per_purchase;
+  if (column === "cost_per_messaging_conversation") return metrics.cost_per_messaging_conversation;
+  return null;
+}
+
+function AdThumbnail({
+  ad,
+  label,
+}: {
+  ad: Campaign["adsets"][number]["ads"][number];
+  label: string;
+}) {
+  const frame =
+    "grid size-13 shrink-0 place-items-center overflow-hidden rounded-lg border bg-muted text-xs font-bold text-muted-foreground shadow-xs";
   const content = ad.thumbnail_url ? (
     <span
       aria-hidden="true"
@@ -581,15 +622,17 @@ function AdsetDrill({
   adset,
   currency,
   conversionsLabel,
+  threshold,
 }: {
   adset: Campaign["adsets"][number];
   currency: string;
   conversionsLabel: string;
+  threshold?: CostThreshold;
 }) {
   const t = useT();
   const adsetCost = costPerResult(adset);
   const adsCount = adset.ads.length;
-  const stat = (label: string, value: string, tone = "text-foreground") => (
+  const stat = (label: string, value: ReactNode, tone = "text-foreground") => (
     <span className="flex flex-col items-end leading-tight">
       <span className="text-[10px] tracking-[0.08em] text-muted-foreground uppercase">{label}</span>
       <span className={`text-sm font-semibold tabular-nums ${tone}`}>{value}</span>
@@ -604,7 +647,9 @@ function AdsetDrill({
           {stat(conversionsLabel, number(adset.conversions), "text-success-fg")}
           {stat(
             t("Custo por resultado"),
-            adsetCost == null ? t("sem dado") : money(adsetCost, currency),
+            <CostSignal value={adsetCost} threshold={threshold}>
+              {adsetCost == null ? t("sem dado") : money(adsetCost, currency)}
+            </CostSignal>,
             "text-info-fg",
           )}
           <span className="rounded-full border bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
@@ -627,7 +672,9 @@ function AdsetDrill({
                 {stat(conversionsLabel, number(ad.conversions))}
                 {stat(
                   t("Custo por resultado"),
-                  adCost == null ? t("sem dado") : money(adCost, currency),
+                  <CostSignal value={adCost} threshold={threshold}>
+                    {adCost == null ? t("sem dado") : money(adCost, currency)}
+                  </CostSignal>,
                 )}
                 {ad.story_id && (
                   <a
@@ -657,6 +704,7 @@ function CampaignTable({
   labels,
   columns,
   idioma,
+  threshold,
 }: {
   campaigns: Campaign[];
   currency: string;
@@ -664,6 +712,7 @@ function CampaignTable({
   platform: "meta_ads" | "google_ads";
   columns: CampaignMetricColumn[];
   idioma: string;
+  threshold?: CostThreshold;
   labels: {
     campaign: string;
     total: string;
@@ -700,17 +749,13 @@ function CampaignTable({
             activeFilter === "all" ||
             campaignStatus(campaign.campaign_status).category === activeFilter,
         )
-        .sort((first, second) =>
-          compareCampaigns(first, second, sortKey, sortDirection, idioma),
-        ),
+        .sort((first, second) => compareCampaigns(first, second, sortKey, sortDirection, idioma)),
     [activeFilter, campaigns, idioma, sortDirection, sortKey],
   );
 
   const changeSort = (key: CampaignSortKey) => {
     if (key === sortKey) {
-      setSortDirection((current) =>
-        current === "descending" ? "ascending" : "descending",
-      );
+      setSortDirection((current) => (current === "descending" ? "ascending" : "descending"));
       return;
     }
     setSortKey(key);
@@ -771,11 +816,10 @@ function CampaignTable({
   };
 
   const metricCell = (metrics: Metrics, column: CampaignMetricColumn, className = "") => (
-    <td
-      key={column}
-      className={`px-4 py-3 text-right whitespace-nowrap tabular-nums ${className}`}
-    >
-      {metricValue(metrics, column, currency, platform)}
+    <td key={column} className={`px-4 py-3 text-right whitespace-nowrap tabular-nums ${className}`}>
+      <CostSignal value={costColumnValue(metrics, column)} threshold={threshold}>
+        {metricValue(metrics, column, currency, platform)}
+      </CostSignal>
     </td>
   );
 
@@ -788,11 +832,13 @@ function CampaignTable({
           className="flex flex-wrap items-center gap-1 border-b px-3 py-2"
         >
           <span className="mr-1 text-xs font-medium text-muted-foreground">{t("Status")}</span>
-          {([
-            ["all", t("Todas")],
-            ["active", t("Ativas")],
-            ["paused", t("Pausadas")],
-          ] as const).map(([value, label]) => (
+          {(
+            [
+              ["all", t("Todas")],
+              ["active", t("Ativas")],
+              ["paused", t("Pausadas")],
+            ] as const
+          ).map(([value, label]) => (
             <Button
               key={value}
               type="button"
@@ -884,6 +930,7 @@ function CampaignTable({
                             adset={adset}
                             currency={currency}
                             conversionsLabel={labels.conversions}
+                            threshold={threshold}
                           />
                         ))}
                       </td>
@@ -1102,6 +1149,21 @@ export function TrafficDashboard() {
         </div>
       </header>
 
+      {report && (
+        <CostThresholdControl
+          key={(report.cost_thresholds ?? [])
+            .map((row) => `${row.platform}:${row.good_until}:${row.acceptable_until}`)
+            .join("|")}
+          initial={report.cost_thresholds ?? []}
+          canManage={report.can_manage_defaults}
+          onSaved={(costThresholds) =>
+            setReport((current) =>
+              current ? { ...current, cost_thresholds: costThresholds } : current,
+            )
+          }
+        />
+      )}
+
       {report?.sync.status === "failed" && (
         <div
           role="alert"
@@ -1140,10 +1202,18 @@ export function TrafficDashboard() {
       )}
 
       {report?.currencies.map((group) => {
+        const richCrm = normalizeCrm(report.crm);
+        const previousRichCrm = report.crm.previous ? normalizeCrm(report.crm.previous) : undefined;
         const meta = group.platforms.find((item) => item.platform === "meta_ads");
         const google = group.platforms.find((item) => item.platform === "google_ads");
         const metaCampaigns = group.campaigns.filter((item) => item.platform === "meta_ads");
         const googleCampaigns = group.campaigns.filter((item) => item.platform === "google_ads");
+        const metaThreshold = (report.cost_thresholds ?? []).find(
+          (item) => item.platform === "meta_ads",
+        );
+        const googleThreshold = (report.cost_thresholds ?? []).find(
+          (item) => item.platform === "google_ads",
+        );
         const conversionLabel = report.model === "ecommerce" ? t("Compras") : t("Conversões");
         const visibleColumns = selectedColumns.length ? selectedColumns : report.default_columns;
         const campaignLabels = {
@@ -1152,16 +1222,18 @@ export function TrafficDashboard() {
           conversions: conversionLabel,
         };
         const trafficStages = buildTrafficFunnelStages(group.summary, report.model, idioma);
+        const previousTrafficStages = group.comparison
+          ? buildTrafficFunnelStages(group.comparison, report.model, idioma)
+          : [];
         const lastTrafficValue = trafficStages.at(-1)?.value ?? 0;
         const funnelStages: FunnelStage[] = [
           ...trafficStages,
           {
             key: "crm-entered",
             label: localText(idioma, "Entraram no CRM", "Ingresaron al CRM"),
-            value: report.crm.leads_entered,
-            rate: lastTrafficValue > 0 ? (report.crm.leads_entered / lastTrafficValue) * 100 : null,
-            cost:
-              report.crm.leads_entered > 0 ? group.summary.spend / report.crm.leads_entered : null,
+            value: richCrm.leads_entered,
+            rate: lastTrafficValue > 0 ? (richCrm.leads_entered / lastTrafficValue) * 100 : null,
+            cost: richCrm.leads_entered > 0 ? group.summary.spend / richCrm.leads_entered : null,
             asSource: localText(idioma, "que entraram no CRM", "que ingresaron al CRM"),
             asTarget: localText(idioma, "entraram no CRM", "ingresaron al CRM"),
             costLabel: localText(idioma, "por lead no CRM", "por lead en el CRM"),
@@ -1169,12 +1241,10 @@ export function TrafficDashboard() {
           {
             key: "crm-service",
             label: localText(idioma, "Em atendimento", "En atención"),
-            value: report.crm.in_service,
+            value: richCrm.in_service,
             rate:
-              report.crm.leads_entered > 0
-                ? (report.crm.in_service / report.crm.leads_entered) * 100
-                : null,
-            cost: report.crm.in_service > 0 ? group.summary.spend / report.crm.in_service : null,
+              richCrm.leads_entered > 0 ? (richCrm.in_service / richCrm.leads_entered) * 100 : null,
+            cost: richCrm.in_service > 0 ? group.summary.spend / richCrm.in_service : null,
             asSource: localText(idioma, "em atendimento", "en atención"),
             asTarget: localText(idioma, "foram atendidos", "fueron atendidos"),
             costLabel: localText(idioma, "por atendimento", "por atención"),
@@ -1182,19 +1252,57 @@ export function TrafficDashboard() {
           {
             key: "crm-won",
             label: localText(idioma, "Vendas fechadas", "Ventas cerradas"),
-            value: report.crm.closed_won,
-            rate:
-              report.crm.in_service > 0
-                ? (report.crm.closed_won / report.crm.in_service) * 100
-                : null,
-            cost: report.crm.closed_won > 0 ? group.summary.spend / report.crm.closed_won : null,
+            value: richCrm.closed_won,
+            rate: richCrm.in_service > 0 ? (richCrm.closed_won / richCrm.in_service) * 100 : null,
+            cost: richCrm.closed_won > 0 ? group.summary.spend / richCrm.closed_won : null,
             asSource: localText(idioma, "que fecharam", "que cerraron"),
             asTarget: localText(idioma, "fecharam venda", "cerraron venta"),
             costLabel: localText(idioma, "por venda", "por venta"),
           },
         ];
+        const previousFunnelStages: FunnelStage[] = previousRichCrm
+          ? [
+              ...previousTrafficStages,
+              {
+                key: "crm-entered",
+                label: localText(idioma, "Entraram no CRM", "Ingresaron al CRM"),
+                value: previousRichCrm.leads_entered,
+                rate: null,
+                cost: null,
+                asSource: "",
+                asTarget: "",
+                costLabel: "",
+              },
+              {
+                key: "crm-service",
+                label: localText(idioma, "Em atendimento", "En atención"),
+                value: previousRichCrm.in_service,
+                rate:
+                  previousRichCrm.leads_entered > 0
+                    ? (previousRichCrm.in_service / previousRichCrm.leads_entered) * 100
+                    : null,
+                cost: null,
+                asSource: "",
+                asTarget: "",
+                costLabel: "",
+              },
+              {
+                key: "crm-won",
+                label: localText(idioma, "Vendas fechadas", "Ventas cerradas"),
+                value: previousRichCrm.closed_won,
+                rate:
+                  previousRichCrm.in_service > 0
+                    ? (previousRichCrm.closed_won / previousRichCrm.in_service) * 100
+                    : null,
+                cost: null,
+                asSource: "",
+                asTarget: "",
+                costLabel: "",
+              },
+            ]
+          : [];
         const costPerClosed =
-          report.crm.closed_won > 0 ? group.summary.spend / report.crm.closed_won : null;
+          richCrm.closed_won > 0 ? group.summary.spend / richCrm.closed_won : null;
         const spendTrend = group.daily.map((day) => day.spend_meta + day.spend_google);
         const conversionTrend = group.daily.map((day) => day.conversions);
         const revenueTrend = group.daily.map((day) => day.revenue);
@@ -1216,8 +1324,8 @@ export function TrafficDashboard() {
           key: "conversions" as const,
           label: localText(idioma, "Fechadas no CRM", "Cerradas en el CRM"),
           hint: t("vendas fechadas no CRM"),
-          value: report.crm.closed_won,
-          previous: report.crm.previous?.closed_won,
+          value: richCrm.closed_won,
+          previous: previousRichCrm?.closed_won,
           sparkline: conversionTrend,
           formatter: number,
           betterWhen: "up" as const,
@@ -1380,102 +1488,28 @@ export function TrafficDashboard() {
                 { label: t("Investimento"), value: money(group.summary.spend, group.currency) },
                 {
                   label: localText(idioma, "Vendas fechadas", "Ventas cerradas"),
-                  value: number(report.crm.closed_won),
+                  value: number(richCrm.closed_won),
                   emphasis: true,
                 },
                 {
                   label: localText(idioma, "Custo por venda fechada", "Costo por venta cerrada"),
-                  value: costPerClosed == null ? t("sem dado") : money(costPerClosed, group.currency),
+                  value:
+                    costPerClosed == null ? t("sem dado") : money(costPerClosed, group.currency),
                   emphasis: true,
                 },
               ]}
             />
 
-            <details open className="group overflow-hidden rounded-2xl border bg-card shadow-sm">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 border-b px-4 py-4 sm:px-5">
-                <div>
-                  <p className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
-                    {t("Período")}
-                  </p>
-                  <h3 className="mt-1 text-lg font-semibold">
-                    {t("Investimento")} · {t("Conversões")}
-                  </h3>
-                </div>
-                <span
-                  className="text-sm text-muted-foreground group-open:rotate-180"
-                  aria-hidden="true"
-                >
-                  ⌄
-                </span>
-              </summary>
-              <div className="h-72 p-3 sm:h-80 sm:p-5">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={group.daily}>
-                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-                    />
-                    <YAxis
-                      yAxisId="spend"
-                      tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-                    />
-                    <YAxis
-                      yAxisId="conversion"
-                      orientation="right"
-                      tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-                    />
-                    <Tooltip
-                      labelFormatter={(label) =>
-                        new Date(`${String(label)}T12:00:00`).toLocaleDateString(
-                          idioma === "es" ? "es-ES" : "pt-BR",
-                        )
-                      }
-                      formatter={(value, name) => [
-                        name === t("Conversões")
-                          ? number(Number(value))
-                          : money(Number(value), group.currency),
-                        name,
-                      ]}
-                      contentStyle={{
-                        background: "var(--card)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 14,
-                        boxShadow: "0 18px 50px -28px var(--foreground)",
-                      }}
-                    />
-                    <Area
-                      yAxisId="spend"
-                      type="monotone"
-                      dataKey="spend_meta"
-                      stackId="spend"
-                      fill="#1877F2"
-                      stroke="#1877F2"
-                      fillOpacity={activeMetric === "spend" ? 0.55 : 0.16}
-                      name="Meta"
-                    />
-                    <Bar
-                      yAxisId="spend"
-                      dataKey="spend_google"
-                      stackId="spend"
-                      fill="#4285F4"
-                      opacity={activeMetric === "spend" ? 0.8 : 0.25}
-                      name="Google"
-                      radius={[4, 4, 0, 0]}
-                    />
-                    <Line
-                      yAxisId="conversion"
-                      type="monotone"
-                      dataKey={activeMetric === "revenue" ? "revenue" : "conversions"}
-                      stroke="var(--primary)"
-                      strokeWidth={activeMetric === "spend" ? 2 : 3.5}
-                      dot={false}
-                      name={activeMetric === "revenue" ? t("Faturamento") : t("Conversões")}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </details>
+            <FunnelAndSituation
+              stages={funnelStages}
+              previousStages={previousFunnelStages}
+              crm={richCrm}
+              idioma={idioma}
+            />
+
+            <TrafficTimeline daily={group.daily} currency={group.currency} idioma={idioma} />
+
+            <PlatformComparison group={group} crm={richCrm} idioma={idioma} />
 
             {meta && (
               <details
@@ -1519,7 +1553,11 @@ export function TrafficDashboard() {
                       value={meta.cpm == null ? t("sem dado") : money(meta.cpm, group.currency)}
                       hint={t("custo por 1.000 exibições")}
                     />
-                    <Kpi label="CTR" value={percent(meta.ctr, t("sem dado"))} hint={t("taxa de clique")} />
+                    <Kpi
+                      label="CTR"
+                      value={percent(meta.ctr, t("sem dado"))}
+                      hint={t("taxa de clique")}
+                    />
                     <Kpi
                       label={t("Cliques no link")}
                       value={number(meta.link_clicks)}
@@ -1548,7 +1586,9 @@ export function TrafficDashboard() {
                           ? t("sem dado")
                           : money(meta.cost_per_conversion, group.currency)
                       }
-                      hint={report.model === "leads" ? t("custo por lead") : t("custo por resultado")}
+                      hint={
+                        report.model === "leads" ? t("custo por lead") : t("custo por resultado")
+                      }
                     />
                     <Kpi
                       label={t("Investimento")}
@@ -1589,9 +1629,7 @@ export function TrafficDashboard() {
                             <p className="mt-1 text-2xl font-semibold tracking-tight text-success-fg">
                               {percent(videoBody, "0%")}
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              {t("viram até o fim")}
-                            </p>
+                            <p className="text-xs text-muted-foreground">{t("viram até o fim")}</p>
                           </div>
                         </div>
                         <ul className="space-y-2.5" aria-label={t("Retenção de vídeo")}>
@@ -1599,7 +1637,9 @@ export function TrafficDashboard() {
                             <li key={bar.label}>
                               <div className="mb-1 flex items-center justify-between text-xs">
                                 <span className="text-muted-foreground">{bar.label}</span>
-                                <span className="font-semibold tabular-nums">{number(bar.value)}</span>
+                                <span className="font-semibold tabular-nums">
+                                  {number(bar.value)}
+                                </span>
                               </div>
                               <div className="h-2 overflow-hidden rounded-full bg-muted">
                                 <div
@@ -1621,6 +1661,7 @@ export function TrafficDashboard() {
                     labels={campaignLabels}
                     columns={visibleColumns}
                     idioma={idioma}
+                    threshold={metaThreshold}
                   />
                 </div>
               </details>
@@ -1702,10 +1743,36 @@ export function TrafficDashboard() {
                     labels={campaignLabels}
                     columns={visibleColumns}
                     idioma={idioma}
+                    threshold={googleThreshold}
                   />
+                  {googleThreshold &&
+                    googleCampaigns.filter((campaign) => {
+                      const cost = costPerResult(campaign);
+                      return cost != null && cost > googleThreshold.acceptable_until;
+                    }).length > 0 && (
+                      <p className="text-sm font-medium text-destructive">
+                        {t("Atenção")}:{" "}
+                        {
+                          googleCampaigns.filter((campaign) => {
+                            const cost = costPerResult(campaign);
+                            return cost != null && cost > googleThreshold.acceptable_until;
+                          }).length
+                        }{" "}
+                        {t("campanhas com custo acima do aceitável")}
+                      </p>
+                    )}
                 </div>
               </details>
             )}
+
+            <CreativePerformance
+              group={group}
+              model={report.model}
+              threshold={metaThreshold}
+              idioma={idioma}
+            />
+            <CrmInsights crm={richCrm} currency={group.currency} idioma={idioma} />
+            <MonthByMonth group={group} crm={richCrm} model={report.model} idioma={idioma} />
           </section>
         );
       })}
