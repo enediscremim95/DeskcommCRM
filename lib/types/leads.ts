@@ -91,6 +91,7 @@ export interface Lead {
   } | null;
   assigned_at: string | null;
   last_activity_at: string | null;
+  stage_entered_at: string;
   expected_close_date: string | null;
   closed_at: string | null;
   source: string;

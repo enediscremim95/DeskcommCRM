@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
 import { useT } from "@/hooks/i18n/useT";
+import { usePermission } from "@/hooks/auth/AuthProvider";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBoard } from "@/hooks/kanban/useBoard";
@@ -79,6 +80,7 @@ export function KanbanBoard({
   leadInicial,
 }: KanbanBoardProps) {
   const t = useT();
+  const podeMover = usePermission("pipeline.move_card");
   const router = useRouter();
   const useExternal = stagesProp !== undefined && leadsProp !== undefined;
   const queryResult = useBoard(useExternal ? null : pipelineId);
@@ -128,13 +130,17 @@ export function KanbanBoard({
     [selectedIds, internalSelected],
   );
 
-  const data = useExternal
-    ? {
-        pipeline: pipelineProp ?? ({} as Pipeline),
-        stages: stagesProp,
-        leads: leadsProp,
-      }
-    : queryResult.data;
+  const data = useMemo(
+    () =>
+      useExternal
+        ? {
+            pipeline: pipelineProp ?? ({} as Pipeline),
+            stages: stagesProp,
+            leads: leadsProp,
+          }
+        : queryResult.data,
+    [leadsProp, pipelineProp, queryResult.data, stagesProp, useExternal],
+  );
   const isLoading = useExternal ? false : queryResult.isLoading;
   const isError = useExternal ? false : queryResult.isError;
   const error = useExternal ? null : queryResult.error;
@@ -169,7 +175,7 @@ export function KanbanBoard({
 
   const handleDragEnd = useCallback(
     (result: DropResult) => {
-      if (!data || !grouped) return;
+      if (!podeMover || !data || !grouped) return;
       const { source, destination, draggableId } = result;
       if (!destination) return;
       if (source.droppableId === destination.droppableId && source.index === destination.index) {
@@ -202,7 +208,7 @@ export function KanbanBoard({
         expectedUpdatedAt: lead.updated_at,
       });
     },
-    [data, grouped, moveCard],
+    [data, grouped, moveCard, podeMover],
   );
 
   if (isLoading) {
@@ -244,6 +250,7 @@ export function KanbanBoard({
             reactivations={reactivations}
             pulses={pulsesProp ?? queryResult.pulses}
             canonicalTags={canonicalTags}
+            canMove={podeMover}
             selectedLeadIds={selectedLeadIds}
             onSelectMany={handleSelectMany}
             onOpen={(leadId) => router.push(`/app/leads/${leadId}`)}

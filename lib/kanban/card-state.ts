@@ -74,8 +74,7 @@ export function buildCardInput(
     | "value_cents"
     | "currency"
     | "tags"
-    | "last_activity_at"
-    | "created_at"
+    | "stage_entered_at"
     | "owner_kind"
     | "owner_user_id"
     | "owner_agent_id"
@@ -95,11 +94,8 @@ export function buildCardInput(
     now?: Date;
   },
 ): CardInput {
-  const reference = lead.last_activity_at ?? lead.created_at;
+  const reference = lead.stage_entered_at;
   const now = opts.now ?? new Date();
-  // ponytail: "tempo no estágio" é medido pela última ATIVIDADE, não pela
-  // entrada no estágio — crm_leads não tem stage_entered_at. Vira exato quando
-  // a Wave 3 registrar a mudança de estágio como atividade.
   const hoursInStage = reference
     ? Math.max(0, (now.getTime() - new Date(reference).getTime()) / 3_600_000)
     : null;

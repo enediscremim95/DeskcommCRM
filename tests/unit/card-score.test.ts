@@ -22,6 +22,7 @@ function lead(over: Partial<Lead> = {}): Lead {
     owner_agent_id: null,
     assigned_at: null,
     last_activity_at: "2026-07-25T10:00:00Z",
+    stage_entered_at: "2026-07-24T10:00:00Z",
     created_at: "2026-07-20T10:00:00Z",
     updated_at: "2026-07-25T10:00:00Z",
     tags: [],
@@ -33,6 +34,17 @@ function lead(over: Partial<Lead> = {}): Lead {
 const opts = { stageName: "Proposta", ownerNames: new Map<string, string | null>() };
 
 describe("o score no card", () => {
+  it("mede o tempo pela entrada na etapa, não pela última atividade", () => {
+    const card = buildCardInput(
+      lead({
+        stage_entered_at: "2026-07-24T10:00:00Z",
+        last_activity_at: "2026-07-25T09:59:00Z",
+      }),
+      { ...opts, now: new Date("2026-07-25T10:00:00Z") },
+    );
+    expect(card.hoursInStage).toBe(24);
+  });
+
   it("score 0 RENDERIZA zero — não vira ausência", () => {
     // `probability || …` é o erro de uma linha que some com o zero legítimo.
     // Zero é "calculei e deu zero", e é uma informação forte: some da tela
