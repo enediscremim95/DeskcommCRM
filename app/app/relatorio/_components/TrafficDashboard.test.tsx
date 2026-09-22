@@ -8,6 +8,9 @@ const { translate } = vi.hoisted(() => ({ translate: (value: string) => value })
 
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => translate }));
 vi.mock("@/lib/i18n/IdiomaProvider", () => ({ useIdioma: () => "pt-BR" }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  useActiveOrg: () => ({ orgId: "org-1", name: "Clínica Exemplo", role: "admin" }),
+}));
 vi.mock("@/components/ui/select", () => ({
   Select: ({
     value,
@@ -529,6 +532,77 @@ describe("colunas da tabela de campanhas", () => {
       expect(row.cells).toHaveLength(4);
     }
     expect(screen.getByText("Total").closest("tr")?.cells).toHaveLength(4);
+  });
+
+  it("fala em linguagem simples: nome da organização, frases nos KPIs, retenção real e detalhe do anúncio", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        data: {
+          model: "leads", organization_key: "org-1", viewer_key: "viewer-1",
+          default_columns: ["spend", "leads"], default_preset_id: null,
+          column_presets: [], can_manage_defaults: false,
+          sync: { status: "ready", last_succeeded_at: "2026-09-18T20:00:00Z", error: null },
+          crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
+          currencies: [{
+            currency: "BRL",
+            summary: { ...metrics, cost_per_lead: 12.5 },
+            comparison: { ...metrics, cost_per_lead: 20, spend: 40 },
+            daily: [],
+            platforms: [{
+              ...metrics, platform: "meta_ads",
+              impressions: 1000, video_views: 300, video_p25: 200, video_p50: 100, video_p75: 50, video_p95: 10,
+            }],
+            campaigns: [{
+              ...metrics, name: "RMKT Clínica", platform: "meta_ads", campaign_status: "ACTIVE",
+              adsets: [{
+                ...metrics, name: "Conjunto Frio", spend: 40, conversions: 4,
+                ads: [
+                  { ...metrics, name: "Vídeo depoimento", spend: 30, conversions: 3, thumbnail_url: null, story_id: "123_456" },
+                  { ...metrics, name: "Imagem oferta", spend: 10, conversions: 0, thumbnail_url: "https://cdn.example/x.jpg", story_id: null },
+                ],
+              }],
+            }],
+          }],
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    expect(await screen.findByRole("heading", { level: 1, name: "Clínica Exemplo" })).toBeInTheDocument();
+    expect(screen.getByText(/^Dados até 18\/09\/2026$/)).toBeInTheDocument();
+
+    // Frases embaixo dos KPIs e a cor da variação seguindo "melhor quando".
+    expect(screen.getAllByText("pessoas únicas que viram").length).toBeGreaterThan(0);
+    expect(screen.getByText("custo por 1.000 exibições")).toBeInTheDocument();
+    expect(screen.getByText("Meta + Google")).toBeInTheDocument();
+    const cpl = screen.getByText("Custo por lead").closest("button") as HTMLButtonElement;
+    expect(cpl.textContent).toContain("↓ 37,5%");
+    expect(cpl.querySelector(".text-success-fg")).not.toBeNull();
+    const spend = screen.getByRole("button", { name: /^Investimento/ });
+    expect(spend.querySelector(".text-success-fg")).not.toBeNull();
+
+    // Retenção real: Hook = 3s ÷ impressões, Body = 75% ÷ impressões, barras relativas ao 25%.
+    expect(screen.getByText("pararam para assistir").parentElement?.textContent).toContain("30%");
+    expect(screen.getByText("viram até o fim").parentElement?.textContent).toContain("5%");
+    const bar95 = screen.getByText("View 95%").closest("li")?.querySelector(".bg-error") as HTMLElement;
+    expect(bar95.style.width).toBe("5%");
+    const bar25 = screen.getByText("View 25%").closest("li")?.querySelector(".bg-success") as HTMLElement;
+    expect(bar25.style.width).toBe("100%");
+
+    // Descrição leiga embaixo do nome da campanha e detalhamento conjunto → anúncio.
+    expect(screen.getByText("Remarketing: quem já viu")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /RMKT Clínica/, expanded: false }));
+    expect(screen.getByText("Conjunto Frio")).toBeInTheDocument();
+    expect(screen.getByText("2 anúncios")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Ver anúncio" });
+    expect(link).toHaveAttribute("href", "https://www.facebook.com/123/posts/456/");
+    expect(screen.getByRole("link", { name: "Ver anúncio: Vídeo depoimento" })).toHaveAttribute(
+      "href",
+      "https://www.facebook.com/123/posts/456/",
+    );
+    expect(screen.getByText("VD")).toBeInTheDocument();
+    expect(screen.getAllByText("sem dado").length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toContain("—");
   });
 
   it("segue a predefinição de colunas ao montar a tabela", async () => {

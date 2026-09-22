@@ -139,24 +139,61 @@ describe("funil visual de conversão", () => {
     expect(report[0]?.platforms[0]?.frequency).toBe(1.25);
   });
 
-  it("expõe taxas de passagem e mantém custo sem fechamento como indisponível", () => {
+  it("conta a passagem em frase, aponta a menor e fixa o custo embaixo do número", () => {
     render(
       <ConversionFunnel
         title="Da entrada ao fechamento"
         idioma="pt"
+        currency="BRL"
         stages={[
-          { key: "entered", label: "Leads que entraram", value: 20, rate: null },
-          { key: "service", label: "Em atendimento", value: 12, rate: 60 },
-          { key: "won", label: "Fechados", value: 0, rate: 0 },
+          {
+            key: "clicks",
+            label: "Cliques no link",
+            value: 3_812,
+            rate: null,
+            asSource: "que clicaram",
+          },
+          {
+            key: "leads",
+            label: "Leads",
+            value: 441,
+            rate: 11.5,
+            cost: 6.12,
+            asSource: "que viraram leads",
+            asTarget: "viraram leads",
+            costLabel: "por lead",
+          },
+          { key: "won", label: "Fechados", value: 0, rate: 0, asTarget: "fecharam venda" },
         ]}
-        summary={[{ label: "Custo por venda fechada", value: "—", emphasis: true }]}
+        summary={[{ label: "Custo por venda fechada", value: "sem dado", emphasis: true }]}
       />,
     );
 
-    expect(screen.getAllByText("60% avançou")).toHaveLength(2);
-    expect(screen.getAllByText("0% avançou")).toHaveLength(2);
+    expect(
+      screen.getByText("De 3,8 mil que clicaram, 441 viraram leads (11,5%)"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("De 441 que viraram leads, 0 fecharam venda (0%)")).toBeInTheDocument();
+    expect(screen.getByText("menor passagem do funil")).toBeInTheDocument();
+    expect(screen.getByText(/R\$\s6,12 por lead/)).toBeInTheDocument();
+    expect(screen.queryByText(/avançou/)).not.toBeInTheDocument();
     const cost = screen.getByText("Custo por venda fechada").parentElement;
     expect(cost).not.toBeNull();
-    expect(within(cost!).getByText("—")).toBeInTheDocument();
+    expect(within(cost!).getByText("sem dado")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("—");
+  });
+
+  it("só destaca a menor passagem quando há mais de uma para comparar", () => {
+    render(
+      <ConversionFunnel
+        title="Curto"
+        idioma="pt"
+        stages={[
+          { key: "a", label: "Impressões", value: 100, rate: null },
+          { key: "b", label: "Cliques", value: 10, rate: 10 },
+        ]}
+        summary={[]}
+      />,
+    );
+    expect(screen.queryByText("menor passagem do funil")).not.toBeInTheDocument();
   });
 });
