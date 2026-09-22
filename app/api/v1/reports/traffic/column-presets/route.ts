@@ -8,20 +8,39 @@ import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  columnsBelongToPlatform,
   serializeTrafficColumnPresets,
   trafficColumnPresetColumnsSchema,
   trafficColumnPresetNameSchema,
+  trafficColumnPresetPlatformSchema,
 } from "@/lib/windsor/column-presets";
 
 export const dynamic = "force-dynamic";
 
-const createSchema = z.object({
-  name: trafficColumnPresetNameSchema,
-  columns: trafficColumnPresetColumnsSchema,
-});
+const createSchema = z
+  .object({
+    name: trafficColumnPresetNameSchema,
+    platform: trafficColumnPresetPlatformSchema,
+    columns: trafficColumnPresetColumnsSchema,
+  })
+  .superRefine((value, context) => {
+    if (!columnsBelongToPlatform(value.platform, value.columns)) {
+      context.addIssue({
+        code: "custom",
+        path: ["columns"],
+        message: "Há colunas incompatíveis com a plataforma.",
+      });
+    }
+  });
 
-export async function GET(): Promise<Response> {
+export async function GET(request: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  const platform = trafficColumnPresetPlatformSchema.safeParse(
+    new URL(request.url).searchParams.get("platform"),
+  );
+  if (!platform.success) {
+    return fail("validation_error", "Plataforma inválida.", 400, { requestId });
+  }
   const authz = await requireRole("viewer", { requestId, resource: "reports" });
   if (!authz.ok) return authz.response;
 
@@ -31,14 +50,15 @@ export async function GET(): Promise<Response> {
     await Promise.all([
       admin
         .from("traffic_dashboard_configs" as never)
-        .select("default_column_preset_id")
+        .select("default_meta_column_preset_id,default_google_column_preset_id")
         .eq("organization_id", organizationId)
         .eq("enabled", true)
         .maybeSingle(),
       admin
         .from("traffic_dashboard_column_presets" as never)
-        .select("id,name,metric_columns")
+        .select("id,name,metric_columns,platform")
         .eq("organization_id", organizationId)
+        .eq("platform", platform.data)
         .order("name"),
     ]);
 
@@ -47,13 +67,23 @@ export async function GET(): Promise<Response> {
       requestId,
     });
   }
+  const typedConfig = config as unknown as {
+    default_meta_column_preset_id: string | null;
+    default_google_column_preset_id: string | null;
+  } | null;
   const defaultPresetId =
-    (config as unknown as { default_column_preset_id: string | null } | null)
-      ?.default_column_preset_id ?? null;
+    platform.data === "meta_ads"
+      ? (typedConfig?.default_meta_column_preset_id ?? null)
+      : (typedConfig?.default_google_column_preset_id ?? null);
   return ok(
     {
       presets: serializeTrafficColumnPresets(
-        presets as unknown as Array<{ id: string; name: string; metric_columns: unknown }>,
+        presets as unknown as Array<{
+          id: string;
+          name: string;
+          metric_columns: unknown;
+          platform: unknown;
+        }>,
         defaultPresetId,
       ),
       default_preset_id: defaultPresetId,
@@ -88,11 +118,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     .insert({
       organization_id: organizationId,
       name: parsed.data.name,
+      platform: parsed.data.platform,
       metric_columns: parsed.data.columns,
       created_by: authz.user.id,
       updated_by: authz.user.id,
     } as never)
-    .select("id,name,metric_columns")
+    .select("id,name,metric_columns,platform")
     .single();
   if (error?.code === "23505") {
     return fail("conflict", "Já existe uma predefinição com este nome.", 409, { requestId });
@@ -102,7 +133,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       requestId,
     });
   }
-  const row = data as unknown as { id: string; name: string; metric_columns: unknown };
+  const row = data as unknown as {
+    id: string;
+    name: string;
+    metric_columns: unknown;
+    platform: unknown;
+  };
   const preset = serializeTrafficColumnPresets([row], null)[0];
   if (!preset) {
     return fail("internal_error", "A predefinição salva ficou inválida.", 500, { requestId });
@@ -116,7 +152,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     requestId,
     bypassedRls: true,
     actingAsPlatformAdmin: true,
-    metadata: { name: preset.name, columns: preset.columns },
+    metadata: { name: preset.name, columns: preset.columns, platform: preset.platform },
   });
   return ok({ preset }, { requestId, status: 201 });
 }

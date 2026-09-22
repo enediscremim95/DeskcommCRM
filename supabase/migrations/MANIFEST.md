@@ -315,3 +315,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260922100000` | `0255_stage_entered_at` | Registra quando cada lead entrou na etapa atual; o backfill usa a última atividade de mudança ou a criação, e um trigger cobre todos os caminhos de movimento. |
 | `20260922163000` | `0257_metricas_prioritarias_relatorio` | Persiste por organização, em ordem, os cartões prioritários do topo do Relatório; ausência preserva o padrão atual de cada modelo. |
 | `20260922143000` | `0256_qualificacao_humana_lead` | Adiciona qualificação humana opcional de 1 a 5 ao lead, independente do score calculado pela IA. |
+| `20260922170000` | `0258_colunas_relatorio_por_plataforma` | Separa predefinições e padrões da tabela de campanhas entre Meta Ads e Google Ads; duplica escolhas legadas de forma idempotente e remove do Google métricas exclusivas de mensagens do Meta. |

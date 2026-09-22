@@ -8,6 +8,7 @@ const USER_A = "fa250000-1111-4000-8000-00000000000a";
 const USER_B = "fa250000-1111-4000-8000-00000000000b";
 const PRESET_A = "fa250000-2222-4000-8000-00000000000a";
 const PRESET_B = "fa250000-2222-4000-8000-00000000000b";
+const PRESET_A_GOOGLE = "fa250000-2222-4000-8000-00000000000c";
 
 beforeAll(() => {
   sql(`
@@ -34,17 +35,22 @@ beforeAll(() => {
     on conflict (organization_id) do nothing;
 
     insert into public.traffic_dashboard_column_presets
-      (id, organization_id, name, metric_columns)
+      (id, organization_id, name, metric_columns, platform)
     values
-      ('${PRESET_A}', '${ORG_A}', 'Captação', array['spend','leads']),
-      ('${PRESET_B}', '${ORG_B}', 'Vendas', array['spend','purchases'])
+      ('${PRESET_A}', '${ORG_A}', 'Captação', array['spend','leads'], 'meta_ads'),
+      ('${PRESET_A_GOOGLE}', '${ORG_A}', 'Captação', array['spend','leads'], 'google_ads'),
+      ('${PRESET_B}', '${ORG_B}', 'Vendas', array['spend','purchases'], 'meta_ads')
     on conflict (id) do nothing;
 
     update public.traffic_dashboard_configs
-       set default_column_preset_id = case organization_id
-         when '${ORG_A}' then '${PRESET_A}'::uuid
-         when '${ORG_B}' then '${PRESET_B}'::uuid
-       end
+       set default_meta_column_preset_id = case organization_id
+             when '${ORG_A}' then '${PRESET_A}'::uuid
+             when '${ORG_B}' then '${PRESET_B}'::uuid
+           end,
+           default_google_column_preset_id = case organization_id
+             when '${ORG_A}' then '${PRESET_A_GOOGLE}'::uuid
+             else null
+           end
      where organization_id in ('${ORG_A}', '${ORG_B}');
   `);
 });
@@ -56,7 +62,7 @@ describe("predefinições de colunas do Relatório", () => {
         USER_A,
         `select count(*) from public.traffic_dashboard_column_presets where organization_id = '${ORG_A}';`,
       ),
-    ).toBe(1);
+    ).toBe(2);
   });
 
   it("viewer não enxerga a predefinição da organização vizinha", () => {
@@ -74,8 +80,8 @@ describe("predefinições de colunas do Relatório", () => {
         set role authenticated;
         select set_config('request.jwt.claims', '{"sub":"${USER_A}"}', false);
         insert into public.traffic_dashboard_column_presets
-          (organization_id, name, metric_columns)
-        values ('${ORG_A}', 'Sem rota', array['spend']);
+          (organization_id, name, metric_columns, platform)
+        values ('${ORG_A}', 'Sem rota', array['spend'], 'meta_ads');
       `),
     ).toThrow();
   });
@@ -84,8 +90,18 @@ describe("predefinições de colunas do Relatório", () => {
     expect(() =>
       sql(`
         update public.traffic_dashboard_configs
-           set default_column_preset_id = '${PRESET_B}'
+           set default_google_column_preset_id = '${PRESET_B}'
          where organization_id = '${ORG_A}';
+      `),
+    ).toThrow();
+  });
+
+  it("o banco recusa métricas sem dado na plataforma Google", () => {
+    expect(() =>
+      sql(`
+        insert into public.traffic_dashboard_column_presets
+          (organization_id, name, metric_columns, platform)
+        values ('${ORG_A}', 'Google inválido', array['spend','reach'], 'google_ads');
       `),
     ).toThrow();
   });

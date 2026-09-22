@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import {
-  CAMPAIGN_METRIC_COLUMNS,
+  type AdPlatform,
   type CampaignMetricColumn,
   type DashboardModel,
 } from "@/lib/windsor/types";
@@ -18,9 +18,11 @@ interface ColumnPresetMenuProps {
   organizationKey: string;
   viewerKey: string;
   model: DashboardModel;
+  platform: AdPlatform;
   initialPresets: TrafficColumnPreset[];
   defaultPresetId: string | null;
   defaultColumns: CampaignMetricColumn[];
+  availableColumns: CampaignMetricColumn[];
   canManage: boolean;
   columnLabel: (column: CampaignMetricColumn, idioma: string) => string;
   onColumnsChange: (columns: CampaignMetricColumn[]) => void;
@@ -51,13 +53,29 @@ export function reorderColumns(
   return next;
 }
 
+export function columnPresetStorageKeys(
+  organizationKey: string,
+  viewerKey: string,
+  model: DashboardModel,
+  platform: AdPlatform,
+) {
+  const identity = `${organizationKey}:${viewerKey}:${model}:${platform}`;
+  return {
+    identity,
+    presetStorageKey: `traffic-campaign-preset:${identity}`,
+    columnsStorageKey: `traffic-campaign-columns:${identity}`,
+  };
+}
+
 export function ColumnPresetMenu({
   organizationKey,
   viewerKey,
   model,
+  platform,
   initialPresets,
   defaultPresetId,
   defaultColumns,
+  availableColumns,
   canManage,
   columnLabel,
   onColumnsChange,
@@ -74,9 +92,12 @@ export function ColumnPresetMenu({
   const [nameDraft, setNameDraft] = useState("");
   const [creating, setCreating] = useState(false);
   const initializedFor = useRef<string | null>(null);
-  const identity = `${organizationKey}:${viewerKey}:${model}`;
-  const presetStorageKey = `traffic-campaign-preset:${identity}`;
-  const columnsStorageKey = `traffic-campaign-columns:${identity}`;
+  const { identity, presetStorageKey, columnsStorageKey } = columnPresetStorageKeys(
+    organizationKey,
+    viewerKey,
+    model,
+    platform,
+  );
 
   useEffect(() => {
     if (initializedFor.current === identity) return;
@@ -93,7 +114,7 @@ export function ColumnPresetMenu({
       try {
         const stored = JSON.parse(localStorage.getItem(columnsStorageKey) ?? "null") as unknown;
         if (Array.isArray(stored)) {
-          const allowed = new Set<string>(CAMPAIGN_METRIC_COLUMNS);
+          const allowed = new Set<string>(availableColumns);
           const valid = stored.filter(
             (column): column is CampaignMetricColumn =>
               typeof column === "string" && allowed.has(column),
@@ -115,6 +136,7 @@ export function ColumnPresetMenu({
     initialPresets,
     onColumnsChange,
     presetStorageKey,
+    availableColumns,
   ]);
 
   const activePreset = presets.find((preset) => preset.id === activePresetId) ?? null;
@@ -162,7 +184,7 @@ export function ColumnPresetMenu({
       const updated = await requestPreset(
         `/api/v1/reports/traffic/column-presets/${activePreset.id}`,
         "PATCH",
-        { columns },
+        { platform, columns },
       );
       if (updated) {
         setPresets((current) =>
@@ -187,6 +209,7 @@ export function ColumnPresetMenu({
     try {
       const created = await requestPreset("/api/v1/reports/traffic/column-presets", "POST", {
         name,
+        platform,
         columns,
       });
       if (created) {
@@ -212,7 +235,7 @@ export function ColumnPresetMenu({
       const updated = await requestPreset(
         `/api/v1/reports/traffic/column-presets/${activePreset.id}`,
         "PATCH",
-        { name: nameDraft.trim() },
+        { platform, name: nameDraft.trim() },
       );
       if (updated) {
         setPresets((current) =>
@@ -237,6 +260,7 @@ export function ColumnPresetMenu({
     setMessage(null);
     try {
       await requestPreset(`/api/v1/reports/traffic/column-presets/${activePreset.id}`, "PATCH", {
+        platform,
         make_default: true,
       });
       setPresets((current) =>
@@ -257,7 +281,10 @@ export function ColumnPresetMenu({
     setBusy(true);
     setMessage(null);
     try {
-      await requestPreset(`/api/v1/reports/traffic/column-presets/${activePreset.id}`, "DELETE");
+      await requestPreset(
+        `/api/v1/reports/traffic/column-presets/${activePreset.id}?platform=${platform}`,
+        "DELETE",
+      );
       const remaining = presets.filter((preset) => preset.id !== activePreset.id);
       setPresets(remaining);
       const next = remaining.find((preset) => preset.is_default) ?? remaining[0] ?? null;
@@ -279,9 +306,7 @@ export function ColumnPresetMenu({
         {t("Colunas")} ({columns.length})
       </summary>
       <div className="absolute right-0 z-20 mt-2 w-[min(92vw,34rem)] rounded-xl border bg-card p-4 shadow-xl">
-        <p className="text-sm font-semibold">
-          {t("Personalizar colunas")}
-        </p>
+        <p className="text-sm font-semibold">{t("Personalizar colunas")}</p>
         {presets.length > 0 ? (
           <label className="mt-3 block text-xs font-medium text-muted-foreground">
             {t("Predefinição")}
@@ -409,12 +434,13 @@ export function ColumnPresetMenu({
               onChange={(event) => setBuscaMetrica(event.target.value)}
             />
             <div className="mt-2 flex max-h-28 flex-wrap gap-2 overflow-y-auto">
-              {CAMPAIGN_METRIC_COLUMNS.filter(
-                (column) =>
-                  !columns.includes(column) &&
-                  semAcento(columnLabel(column, idioma)).includes(semAcento(buscaMetrica.trim())),
-              ).map(
-                (column) => (
+              {availableColumns
+                .filter(
+                  (column) =>
+                    !columns.includes(column) &&
+                    semAcento(columnLabel(column, idioma)).includes(semAcento(buscaMetrica.trim())),
+                )
+                .map((column) => (
                   <button
                     key={column}
                     type="button"
@@ -423,8 +449,7 @@ export function ColumnPresetMenu({
                   >
                     + {columnLabel(column, idioma)}
                   </button>
-                ),
-              )}
+                ))}
             </div>
 
             {creating && (
@@ -455,9 +480,7 @@ export function ColumnPresetMenu({
                 disabled={busy || !activePreset}
                 onClick={saveColumns}
               >
-                {busy
-                  ? t("Salvando…")
-                  : t("Salvar")}
+                {busy ? t("Salvando…") : t("Salvar")}
               </button>
               <button
                 type="button"
@@ -477,9 +500,7 @@ export function ColumnPresetMenu({
                 disabled={busy || !activePreset || activePreset.is_default}
                 onClick={makeDefault}
               >
-                {activePreset?.is_default
-                  ? t("Padrão")
-                  : t("Marcar como padrão")}
+                {activePreset?.is_default ? t("Padrão") : t("Marcar como padrão")}
               </button>
               <button
                 type="button"
