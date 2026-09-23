@@ -60,7 +60,7 @@ export function FollowupsDoLead({ leadId, contactId, podeEditar }: Props) {
           </p>
         </div>
         {podeEditar ? (
-          <Button type="button" size="sm" variant="outline" onClick={abrir}>
+          <Button type="button" size="sm" variant="default" onClick={abrir}>
             <Plus size={14} aria-hidden />
             {t("Follow-up")}
           </Button>

@@ -5667,6 +5667,7 @@ export const DICIONARIO: Traducoes = {
   "Última atividade": { es: "Última actividad" },
   "Nesta etapa desde": { es: "En esta etapa desde" },
   "Abrir no WhatsApp": { es: "Abrir en WhatsApp" },
+  "Sugestão de retomada vencida": { es: "Sugerencia de retomada vencida" },
   "Direito ao esquecimento (LGPD)": { es: "Derecho al olvido (LGPD)" },
   "A anonimização é irreversível. Use somente após confirmação formal do titular ou ordem judicial.": {
     es: "La anonimización es irreversible. Úsala solo después de confirmación formal del titular u orden judicial.",

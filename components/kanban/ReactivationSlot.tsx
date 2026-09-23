@@ -55,6 +55,17 @@ export function ReactivationSlot({
   };
 
   const resta = quantoFalta(expiresAt, t);
+  // Sugestão com o prazo vencido não oferece botão: quem clicasse levaria um 409
+  // do servidor ("já foi decidida"), porque quem a vence só roda de 15 em 15 min.
+  const venceu = resta === t("vencendo");
+
+  if (venceu) {
+    return (
+      <span className="min-w-0 flex-1 truncate text-text-muted">
+        {t("Sugestão de retomada vencida")}
+      </span>
+    );
+  }
 
   return (
     <>

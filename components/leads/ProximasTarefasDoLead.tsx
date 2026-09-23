@@ -45,7 +45,7 @@ export function ProximasTarefasDoLead({ leadId, contactId, canEdit }: Props) {
           <Button
             type="button"
             size="sm"
-            variant="outline"
+            variant="default"
             className="min-h-11 sm:min-h-8"
             onClick={() => setOpen(true)}
           >
