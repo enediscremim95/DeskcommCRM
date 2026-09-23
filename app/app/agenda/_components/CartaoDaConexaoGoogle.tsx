@@ -26,6 +26,30 @@ import { usePermission } from "@/hooks/auth/AuthProvider";
  * agir — falta uma chave, e há um lugar onde se põe. Botão desabilitado aqui
  * diria "você não pode", quando o certo é "esta instalação ainda não tem".
  */
+/** O "G" de quatro cores da marca do Google, nas cores oficiais. */
+function GoogleG() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden focusable="false">
+      <path
+        fill="#EA4335"
+        d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+      />
+      <path
+        fill="#4285F4"
+        d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+      />
+    </svg>
+  );
+}
+
 export function CartaoDaConexaoGoogle({
   configurado,
   falta,
@@ -167,18 +191,26 @@ export function CartaoDaConexaoGoogle({
   }
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border bg-surface p-3">
-      <p className="min-w-0 flex-1 text-sm text-text-muted">
-        {t(
-          "Conecte sua agenda do Google para ver aqui o que já está marcado lá — e enviar para lá o que for marcado aqui.",
-        )}
-      </p>
-      <Button variant="outline" size="sm" data-testid="conectar-google" asChild>
-        <a href="/api/v1/agenda/google/connect">
-          <GoogleLogo size={16} weight="bold" aria-hidden />
-          <span>{t("Conectar Google")}</span>
-        </a>
-      </Button>
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 sm:flex-row sm:items-center">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-text">{t("Conecte sua agenda do Google")}</p>
+        <p className="mt-0.5 text-sm text-text-muted">
+          {t(
+            "Você vê aqui o que já está marcado lá, e o que for marcado aqui aparece na sua agenda.",
+          )}
+        </p>
+      </div>
+      {/* Botão no padrão da marca do Google: fundo branco, borda #dadce0, texto
+          #3c4043 e o "G" de quatro cores. Fixo nos dois temas porque é marca de
+          terceiro, não cor do nosso sistema. */}
+      <a
+        href="/api/v1/agenda/google/connect"
+        data-testid="conectar-google"
+        className="inline-flex h-10 shrink-0 items-center justify-center gap-3 rounded-[4px] border border-[#dadce0] bg-white px-4 text-sm font-medium text-[#3c4043] shadow-xs transition-colors hover:bg-[#f7f8f8] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4285f4]"
+      >
+        <GoogleG />
+        <span>{t("Conectar com o Google")}</span>
+      </a>
     </div>
   );
 }

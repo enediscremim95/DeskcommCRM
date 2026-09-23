@@ -15,6 +15,7 @@ import {
   rotuloDoCampo,
   valorLegivel,
 } from "@/lib/leads/dados-completos";
+import { origemComUtms } from "@/lib/leads/utm-da-url";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import type { Lead } from "@/lib/types/leads";
 import { CaretRight, Check, Copy } from "@/lib/ui/icons";
@@ -258,9 +259,12 @@ export function DadosCompletosDoLead({
     ),
     fieldDefs,
   );
-  const origem = Object.entries(lead.source_metadata ?? {}).filter(
-    ([, valor]) => !estaVazio(valor),
-  );
+  // A campanha costuma chegar grudada na URL da página ("?utm_campaign=..."),
+  // então ela também vira linha com nome, e não um endereço cortado na tela.
+  const origem = origemComUtms(
+    lead.source_metadata as Record<string, unknown> | null,
+    Object.values(lead.custom_fields ?? {}),
+  ).filter(([, valor]) => !estaVazio(valor));
 
   const negocio: CampoProps[] = [
     { rotulo: t("Título"), valor: lead.title },

@@ -5667,6 +5667,9 @@ export const DICIONARIO: Traducoes = {
   "Última atividade": { es: "Última actividad" },
   "Nesta etapa desde": { es: "En esta etapa desde" },
   "Abrir no WhatsApp": { es: "Abrir en WhatsApp" },
+  "Conecte sua agenda do Google": { es: "Conecte su agenda de Google" },
+  "Você vê aqui o que já está marcado lá, e o que for marcado aqui aparece na sua agenda.": { es: "Usted ve aquí lo que ya está agendado allá, y lo que se agende aquí aparece en su agenda." },
+  "Conectar com o Google": { es: "Conectar con Google" },
   "Sugestão de retomada vencida": { es: "Sugerencia de retomada vencida" },
   "Direito ao esquecimento (LGPD)": { es: "Derecho al olvido (LGPD)" },
   "A anonimização é irreversível. Use somente após confirmação formal do titular ou ordem judicial.": {
