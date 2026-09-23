@@ -159,7 +159,19 @@ export function ContactDetailClient({ contactId }: Props) {
               <div>
                 <dt className="text-xs uppercase text-muted-foreground">{t("Telefone")}</dt>
                 <dd className="mt-1">
-                  {contact.phone_number ? phoneForDisplay(contact.phone_number) : "—"}
+                  {contact.phone_number ? (
+                    <a
+                      className="hover:underline"
+                      href={`https://wa.me/${contact.phone_number.replace(/\D/g, "")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={t("Abrir no WhatsApp")}
+                    >
+                      {phoneForDisplay(contact.phone_number)}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
                 </dd>
               </div>
               <div>
