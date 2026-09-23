@@ -30,6 +30,12 @@ const ROTULOS_CONHECIDOS: Record<string, string> = {
   campaign_name: "Campanha",
   ad_name: "Anúncio",
   adset_name: "Conjunto de anúncios",
+  campaign_id: "Código da campanha",
+  adset_id: "Código do conjunto",
+  ad_id: "Código do anúncio",
+  gclid: "Clique do Google",
+  fbclid: "Clique do Facebook",
+  pagina: "Página",
   webhook_source_id: "Fonte de captação",
   raw_phone: "Telefone informado",
 };
