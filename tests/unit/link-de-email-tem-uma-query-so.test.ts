@@ -1,8 +1,8 @@
 /**
- * O LINK DO E-MAIL DE AUTH É MONTADO POR DOIS ARQUIVOS QUE NÃO SE CONHECEM.
+ * O LINK DE CONFIRMAÇÃO DO SIGNUP É MONTADO POR DOIS ARQUIVOS QUE NÃO SE CONHECEM.
  *
- * Quem inicia a query é o Server Action (`?type=recovery` / `?type=signup` em
- * `redirectTo`/`emailRedirectTo`); quem a continua é o template HTML que o
+ * Quem inicia a query é o Server Action (`?type=signup` em `emailRedirectTo`);
+ * quem a continua é o template HTML que o
  * GoTrue renderiza (`&token_hash={{ .TokenHash }}`). Um é TypeScript, o outro
  * é HTML lido por um serviço em Go — nenhum compilador, tipo ou teste de
  * unidade existente liga os dois.
@@ -42,11 +42,6 @@ const ler = (p: string) => readFileSync(join(raiz, p), "utf8");
 
 const PARES = [
   {
-    fluxo: "recovery",
-    action: "app/actions/auth/requestPasswordReset.ts",
-    template: "supabase/templates/recovery.html",
-  },
-  {
     fluxo: "signup",
     action: "app/actions/auth/signUp.ts",
     template: "supabase/templates/confirmation.html",
@@ -82,4 +77,11 @@ describe("o link do e-mail de auth tem UMA query só", () => {
       ).toBe("{{ .RedirectTo }}&token_hash={{ .TokenHash }}");
     });
   }
+
+  it("recovery é montado inteiro pela Action com type e token_hash", () => {
+    const action = ler("app/actions/auth/requestPasswordReset.ts");
+    expect(action).toContain('confirmUrl.searchParams.set("type", "recovery")');
+    expect(action).toContain('confirmUrl.searchParams.set("token_hash", tokenHash)');
+    expect(action).not.toContain("resetPasswordForEmail");
+  });
 });

@@ -6481,11 +6481,22 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível enviar o e-mail. Tente novamente.": {
     es: "No se pudo enviar el correo. Intenta de nuevo.",
   },
+  "O envio de e-mail não está configurado. Fale com o administrador.": {
+    es: "El envío de correo no está configurado. Habla con el administrador.",
+  },
   "Verifique seu e-mail": { es: "Revisa tu correo" },
   "Se existir uma conta com esse e-mail, enviamos um link para redefinir a senha.": {
     es: "Si existe una cuenta con ese correo, enviamos un enlace para restablecer la contraseña.",
   },
   "Enviar link de redefinição": { es: "Enviar enlace de restablecimiento" },
+  "Crie uma nova senha": { es: "Crea una nueva contraseña" },
+  "Recebemos um pedido para redefinir a senha da sua conta.": {
+    es: "Recibimos una solicitud para restablecer la contraseña de tu cuenta.",
+  },
+  "Criar nova senha": { es: "Crear nueva contraseña" },
+  "Por segurança, este link é temporário e só pode ser usado uma vez.": {
+    es: "Por seguridad, este enlace es temporal y solo puede usarse una vez.",
+  },
 
   // Mensagens de validação do Zod (lib/auth/schemas.ts) — acessadas via
   // `errors.campo.message` (não literal, invisível ao scanner de t()).

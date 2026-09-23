@@ -11,9 +11,10 @@ import { env } from "@/lib/env";
 /**
  * GET /auth/confirm — troca o token do e-mail por uma sessão.
  *
- * É o destino único dos links de e-mail do GoTrue: confirmação de signup E
- * redefinição de senha. Dois formatos de link chegam aqui, dependendo de como
- * o projeto Supabase está configurado:
+ * É o destino único dos links de confirmação e redefinição. O signup pode vir
+ * pelo e-mail do GoTrue; a recuperação iniciada no app gera o token pelo Admin
+ * e envia pelo Resend. Dois formatos de link podem chegar aqui, dependendo de
+ * como o projeto Supabase está configurado:
  *
  * - `token_hash` + `type`: template de e-mail customizado (supabase/templates/,
  *   subidos por `hostgator-setup-kit/marca-emails.sh`) linkando direto pro app.
@@ -27,8 +28,8 @@ import { env } from "@/lib/env";
  * - `code` (PKCE): template PADRÃO do Supabase (o de quem nunca configurou os
  *   templates — caso mais comum em instalação fresca). O e-mail linka pro
  *   `/auth/v1/verify` do próprio GoTrue, que valida e SÓ ENTÃO redireciona pra
- *   cá com o code; não inclui `type`, por isso requestPasswordReset.ts e
- *   signUp.ts anexam `?type=` no redirectTo/emailRedirectTo — é o único jeito
+ *   cá com o code; não inclui `type`, por isso signUp.ts anexa `?type=` no
+ *   emailRedirectTo — é o único jeito
  *   desse dado sobreviver ao hop pelo GoTrue nesse formato.
  *
  *   ⚠️ O formato `code` NÃO FECHA nesta instalação, e o motivo é estrutural.
