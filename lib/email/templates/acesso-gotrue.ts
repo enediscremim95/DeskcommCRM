@@ -1,14 +1,15 @@
 import { NEUTROS_DE_SAIDA, type MarcaDeSaida } from "@/lib/branding/saida";
 
 /**
- * Os dois e-mails de ACESSO — confirmar conta e redefinir senha — no formato
- * que o GoTrue renderiza.
+ * Moldes de confirmação e recovery no formato que o GoTrue renderiza. A ação
+ * pública de recuperação já envia um template próprio pelo Resend; o molde de
+ * recovery permanece para instalações que acionem o mailer do GoTrue direto.
  *
  * ─── POR QUE ISTO É DIFERENTE DE `invite.ts` ────────────────────────────────
  *
- * O convite de time é montado e ENVIADO por nós. Estes dois não: quem os
- * renderiza e envia é o GoTrue, um processo de terceiro. Nós só entregamos o
- * MOLDE, e ele preenche `{{ .RedirectTo }}` e `{{ .TokenHash }}` na hora do
+ * O convite de time e a recuperação iniciada pelo app são enviados por nós.
+ * Estes moldes, quando usados, são renderizados e enviados pelo GoTrue.
+ * Entregamos o MOLDE, e ele preenche `{{ .RedirectTo }}` e `{{ .TokenHash }}` na hora do
  * envio. Por isso a saída aqui é uma string de template Go, não um e-mail
  * pronto — e por isso as chaves duplas NÃO passam por escape: elas são sintaxe
  * do renderizador, não dado.
@@ -28,8 +29,8 @@ import { NEUTROS_DE_SAIDA, type MarcaDeSaida } from "@/lib/branding/saida";
  *
  * ─── `&`, NUNCA `?` ────────────────────────────────────────────────────────
  *
- * `.RedirectTo` já chega com `?type=` embutido — `signUp.ts` e
- * `requestPasswordReset.ts` o anexam de propósito, porque é o único jeito de o
+ * `.RedirectTo` já precisa chegar com `?type=` embutido — `signUp.ts` o anexa
+ * de propósito, porque é o único jeito de o
  * `type` sobreviver ao hop pelo GoTrue no outro formato. Um `?` aqui duplicaria
  * o separador e o parser de URL do browser pararia de reconhecer `token_hash`.
  */

@@ -38,6 +38,8 @@ export function ForgotPasswordForm() {
         setServerError(t("Muitas tentativas. Aguarde alguns minutos."));
       } else if (res.error === "validation_error") {
         setServerError(t("Email inválido. Confira o campo."));
+      } else if (res.error === "email_not_configured") {
+        setServerError(t("O envio de e-mail não está configurado. Fale com o administrador."));
       } else {
         setServerError(t("Não foi possível enviar o e-mail. Tente novamente."));
       }
