@@ -2044,3 +2044,20 @@ plataforma; o invariante
 escrita direta negada e FK composta contra padrão cross-tenant. A prova
 Playwright ficou pendente nesta execução porque o ambiente exige carregar
 credenciais sintéticas E2E, explicitamente fora do escopo autorizado.
+
+## Apoio humano no WhatsApp Web [P0]
+
+| # | Caso | Resultado exigido |
+| --- | --- | --- |
+| X1 | Atendente instala e volta ao CRM autenticado | O pareamento acontece sem copiar token; a extensão guarda somente o token efêmero na sessão do Chrome |
+| X2 | CRM fecha, troca de empresa ou expira | A presença vence e todas as APIs da extensão respondem `Entre no CRM para usar.` |
+| X3 | Conversa conhecida está aberta | O painel mostra nome, etapa, origem e anotações recentes do mesmo tenant |
+| X4 | Atendente busca uma resposta rápida | Texto pessoal ou compartilhado é encontrado e apenas colocado no campo do WhatsApp para revisão |
+| X5 | Gerente anexa áudio compartilhado | A prévia toca antes de salvar; o servidor recodifica para `audio/ogg; codecs=opus` e guarda em caminho privado do tenant |
+| X6 | Atendente envia o áudio | A ponte local chama `sendFileMessage` com `type: audio` e `isPtt: true`; qualquer falha interrompe sem enviar como anexo |
+| X7 | Atendente anota ou muda etapa | A operação usa o core do CRM, produz atividade/auditoria e filtra explicitamente a organização autenticada |
+| X8 | Tenant tenta cruzar dados | RLS de pareamentos, RLS dos templates e filtros explícitos impedem leitura ou mutação cruzada |
+
+A jornada real no WhatsApp Web depende de uma conta pareada e não é alegada por
+um teste sintético. O recorte automatizado cobre pacote, origem, autenticação,
+RLS, conversão de áudio, estrutura da chamada PTT e a tela controlada no CRM.

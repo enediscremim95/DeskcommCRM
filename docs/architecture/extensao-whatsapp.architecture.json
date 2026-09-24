@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Apoio humano no WhatsApp Web",
+    "subtitle": "Sessão ativa, tenant explícito e voz Opus formam uma única fronteira curta",
+    "output": "extensao-whatsapp.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "humano", "label": "Atendente" },
+    { "id": "crm", "label": "CRM autenticado" },
+    { "id": "extensao", "label": "Extensão Manifest V3" },
+    { "id": "pagina", "label": "WhatsApp Web" },
+    { "id": "dados", "label": "Dados privados" }
+  ],
+  "mainPath": ["sessao", "pareamento", "painel", "contexto", "acao"],
+  "nodes": [
+    {
+      "id": "sessao",
+      "lane": "humano",
+      "col": 0,
+      "type": "frontend",
+      "label": "Tela de instalação",
+      "sublabel": "sessão e organização ativa do CRM"
+    },
+    {
+      "id": "pareamento",
+      "lane": "crm",
+      "col": 1,
+      "type": "api",
+      "label": "Código de uso único + presença",
+      "sublabel": "token efêmero, hash no banco e nenhum segredo manual"
+    },
+    {
+      "id": "auth",
+      "lane": "crm",
+      "col": 2,
+      "type": "security",
+      "label": "Autenticação da extensão",
+      "sublabel": "origem exata, ID fixo, tenant, vínculo e presença recente"
+    },
+    {
+      "id": "painel",
+      "lane": "extensao",
+      "col": 3,
+      "type": "frontend",
+      "label": "Painel lateral",
+      "sublabel": "ficha, busca, texto, voz, nota e etapa"
+    },
+    {
+      "id": "ponte",
+      "lane": "pagina",
+      "col": 4,
+      "type": "lib",
+      "label": "Ponte WA-JS local",
+      "sublabel": "lê a conversa, preenche texto e envia PTT"
+    },
+    {
+      "id": "contexto",
+      "lane": "crm",
+      "col": 4,
+      "type": "api",
+      "label": "Contexto e ações",
+      "sublabel": "filtro explícito por organization_id"
+    },
+    {
+      "id": "templates",
+      "lane": "dados",
+      "col": 5,
+      "type": "table",
+      "label": "message_templates",
+      "sublabel": "resposta compartilhada e metadados do áudio"
+    },
+    {
+      "id": "storage",
+      "lane": "dados",
+      "col": 5,
+      "type": "storage",
+      "label": "whatsapp-media",
+      "sublabel": "OGG/Opus privado sob o prefixo do tenant"
+    },
+    {
+      "id": "limpeza",
+      "lane": "dados",
+      "col": 6,
+      "type": "queue",
+      "label": "storage_redaction_queue",
+      "sublabel": "remoção LGPD assíncrona do objeto substituído"
+    },
+    {
+      "id": "acao",
+      "lane": "pagina",
+      "col": 6,
+      "type": "external",
+      "label": "Conversa ativa",
+      "sublabel": "o humano revisa texto; voz é uma ação unitária explícita"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "sessao", "to": "pareamento", "label": "cria código e mantém presença" },
+    {
+      "id": "e2",
+      "from": "pareamento",
+      "to": "painel",
+      "label": "entrega token mínimo à sessão da extensão"
+    },
+    { "id": "e3", "from": "painel", "to": "auth", "label": "Bearer efêmero + origem e ID exatos" },
+    { "id": "e4", "from": "auth", "to": "contexto", "label": "autoriza somente o tenant ativo" },
+    { "id": "e5", "from": "painel", "to": "ponte", "label": "operações locais e unitárias" },
+    { "id": "e6", "from": "ponte", "to": "acao", "label": "setInputText ou sendFileMessage isPtt" },
+    {
+      "id": "e7",
+      "from": "contexto",
+      "to": "templates",
+      "label": "lista o que o usuário pode usar"
+    },
+    { "id": "e8", "from": "templates", "to": "storage", "label": "aponta para voz validada" },
+    {
+      "id": "e9",
+      "from": "storage",
+      "to": "painel",
+      "label": "bytes privados para uma ação explícita"
+    },
+    {
+      "id": "e10",
+      "from": "templates",
+      "to": "limpeza",
+      "label": "troca ou exclusão enfileira o objeto antigo"
+    },
+    { "id": "e11", "from": "acao", "to": "contexto", "label": "nota e etapa voltam ao core do CRM" }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Não é um canal autônomo",
+      "items": [
+        "não existe massa, agenda ou resposta automática",
+        "texto é somente preenchido para revisão humana",
+        "voz exige clique individual e nunca cai para anexo comum"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Falha fechada",
+      "items": [
+        "sem CRM presente: Entre no CRM para usar",
+        "sem conversão Opus: nada é guardado ou enviado",
+        "sem vínculo ativo no tenant: a API rejeita o token"
+      ]
+    }
+  ]
+}

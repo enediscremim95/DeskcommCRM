@@ -16,6 +16,7 @@ ser fonte sem ninguém decidir isso.
 
 | arquivo | escopo |
 |---|---|
+| `extensao-whatsapp.architecture.json` | painel humano no WhatsApp Web, pareamento efêmero dependente da sessão do CRM, isolamento do tenant e voz privada em OGG/Opus |
 | `crm-cliente-uma-tela.architecture.json` | criação administrativa pronta, perfil editável e entrega de acesso recuperável |
 | `navegacao-do-app.architecture.json` | catálogo único projetado no sidebar, gaveta, dock móvel, hubs e busca, sempre filtrado por permissão e com estado ativo visível |
 | `aparencias.architecture.json` | Preferência pessoal de navegador, seleção acessível e aplicação de cores no shell e portais |
