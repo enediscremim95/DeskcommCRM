@@ -4,11 +4,13 @@ import { marcaDaSaida } from "@/lib/branding/saida";
 import {
   buildLeadAlertEmail,
   buildLeadBatchEmail,
+  buildUrgentLeadBatchEmail,
   type LeadAlertKind,
 } from "@/lib/email/templates/lead-alert";
 import { isEmailConfigured, sendEmail } from "@/lib/email/resend";
 import { env } from "@/lib/env";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
+import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const CONSUMER_KEY = "notification.email.lead-alert.v2";
@@ -25,15 +27,20 @@ interface PreferenceRow {
 interface BatchRow {
   id: string;
   recipient_user_id: string;
-  status: "pending" | "processing" | "sent";
+  kind: LeadAlertKind;
+  status: "pending" | "processing" | "sent" | "suppressed";
   due_at: string;
   updated_at: string;
+  deferred_count: number;
 }
 
 interface BatchItemRow {
   lead_id: string;
   lead_title: string;
   created_at: string;
+  urgency_reason: string | null;
+  stage_name: string | null;
+  action_required_at: string | null;
 }
 
 function kindFor(row: EventRow): LeadAlertKind | null {
@@ -120,7 +127,7 @@ async function organizationName(admin: SupabaseClient, organizationId: string): 
   return data?.display_name?.trim() || data?.legal_name?.trim() || "sua organização";
 }
 
-async function queueNewLead(
+async function queueLeadEmail(
   admin: SupabaseClient,
   row: EventRow,
   recipients: string[],
@@ -147,54 +154,19 @@ async function queueNewLead(
   return { consumer_key: CONSUMER_KEY, status: "ok" };
 }
 
-async function sendUrgentLead(
-  admin: SupabaseClient,
-  row: EventRow,
-  leadTitle: string,
-  recipients: string[],
-): Promise<HandlerResult> {
-  const marca = await marcaDaSaida(row.organization_id);
-  const orgName = await organizationName(admin, row.organization_id);
-  const href = new URL(`/app/leads/${row.entity_id}`, env.NEXT_PUBLIC_APP_URL).toString();
-  const urgentReason = row.payload.reason === "task_overdue" ? "task_overdue" : "risk";
-  const message = buildLeadAlertEmail({
-    kind: "urgent_lead",
-    href,
-    marca,
-    organizationName: orgName,
-    leadTitle,
-    urgentReason,
-  });
-  let sent = 0;
-  let failed = false;
+function tempoDecorrido(iso: string | null, now = Date.now()): string {
+  if (!iso) return "agora";
+  const elapsedMinutes = Math.max(0, Math.floor((now - Date.parse(iso)) / 60_000));
+  if (!Number.isFinite(elapsedMinutes) || elapsedMinutes < 1) return "agora";
+  if (elapsedMinutes < 60) return `há ${elapsedMinutes} min`;
+  const hours = Math.floor(elapsedMinutes / 60);
+  if (hours < 24) return `há ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `há ${days} dia${days === 1 ? "" : "s"}`;
+}
 
-  for (const userId of recipients) {
-    const { data, error } = await admin.auth.admin.getUserById(userId);
-    const email = data.user?.email?.trim();
-    if (error || !email) {
-      failed = true;
-      continue;
-    }
-    const result = await sendEmail({
-      to: email,
-      subject: message.subject,
-      html: message.html,
-      text: message.text,
-      fromName: marca.nome,
-      idempotencyKey: `lead-email-event:${row.id}:${userId}`,
-    });
-    if (result.ok) sent += 1;
-    else failed = true;
-  }
-
-  if (failed) {
-    return {
-      consumer_key: CONSUMER_KEY,
-      status: "error",
-      detail: `envio incompleto; confirmados=${sent}; esperados=${recipients.length}`,
-    };
-  }
-  return { consumer_key: CONSUMER_KEY, status: "ok" };
+function motivoUrgente(reason: string | null): string {
+  return reason === "task_overdue" ? "tarefa vencida" : "risco no atendimento";
 }
 
 async function handleBatchFlush(row: EventRow, admin: SupabaseClient): Promise<HandlerResult> {
@@ -209,7 +181,7 @@ async function handleBatchFlush(row: EventRow, admin: SupabaseClient): Promise<H
   const readBatch = () =>
     admin
       .from("notification_email_batches" as never)
-      .select("id,recipient_user_id,status,due_at,updated_at" as never)
+      .select("id,recipient_user_id,kind,status,due_at,updated_at,deferred_count" as never)
       .eq("organization_id" as never, row.organization_id)
       .eq("id" as never, batchId)
       .maybeSingle();
@@ -219,8 +191,12 @@ async function handleBatchFlush(row: EventRow, admin: SupabaseClient): Promise<H
   if (!batch) {
     return { consumer_key: CONSUMER_KEY, status: "skipped", detail: "lote não encontrado" };
   }
-  if (batch.status === "sent") {
-    return { consumer_key: CONSUMER_KEY, status: "skipped", detail: "lote já enviado" };
+  if (batch.status === "sent" || batch.status === "suppressed") {
+    return {
+      consumer_key: CONSUMER_KEY,
+      status: "skipped",
+      detail: batch.status === "sent" ? "lote já enviado" : "lote suprimido pela cota",
+    };
   }
   if (
     batch.status === "processing" &&
@@ -251,7 +227,7 @@ async function handleBatchFlush(row: EventRow, admin: SupabaseClient): Promise<H
       .eq("id" as never, batchId)
       .eq("status" as never, "pending")
       .lte("due_at" as never, new Date().toISOString())
-      .select("id,recipient_user_id,status,due_at,updated_at" as never)
+      .select("id,recipient_user_id,kind,status,due_at,updated_at,deferred_count" as never)
       .maybeSingle();
     if (claim.error) throw claim.error;
     batch = claim.data as unknown as BatchRow | null;
@@ -259,8 +235,12 @@ async function handleBatchFlush(row: EventRow, admin: SupabaseClient): Promise<H
       ({ data, error } = await readBatch());
       if (error) throw error;
       batch = data as unknown as BatchRow | null;
-      if (!batch || batch.status === "sent") {
-        return { consumer_key: CONSUMER_KEY, status: "skipped", detail: "lote já enviado" };
+      if (!batch || batch.status === "sent" || batch.status === "suppressed") {
+        return {
+          consumer_key: CONSUMER_KEY,
+          status: "skipped",
+          detail: batch?.status === "suppressed" ? "lote suprimido pela cota" : "lote já enviado",
+        };
       }
       if (batch.status === "pending") {
         return {
@@ -288,7 +268,7 @@ async function handleBatchFlush(row: EventRow, admin: SupabaseClient): Promise<H
 
   const { data: rawItems, error: itemsError } = await admin
     .from("notification_email_batch_items" as never)
-    .select("lead_id,lead_title,created_at" as never)
+    .select("lead_id,lead_title,created_at,urgency_reason,stage_name,action_required_at" as never)
     .eq("organization_id" as never, row.organization_id)
     .eq("batch_id" as never, batchId)
     .order("created_at" as never, { ascending: true });
@@ -313,21 +293,36 @@ async function handleBatchFlush(row: EventRow, admin: SupabaseClient): Promise<H
 
   const marca = await marcaDaSaida(row.organization_id);
   const orgName = await organizationName(admin, row.organization_id);
-  const emailItems = items.map((item) => ({
-    title: item.lead_title,
-    href: new URL(`/app/leads/${item.lead_id}`, env.NEXT_PUBLIC_APP_URL).toString(),
-  }));
-  const firstItem = emailItems[0]!;
   const message =
-    emailItems.length === 1
-      ? buildLeadAlertEmail({
-          kind: "new_lead",
-          href: firstItem.href,
+    batch.kind === "urgent_lead"
+      ? buildUrgentLeadBatchEmail({
+          items: items.map((item) => ({
+            title: item.lead_title,
+            stage: item.stage_name?.trim() || "Etapa não informada",
+            reason: motivoUrgente(item.urgency_reason),
+            age: tempoDecorrido(item.action_required_at ?? item.created_at),
+          })),
           marca,
           organizationName: orgName,
-          leadTitle: firstItem.title,
+          funnelHref: new URL("/app/kanban", env.NEXT_PUBLIC_APP_URL).toString(),
+          deferredCount: batch.deferred_count,
         })
-      : buildLeadBatchEmail({ items: emailItems, marca, organizationName: orgName });
+      : (() => {
+          const emailItems = items.map((item) => ({
+            title: item.lead_title,
+            href: new URL(`/app/leads/${item.lead_id}`, env.NEXT_PUBLIC_APP_URL).toString(),
+          }));
+          const firstItem = emailItems[0]!;
+          return emailItems.length === 1
+            ? buildLeadAlertEmail({
+                kind: "new_lead",
+                href: firstItem.href,
+                marca,
+                organizationName: orgName,
+                leadTitle: firstItem.title,
+              })
+            : buildLeadBatchEmail({ items: emailItems, marca, organizationName: orgName });
+        })();
   const result = await sendEmail({
     to: email,
     subject: message.subject,
@@ -337,6 +332,29 @@ async function handleBatchFlush(row: EventRow, admin: SupabaseClient): Promise<H
     idempotencyKey: `lead-email-batch:${batch.id}:${batch.recipient_user_id}`,
   });
   if (!result.ok) {
+    if (result.error === "rate_limited") {
+      const suppressedAt = new Date().toISOString();
+      const { error: suppressedError } = await admin
+        .from("notification_email_batches" as never)
+        .update({ status: "suppressed", sent_at: suppressedAt } as never)
+        .eq("organization_id" as never, row.organization_id)
+        .eq("id" as never, batchId)
+        .eq("status" as never, "processing");
+      if (suppressedError) throw suppressedError;
+      await audit({
+        action: "notification.email_quota_exceeded",
+        organizationId: row.organization_id,
+        resourceType: "notification_email_batch",
+        resourceId: batchId,
+        bypassedRls: true,
+        metadata: { kind: batch.kind, recipient_user_id: batch.recipient_user_id },
+      });
+      return {
+        consumer_key: CONSUMER_KEY,
+        status: "ok",
+        detail: "lote suprimido após limite do provedor",
+      };
+    }
     return {
       consumer_key: CONSUMER_KEY,
       status: "error",
@@ -400,8 +418,7 @@ export async function handleLeadEmailEvent(
       detail: "sem destinatário com email ligado",
     };
   }
-  if (kind === "new_lead") return queueNewLead(admin, row, recipients);
-  return sendUrgentLead(admin, row, lead.title?.trim() || "Lead sem nome", recipients);
+  return queueLeadEmail(admin, row, recipients);
 }
 
 export const leadEmailNotificationHandler: EventHandler = {

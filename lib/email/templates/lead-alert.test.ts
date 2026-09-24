@@ -4,7 +4,7 @@ vi.mock("@/lib/branding/saida", () => ({
   NEUTROS_DE_SAIDA: { fundo: "#ffffff", texto: "#111111", suave: "#666666" },
 }));
 
-import { buildLeadAlertEmail, buildLeadBatchEmail } from "./lead-alert";
+import { buildLeadAlertEmail, buildLeadBatchEmail, buildUrgentLeadBatchEmail } from "./lead-alert";
 
 const marca = {
   nome: "Marca <Segura>",
@@ -70,5 +70,28 @@ describe("buildLeadAlertEmail", () => {
     expect(result.html).toContain("Lead &lt;Um&gt;");
     expect(result.html).toContain("a=1&amp;b=2");
     expect(result.text).toContain("Lead Dois: https://crm.example/app/leads/2");
+  });
+
+  it("resume urgências com etapa, motivo, tempo e botão para o funil", () => {
+    const result = buildUrgentLeadBatchEmail({
+      marca,
+      organizationName: "Bendito & Ponto",
+      funnelHref: "https://crm.example/app/kanban?a=1&b=2",
+      deferredCount: 4,
+      items: [
+        {
+          title: "Lead <Um>",
+          stage: "Negociação",
+          reason: "tarefa vencida",
+          age: "há 3 h",
+        },
+      ],
+    });
+
+    expect(result.subject).toBe("1 lead pedindo ação na Bendito & Ponto | Marca <Segura>");
+    expect(result.html).toContain("Lead &lt;Um&gt;");
+    expect(result.html).toContain("Negociação · tarefa vencida · há 3 h");
+    expect(result.html).toContain("https://crm.example/app/kanban?a=1&amp;b=2");
+    expect(result.text).toContain("4 leads adiados pelo teto diário");
   });
 });

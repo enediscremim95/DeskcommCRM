@@ -6,6 +6,8 @@ import { useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useNotificationPermission } from "@/hooks/notifications/useNotificationPermission";
 import {
@@ -18,6 +20,7 @@ import {
   type NotifyChannelPref,
 } from "@/lib/notifications/prefs";
 import type { EmailNotificationPreferences } from "@/lib/notifications/email-preferences";
+import type { EmailNotificationPolicy } from "@/lib/notifications/email-policy";
 
 const LABELS: Record<NotifyCategory, string> = {
   message: "Nova mensagem",
@@ -29,9 +32,13 @@ const LABELS: Record<NotifyCategory, string> = {
 
 export function NotificationPrefsClient({
   initialEmailPrefs = { new_lead: true, urgent_lead: true },
+  initialEmailPolicy = { urgent_batch_window_minutes: 60, urgent_daily_limit: 6 },
+  canManageEmailPolicy = false,
   emailConfigured = false,
 }: {
   initialEmailPrefs?: EmailNotificationPreferences;
+  initialEmailPolicy?: EmailNotificationPolicy;
+  canManageEmailPolicy?: boolean;
   emailConfigured?: boolean;
 }) {
   const t = useT();
@@ -40,7 +47,9 @@ export function NotificationPrefsClient({
   const denied = permission === "denied";
   const unsupported = permission === "unsupported";
   const [emailPrefs, setEmailPrefs] = useState(initialEmailPrefs);
+  const [emailPolicy, setEmailPolicy] = useState(initialEmailPolicy);
   const [savingEmail, setSavingEmail] = useState<keyof EmailNotificationPreferences | null>(null);
+  const [savingPolicy, setSavingPolicy] = useState(false);
 
   async function onToggle(category: NotifyCategory, channel: NotifyChannelPref, on: boolean) {
     if (channel === "push" && on) {
@@ -50,6 +59,23 @@ export function NotificationPrefsClient({
       }
     }
     gravarCanal(category, channel, on);
+  }
+
+  async function saveEmailPolicy() {
+    setSavingPolicy(true);
+    try {
+      const response = await fetch("/api/v1/notifications/email", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(emailPolicy),
+      });
+      if (!response.ok) throw new Error("save_failed");
+      toast.success(t("Resumo de urgência atualizado."));
+    } catch {
+      toast.error(t("Não foi possível salvar o resumo de urgência."));
+    } finally {
+      setSavingPolicy(false);
+    }
   }
 
   async function onEmailToggle(category: keyof EmailNotificationPreferences, on: boolean) {
@@ -118,6 +144,54 @@ export function NotificationPrefsClient({
           </label>
         </div>
       </Card>
+
+      {canManageEmailPolicy ? (
+        <Card className="p-4">
+          <div>
+            <h2 className="font-medium">{t("Resumo de urgência da organização")}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t(
+                "Agrupa os leads que pedem ação e preserva a cota para convites e redefinições de senha.",
+              )}
+            </p>
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">{t("Janela do resumo em minutos")}</span>
+              <Input
+                type="number"
+                min={5}
+                max={1440}
+                value={emailPolicy.urgent_batch_window_minutes}
+                onChange={(event) =>
+                  setEmailPolicy((current) => ({
+                    ...current,
+                    urgent_batch_window_minutes: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">{t("Máximo de resumos por pessoa por dia")}</span>
+              <Input
+                type="number"
+                min={1}
+                max={24}
+                value={emailPolicy.urgent_daily_limit}
+                onChange={(event) =>
+                  setEmailPolicy((current) => ({
+                    ...current,
+                    urgent_daily_limit: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+          </div>
+          <Button className="mt-4" disabled={savingPolicy} onClick={() => void saveEmailPolicy()}>
+            {savingPolicy ? t("Salvando...") : t("Salvar resumo de urgência")}
+          </Button>
+        </Card>
+      ) : null}
 
       <Card className="p-0">
         <table className="w-full text-sm">

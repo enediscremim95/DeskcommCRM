@@ -231,4 +231,54 @@ describe("remetente", () => {
     );
     vi.doUnmock("resend");
   });
+
+  it("cota diária de notificação não cria bloqueio local para o envio transacional seguinte", async () => {
+    process.env.RESEND_API_KEY = "re_chave_valida_de_teste";
+    process.env.RESEND_FROM_EMAIL = "nao-responda@revenda.com.br";
+    let chamada = 0;
+    vi.doMock("resend", () => ({
+      Resend: class {
+        emails = {
+          send: async () => {
+            chamada += 1;
+            return chamada === 1
+              ? {
+                  data: null,
+                  error: { name: "daily_quota_exceeded", message: "Daily quota reached" },
+                }
+              : { data: { id: "transactional-1" }, error: null };
+          },
+        };
+      },
+    }));
+    const { sendEmail } = await import("@/lib/email/resend");
+
+    expect((await sendEmail({ to: "aviso@b.com", subject: "Aviso", html: "x" })).error).toBe(
+      "rate_limited",
+    );
+    expect(await sendEmail({ to: "convite@b.com", subject: "Convite", html: "x" })).toEqual({
+      ok: true,
+      id: "transactional-1",
+    });
+    vi.doUnmock("resend");
+  });
+
+  it("uma exceção HTTP 429 também é classificada como limite, não como falha genérica", async () => {
+    process.env.RESEND_API_KEY = "re_chave_valida_de_teste";
+    process.env.RESEND_FROM_EMAIL = "nao-responda@revenda.com.br";
+    vi.doMock("resend", () => ({
+      Resend: class {
+        emails = {
+          send: async () => {
+            throw new Error("HTTP 429: quota exceeded");
+          },
+        };
+      },
+    }));
+    const { sendEmail } = await import("@/lib/email/resend");
+
+    expect((await sendEmail({ to: "aviso@b.com", subject: "Aviso", html: "x" })).error)
+      .toBe("rate_limited");
+    vi.doUnmock("resend");
+  });
 });
