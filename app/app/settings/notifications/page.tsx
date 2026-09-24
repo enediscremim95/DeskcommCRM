@@ -4,6 +4,8 @@ import { Card } from "@/components/ui/card";
 import { vapidPronto } from "@/lib/notifications/vapid";
 import { isEmailConfigured } from "@/lib/email/resend";
 import { readEmailNotificationPreferences } from "@/lib/notifications/email-preferences";
+import { readEmailNotificationPolicy } from "@/lib/notifications/email-policy";
+import { roleAtLeast } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { NotificationPrefsClient } from "./_client";
 
@@ -54,6 +56,9 @@ export default async function NotificationsPage() {
   const emailPrefs = activeOrg
     ? await readEmailNotificationPreferences(await createClient(), activeOrg.orgId, user.id)
     : { new_lead: true, urgent_lead: true };
+  const emailPolicy = activeOrg
+    ? await readEmailNotificationPolicy(await createClient(), activeOrg.orgId)
+    : { urgent_batch_window_minutes: 60, urgent_daily_limit: 6 };
   const emailConfigured = isEmailConfigured();
 
   return (
@@ -102,7 +107,12 @@ export default async function NotificationsPage() {
         </Card>
       )}
 
-      <NotificationPrefsClient initialEmailPrefs={emailPrefs} emailConfigured={emailConfigured} />
+      <NotificationPrefsClient
+        initialEmailPrefs={emailPrefs}
+        initialEmailPolicy={emailPolicy}
+        canManageEmailPolicy={roleAtLeast(activeOrg?.role, "manager")}
+        emailConfigured={emailConfigured}
+      />
     </div>
   );
 }

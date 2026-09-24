@@ -82,7 +82,7 @@ export function fromAddress(fromName?: string): string | null {
  * já paga neste projeto: erro que não nomeia a causa vira caça ao fantasma.
  */
 function classificar(nome: string, mensagem: string): NonNullable<SendResult["error"]> {
-  if (nome.toLowerCase().includes("rate")) return "rate_limited";
+  if (/rate|quota|too many|429/i.test(`${nome} ${mensagem}`)) return "rate_limited";
   if (/not verified|domain is not verified|não verificad/i.test(mensagem)) {
     return "dominio_nao_verificado";
   }
@@ -121,10 +121,12 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
     }
     return { ok: true, id: data?.id };
   } catch (err) {
+    const name = err instanceof Error ? err.name : "";
+    const message = err instanceof Error ? err.message : String(err);
     return {
       ok: false,
-      error: "send_failed",
-      details: err instanceof Error ? err.message : String(err),
+      error: classificar(name, message),
+      details: message,
     };
   }
 }

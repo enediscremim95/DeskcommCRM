@@ -66,6 +66,12 @@ vi.mock("@/lib/notifications/email-preferences", () => ({
     urgent_lead: true,
   }),
 }));
+vi.mock("@/lib/notifications/email-policy", () => ({
+  readEmailNotificationPolicy: vi.fn().mockResolvedValue({
+    urgent_batch_window_minutes: 60,
+    urgent_daily_limit: 6,
+  }),
+}));
 vi.mock("@/app/app/settings/notifications/_client", () => ({
   NotificationPrefsClient: () => <table />,
 }));
