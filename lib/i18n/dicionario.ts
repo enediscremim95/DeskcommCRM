@@ -4082,6 +4082,8 @@ export const DICIONARIO: Traducoes = {
   },
   "Worker de import": { es: "Worker de import" },
   "Expira em (dias) — opcional": { es: "Expira en (días) — opcional" },
+  "Expira em quantos dias (opcional)": { es: "Expira en cuántos días (opcional)" },
+  "Marcar todos": { es: "Marcar todos" },
   Criar: { es: "Crear" },
   "Token criado": { es: "Token creado" },
   "Copie e guarde agora — não conseguiremos exibir novamente.": {

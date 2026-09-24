@@ -195,26 +195,43 @@ export function ApiTokensClient() {
             </div>
             <div className="space-y-2">
               <Label>{t("Escopos")}</Label>
-              <div className="flex flex-wrap gap-2">
+              {/* Lista com caixinha, e "Marcar todos" como primeira linha: com 9
+                  escopos, clicar um por um era o caminho normal. */}
+              <div className="grid gap-1.5 rounded-md border p-2">
+                <label className="flex cursor-pointer items-center gap-2 border-b pb-1.5 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    className="size-4"
+                    checked={scopes.length === SCOPES.length}
+                    ref={(el) => {
+                      if (el) el.indeterminate = scopes.length > 0 && scopes.length < SCOPES.length;
+                    }}
+                    onChange={(e) => setScopes(e.target.checked ? SCOPES.map((s) => s.id) : [])}
+                  />
+                  {t("Marcar todos")}
+                </label>
                 {SCOPES.map((s) => (
-                  <button
-                    type="button"
+                  <label
                     key={s.id}
-                    onClick={() => toggleScope(s.id)}
+                    className="flex cursor-pointer items-start gap-2 text-sm"
                     title={t(s.label)}
-                    aria-label={`${s.id} — ${t(s.label)}`}
-                    className={`rounded-md border px-2 py-1 text-xs ${
-                      scopes.includes(s.id) ? "border-primary bg-primary/10" : "border-border"
-                    }`}
                   >
-                    {s.id}
-                    <span className="ml-1 text-muted-foreground">· {t(s.label)}</span>
-                  </button>
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 size-4 shrink-0"
+                      checked={scopes.includes(s.id)}
+                      onChange={() => toggleScope(s.id)}
+                    />
+                    <span className="min-w-0">
+                      <span className="font-mono text-xs">{s.id}</span>
+                      <span className="ml-1 text-muted-foreground">{t(s.label)}</span>
+                    </span>
+                  </label>
                 ))}
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="t-exp">{t("Expira em (dias) — opcional")}</Label>
+              <Label htmlFor="t-exp">{t("Expira em quantos dias (opcional)")}</Label>
               <Input
                 id="t-exp"
                 type="number"
