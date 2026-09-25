@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,12 +20,22 @@ import { WaitForm } from "./forms/WaitForm";
 import type { ConfigOf } from "./forms/shared";
 import { NODE_VISUALS } from "./nodes/nodeVisuals";
 
+interface CustomPanel {
+  title: string;
+  description: string;
+  icon: ComponentType<{ size?: number; className?: string; "aria-hidden"?: boolean }>;
+  chipClassName: string;
+  content: ReactNode;
+}
+
 interface Props {
   node: RFNode;
   onChange: (patch: Partial<RFNodeData>) => void;
   onDelete: () => void;
   /** Ramos deste nó que já têm aresta — quem sabe isso é o canvas, que é dono do grafo. */
   ramosLigados?: string[];
+  custom?: CustomPanel;
+  hideDelete?: boolean;
 }
 
 /**
@@ -37,13 +47,30 @@ interface Props {
  * quando o candidato passa no schema — senão mostra erro inline e o canvas
  * mantém a última config válida (nunca um valor pela metade rio acima).
  */
-export function NodeConfigPanel({ node, onChange, onDelete, ramosLigados }: Props) {
+export function NodeConfigPanel({ node, onChange, onDelete, ramosLigados, custom, hideDelete = false }: Props) {
   const t = useT();
+  const [label, setLabel] = useState(node.data.label);
+  const [labelError, setLabelError] = useState<string | null>(null);
+  if (custom) {
+    const CustomIcon = custom.icon;
+    return (
+      <div className="flex h-full flex-col gap-5 overflow-y-auto" data-testid="node-config-panel">
+        <div className="space-y-1">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-text">
+            <span className={`flex h-6 w-6 items-center justify-center rounded-full ${custom.chipClassName}`}>
+              <CustomIcon size={14} aria-hidden />
+            </span>
+            {t(custom.title)}
+          </h2>
+          <p className="text-sm text-text-muted">{t(custom.description)}</p>
+        </div>
+        <div className="space-y-4 border-t border-border pt-4">{custom.content}</div>
+      </div>
+    );
+  }
   const type = node.type as FlowNode["type"];
   const visual = NODE_VISUALS[type];
   const Icon = visual.icon;
-  const [label, setLabel] = useState(node.data.label);
-  const [labelError, setLabelError] = useState<string | null>(null);
 
   const commitLabel = (value: string) => {
     setLabel(value);
@@ -124,7 +151,7 @@ export function NodeConfigPanel({ node, onChange, onDelete, ramosLigados }: Prop
         )}
       </div>
 
-      <div className="mt-auto border-t border-border pt-4">
+      {!hideDelete && <div className="mt-auto border-t border-border pt-4">
         <Button
           type="button"
           variant="outline"
@@ -136,7 +163,7 @@ export function NodeConfigPanel({ node, onChange, onDelete, ramosLigados }: Prop
           <Trash size={14} aria-hidden className="mr-1" />
           {t("Excluir nó")}
         </Button>
-      </div>
+      </div>}
     </div>
   );
 }

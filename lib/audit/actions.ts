@@ -172,6 +172,7 @@ export const AUDIT_ACTIONS = [
   "ai_agent.published",
   "ai_agent.version_created",
   "ai_agent.version_updated",
+  "ai_agent.guardrails_disabled",
   "ai_agent.mcp_draft_discarded",
   "ai_agent.tested",
   "ai_agent.reconciled",
