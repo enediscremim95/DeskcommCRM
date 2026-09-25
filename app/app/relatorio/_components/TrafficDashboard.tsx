@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { DragScroll } from "@/components/ui/drag-scroll";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -829,7 +829,6 @@ function AdsetDrill({
 function CampaignTable({
   campaigns,
   currency,
-  total,
   platform,
   organizationKey,
   labels,
@@ -841,7 +840,6 @@ function CampaignTable({
 }: {
   campaigns: Campaign[];
   currency: string;
-  total: Metrics;
   platform: "meta_ads" | "google_ads";
   organizationKey: string;
   columns: CampaignMetricColumn[];
@@ -863,12 +861,24 @@ function CampaignTable({
   const [sortKey, setSortKey] = useState<CampaignSortKey>("spend");
   const [sortDirection, setSortDirection] = useState<SortDirection>("descending");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const [onlySelected, setOnlySelected] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputId = useId();
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const statusChangedByUser = useRef(false);
   // Antes da primeira sincronização que traz o status, nenhuma campanha o conhece.
   // Nesse caso a coluna e o filtro somem em vez de mostrar "Não informada" em tudo.
   const showStatus = campaigns.some((campaign) => campaignStatus(campaign.campaign_status).known);
   const activeFilter = showStatus ? statusFilter : "all";
   const columnCount = columns.length + (showStatus ? 2 : 1);
+  const campaignsWithKeys = useMemo(
+    () => campaigns.map((campaign, index) => ({
+      campaign,
+      key: campaign.id ?? `${campaign.platform}:${campaign.name}:${index}`,
+    })),
+    [campaigns],
+  );
 
   useEffect(() => {
     statusChangedByUser.current = false;
@@ -888,21 +898,49 @@ function CampaignTable({
     traduzir: t,
   });
 
+  const statusFilteredCampaigns = useMemo(
+    () => campaignsWithKeys.filter(({ campaign }) =>
+      activeFilter === "all" || campaignStatus(campaign.campaign_status).category === activeFilter),
+    [activeFilter, campaignsWithKeys],
+  );
+  const normalizedSearch = useMemo(
+    () => searchQuery.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase(idioma).trim(),
+    [idioma, searchQuery],
+  );
+  const searchFilteredCampaigns = useMemo(
+    () => statusFilteredCampaigns.filter(({ campaign }) =>
+      campaign.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase(idioma)
+        .includes(normalizedSearch)),
+    [idioma, normalizedSearch, statusFilteredCampaigns],
+  );
+  const selectableCampaigns = useMemo(
+    () => searchFilteredCampaigns.filter(({ key }) => !onlySelected || selectedKeys.has(key)),
+    [onlySelected, searchFilteredCampaigns, selectedKeys],
+  );
   const visibleCampaigns = useMemo(
-    () =>
-      campaigns
-        .filter(
-          (campaign) =>
-            activeFilter === "all" ||
-            campaignStatus(campaign.campaign_status).category === activeFilter,
-        )
-        .sort((first, second) => compareCampaigns(first, second, sortKey, sortDirection, idioma)),
-    [activeFilter, campaigns, idioma, sortDirection, sortKey],
+    () => [...selectableCampaigns]
+      .sort((first, second) =>
+        compareCampaigns(first.campaign, second.campaign, sortKey, sortDirection, idioma)),
+    [idioma, selectableCampaigns, sortDirection, sortKey],
   );
   const visibleTotal = useMemo(
-    () => (activeFilter === "all" ? total : summarizeCampaigns(visibleCampaigns)),
-    [activeFilter, total, visibleCampaigns],
+    () => summarizeCampaigns(visibleCampaigns.map(({ campaign }) => campaign)),
+    [visibleCampaigns],
   );
+  const selectedCampaigns = useMemo(
+    () => campaignsWithKeys.filter(({ key }) => selectedKeys.has(key)).map(({ campaign }) => campaign),
+    [campaignsWithKeys, selectedKeys],
+  );
+  const selectedTotal = useMemo(() => summarizeCampaigns(selectedCampaigns), [selectedCampaigns]);
+  const selectedVisibleCount = selectableCampaigns.filter(({ key }) => selectedKeys.has(key)).length;
+  const allVisibleSelected = selectableCampaigns.length > 0 &&
+    selectedVisibleCount === selectableCampaigns.length;
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selectedVisibleCount > 0 && !allVisibleSelected;
+    }
+  }, [allVisibleSelected, selectedVisibleCount]);
 
   const changeSort = (key: CampaignSortKey) => {
     if (key === sortKey) {
@@ -926,6 +964,37 @@ function CampaignTable({
       else next.add(key);
       return next;
     });
+  };
+
+  const toggleCampaign = (key: string) => {
+    const selectionWillBeEmpty = selectedKeys.size === 1 && selectedKeys.has(key);
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    if (selectionWillBeEmpty) setOnlySelected(false);
+  };
+
+  const toggleAllVisible = () => {
+    const visibleKeys = new Set(selectableCampaigns.map(({ key }) => key));
+    const selectionWillBeEmpty = allVisibleSelected &&
+      [...selectedKeys].every((key) => visibleKeys.has(key));
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      for (const { key } of selectableCampaigns) {
+        if (allVisibleSelected) next.delete(key);
+        else next.add(key);
+      }
+      return next;
+    });
+    if (selectionWillBeEmpty) setOnlySelected(false);
+  };
+
+  const clearSelection = () => {
+    setSelectedKeys(new Set());
+    setOnlySelected(false);
   };
 
   // Um único estilo para todo cabeçalho. O <button> de ordenar repete as classes
@@ -1018,13 +1087,82 @@ function CampaignTable({
             ))}
           </div>
         )}
+        <div className="flex min-w-[16rem] flex-1 flex-wrap items-center gap-2 sm:max-w-xl">
+          <Label htmlFor={searchInputId} className="sr-only">
+            {t("Pesquisar campanha")}
+          </Label>
+          <Input
+            id={searchInputId}
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder={t("Pesquisar campanha")}
+            className="h-9 min-w-40 flex-1"
+          />
+          <span aria-live="polite" className="whitespace-nowrap text-xs text-muted-foreground">
+            {number(visibleCampaigns.length)} {t(visibleCampaigns.length === 1
+              ? "campanha encontrada" : "campanhas encontradas")}
+          </span>
+          {searchQuery.length > 0 && (
+            <Button type="button" size="sm" variant="ghost" onClick={() => setSearchQuery("")}>
+              {t("Limpar pesquisa")}
+            </Button>
+          )}
+        </div>
         <div className="ml-auto">{columnMenu}</div>
       </div>
+      {selectedCampaigns.length > 0 && (
+        <div role="status" aria-live="polite"
+          className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-primary/[0.06] px-3 py-3 text-sm">
+          <span className="font-semibold">
+            {number(selectedCampaigns.length)} {t(selectedCampaigns.length === 1 ? "campanha marcada" : "campanhas marcadas")}
+          </span>
+          <span>{t("Investimento")}: <strong>{money(selectedTotal.spend, currency)}</strong></span>
+          <span>{labels.conversions}: <strong>{number(selectedTotal.conversions)}</strong></span>
+          <span>
+            {t("Custo por conversão")}: <strong>{selectedTotal.cost_per_conversion == null
+              ? t("sem dado") : money(selectedTotal.cost_per_conversion, currency)}</strong>
+          </span>
+          <span className="basis-full text-xs text-muted-foreground lg:basis-auto lg:flex-1">
+            {t("Os cards do topo e o funil mostram o período inteiro.")}
+          </span>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant={onlySelected ? "secondary" : "outline"}
+              aria-pressed={onlySelected} onClick={() => setOnlySelected((current) => !current)}>
+              {onlySelected ? t("Ver todas as campanhas") : t("Ver só as selecionadas")}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={clearSelection}>
+              {t("Limpar seleção")}
+            </Button>
+          </div>
+        </div>
+      )}
       <DragScroll className="overflow-x-auto">
         <table className="w-full min-w-max text-sm">
           <thead className="border-b bg-muted/35">
             <tr>
-              {sortableHeader("name", labels.campaign, "left")}
+              <th scope="col" className={`${headerCell} text-left ${sortKey === "name" ? "text-foreground" : "text-muted-foreground"}`}
+                style={columnStyle("name")} aria-sort={sortKey === "name" ? sortDirection : "none"}>
+                <div className="flex min-w-0 items-center gap-3">
+                  <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
+                    <input ref={selectAllRef} type="checkbox"
+                      className="size-5 cursor-pointer accent-primary"
+                      checked={allVisibleSelected} disabled={selectableCampaigns.length === 0}
+                      aria-label={t("Selecionar campanhas visíveis")} onChange={toggleAllVisible} />
+                  </label>
+                  <button type="button"
+                    className={`${headerText} inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-sm text-inherit hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden`}
+                    onClick={() => changeSort("name")} aria-label={`${t("Ordenar por")} ${labels.campaign}`}
+                    title={labels.campaign}>
+                    <span className="min-w-0 truncate">{labels.campaign}</span>
+                    <span aria-hidden="true"
+                      className={`w-3 shrink-0 text-center text-[9px] ${sortKey === "name" ? "" : "opacity-0"}`}>
+                      {sortDirection === "descending" ? "▼" : "▲"}
+                    </span>
+                  </button>
+                </div>
+                {resizeHandle("name", labels.campaign)}
+              </th>
               {showStatus && (
                 <th
                   scope="col"
@@ -1041,8 +1179,14 @@ function CampaignTable({
             </tr>
           </thead>
           <tbody className="divide-y">
-            {visibleCampaigns.map((campaign) => {
-              const key = campaign.id ?? `${campaign.platform}:${campaign.name}`;
+            {normalizedSearch.length > 0 && visibleCampaigns.length === 0 && (
+              <tr>
+                <td colSpan={columnCount} className="px-4 py-8 text-center text-muted-foreground">
+                  {t("Nenhuma campanha corresponde à pesquisa e aos filtros.")}
+                </td>
+              </tr>
+            )}
+            {visibleCampaigns.map(({ campaign, key }) => {
               const status = campaignStatus(campaign.campaign_status);
               const description = campaignDescription(campaign.name);
               const isOpen = isMeta && expanded.has(key);
@@ -1053,8 +1197,15 @@ function CampaignTable({
                       className="max-w-md overflow-hidden px-4 py-3 font-medium"
                       style={columnStyle("name")}
                     >
-                      {isMeta ? (
-                        <button
+                      <div className="flex items-start gap-3">
+                        <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
+                          <input type="checkbox" className="size-5 cursor-pointer accent-primary"
+                            checked={selectedKeys.has(key)} aria-label={`${t("Selecionar campanha")} ${campaign.name}`}
+                            onClick={(event) => event.stopPropagation()} onChange={() => toggleCampaign(key)} />
+                        </label>
+                        <div className="min-w-0 flex-1">
+                        {isMeta ? (
+                          <button
                           type="button"
                           aria-expanded={isOpen}
                           onClick={() => toggleExpanded(key)}
@@ -1075,15 +1226,17 @@ function CampaignTable({
                             />
                           </svg>
                           <span className="truncate">{campaign.name}</span>
-                        </button>
-                      ) : (
-                        <span className="block truncate">{campaign.name}</span>
-                      )}
-                      {description && (
-                        <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
-                          {t(description)}
-                        </span>
-                      )}
+                          </button>
+                        ) : (
+                          <span className="block truncate">{campaign.name}</span>
+                        )}
+                        {description && (
+                          <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
+                            {t(description)}
+                          </span>
+                        )}
+                        </div>
+                      </div>
                     </td>
                     {showStatus && (
                       <td className="overflow-hidden px-4 py-3" style={columnStyle("status")}>
@@ -1187,7 +1340,7 @@ export function TrafficDashboard() {
       active = false;
       controller.abort();
     };
-  }, [window, t]);
+  }, [activeOrg?.orgId, window, t]);
 
   // "Dados até dd/mm/aaaa" (painel antigo): a data da última sincronização que
   // a resposta já traz, sem hora, porque é o que o cliente quer saber.
@@ -1869,9 +2022,9 @@ export function TrafficDashboard() {
                     </div>
                   )}
                   <CampaignTable
+                    key={`${activeOrg?.orgId ?? report.organization_key}:${window.from}:${window.to}:meta_ads`}
                     campaigns={metaCampaigns}
                     currency={group.currency}
-                    total={meta}
                     platform="meta_ads"
                     organizationKey={report.organization_key}
                     labels={campaignLabels}
@@ -1970,9 +2123,9 @@ export function TrafficDashboard() {
                     />
                   </div>
                   <CampaignTable
+                    key={`${activeOrg?.orgId ?? report.organization_key}:${window.from}:${window.to}:google_ads`}
                     campaigns={googleCampaigns}
                     currency={group.currency}
-                    total={google}
                     platform="google_ads"
                     organizationKey={report.organization_key}
                     labels={campaignLabels}
