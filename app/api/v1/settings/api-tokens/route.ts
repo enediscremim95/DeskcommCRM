@@ -102,7 +102,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     {
       ...created,
       plaintext,
-      _warning: t("Salve este token agora — ele não será mostrado novamente."),
+      _warning: t("Salve este token agora. Ele não será mostrado novamente."),
     },
     { status: 201, requestId },
   );
