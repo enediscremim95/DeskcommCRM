@@ -1089,6 +1089,20 @@ function CampaignTable({
               {t("Limpar pesquisa")}
             </Button>
           )}
+          {/* Os botões da seleção moram aqui, ao lado da pesquisa: são as ações
+              de "o que eu quero ver na tabela", e é onde a mão já está. A faixa
+              da seleção abaixo fica só com os números das campanhas marcadas. */}
+          {selectedCampaigns.length > 0 && (
+            <>
+              <Button type="button" size="sm" variant={onlySelected ? "secondary" : "outline"}
+                aria-pressed={onlySelected} onClick={() => setOnlySelected((current) => !current)}>
+                {onlySelected ? t("Ver todas as campanhas") : t("Ver só as selecionadas")}
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={clearSelection}>
+                {t("Limpar seleção")}
+              </Button>
+            </>
+          )}
         </div>
         <div className="ml-auto flex items-center gap-2">
           <Button
@@ -1118,15 +1132,6 @@ function CampaignTable({
           <span className="basis-full text-xs text-muted-foreground lg:basis-auto lg:flex-1">
             {t("Os cards do topo e o funil mostram o período inteiro.")}
           </span>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" variant={onlySelected ? "secondary" : "outline"}
-              aria-pressed={onlySelected} onClick={() => setOnlySelected((current) => !current)}>
-              {onlySelected ? t("Ver todas as campanhas") : t("Ver só as selecionadas")}
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={clearSelection}>
-              {t("Limpar seleção")}
-            </Button>
-          </div>
         </div>
       )}
       <DragScroll className="overflow-x-auto">
