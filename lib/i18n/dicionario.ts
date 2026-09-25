@@ -540,6 +540,7 @@ export const DICIONARIO: Traducoes = {
   "Sem dados suficientes": { es: "Sin datos suficientes" },
   "Anúncios Meta": { es: "Anuncios Meta" },
   "Cliques para leads": { es: "Clics a leads" },
+  "Taxa de conv. site": { es: "Tasa de conv. sitio" },
   "Ver menos": { es: "Ver menos" },
   "Ver todos": { es: "Ver todos" },
   "Leads no CRM: etapas e perdas": { es: "Leads en el CRM: etapas y pérdidas" },
