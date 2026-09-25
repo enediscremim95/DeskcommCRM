@@ -20,6 +20,7 @@ const LEAD_EMAIL_PROCESSING_LEASE_MS = 5 * 60 * 1000;
 
 interface PreferenceRow {
   user_id: string;
+  email_enabled: boolean;
   new_lead: boolean;
   urgent_lead: boolean;
 }
@@ -91,7 +92,7 @@ async function enabledRecipients(
   if (userIds.length === 0) return [];
   const { data, error } = await admin
     .from("notification_email_preferences" as never)
-    .select("user_id,new_lead,urgent_lead" as never)
+    .select("user_id,email_enabled,new_lead,urgent_lead" as never)
     .eq("organization_id" as never, organizationId)
     .in("user_id" as never, userIds);
   if (error) throw error;
@@ -113,8 +114,24 @@ async function enabledRecipients(
     const pref = byUser.get(userId);
     // O dono da instalação acompanha somente as organizações que marcou.
     if (!pref && platformAdmins.has(userId)) return false;
+    if (pref?.email_enabled === false) return false;
     return kind === "new_lead" ? pref?.new_lead !== false : pref?.urgent_lead !== false;
   });
+}
+
+async function emailMasterEnabled(
+  admin: SupabaseClient,
+  organizationId: string,
+  userId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("notification_email_preferences" as never)
+    .select("email_enabled" as never)
+    .eq("organization_id" as never, organizationId)
+    .eq("user_id" as never, userId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as unknown as { email_enabled?: boolean } | null)?.email_enabled !== false;
 }
 
 async function organizationName(admin: SupabaseClient, organizationId: string): Promise<string> {
@@ -281,6 +298,21 @@ async function handleBatchFlush(row: EventRow, admin: SupabaseClient): Promise<H
       .eq("organization_id" as never, row.organization_id)
       .eq("id" as never, batchId);
     return { consumer_key: CONSUMER_KEY, status: "skipped", detail: "lote vazio" };
+  }
+
+  if (!(await emailMasterEnabled(admin, row.organization_id, batch.recipient_user_id))) {
+    const { error: suppressedError } = await admin
+      .from("notification_email_batches" as never)
+      .update({ status: "suppressed", sent_at: new Date().toISOString() } as never)
+      .eq("organization_id" as never, row.organization_id)
+      .eq("id" as never, batchId)
+      .eq("status" as never, "processing");
+    if (suppressedError) throw suppressedError;
+    return {
+      consumer_key: CONSUMER_KEY,
+      status: "skipped",
+      detail: "lote suprimido porque o email da pessoa está desligado",
+    };
   }
 
   const { data: userData, error: userError } = await admin.auth.admin.getUserById(

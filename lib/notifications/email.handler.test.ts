@@ -198,6 +198,54 @@ describe("handleLeadEmailEvent", () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { eventType: "lead.created", kind: "new_lead" },
+    { eventType: "lead.action_required", kind: "urgent_lead" },
+  ] as const)(
+    "não enfileira $kind quando o mestre de e-mail da pessoa está desligado",
+    async ({ eventType }) => {
+      const admin = adminCom(
+        {
+          crm_leads: [
+            {
+              data: {
+                id: "lead-1",
+                owner_user_id: "owner-1",
+                status: "open",
+                title: "Jatobá",
+              },
+              error: null,
+            },
+          ],
+          user_organizations: [{ data: { user_id: "owner-1" }, error: null }],
+          notification_email_preferences: [
+            {
+              data: [
+                {
+                  user_id: "owner-1",
+                  email_enabled: false,
+                  new_lead: true,
+                  urgent_lead: true,
+                },
+              ],
+              error: null,
+            },
+          ],
+        },
+        { "owner-1": "owner@example.com" },
+      );
+
+      const result = await handleLeadEmailEvent(evento({ event_type: eventType }), admin);
+
+      expect(result).toMatchObject({
+        status: "skipped",
+        detail: "sem destinatário com email ligado",
+      });
+      expect(admin.rpc).not.toHaveBeenCalled();
+      expect(sendEmail).not.toHaveBeenCalled();
+    },
+  );
+
   it("não dispara uma avalanche ao encontrar lead antigo no backlog", async () => {
     const admin = adminCom({}, {});
 
@@ -472,6 +520,58 @@ describe("handleLeadEmailEvent", () => {
     expect(result).toMatchObject({
       status: "retry",
       detail: "outro worker está enviando o lote",
+    });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("não envia um lote já enfileirado se o mestre for desligado antes do envio", async () => {
+    const due = new Date(Date.now() - 1_000).toISOString();
+    const batch = {
+      id: "batch-1",
+      recipient_user_id: "owner-1",
+      kind: "new_lead",
+      status: "pending",
+      due_at: due,
+      updated_at: due,
+      deferred_count: 0,
+    };
+    const admin = adminCom(
+      {
+        notification_email_batches: [
+          { data: batch, error: null },
+          { data: { ...batch, status: "processing" }, error: null },
+          { data: null, error: null },
+        ],
+        notification_email_batch_items: [
+          {
+            data: [
+              {
+                lead_id: "lead-1",
+                lead_title: "Lead 1",
+                created_at: due,
+                urgency_reason: null,
+                stage_name: null,
+                action_required_at: null,
+              },
+            ],
+            error: null,
+          },
+        ],
+        notification_email_preferences: [
+          { data: { email_enabled: false }, error: null },
+        ],
+      },
+      { "owner-1": "owner@example.com" },
+    );
+
+    const result = await handleLeadEmailEvent(
+      evento({ event_type: "notification.email_batch_due", entity_id: "batch-1" }),
+      admin,
+    );
+
+    expect(result).toMatchObject({
+      status: "skipped",
+      detail: "lote suprimido porque o email da pessoa está desligado",
     });
     expect(sendEmail).not.toHaveBeenCalled();
   });
