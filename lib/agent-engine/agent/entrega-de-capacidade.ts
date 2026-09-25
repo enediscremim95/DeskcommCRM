@@ -84,6 +84,7 @@ export const CAPACIDADES_DE_OPERACAO: readonly string[] = [
   'crm_set_automation_rule_active',
   'crm_list_team_members',
   'crm_list_message_templates',
+  'crm_apply_channel_label',
 ];
 
 /**

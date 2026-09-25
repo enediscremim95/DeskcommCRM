@@ -625,6 +625,22 @@ async function sendFixedOutbound(
 
   const outcome = chain.outcome;
   switch (outcome.kind) {
+    case 'deferred':
+      await applySendOutcome(
+        pool,
+        outcome,
+        {
+          jobId: job.id,
+          workerId: ctx.workerId,
+          tenantId,
+          leadId,
+          jobClaim: claimOfJob(job),
+        },
+        { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs },
+      );
+      throw new JobSettledError(
+        'canal ocupado por outro atendimento, follow-up devolvido à fila',
+      );
     case 'sent':
     case 'already_sent':
       runLog.info('envio fixo concluído', { kind: outcome.kind });

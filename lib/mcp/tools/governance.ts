@@ -15,6 +15,7 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { conversationTagSchema, conversationTagsSchema } from "@/lib/schemas/messaging";
 import { getQueueStatus } from "@/lib/routing/queue";
+import { aplicarEtiquetaNaConversa } from "@/lib/messaging/etiqueta-da-conversa";
 import type { McpContext } from "../types";
 import type { McpToolDefinition } from "../types";
 
@@ -224,6 +225,44 @@ export const crmManageTags: McpToolDefinition<typeof tagsInputShape> = {
     });
 
     return { target_kind: input.target_kind, target_id: input.target_id, tags: nextTags };
+  },
+};
+
+const channelLabelInputShape = {
+  conversation_id: z.string().uuid(),
+  label: z.string().trim().min(1).max(100),
+};
+
+export const crmApplyChannelLabel: McpToolDefinition<typeof channelLabelInputShape> = {
+  name: "crm_apply_channel_label",
+  description:
+    "Aplica à conversa uma etiqueta já existente no aplicativo de mensagens. " +
+    "Use depois de identificar o desfecho do atendimento. Se o canal não suportar " +
+    "etiquetas ou a etiqueta não existir, o atendimento continua normalmente.",
+  inputSchema: channelLabelInputShape,
+  category: "write",
+  requiresRole: "agent",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) => {
+    const status = await aplicarEtiquetaNaConversa(ctx.supabase, {
+      organizationId: ctx.organizationId,
+      conversationId: input.conversation_id,
+      labelName: input.label,
+    });
+    if (status === 'applied') {
+      const a = actorAudit(ctx);
+      await audit({
+        action: 'conversation.channel_label_applied',
+        actorUserId: a.actorUserId,
+        actorApiTokenId: ctx.apiTokenId,
+        organizationId: ctx.organizationId,
+        resourceType: 'conversation',
+        resourceId: input.conversation_id,
+        requestId: ctx.requestId,
+        metadata: { ...a.metadataActor, via: 'mcp' },
+      });
+    }
+    return { applied: status === 'applied', status };
   },
 };
 
