@@ -3,9 +3,18 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 
 import { strFromU8, unzipSync } from "fflate";
-import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { cleanup, render, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  BROWSER_EXTENSION_HEARTBEAT_INTERVAL_MS,
+  BROWSER_EXTENSION_PAIRING_KEY,
+  BrowserExtensionHeartbeat,
+} from "@/app/app/_components/BrowserExtensionHeartbeat";
+
+import {
+  EXTENSION_PRESENCE_MAX_AGE_MS,
   WHATSAPP_EXTENSION_ID,
   WHATSAPP_EXTENSION_MANIFEST_KEY,
   WHATSAPP_EXTENSION_ORIGIN,
@@ -22,6 +31,12 @@ import {
   novoTokenDaExtensao,
   segredoConfere,
 } from "@/lib/browser-extension/security";
+
+afterEach(() => {
+  cleanup();
+  window.sessionStorage.clear();
+  vi.unstubAllGlobals();
+});
 
 describe("extensão de apoio no WhatsApp Web", () => {
   it("aceita CORS somente da origem fixa da extensão", () => {
@@ -113,5 +128,44 @@ describe("extensão de apoio no WhatsApp Web", () => {
     expect(heartbeat).toContain("window.sessionStorage");
     expect(heartbeat).toContain("pairing/heartbeat");
     expect(heartbeat).not.toContain("accessToken");
+  });
+
+  it("desfaz o pareamento quando o pulso responde 401", async () => {
+    window.sessionStorage.setItem(BROWSER_EXTENSION_PAIRING_KEY, "pairing-401");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
+
+    render(createElement(BrowserExtensionHeartbeat));
+
+    await waitFor(() => {
+      expect(window.sessionStorage.getItem(BROWSER_EXTENSION_PAIRING_KEY)).toBeNull();
+    });
+  });
+
+  it("mantém o pareamento quando o pulso responde 500", async () => {
+    window.sessionStorage.setItem(BROWSER_EXTENSION_PAIRING_KEY, "pairing-500");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(createElement(BrowserExtensionHeartbeat));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(window.sessionStorage.getItem(BROWSER_EXTENSION_PAIRING_KEY)).toBe("pairing-500");
+  });
+
+  it("mantém o pareamento quando a rede falha", async () => {
+    window.sessionStorage.setItem(BROWSER_EXTENSION_PAIRING_KEY, "pairing-rede");
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("rede indisponível"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(createElement(BrowserExtensionHeartbeat));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(window.sessionStorage.getItem(BROWSER_EXTENSION_PAIRING_KEY)).toBe("pairing-rede");
+  });
+
+  it("deriva o intervalo como um quarto da janela de presença", () => {
+    expect(BROWSER_EXTENSION_HEARTBEAT_INTERVAL_MS).toBe(
+      EXTENSION_PRESENCE_MAX_AGE_MS / 4,
+    );
   });
 });
