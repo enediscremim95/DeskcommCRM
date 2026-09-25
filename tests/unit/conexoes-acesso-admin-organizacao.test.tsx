@@ -49,11 +49,15 @@ describe("acesso à tela de Conexões", () => {
     expect(redirect).not.toHaveBeenCalled();
   });
 
-  it("não usa o papel de plataforma para liberar quem não administra a organização", async () => {
-    state.role = "manager";
+  it("mostra as ações ao admin da plataforma sem suporte mesmo sem papel admin na organização", async () => {
+    state.role = "viewer";
     state.isPlatformAdmin = true;
+    state.canView = false;
 
-    await expect(ConnectionsPage()).rejects.toThrow("redirect:/403");
+    const html = renderToStaticMarkup(await ConnectionsPage());
+
+    expect(html).toContain("Ações da conexão");
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it("preserva o fechamento explícito da integração", async () => {
