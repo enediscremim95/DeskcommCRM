@@ -34,6 +34,16 @@ describe("apresentação dinâmica do MCP", () => {
     expect(texto).toContain("Pode registrar e alterar dados do CRM");
   });
 
+  it("avisa que a montagem com escopo próprio nunca publica sozinha", () => {
+    const texto = montarApresentacaoMcp({
+      ...base,
+      role: "manager",
+      scopes: ["mcp:read", "mcp:configure"],
+    });
+    expect(texto).toContain("Nada do que for montado entra no ar sozinho");
+    expect(texto).toContain("publicar pela tela de Agentes");
+  });
+
   it("não promete dados operacionais ao papel leitor, mesmo com os escopos", () => {
     const texto = montarApresentacaoMcp({
       ...base,

@@ -38,7 +38,7 @@ import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,skill_names,channel_config,provisioning_origin,mcp_api_token_id,mcp_change_summary";
 
 type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -313,6 +313,8 @@ export async function saveAgentDraftAction(
         operator_tool_ids: v.operator_tool_ids,
         pipeline_ids: v.pipeline_ids,
         knowledge_source_ids: v.knowledge_source_ids,
+        skill_names: v.skill_names,
+        channel_config: v.channel_config,
         split_messages: v.split_messages,
         split_max_chars: v.split_max_chars,
         followup: v.followup,
@@ -520,6 +522,8 @@ export async function revertToVersionAction(
     operator_tool_ids: string[];
     pipeline_ids: string[];
     knowledge_source_ids: string[];
+    skill_names: string[] | null;
+    channel_config: Record<string, unknown> | null;
     split_messages: boolean;
     split_max_chars: number;
   };
@@ -568,6 +572,8 @@ export async function revertToVersionAction(
         // que aquela versão consultava é publicar uma configuração inventada.
         pipeline_ids: src.pipeline_ids,
         knowledge_source_ids: src.knowledge_source_ids ?? [],
+        skill_names: src.skill_names,
+        channel_config: src.channel_config,
         split_messages: src.split_messages,
         split_max_chars: src.split_max_chars,
         status: "draft",
@@ -723,6 +729,8 @@ export async function createMcpAgentAction(
     operator_tool_ids: v.operator_tool_ids,
     pipeline_ids: v.pipeline_ids,
     knowledge_source_ids: v.knowledge_source_ids,
+    skill_names: v.skill_names,
+    channel_config: v.channel_config,
     status: "draft",
     created_by: authUser.id,
   }).select("id").single();
@@ -749,6 +757,59 @@ export async function createMcpAgentAction(
 
   revalidatePath("/app/ai/agents");
   return { ok: true, data: { agent_id: agentRow.id, version_id: versionRow.id } };
+}
+
+export async function discardMcpDraftAction(
+  agentId: string,
+  versionId: string,
+): Promise<ActionResult> {
+  if (!UUID_RX.test(agentId) || !UUID_RX.test(versionId)) {
+    return { ok: false, error: "invalid_request" };
+  }
+  const guard = await ensureAdmin();
+  if (!guard.ok) return guard;
+  const { authUser, activeOrg } = guard;
+  const admin = createAdminClient();
+
+  const { data: removed, error } = await admin
+    .from("ai_agent_versions")
+    .delete()
+    .eq("id", versionId)
+    .eq("agent_id", agentId)
+    .eq("organization_id", activeOrg.orgId)
+    .eq("status", "draft")
+    .eq("provisioning_origin", "mcp")
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, error: "internal_error", message: error.message };
+  if (!removed) return { ok: false, error: "draft_not_found" };
+
+  const { count } = await admin
+    .from("ai_agent_versions")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", activeOrg.orgId)
+    .eq("agent_id", agentId);
+  if (count === 0) {
+    await admin
+      .from("ai_agents")
+      .update({ archived_at: new Date().toISOString() })
+      .eq("id", agentId)
+      .eq("organization_id", activeOrg.orgId)
+      .is("published_version_id", null);
+  }
+
+  await audit({
+    action: "ai_agent.mcp_draft_discarded",
+    actorUserId: authUser.id,
+    organizationId: activeOrg.orgId,
+    resourceType: "ai_agent_version",
+    resourceId: versionId,
+    requestId: randomUUID(),
+    metadata: { agent_id: agentId },
+  });
+  revalidatePath(`/app/ai/agents/${agentId}`);
+  revalidatePath("/app/ai/agents");
+  return { ok: true };
 }
 
 export async function configureChannelConcurrencyAction(

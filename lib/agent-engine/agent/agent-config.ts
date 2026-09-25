@@ -41,6 +41,8 @@ export interface PublishedAgentConfig {
   casesEnabled: boolean;
   /** tool_ids do catálogo MCP habilitadas na tela (2B-tools). */
   toolIds: string[];
+  /** NULL = comportamento legado (todas); array = seleção explícita da versão. */
+  skillNames?: string[] | null;
   /**
    * Materiais que ESTE agente consulta (`ai_agent_versions.knowledge_source_ids`).
    * Vazio = NENHUM: a ferramenta de busca some do turno.
@@ -111,6 +113,7 @@ interface Row {
   multimodal_input: boolean;
   cases_enabled: boolean;
   tool_ids: string[] | null;
+  skill_names: string[] | null;
   active_kb_version_id: string | null;
   config: Record<string, unknown> | null;
   operator_enabled: boolean | null;
@@ -140,6 +143,7 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.multimodal_input,
             v.cases_enabled,
             v.tool_ids,
+            v.skill_names,
             a.active_kb_version_id,
             a.config,
             v.operator_enabled,
@@ -195,6 +199,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     multimodalInput: r.multimodal_input,
     casesEnabled: r.cases_enabled,
     toolIds: r.tool_ids ?? [],
+    skillNames: r.skill_names ?? null,
     // `?? []` cobre o clone sem a 0181: sem a coluna, o agente cai no ponteiro
     // legado abaixo em vez de ficar sem material nenhum.
     knowledgeSourceIds: r.knowledge_source_ids ?? [],

@@ -12,6 +12,7 @@
  *   `agent_run:<uuid>` -> vincula tool_call ao run (Spec 10)
  *   `mcp:read`         -> habilita read tools desta wave
  *   `mcp:write`        -> habilita write tools (S-13.04)
+ *   `mcp:configure`    -> monta atendimento em rascunho, sem publicar
  */
 import { createHash } from "node:crypto";
 

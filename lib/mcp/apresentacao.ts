@@ -47,8 +47,10 @@ export function montarApresentacaoMcp(input: ApresentacaoMcpInput): string {
   const vocabulary = resolveVocabulary(input.vocabulary);
   const temLeitura = input.scopes.includes("mcp:read");
   const temEscrita = input.scopes.includes("mcp:write");
+  const temMontagem = input.scopes.includes("mcp:configure");
   const podeLer = temLeitura && ROLE_RANK[input.role] >= ROLE_RANK.agent;
   const podeEscrever = temEscrita && ROLE_RANK[input.role] >= ROLE_RANK.agent;
+  const podeMontar = temMontagem && ROLE_RANK[input.role] >= ROLE_RANK.manager;
   const linhas = [
     t("CONTEXTO DESTE CRM"),
     `${t("Você está conectado ao")} ${input.productName}, ${t("na organização")} ${input.organizationName}.`,
@@ -72,6 +74,11 @@ export function montarApresentacaoMcp(input: ApresentacaoMcpInput): string {
     temEscrita && ROLE_RANK[input.role] < ROLE_RANK.manager
       ? t("Ações de configuração que exigem gerente ou administrador continuam recusadas pelo papel do token.")
       : "",
+    podeMontar
+      ? t("Pode montar e revisar o atendimento em rascunho. Nada do que for montado entra no ar sozinho: uma pessoa precisa publicar pela tela de Agentes.")
+      : temMontagem
+        ? t("Não pode montar o atendimento porque esse escopo exige papel de gerente ou administrador.")
+        : t("Não pode montar o atendimento porque o token não tem o escopo mcp:configure, que nasce desligado."),
     "",
     t("VOCABULÁRIO DESTA ORGANIZAÇÃO"),
     `${t("Lead")} (${vocabulary.lead}) ${t("e negócio")} (${vocabulary.deal}) ${t("representam a mesma oportunidade comercial. Etapa é a posição dessa oportunidade no funil.")}`,

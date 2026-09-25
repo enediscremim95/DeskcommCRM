@@ -29,6 +29,11 @@ export interface AgentVersionRow {
   operator_tool_ids: string[];
   pipeline_ids: string[];
   knowledge_source_ids: string[];
+  skill_names: string[] | null;
+  channel_config: Record<string, unknown> | null;
+  provisioning_origin?: "onboarding" | "legacy_reconciliation" | "mcp" | null;
+  mcp_api_token_id?: string | null;
+  mcp_change_summary?: string[];
   split_messages: boolean;
   split_max_chars: number;
   followup: { enabled: boolean; flow_pointer_ids: string[] };
