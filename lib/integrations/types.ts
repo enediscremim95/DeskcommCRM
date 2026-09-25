@@ -10,7 +10,7 @@ export interface IntegrationPermission {
 export type IntegrationAccessMap = Record<IntegrationSlug, IntegrationPermission>;
 
 export const DEFAULT_INTEGRATION_ACCESS: IntegrationAccessMap = {
-  whatsapp: { client_visible: true, client_can_reconnect: false },
+  whatsapp: { client_visible: true, client_can_reconnect: true },
   n8n: { client_visible: true, client_can_reconnect: false },
   windsor: { client_visible: true, client_can_reconnect: false },
 };
