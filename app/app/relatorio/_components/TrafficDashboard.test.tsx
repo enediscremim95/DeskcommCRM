@@ -890,6 +890,46 @@ describe("colunas da tabela de campanhas", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
+  it("busca sem acento, marca só o resultado e limpa sem perder a seleção", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(baseResponse([
+      campaignWithStatus("Promoção de Inverno", "ACTIVE", 50),
+      campaignWithStatus("Sempre Visível", "ACTIVE", 30),
+      campaignWithStatus("Outra Campanha", "ACTIVE", 20),
+    ], ["spend"])));
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Promoção de Inverno")).closest("table") as HTMLTableElement;
+
+    await user.click(within(table).getByRole("checkbox", {
+      name: "Selecionar campanha Sempre Visível",
+    }));
+    await user.type(screen.getByRole("searchbox", { name: "Pesquisar campanha" }), "promocao");
+
+    expect(within(table).getByText("Promoção de Inverno")).toBeInTheDocument();
+    expect(within(table).queryByText("Sempre Visível")).not.toBeInTheDocument();
+    expect(screen.getByText("1 campanha encontrada")).toBeInTheDocument();
+
+    await user.click(within(table).getByRole("checkbox", {
+      name: "Selecionar campanhas visíveis",
+    }));
+    expect(screen.getByRole("status")).toHaveTextContent("2 campanhas marcadas");
+
+    await user.click(screen.getByRole("button", { name: "Limpar pesquisa" }));
+    expect(within(table).getByRole("checkbox", {
+      name: "Selecionar campanha Promoção de Inverno",
+    })).toBeChecked();
+    expect(within(table).getByRole("checkbox", {
+      name: "Selecionar campanha Sempre Visível",
+    })).toBeChecked();
+    expect(within(table).getByRole("checkbox", {
+      name: "Selecionar campanha Outra Campanha",
+    })).not.toBeChecked();
+
+    await user.type(screen.getByRole("searchbox", { name: "Pesquisar campanha" }), "inexistente");
+    expect(within(table).getByText("Nenhuma campanha corresponde à pesquisa e aos filtros."))
+      .toBeInTheDocument();
+  });
+
   it("resume as marcadas e o total acompanha exatamente as linhas visíveis", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(baseResponse([
       { ...campaignWithStatus("Campanha A", "ACTIVE", 30), conversions: 3, leads: 3 },

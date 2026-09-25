@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { DragScroll } from "@/components/ui/drag-scroll";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -863,6 +863,8 @@ function CampaignTable({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(() => new Set());
   const [onlySelected, setOnlySelected] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputId = useId();
   const selectAllRef = useRef<HTMLInputElement>(null);
   const statusChangedByUser = useRef(false);
   // Antes da primeira sincronização que traz o status, nenhuma campanha o conhece.
@@ -901,12 +903,25 @@ function CampaignTable({
       activeFilter === "all" || campaignStatus(campaign.campaign_status).category === activeFilter),
     [activeFilter, campaignsWithKeys],
   );
+  const normalizedSearch = useMemo(
+    () => searchQuery.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase(idioma).trim(),
+    [idioma, searchQuery],
+  );
+  const searchFilteredCampaigns = useMemo(
+    () => statusFilteredCampaigns.filter(({ campaign }) =>
+      campaign.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase(idioma)
+        .includes(normalizedSearch)),
+    [idioma, normalizedSearch, statusFilteredCampaigns],
+  );
+  const selectableCampaigns = useMemo(
+    () => searchFilteredCampaigns.filter(({ key }) => !onlySelected || selectedKeys.has(key)),
+    [onlySelected, searchFilteredCampaigns, selectedKeys],
+  );
   const visibleCampaigns = useMemo(
-    () => statusFilteredCampaigns
-      .filter(({ key }) => !onlySelected || selectedKeys.has(key))
+    () => [...selectableCampaigns]
       .sort((first, second) =>
         compareCampaigns(first.campaign, second.campaign, sortKey, sortDirection, idioma)),
-    [idioma, onlySelected, selectedKeys, sortDirection, sortKey, statusFilteredCampaigns],
+    [idioma, selectableCampaigns, sortDirection, sortKey],
   );
   const visibleTotal = useMemo(
     () => summarizeCampaigns(visibleCampaigns.map(({ campaign }) => campaign)),
@@ -917,9 +932,9 @@ function CampaignTable({
     [campaignsWithKeys, selectedKeys],
   );
   const selectedTotal = useMemo(() => summarizeCampaigns(selectedCampaigns), [selectedCampaigns]);
-  const selectedVisibleCount = statusFilteredCampaigns.filter(({ key }) => selectedKeys.has(key)).length;
-  const allVisibleSelected = statusFilteredCampaigns.length > 0 &&
-    selectedVisibleCount === statusFilteredCampaigns.length;
+  const selectedVisibleCount = selectableCampaigns.filter(({ key }) => selectedKeys.has(key)).length;
+  const allVisibleSelected = selectableCampaigns.length > 0 &&
+    selectedVisibleCount === selectableCampaigns.length;
 
   useEffect(() => {
     if (selectAllRef.current) {
@@ -963,12 +978,12 @@ function CampaignTable({
   };
 
   const toggleAllVisible = () => {
-    const visibleKeys = new Set(statusFilteredCampaigns.map(({ key }) => key));
+    const visibleKeys = new Set(selectableCampaigns.map(({ key }) => key));
     const selectionWillBeEmpty = allVisibleSelected &&
       [...selectedKeys].every((key) => visibleKeys.has(key));
     setSelectedKeys((current) => {
       const next = new Set(current);
-      for (const { key } of statusFilteredCampaigns) {
+      for (const { key } of selectableCampaigns) {
         if (allVisibleSelected) next.delete(key);
         else next.add(key);
       }
@@ -1072,6 +1087,28 @@ function CampaignTable({
             ))}
           </div>
         )}
+        <div className="flex min-w-[16rem] flex-1 flex-wrap items-center gap-2 sm:max-w-xl">
+          <Label htmlFor={searchInputId} className="sr-only">
+            {t("Pesquisar campanha")}
+          </Label>
+          <Input
+            id={searchInputId}
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder={t("Pesquisar campanha")}
+            className="h-9 min-w-40 flex-1"
+          />
+          <span aria-live="polite" className="whitespace-nowrap text-xs text-muted-foreground">
+            {number(visibleCampaigns.length)} {t(visibleCampaigns.length === 1
+              ? "campanha encontrada" : "campanhas encontradas")}
+          </span>
+          {searchQuery.length > 0 && (
+            <Button type="button" size="sm" variant="ghost" onClick={() => setSearchQuery("")}>
+              {t("Limpar pesquisa")}
+            </Button>
+          )}
+        </div>
         <div className="ml-auto">{columnMenu}</div>
       </div>
       {selectedCampaigns.length > 0 && (
@@ -1110,7 +1147,7 @@ function CampaignTable({
                   <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
                     <input ref={selectAllRef} type="checkbox"
                       className="size-5 cursor-pointer accent-primary"
-                      checked={allVisibleSelected} disabled={statusFilteredCampaigns.length === 0}
+                      checked={allVisibleSelected} disabled={selectableCampaigns.length === 0}
                       aria-label={t("Selecionar campanhas visíveis")} onChange={toggleAllVisible} />
                   </label>
                   <button type="button"
@@ -1142,6 +1179,13 @@ function CampaignTable({
             </tr>
           </thead>
           <tbody className="divide-y">
+            {normalizedSearch.length > 0 && visibleCampaigns.length === 0 && (
+              <tr>
+                <td colSpan={columnCount} className="px-4 py-8 text-center text-muted-foreground">
+                  {t("Nenhuma campanha corresponde à pesquisa e aos filtros.")}
+                </td>
+              </tr>
+            )}
             {visibleCampaigns.map(({ campaign, key }) => {
               const status = campaignStatus(campaign.campaign_status);
               const description = campaignDescription(campaign.name);
