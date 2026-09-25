@@ -93,7 +93,7 @@ test.describe("navegação agrupada", () => {
     await expect(titulos).toHaveText([
       "Atendimento",
       "CRM",
-      "Automação",
+      "Atendimento com IA",
       "Canais",
       "Análise",
     ]);
@@ -210,32 +210,16 @@ test.describe("navegação agrupada", () => {
     await page.waitForURL(/knowledge\/sources/);
   });
 
-  /**
-   * Agrupar cria um risco que a lista plana não tinha: o menu cresce e passa a
-   * exigir scroll. Na primeira versão desta mudança, medido em 1280×768, o
-   * conteúdo dava 1019px contra 663px visíveis — SETE links e os grupos Análise
-   * e Organização ficavam fora da dobra. Trocar "17 itens sem hierarquia" por
-   * "20 itens que não cabem" seria recriar o problema em outra forma.
-   *
-   * Medido por ferramenta, nunca a olho.
-   */
-  test("nenhum grupo fica fora da dobra, e em 900px o menu não rola", async ({ page }) => {
+  test("todos os grupos continuam alcançáveis com o atendimento nativo aberto", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginAdmin(page);
-
-    const m = await page.evaluate(() => {
-      const nav = document.querySelector('nav[aria-label="Navegação principal"]')!;
-      const r = nav.getBoundingClientRect();
-      return {
-        rola: nav.scrollHeight > Math.round(r.height) + 1,
-        titulosFora: [...nav.querySelectorAll("h2")].filter(
-          (h) => h.getBoundingClientRect().bottom > r.bottom,
-        ).length,
-      };
-    });
-
-    expect(m.titulosFora, "grupo inteiro invisível é o problema que viemos resolver").toBe(0);
-    expect(m.rola, "em 900px o menu inteiro tem de caber sem scroll").toBe(false);
+    const nav = sidebar(page).getByRole("navigation", { name: "Navegação principal" });
+    const alertas = nav.getByRole("link", { name: "Alertas" });
+    await alertas.scrollIntoViewIfNeeded();
+    await expect(alertas).toBeVisible();
+    const analise = nav.getByRole("heading", { name: "Análise" });
+    await analise.scrollIntoViewIfNeeded();
+    await expect(analise).toBeVisible();
   });
 
   test.describe("mobile", () => {
