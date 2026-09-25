@@ -1,6 +1,15 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { DragScroll } from "@/components/ui/drag-scroll";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +27,7 @@ import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import {
+  CAMPAIGN_METRIC_COLUMNS,
   campaignMetricColumnsForPlatform,
   type AdPlatform,
   type CampaignMetricColumn,
@@ -470,6 +480,40 @@ function metricValue(
 type CampaignStatusFilter = "all" | "active" | "paused";
 type CampaignSortKey = "name" | CampaignMetricColumn;
 type SortDirection = "ascending" | "descending";
+type ResizableColumnKey = "name" | "status" | CampaignMetricColumn;
+
+const COLUMN_MIN_WIDTH: Record<"name" | "status" | "metric", number> = {
+  name: 180,
+  status: 112,
+  metric: 104,
+};
+
+const COLUMN_FALLBACK_WIDTH: Record<"name" | "status" | "metric", number> = {
+  name: 280,
+  status: 132,
+  metric: 144,
+};
+const MAX_COLUMN_WIDTH = 1200;
+const RESIZABLE_COLUMN_KEYS = new Set<string>(["name", "status", ...CAMPAIGN_METRIC_COLUMNS]);
+
+function columnWidthKind(column: ResizableColumnKey): keyof typeof COLUMN_MIN_WIDTH {
+  if (column === "name" || column === "status") return column;
+  return "metric";
+}
+
+function validStoredWidths(value: unknown): Partial<Record<ResizableColumnKey, number>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      ([column, width]) =>
+        RESIZABLE_COLUMN_KEYS.has(column) &&
+        typeof width === "number" &&
+        Number.isFinite(width) &&
+        width >= COLUMN_MIN_WIDTH[columnWidthKind(column as ResizableColumnKey)] &&
+        width <= MAX_COLUMN_WIDTH,
+    ),
+  ) as Partial<Record<ResizableColumnKey, number>>;
+}
 
 const CAMPAIGN_STATUS: Record<
   string,
@@ -817,9 +861,11 @@ function CampaignTable({
   currency,
   total,
   platform,
+  organizationKey,
   labels,
   columns,
   idioma,
+  priorityMetric,
   threshold,
   columnMenu,
 }: {
@@ -827,8 +873,10 @@ function CampaignTable({
   currency: string;
   total: Metrics;
   platform: "meta_ads" | "google_ads";
+  organizationKey: string;
   columns: CampaignMetricColumn[];
   idioma: string;
+  priorityMetric: PriorityMetricColumn | "conversions";
   threshold?: CostThreshold;
   columnMenu: ReactNode;
   labels: {
@@ -840,10 +888,19 @@ function CampaignTable({
   const t = useT();
   const isMeta = platform === "meta_ads";
   const storageKey = `traffic-campaign-status-filter:${platform}`;
+  const widthsStorageKey = `traffic-report-column-widths:${organizationKey}:${platform}`;
   const [statusFilter, setStatusFilter] = useState<CampaignStatusFilter>("all");
   const [sortKey, setSortKey] = useState<CampaignSortKey>("spend");
   const [sortDirection, setSortDirection] = useState<SortDirection>("descending");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [columnWidths, setColumnWidths] = useState<Partial<Record<ResizableColumnKey, number>>>({});
+  const columnWidthsRef = useRef<Partial<Record<ResizableColumnKey, number>>>({});
+  const resizing = useRef<{
+    column: ResizableColumnKey;
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
   const statusChangedByUser = useRef(false);
   // Antes da primeira sincronização que traz o status, nenhuma campanha o conhece.
   // Nesse caso a coluna e o filtro somem em vez de mostrar "Não informada" em tudo.
@@ -862,6 +919,21 @@ function CampaignTable({
     }
     return undefined;
   }, [storageKey]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      try {
+        const stored = window.localStorage.getItem(widthsStorageKey);
+        const next = stored ? validStoredWidths(JSON.parse(stored)) : {};
+        columnWidthsRef.current = next;
+        setColumnWidths(next);
+      } catch {
+        columnWidthsRef.current = {};
+        setColumnWidths({});
+      }
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [widthsStorageKey]);
 
   const visibleCampaigns = useMemo(
     () =>
@@ -903,13 +975,119 @@ function CampaignTable({
     });
   };
 
+  const saveColumnWidths = (next: Partial<Record<ResizableColumnKey, number>>) => {
+    columnWidthsRef.current = next;
+    setColumnWidths(next);
+    if (Object.keys(next).length === 0) window.localStorage.removeItem(widthsStorageKey);
+    else window.localStorage.setItem(widthsStorageKey, JSON.stringify(next));
+  };
+
+  const setColumnWidth = (column: ResizableColumnKey, width: number) => {
+    const kind = columnWidthKind(column);
+    saveColumnWidths({
+      ...columnWidthsRef.current,
+      [column]: Math.min(MAX_COLUMN_WIDTH, Math.max(COLUMN_MIN_WIDTH[kind], Math.round(width))),
+    });
+  };
+
+  const startResize = (event: ReactPointerEvent<HTMLButtonElement>, column: ResizableColumnKey) => {
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const kind = columnWidthKind(column);
+    const measured = event.currentTarget.parentElement?.getBoundingClientRect().width ?? 0;
+    resizing.current = {
+      column,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: columnWidthsRef.current[column] ?? (measured || COLUMN_FALLBACK_WIDTH[kind]),
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const continueResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const current = resizing.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setColumnWidth(current.column, current.startWidth + event.clientX - current.startX);
+  };
+
+  const stopResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (resizing.current?.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    resizing.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+  };
+
+  const resetColumnWidth = (column: ResizableColumnKey) => {
+    const next = { ...columnWidthsRef.current };
+    delete next[column];
+    saveColumnWidths(next);
+  };
+
+  const columnStyle = (column: ResizableColumnKey): CSSProperties | undefined => {
+    const width = columnWidths[column];
+    return width == null ? undefined : { width, minWidth: width, maxWidth: width };
+  };
+
+  const resizeHandle = (column: ResizableColumnKey, label: string) => {
+    const kind = columnWidthKind(column);
+    const description = `${t("Ajustar largura da coluna")} ${label}. ${t("Clique duas vezes para restaurar")}`;
+    return (
+      <button
+        type="button"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={description}
+        aria-valuemin={COLUMN_MIN_WIDTH[kind]}
+        aria-valuemax={MAX_COLUMN_WIDTH}
+        aria-valuenow={columnWidths[column] ?? COLUMN_FALLBACK_WIDTH[kind]}
+        title={description}
+        className="group absolute inset-y-0 right-0 z-10 hidden w-3 translate-x-1/2 cursor-col-resize touch-none select-none [@media(pointer:fine)]:block"
+        onPointerDown={(event) => startResize(event, column)}
+        onPointerMove={continueResize}
+        onPointerUp={stopResize}
+        onPointerCancel={stopResize}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          resetColumnWidth(column);
+        }}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Home") {
+            event.preventDefault();
+            event.stopPropagation();
+            resetColumnWidth(column);
+            return;
+          }
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          event.stopPropagation();
+          const current = columnWidthsRef.current[column] ?? COLUMN_FALLBACK_WIDTH[kind];
+          setColumnWidth(column, current + (event.key === "ArrowRight" ? 8 : -8));
+        }}
+      >
+        <span className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-primary group-focus-visible:bg-primary" />
+      </button>
+    );
+  };
+
   // Um único estilo para todo cabeçalho. O <button> de ordenar repete as classes
   // de texto para não depender do que o navegador reseta em botões.
   const headerText = "text-xs font-semibold tracking-[0.08em] uppercase";
-  const headerCell = `${headerText} px-4 py-3 whitespace-nowrap`;
+  const headerCell = `${headerText} relative px-4 py-3 whitespace-nowrap`;
 
   const sortableHeader = (key: CampaignSortKey, label: string, align: "left" | "right") => {
     const active = sortKey === key;
+    const priority = key !== "name" && key === priorityMetric;
     // A seta ocupa o mesmo espaço sempre (invisível quando inativa) e fica do lado
     // de dentro da coluna: à direita do nome e à esquerda dos números, para o
     // texto não sair do alinhamento quando a ordenação troca de coluna.
@@ -925,30 +1103,42 @@ function CampaignTable({
       <th
         key={key}
         scope="col"
-        className={`${headerCell} ${align === "right" ? "text-right" : "text-left"} ${active ? "text-foreground" : "text-muted-foreground"}`}
+        className={`${headerCell} ${align === "right" ? "text-right" : "text-left"} ${priority ? "bg-primary/[0.10] text-foreground" : active ? "text-foreground" : "text-muted-foreground"}`}
+        style={columnStyle(key)}
+        data-priority={priority || undefined}
         aria-sort={active ? sortDirection : "none"}
       >
         <button
           type="button"
-          className={`${headerText} inline-flex w-full items-center gap-1 rounded-sm text-inherit hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${align === "right" ? "justify-end" : "justify-start"}`}
+          className={`${headerText} inline-flex w-full min-w-0 items-center gap-1 overflow-hidden rounded-sm text-inherit hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${align === "right" ? "justify-end" : "justify-start"}`}
           onClick={() => changeSort(key)}
           aria-label={`${t("Ordenar por")} ${label}`}
+          title={label}
         >
           {align === "right" && arrow}
-          <span>{label}</span>
+          <span className="min-w-0 truncate">{label}</span>
           {align === "left" && arrow}
         </button>
+        {resizeHandle(key, label)}
       </th>
     );
   };
 
-  const metricCell = (metrics: Metrics, column: CampaignMetricColumn, className = "") => (
-    <td key={column} className={`px-4 py-3 text-right whitespace-nowrap tabular-nums ${className}`}>
-      <CostSignal value={costColumnValue(metrics, column)} threshold={threshold}>
-        {metricValue(metrics, column, currency, platform)}
-      </CostSignal>
-    </td>
-  );
+  const metricCell = (metrics: Metrics, column: CampaignMetricColumn, className = "") => {
+    const priority = column === priorityMetric;
+    return (
+      <td
+        key={column}
+        className={`overflow-hidden px-4 py-3 text-right whitespace-nowrap tabular-nums ${priority ? "bg-primary/[0.06] text-base font-semibold" : ""} ${className}`}
+        style={columnStyle(column)}
+        data-priority={priority || undefined}
+      >
+        <CostSignal value={costColumnValue(metrics, column)} threshold={threshold}>
+          {metricValue(metrics, column, currency, platform)}
+        </CostSignal>
+      </td>
+    );
+  };
 
   return (
     <div className="rounded-xl border bg-card">
@@ -988,8 +1178,13 @@ function CampaignTable({
             <tr>
               {sortableHeader("name", labels.campaign, "left")}
               {showStatus && (
-                <th scope="col" className={`${headerCell} text-left text-muted-foreground`}>
-                  {t("Status")}
+                <th
+                  scope="col"
+                  className={`${headerCell} text-left text-muted-foreground`}
+                  style={columnStyle("status")}
+                >
+                  <span className="block truncate">{t("Status")}</span>
+                  {resizeHandle("status", t("Status"))}
                 </th>
               )}
               {columns.map((column) =>
@@ -1006,7 +1201,10 @@ function CampaignTable({
               return (
                 <Fragment key={key}>
                   <tr className="hover:bg-muted/35">
-                    <td className="max-w-md px-4 py-3 font-medium">
+                    <td
+                      className="max-w-md overflow-hidden px-4 py-3 font-medium"
+                      style={columnStyle("name")}
+                    >
                       {isMeta ? (
                         <button
                           type="button"
@@ -1040,7 +1238,7 @@ function CampaignTable({
                       )}
                     </td>
                     {showStatus && (
-                      <td className="px-4 py-3">
+                      <td className="overflow-hidden px-4 py-3" style={columnStyle("status")}>
                         <Badge
                           variant={status.variant}
                           className="px-2 py-0 text-[11px] leading-5 whitespace-nowrap"
@@ -1072,8 +1270,10 @@ function CampaignTable({
           </tbody>
           <tfoot>
             <tr className="border-t bg-muted/45 font-semibold">
-              <td className="px-4 py-3">{labels.total}</td>
-              {showStatus && <td className="px-4 py-3" />}
+              <td className="overflow-hidden px-4 py-3" style={columnStyle("name")}>
+                {labels.total}
+              </td>
+              {showStatus && <td className="px-4 py-3" style={columnStyle("status")} />}
               {columns.map((column) => metricCell(visibleTotal, column))}
             </tr>
           </tfoot>
@@ -1825,9 +2025,11 @@ export function TrafficDashboard() {
                     currency={group.currency}
                     total={meta}
                     platform="meta_ads"
+                    organizationKey={report.organization_key}
                     labels={campaignLabels}
                     columns={metaColumns}
                     idioma={idioma}
+                    priorityMetric={activeMetric}
                     threshold={metaThreshold}
                     columnMenu={
                       <ColumnPresetMenu
@@ -1924,9 +2126,11 @@ export function TrafficDashboard() {
                     currency={group.currency}
                     total={google}
                     platform="google_ads"
+                    organizationKey={report.organization_key}
                     labels={campaignLabels}
                     columns={googleColumns}
                     idioma={idioma}
+                    priorityMetric={activeMetric}
                     threshold={googleThreshold}
                     columnMenu={
                       <ColumnPresetMenu
