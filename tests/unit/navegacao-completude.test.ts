@@ -31,6 +31,12 @@ const BASE = path.join(RAIZ, "app", "app");
  * e quem revisar o PR a lê.
  */
 const NAV_ALLOWLIST: Record<string, string> = {
+  "/app/crm":
+    "hub legado preservado para links salvos; por decisão do dono em 17/09/2026 o CRM ficou sem hub e mostra somente Funis, Contatos e Tarefas no menu",
+  "/app/ai":
+    "hub legado preservado para links salvos; por decisão do dono em 17/09/2026 o grupo mostra Atendimento, Casos e Alertas diretamente no menu",
+  "/app/analise":
+    "hub legado preservado para links salvos; por decisão do dono em 18/09/2026 Análise mostra somente Relatório no menu",
   "/app/metrics":
     "redirect legado para /app/resultados; mantido para links salvos e integrações que ainda usam a URL anterior",
   "/app": "redirect para /app/inbox — não é tela, é o ponto de entrada",

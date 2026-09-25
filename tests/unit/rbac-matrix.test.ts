@@ -5,8 +5,8 @@
  * mínimo da matriz, exercitando os Route Handlers REAIS (auth e Supabase
  * mockados; a decisão de autorização é a de produção via requireRole).
  *
- * Grupos cobertos: settings/api-tokens (admin), team (read manager+/write
- * admin), audit (manager+), inbox/conversations (read viewer+/write agent+),
+ * Grupos cobertos: settings/api-tokens (gestão), team (read/write gestão),
+ * audit (manager+), inbox/conversations (read viewer+/write agent+),
  * leads (read viewer+/write agent+). Billing: nenhuma rota existe hoje —
  * célula admin-only da matriz fica coberta quando a rota nascer.
  */
@@ -108,15 +108,14 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// settings/api-tokens — admin only (spec 13 §4: api_tokens = none abaixo de admin)
+// settings/api-tokens — manager e admin têm o mesmo piso de acesso geral.
 // ---------------------------------------------------------------------------
 describe("grupo settings/api-tokens (admin)", () => {
-  it("GET nega 403 para manager", async () => {
+  it("GET permite 200 para manager", async () => {
     session("manager");
     const { GET } = await import("@/app/api/v1/settings/api-tokens/route");
     const res = await GET(req("/api/v1/settings/api-tokens"));
-    expect(res.status).toBe(403);
-    expect(await errorCode(res)).toBe("forbidden_role");
+    expect(res.status).toBe(200);
   });
 
   it("GET permite 200 para admin", async () => {
@@ -128,7 +127,7 @@ describe("grupo settings/api-tokens (admin)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// team — read manager+ (nota 7), write admin
+// team — `team.manage` é capacidade nomeada de manager e admin.
 // ---------------------------------------------------------------------------
 describe("grupo team (read manager+, write admin)", () => {
   it("GET /team nega 403 para agent", async () => {
@@ -146,16 +145,15 @@ describe("grupo team (read manager+, write admin)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("PATCH /team/[user_id]/role nega 403 para manager + audita authz.denied", async () => {
+  it("PATCH /team/[user_id]/role permite manager e audita a mudança", async () => {
     session("manager");
     const { PATCH } = await import("@/app/api/v1/team/[user_id]/role/route");
     const res = await PATCH(
       req("/api/v1/team/x/role", { method: "PATCH", body: JSON.stringify({ role: "admin" }) }),
       params({ user_id: USER_ID }),
     );
-    expect(res.status).toBe(403);
-    expect(await errorCode(res)).toBe("forbidden_role");
-    expect(vi.mocked(audit).mock.calls.some(([e]) => e.action === "authz.denied")).toBe(true);
+    expect(res.status).toBe(200);
+    expect(vi.mocked(audit).mock.calls.some(([e]) => e.action === "team.role_changed")).toBe(true);
   });
 });
 

@@ -165,38 +165,13 @@ export function SidebarContent({
         12px para 8px devolvem ~90px — folga para o próximo item, em vez de
         deixar a próxima tela nova repetir esta corrida.
 
-        ⚠️ Isto é remendo de densidade, não conserto estrutural. O menu vai
-        estourar de novo: a saída existente é o HUB (o grupo IA já a usa — nove
-        das treze telas dele moram atrás do "Ver tudo em IA"), e o CRM ainda não
-        tem um. Quando o quinto destino de CRM aparecer, é hub que se cria, não
-        mais 4px que se raspa.
-
-        ✅ O QUINTO APARECEU, e a promessa foi paga. Tarefas (PR #546) levou o
-        CRM a cinco telas e a dobra estourou em 13px — medido em 1280×900,
-        `scrollHeight` 776 contra 763 de altura. O conserto foi `/app/crm`, o
-        hub do grupo: Produtos e Etapas do funil saíram do menu para dentro
-        dele, e nenhum valor deste arquivo mudou por causa disso.
-
-        Fica valendo o mesmo, agora para o próximo grupo: com hub em CRM, IA e
-        Organização, tela nova de qualquer um dos três não pressiona mais o
-        menu. Quem pressionar é um grupo SEM hub — Atendimento (4), Canais (3)
-        ou Análise (3). Quando um deles passar de quatro, a resposta é a mesma:
-        cria-se o hub, não se raspa densidade.
-
-        ✅ ANÁLISE FOI A SEGUINTE, e a regra valeu igual. Atividades (PR #583)
-        levou o grupo a cinco telas e a dobra estourou de novo — medido em
-        1280×900, logado como admin: `scrollHeight` 776 contra 763 de altura
-        visível, 13px de excesso, com o link "Audit Log" 13px abaixo da caixa de
-        conteúdo da nav. O conserto foi `/app/analise`, o hub do grupo: Evolução
-        da IA e Audit Log saíram do menu para dentro dele, e NENHUM valor deste
-        arquivo mudou por causa disso. Sobrou 19px de folga — a mesma que havia
-        antes de Atividades chegar.
-
-        Ficam sem hub Atendimento e Canais (4 e 2 destinos quando isto foi
-        medido) — em qualquer um deles, o quinto destino é que cria o hub, nunca
-        mais densidade raspada. A conta é fechada e vale conferir antes de abrir
-        o PR: cada linha custa 32px (28px de altura + 4px de `space-y-1`), e
-        trocar N destinos do menu por um único link de hub devolve (N-1)×32px.
+        ⚠️ Tarefas e Atividades já motivaram hubs por causa da densidade, mas o
+        dono retirou os hubs de CRM e IA em 17/09/2026 e o de Análise em
+        18/09/2026. A solução vigente é explícita: o menu mostra somente as
+        portas de uso diário escolhidas no catálogo; as demais continuam no ⌘K.
+        Não reintroduza um hub nem ressuscite links antigos por causa deste
+        histórico. Se a dobra estourar, a composição precisa ser medida outra
+        vez contra a decisão vigente do produto.
       */}
       <nav className="flex-1 space-y-2 overflow-y-auto p-2" aria-label={t("Navegação principal")}>
         {grupos.map(({ group, items }) => {

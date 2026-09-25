@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /**
  * A IMPORTAÇÃO DE LEADS NÃO ACEITA NADA NO ESCURO.
  *
@@ -167,11 +169,9 @@ function fazerSupabaseComEtapas(etapas: EtapaDoFunil[]) {
 /**
  * O corpo multipart é montado NA MÃO, byte a byte — e não com `new FormData()`.
  *
- * Medido: sob o ambiente `jsdom` da suíte, passar um `FormData` do jsdom como
- * `body` de um `NextRequest` faz o undici (que é quem serializa) não reconhecer
- * o `File` do jsdom e gravá-lo como a STRING "undefined". O arquivo chega à
- * rota com 9 bytes, nome "blob" e conteúdo `undefined` — e o teste passaria a
- * medir o realm do ambiente, não a rota.
+ * Este arquivo roda no ambiente `node`, o mesmo realm do runtime da rota. No
+ * `jsdom`, o parser do `NextRequest` cria um `File` do undici e tenta anexá-lo
+ * ao `FormData` de outro realm; o próprio parser quebra antes de chegar à rota.
  *
  * Montar o multipart à mão remove a variável: é exatamente o que o navegador
  * põe no fio, e o `req.formData()` da rota o lê com o parser de produção.
@@ -193,7 +193,10 @@ function pedido(csv: string, campos: Record<string, string | null> = {}) {
   return new NextRequest("http://x/api/v1/leads/import", {
     method: "POST",
     headers: { "content-type": `multipart/form-data; boundary=${B}` },
-    body: corpo,
+    // O parser multipart do runtime opera sobre bytes. Passar `string` aqui
+    // depende da coerção do undici e deixou de produzir um corpo parseável no
+    // Node 22; `TextEncoder` reproduz os bytes que o navegador envia no fio.
+    body: new TextEncoder().encode(corpo),
   });
 }
 
@@ -210,7 +213,7 @@ describe("POST /api/v1/leads/import", () => {
 
     const res = await POST(pedido("nome,valor\nAna,100\nBruno,200"));
 
-    expect(res.status).toBe(200);
+    expect(res.status, JSON.stringify(await res.clone().json())).toBe(200);
     expect(vi.mocked(createLeadHandler)).toHaveBeenCalledTimes(2);
     for (const [, ctx] of vi.mocked(createLeadHandler).mock.calls) {
       expect((ctx as { organization_id: string }).organization_id).toBe(ORG);

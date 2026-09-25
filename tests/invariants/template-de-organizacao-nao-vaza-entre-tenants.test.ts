@@ -265,7 +265,7 @@ describe("0233 · template de organização", () => {
     expect(estado).toBe("Você atende quem procura a clínica.|SEM-VERSAO");
   });
 
-  it("a procedência só é legível pelo admin da própria organização, nunca pelo vizinho", () => {
+  it("a procedência é legível pela gestão da própria organização, nunca pelo vizinho", () => {
     const a = criarTenant("inv-0236-proveniencia-a");
     const b = criarTenant("inv-0236-proveniencia-b");
     const [adminA, managerB] = lastLine(sql(`
@@ -299,7 +299,7 @@ describe("0233 · template de organização", () => {
 
     expect(contarComo(adminA!, `select count(*) from public.organization_template_items where organization_id='${a.org}'::uuid;`)).toBe(1);
     expect(contarComo(adminA!, `select count(*) from public.organization_template_items where organization_id='${b.org}'::uuid;`)).toBe(0);
-    expect(contarComo(managerB!, `select count(*) from public.organization_template_items where organization_id='${b.org}'::uuid;`)).toBe(0);
+    expect(contarComo(managerB!, `select count(*) from public.organization_template_items where organization_id='${b.org}'::uuid;`)).toBe(1);
   });
 
   it("as cadências entram DESLIGADAS e sem versão ativa", () => {

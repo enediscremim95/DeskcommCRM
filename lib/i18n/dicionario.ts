@@ -2963,6 +2963,11 @@ export const DICIONARIO: Traducoes = {
   alerta: { es: "alerta" },
   alertas: { es: "alertas" },
   "alertas adicionais": { es: "alertas adicionales" },
+  "Alertas": { es: "Alertas" },
+  "MCP": { es: "MCP" },
+  "A organização precisa manter ao menos um administrador.": {
+    es: "La organización debe mantener al menos un administrador.",
+  },
   "Tenants Ativos": { es: "Tenants Activos" },
   "organizações ativas": { es: "organizaciones activas" },
   "Pendentes >10min": { es: "Pendientes >10min" },

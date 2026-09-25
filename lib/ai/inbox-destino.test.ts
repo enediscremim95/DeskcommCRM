@@ -68,7 +68,7 @@ describe("destinos da Central", () => {
     expect(item?.destination.estado).toBe("indisponivel");
     expect(l.queries).toEqual([{ table: "crm_leads", org: ORG, ids: [ID] }, { table: "crm_pipelines", org: ORG, ids: [PIPELINE] }]);
   });
-  it.each(["agent", "manager"] as const)("%s não recebe conexão admin", async role => {
+  it.each(["agent"] as const)("%s não recebe conexão admin", async role => {
     const l = leitor(); const [item] = await resolverDestinosDosAvisos(l.client, ORG, role, [aviso("qr_rescan", "channel_session")]);
     expect(item?.destination.estado).toBe("sem_permissao"); expect(l.queries).toHaveLength(0);
   });
@@ -132,7 +132,7 @@ it('reparo do agente legado tem destino tipado somente para admin e entidade vis
  const item=aviso('other','ai_agent');
  const [admin]=await resolverDestinosDosAvisos(leitor().client,ORG,'admin',[item]);
  expect(admin?.destination).toMatchObject({estado:'disponivel',href:`/app/ai/agents/${ID}`});
- for(const role of ['viewer','agent','manager'] as const){
+ for(const role of ['viewer','agent'] as const){
   const [denied]=await resolverDestinosDosAvisos(leitor().client,ORG,role,[item]);
   expect(denied?.destination.estado).toBe('sem_permissao');
  }

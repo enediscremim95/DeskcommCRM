@@ -96,14 +96,6 @@ export default async function AtendimentoPage() {
     ? allVersions.filter((version) => version.agent_id === selectedAgent.id)
     : [];
   const selectedChannel = channels.find((channel) => channel.status === 'WORKING') ?? channels[0] ?? null;
-  const dailyLimitRes = selectedChannel
-    ? await supabase
-        .from('channel_sessions')
-        .select('daily_message_limit')
-        .eq('organization_id', activeOrg.orgId)
-        .eq('id', selectedChannel.id)
-        .maybeSingle()
-    : { data: null };
 
   return (
     <AtendimentoBuilder
@@ -114,7 +106,7 @@ export default async function AtendimentoPage() {
       defaultToolIds={capacidadesPadraoDoOnboarding()}
       agent={selectedAgent}
       versions={versions}
-      dailyMessageLimit={dailyLimitRes.data?.daily_message_limit ?? null}
+      dailyMessageLimit={selectedChannel?.daily_message_limit ?? null}
       followupFlows={(followupsRes.data ?? []) as Array<{ id: string; name: string }>}
     />
   );

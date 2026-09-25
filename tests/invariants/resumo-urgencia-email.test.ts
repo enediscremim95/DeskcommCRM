@@ -22,6 +22,7 @@ function sql(script: string): string {
       "postgres",
       "-v",
       "ON_ERROR_STOP=1",
+      "-q",
       "-tA",
       "-f",
       "-",

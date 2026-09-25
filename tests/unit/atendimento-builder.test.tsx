@@ -59,6 +59,7 @@ const channel = {
   display_name: "WhatsApp comercial",
   status: "WORKING",
   phone_number: "+5541999999999",
+  daily_message_limit: 80,
 };
 const agent = {
   id: "22222222-2222-4222-8222-222222222222",

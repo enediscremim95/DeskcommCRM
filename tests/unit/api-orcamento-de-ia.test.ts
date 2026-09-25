@@ -149,7 +149,7 @@ beforeEach(() => {
 
 describe("PATCH /api/v1/ai/budget", () => {
   describe("quem pode mexer", () => {
-    for (const papel of ["viewer", "agent", "manager"] as const) {
+    for (const papel of ["viewer", "agent"] as const) {
       it(`${papel} recebe 403 — mexer no teto é decisão de admin`, async () => {
         sessao(papel);
         const { cliente } = fazerAdmin({ linha: null });

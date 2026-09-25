@@ -79,8 +79,8 @@ const PROVA_PROPRIA: readonly Excecao[] = [
     tabela: "organization_template_items",
     razao:
       "tests/invariants/template-de-organizacao-nao-vaza-entre-tenants.test.ts — " +
-      "admin A lê sua proveniência e conta 0 na organização B; manager B não " +
-      "lê nem a própria. JWT authenticated e RLS são exercitados nos dois eixos.",
+      "admin A lê sua proveniência e conta 0 na organização B; manager B lê " +
+      "somente a própria. JWT authenticated e RLS são exercitados nos dois eixos.",
   },
   { tabela: "channel_routing_policies", razao: "tests/invariants/channel-routing.test.ts — dois tenants reais, leitura positiva local e negativa cruzada por JWT; FK composta rejeita canal de outra org" },
   { tabela: "channel_routing_responsibles", razao: "tests/invariants/channel-routing.test.ts — JWT do tenant B não lê responsáveis de A; revogação remove vínculo e claim revalida membro ativo" },
@@ -88,6 +88,54 @@ const PROVA_PROPRIA: readonly Excecao[] = [
   { tabela: "appointment_recovery_receipts", razao: "tests/invariants/agenda-presenca-acl.test.ts — leitura/escrita direta anon/authenticated negadas, escrita service_role negada e RPC service-only valida a tupla org/evento nos dois sentidos A/B" },
   { tabela: "event_service_origins", razao: "tests/invariants/service-event-origin.test.ts — recibo server-only, authenticated sem leitura/escrita, RPC rejeita tenant B real" },
   { tabela: "platform_support_sessions", razao: "tests/invariants/suporte-temporario.test.ts — grant por sessão, readonly e nenhuma escrita direta authenticated" },
+  {
+    tabela: "channel_delivery_leases",
+    razao:
+      "tests/invariants/tabelas-tenant-server-only.test.ts — authenticated com JWT real recebe " +
+      "permission denied; service_role continua alcançando a tabela.",
+  },
+  {
+    tabela: "n8n_workflow_bindings",
+    razao: "tests/invariants/tabelas-tenant-server-only.test.ts — mesma prova deny-all.",
+  },
+  {
+    tabela: "organization_integration_permissions",
+    razao: "tests/invariants/tabelas-tenant-server-only.test.ts — mesma prova deny-all.",
+  },
+  {
+    tabela: "traffic_dashboard_accounts",
+    razao: "tests/invariants/tabelas-tenant-server-only.test.ts — mesma prova deny-all.",
+  },
+  {
+    tabela: "traffic_dashboard_configs",
+    razao: "tests/invariants/tabelas-tenant-server-only.test.ts — mesma prova deny-all.",
+  },
+  {
+    tabela: "traffic_dashboard_facts",
+    razao: "tests/invariants/tabelas-tenant-server-only.test.ts — mesma prova deny-all.",
+  },
+  {
+    tabela: "traffic_dashboard_sync_runs",
+    razao: "tests/invariants/tabelas-tenant-server-only.test.ts — mesma prova deny-all.",
+  },
+  {
+    tabela: "tenant_owner_access",
+    razao:
+      "tests/invariants/tenant-owner-access.test.ts — authenticated e anon sem SELECT, RLS " +
+      "ligada, RPCs privadas e ator sem escopo full recusado.",
+  },
+  {
+    tabela: "notification_email_batches",
+    razao:
+      "tests/invariants/notification-email-batch.test.ts — JWT de admin, manager e agent " +
+      "prova que cada destinatário lê somente o próprio lote.",
+  },
+  {
+    tabela: "notification_email_batch_items",
+    razao:
+      "tests/invariants/notification-email-batch.test.ts — itens são criados por destinatário " +
+      "e a policy usa a mesma dupla organização e usuário provada nos lotes.",
+  },
   {
     tabela: "webhook_lead_captures",
     razao:

@@ -1017,7 +1017,7 @@ function CampaignTable({
 
   const childCount = (count: number, singular: string, plural: string) => (
     <span className="block truncate text-xs font-normal text-muted-foreground">
-      {number(count)} {t(count === 1 ? singular : plural)}
+      {number(count)} {count === 1 ? singular : plural}
     </span>
   );
 
@@ -1220,7 +1220,7 @@ function CampaignTable({
                                   {chevron(isOpen)}
                                   <span className="min-w-0 flex-1">
                                     <span className="block truncate">{campaign.name}</span>
-                                    {childCount(campaign.adsets.length, "conjunto", "conjuntos")}
+                                    {childCount(campaign.adsets.length, t("conjunto"), t("conjuntos"))}
                                     {description && (
                                       <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
                                         {t(description)}
@@ -1269,7 +1269,7 @@ function CampaignTable({
                                         {chevron(adsetOpen)}
                                         <span className="min-w-0 flex-1">
                                           <span className="block truncate">{adset.name}</span>
-                                          {childCount(adset.ads.length, "anúncio", "anúncios")}
+                                          {childCount(adset.ads.length, t("anúncio"), t("anúncios"))}
                                         </span>
                                       </span>
                                     </button>
