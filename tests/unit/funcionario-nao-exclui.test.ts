@@ -83,6 +83,18 @@ describe("Atendente não exclui recursos", () => {
     ).toBe(true);
   });
 
+  it("ai.credentials.delete libera administrador da organização e plataforma, mas recusa gerente", () => {
+    expect(roleHasPermission("manager", "ai.credentials.delete")).toBe(false);
+    expect(roleHasPermission("admin", "ai.credentials.delete")).toBe(true);
+    expect(
+      userHasPermission(
+        { is_platform_admin: true, support: null },
+        { role: "viewer" },
+        "ai.credentials.delete",
+      ),
+    ).toBe(true);
+  });
+
   it("reconhece remoção escondida na substituição de etiquetas", () => {
     expect(replacementRemovesValues(["quente", "retorno"], ["quente"])).toBe(true);
     expect(replacementRemovesValues(["quente"], ["quente", "novo"])).toBe(false);
@@ -124,6 +136,14 @@ describe("Atendente não exclui recursos", () => {
     expect(gate).toBeGreaterThan(-1);
     expect(efeito).toBeGreaterThan(gate);
     expect(source).toContain('input.action === "tag" && (input.params.remove?.length ?? 0) > 0');
+  });
+
+  it("a rota de exclusão de credencial usa a capacidade nomeada antes do efeito", () => {
+    const source = readFileSync(join(ROOT, "app/api/v1/ai/credentials/[id]/route.ts"), "utf8");
+    const gate = source.indexOf('requirePermission("ai.credentials.delete"');
+    const efeito = source.indexOf('.from("ai_provider_credentials")\n    .delete()');
+    expect(gate).toBeGreaterThan(-1);
+    expect(efeito).toBeGreaterThan(gate);
   });
 
   it("substituições de etiquetas exigem o gate quando removem valores", () => {

@@ -28,13 +28,14 @@ beforeEach(() => {
 });
 
 describe("capacidades não lineares", () => {
-  it("gerente pode gerir equipe e excluir leads", async () => {
+  it("gerente pode gerir equipe e excluir leads, mas não apaga credencial de IA", async () => {
     autorizado("manager");
     expect((await requirePermission("team.manage")).ok).toBe(true);
     expect((await requirePermission("lead.delete")).ok).toBe(true);
+    expect((await requirePermission("ai.credentials.delete")).ok).toBe(false);
   });
 
-  it("administrador da organização gere equipe, mas não exclui lead", async () => {
+  it("administrador da organização gere equipe e credenciais, mas não exclui lead", async () => {
     autorizado("admin");
     const lead = await requirePermission("lead.delete", { requestId: "req-lead" });
     expect(lead.ok).toBe(false);
@@ -42,6 +43,10 @@ describe("capacidades não lineares", () => {
     // dele também: o dono restringiu a exclusão, não a gestão de pessoas.
     const team = await requirePermission("team.manage", { requestId: "req-team" });
     expect(team.ok).toBe(true);
+    const credential = await requirePermission("ai.credentials.delete", {
+      requestId: "req-credential",
+    });
+    expect(credential.ok).toBe(true);
     expect(mocks.audit).toHaveBeenCalledTimes(1);
   });
 
@@ -49,6 +54,7 @@ describe("capacidades não lineares", () => {
     autorizado("admin", true);
     expect((await requirePermission("team.manage")).ok).toBe(true);
     expect((await requirePermission("lead.delete")).ok).toBe(true);
+    expect((await requirePermission("ai.credentials.delete")).ok).toBe(true);
     expect(mocks.audit).not.toHaveBeenCalled();
   });
 });

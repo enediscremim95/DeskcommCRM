@@ -141,7 +141,9 @@ export function ManagedQrConnector({ fallback }: { fallback: ReactNode }) {
     <Card>
       <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <CardTitle>{connector.display_name || connector.provider_label}</CardTitle>
+          <CardTitle>
+            {connector.display_name?.trim() ? connector.display_name.trim() : connector.provider_label}
+          </CardTitle>
           <CardDescription>
             {t("Número")} {connector.phone_number}. {t("A instância existente é preservada, o CRM apenas confere e reconecta.")}
           </CardDescription>

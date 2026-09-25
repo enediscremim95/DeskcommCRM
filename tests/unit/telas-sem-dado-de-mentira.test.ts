@@ -83,6 +83,15 @@ const PROIBIDOS = /(dados-de-mentira|fixtures?|mock|stub|dados-falsos|seed-de-te
  */
 const PERMITIDOS: Record<string, string> = {};
 
+/**
+ * A suíte parte de centenas de telas que convergem nos mesmos componentes.
+ * Sem cache, cada raiz relia e resolvia todo esse grafo do disco outra vez,
+ * tornando o gate quadrático e fazendo uma asserção saudável expirar quando
+ * os demais testes disputavam I/O. O cache preserva a travessia por raiz e só
+ * evita repetir o trabalho imutável de analisar o mesmo módulo.
+ */
+const MODULOS = new Map<string, { locais: string[]; proibidos: string[] }>();
+
 function arquivosDeTela(dir: string): string[] {
   const achados: string[] = [];
   for (const entrada of readdirSync(dir)) {
@@ -147,20 +156,29 @@ function cadeiaDeImports(arquivo: string, vistos = new Set<string>()): string[] 
   if (vistos.has(arquivo)) return [];
   vistos.add(arquivo);
   const achados: string[] = [];
-  let fonte: string;
-  try {
-    fonte = readFileSync(arquivo, "utf8");
-  } catch {
-    return [];
-  }
-  for (const especificador of importesDe(fonte)) {
-    if (PROIBIDOS.test(especificador)) {
-      achados.push(`${relativoEmBarraNormal(RAIZ, arquivo)} → ${especificador}`);
-      continue;
+  let modulo = MODULOS.get(arquivo);
+  if (!modulo) {
+    let fonte: string;
+    try {
+      fonte = readFileSync(arquivo, "utf8");
+    } catch {
+      return [];
     }
-    const local = resolverLocal(especificador, arquivo);
-    if (local) achados.push(...cadeiaDeImports(local, vistos));
+    const locais: string[] = [];
+    const proibidos: string[] = [];
+    for (const especificador of importesDe(fonte)) {
+      if (PROIBIDOS.test(especificador)) {
+        proibidos.push(`${relativoEmBarraNormal(RAIZ, arquivo)} → ${especificador}`);
+        continue;
+      }
+      const local = resolverLocal(especificador, arquivo);
+      if (local) locais.push(local);
+    }
+    modulo = { locais, proibidos };
+    MODULOS.set(arquivo, modulo);
   }
+  achados.push(...modulo.proibidos);
+  for (const local of modulo.locais) achados.push(...cadeiaDeImports(local, vistos));
   return achados;
 }
 

@@ -293,7 +293,7 @@ export function ApiTokensClient({ connectorUrl }: { connectorUrl: string }) {
                 <div className="space-y-3 rounded-md border p-3">
                   <p className="text-sm font-medium">{t("Comando para conectar pelo MCP")}</p>
                   <p className="text-xs text-muted-foreground">{t("O comando exibido protege o token. Ao copiar, o token recém-criado será incluído.")}</p>
-                  <code className="block overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted p-3 text-xs">
+                  <code className="block overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs">
                     {comandosCriados.exibido}
                   </code>
                   <Button

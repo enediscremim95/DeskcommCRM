@@ -17,7 +17,7 @@
  *   2. A ORDEM respeita as três FKs `ON DELETE RESTRICT` para `contacts`
  *      (`messages`, `conversations`, `calendar_appointments`). Errar a ordem
  *      não é estética: o Postgres devolve 23503 e o reset para no meio.
- *   3. Quem não é admin, e quem digitou o nome errado, não emite DELETE nenhum
+ *   3. Quem não é da gestão, e quem digitou o nome errado, não emite DELETE nenhum
  *      — e a conferência do nome é feita contra o `display_name` LIDO DO BANCO,
  *      porque uma server action é endpoint público e o diálogo do navegador
  *      não é gate de nada.
@@ -194,7 +194,7 @@ describe("zona de perigo: o apagamento não sai da própria organização", () =
 });
 
 describe("zona de perigo: quem pode puxar o gatilho", () => {
-  for (const papelSemPoder of ["agent", "viewer", "manager"]) {
+  for (const papelSemPoder of ["agent", "viewer"]) {
     it(`${papelSemPoder} recebe forbidden_role e não emite DELETE nenhum`, async () => {
       papel = papelSemPoder;
       const r = await apagarDadosOperacionaisDaOrganizacao({ confirmNome: NOME_DA_ORG });
@@ -203,6 +203,13 @@ describe("zona de perigo: quem pode puxar o gatilho", () => {
       expect(auditadas).toEqual([]);
     });
   }
+
+  it("manager passa porque tem o mesmo piso de acesso geral do admin", async () => {
+    papel = "manager";
+    const r = await apagarDadosOperacionaisDaOrganizacao({ confirmNome: NOME_DA_ORG });
+    expect(r.ok).toBe(true);
+    expect(delecoes).toHaveLength(RAIZES_DO_APAGAMENTO.length);
+  });
 
   it("sessão com fator de MFA pendente não apaga nada", async () => {
     mfaPendente = true;

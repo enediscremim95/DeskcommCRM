@@ -1,5 +1,5 @@
 ---
-impacto: alterado
+impacto: nada_mudou
 secao: alterado
 titulo: O aviso por e-mail de lead novo passa a nascer desligado
 ---

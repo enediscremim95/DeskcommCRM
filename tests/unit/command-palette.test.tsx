@@ -71,8 +71,13 @@ describe("CommandPalette", () => {
     const user = userEvent.setup();
     abrir();
     await user.type(screen.getByRole("combobox"), "conhec");
+    const destacado = screen.getAllByRole("option")[0];
+    // O fluxo unificado de Atendimento vem antes da tela específica de
+    // Conhecimento porque também a descreve. Prendemos o destino concreto,
+    // não só a coincidência entre o item lido e o argumento enviado.
+    expect(destacado).toHaveAttribute("data-href", "/app/ai/atendimento");
     await user.keyboard("{Enter}");
-    expect(push).toHaveBeenCalledWith("/app/ai/knowledge/sources");
+    expect(push).toHaveBeenCalledWith("/app/ai/atendimento");
   });
 
   it("seta para baixo move o destaque antes do Enter", async () => {

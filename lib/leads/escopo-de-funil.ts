@@ -127,6 +127,10 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_create_webhook_source: "sem_funil",
   crm_set_webhook_source_active: "sem_funil",
   crm_set_automation_rule_active: "sem_funil",
+  crm_create_ai_agent_draft_from_template: "sem_funil",
+  crm_update_ai_agent_draft: "sem_funil",
+  crm_add_ai_agent_knowledge_draft: "sem_funil",
+  crm_apply_channel_label: "sem_funil",
 };
 
 /**

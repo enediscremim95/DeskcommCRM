@@ -87,7 +87,7 @@ beforeEach(async () => {
       <ThemeToggle />
     </ThemeProvider>
   );
-});
+}, 15_000); // Hooks têm teto próprio de 10s; use o mesmo teto já definido para a suíte.
 
 afterEach(() => {
   document.body.innerHTML = "";

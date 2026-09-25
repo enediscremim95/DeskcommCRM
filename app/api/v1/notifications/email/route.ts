@@ -15,6 +15,7 @@ import {
   applyEmailNotificationPreferencesPatch,
   readEmailNotificationPreferences,
 } from "@/lib/notifications/email-preferences";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -128,7 +129,10 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   let policy = await readEmailNotificationPolicy(db, authz.org.orgId);
   if (Object.keys(policyPatch).length > 0) {
-    const { data: organization, error: organizationError } = await db
+    // `organizations` só aceita esta escrita pelo service role. O tenant vem
+    // da sessão e continua explícito porque o client admin bypassa RLS.
+    const admin = createAdminClient();
+    const { data: organization, error: organizationError } = await admin
       .from("organizations")
       .select("settings")
       .eq("id", authz.org.orgId)
@@ -155,7 +159,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
         email: { ...email, ...policyPatch },
       },
     };
-    const { error } = await db
+    const { error } = await admin
       .from("organizations")
       .update({ settings: updatedSettings })
       .eq("id", authz.org.orgId);

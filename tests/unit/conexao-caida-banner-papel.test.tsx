@@ -34,6 +34,7 @@ const copy = {
 describe.each(["pt-BR", "es"] as const)("alerta de conexão em %s", locale => {
   it.each([
     ["admin do tenant", "admin", baseUser],
+    ["gerente", "manager", baseUser],
     ["plataforma fora do suporte", "agent", { ...baseUser, is_platform_admin: true }],
     ["suporte de edição", "admin", { ...baseUser, is_platform_admin: true, support: { ...support, access_mode: "full" } }],
   ] as const)("%s abre Conexões com a ação adequada ao estado", (_name, role, who) => {
@@ -48,7 +49,6 @@ describe.each(["pt-BR", "es"] as const)("alerta de conexão em %s", locale => {
 
   it.each([
     ["atendente", "agent", baseUser],
-    ["gerente", "manager", baseUser],
     ["viewer", "viewer", baseUser],
     ["plataforma em suporte somente leitura com vínculo físico admin", "viewer", { ...baseUser, is_platform_admin: true, support }],
   ] as const)("%s recebe o alerta e uma orientação, sem CTA proibida", (_name, role, who) => {

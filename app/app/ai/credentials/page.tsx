@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { userHasPermission } from "@/lib/auth/permissions";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import type { CredentialRow } from "@/hooks/ai/useCredentials";
@@ -31,6 +32,7 @@ export default async function CredentialsPage() {
 
   const credentials = (data ?? []) as unknown as CredentialRow[];
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
+  const canDelete = userHasPermission(user, activeOrg, "ai.credentials.delete");
 
   // Mesma regra do DELETE: só conta a versão PUBLICADA de agente não arquivado.
   let usageMap: Record<string, number> = {};
@@ -59,6 +61,7 @@ export default async function CredentialsPage() {
       <CredentialsList
         initialData={credentials}
         canWrite={canWrite}
+        canDelete={canDelete}
         usageMap={usageMap}
       />
     </div>

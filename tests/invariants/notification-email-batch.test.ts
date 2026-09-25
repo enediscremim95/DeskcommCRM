@@ -103,5 +103,23 @@ describe("lote de notificações de lead", () => {
         `select count(*) from public.notification_email_batches where organization_id = '${GOV_ORG}'`,
       ),
     ).toBe(0);
+    expect(
+      countAs(
+        GOV_ADMIN,
+        `select count(*) from public.notification_email_batch_items where organization_id = '${GOV_ORG}'`,
+      ),
+    ).toBe(2);
+    expect(
+      countAs(
+        GOV_MANAGER,
+        `select count(*) from public.notification_email_batch_items where organization_id = '${GOV_ORG}'`,
+      ),
+    ).toBe(1);
+    expect(
+      countAs(
+        GOV_AGENT_A,
+        `select count(*) from public.notification_email_batch_items where organization_id = '${GOV_ORG}'`,
+      ),
+    ).toBe(0);
   });
 });
