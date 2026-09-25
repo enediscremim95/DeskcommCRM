@@ -18,9 +18,12 @@ const permissionSchema = z.object({
   client_visible: z.boolean(),
   client_can_reconnect: z.boolean().default(false),
 });
+const whatsappPermissionSchema = permissionSchema.extend({
+  client_can_reconnect: z.boolean().default(true),
+});
 const inputSchema = z.object({
   permissions: z.object({
-    whatsapp: permissionSchema,
+    whatsapp: whatsappPermissionSchema,
     n8n: permissionSchema,
     windsor: permissionSchema,
   }),
