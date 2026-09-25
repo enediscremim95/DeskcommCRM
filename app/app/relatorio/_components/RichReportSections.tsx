@@ -464,10 +464,10 @@ export function CreativePerformance({
     model === "ecommerce"
       ? local(idioma, "Custo/compra", "Costo/compra")
       : local(idioma, "Custo/lead", "Costo/lead");
-  const rateLabel =
-    model === "ecommerce"
-      ? local(idioma, "Cliques para compras", "Clics a compras")
-      : t("Cliques para leads");
+  // "Taxa de conv. site" e não "Cliques para leads": o número é a fatia de quem
+  // clicou e virou resultado na página, então o nome que o gestor usa no dia a
+  // dia é taxa de conversão do site.
+  const rateLabel = local(idioma, "Taxa de conv. site", "Tasa de conv. sitio");
   const costHighlightLabel =
     model === "ecommerce"
       ? local(idioma, "Menor custo por compra", "Menor costo por compra")

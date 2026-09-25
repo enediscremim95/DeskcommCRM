@@ -2117,7 +2117,7 @@ export function TrafficDashboard() {
                       hint={t("custo por resultado")}
                     />
                     <Kpi
-                      label="CVR"
+                      label={t("Taxa de conv. site")}
                       value={percent(google.conversion_rate, t("sem dado"))}
                       hint={t("cliques que viraram resultado")}
                     />
