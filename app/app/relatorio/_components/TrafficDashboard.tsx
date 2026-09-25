@@ -1192,11 +1192,6 @@ function CampaignTable({
               const description = campaignDescription(campaign.name);
               const hasAdsets = isMeta && campaign.adsets.length > 0;
               const isOpen = hasAdsets && expanded.has(key);
-              const lastMetricColumn = [...columnOrder]
-                .reverse()
-                .find((column): column is CampaignMetricColumn =>
-                  column !== "name" && column !== "status",
-                );
               return (
                 <Fragment key={key}>
                   <tr className="transition-colors hover:bg-muted/45">
@@ -1307,20 +1302,19 @@ function CampaignTable({
                                     <div className="flex min-w-0 items-center gap-2 pl-8">
                                       <span aria-hidden="true" className="h-5 w-3 shrink-0 border-b border-l border-border" />
                                       <AdThumbnail ad={ad} label={t("Ver anúncio")} />
-                                      <span className="min-w-0 flex-1 truncate">{ad.name}</span>
-                                      {!lastMetricColumn && adLink}
+                                      <span className="min-w-0 truncate">{ad.name}</span>
+                                      {/* O botão fica colado no nome do anúncio. Antes ia
+                                          para a última coluna de métrica, na ponta direita
+                                          da tabela: o olho tinha que atravessar a tela para
+                                          ligar o botão ao criativo a que ele pertence. */}
+                                      {adLink}
                                     </div>
                                   </td>
                                 );
                                 if (column === "status") return showStatus ? (
                                   <td key={column} className="overflow-hidden px-4 py-2.5" style={columnStyle("status")} />
                                 ) : null;
-                                return metricCell(
-                                  ad,
-                                  column,
-                                  "text-muted-foreground",
-                                  column === lastMetricColumn ? adLink : undefined,
-                                );
+                                return metricCell(ad, column, "text-muted-foreground");
                               })}
                             </tr>
                           );
