@@ -835,12 +835,114 @@ describe("colunas da tabela de campanhas", () => {
     expect(screen.queryByText("Beta")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Todas" }));
 
-    // Abrir os conjuntos não desalinha: a linha extra ocupa todas as colunas.
-    await user.click(screen.getByRole("button", { name: "Beta", expanded: false }));
+    // O conjunto é uma linha da mesma tabela, com as mesmas colunas e larguras.
+    await user.click(screen.getByRole("button", { name: /^Beta/, expanded: false }));
     const adsetRow = screen.getByText("Conjunto Beta").closest("tr") as HTMLTableRowElement;
-    expect(adsetRow.cells).toHaveLength(1);
-    expect(adsetRow.cells[0]?.colSpan).toBe(headerNames(table).length);
-    expect(screen.getByRole("button", { name: "Beta", expanded: true })).toBeInTheDocument();
+    expect(adsetRow.cells).toHaveLength(headerNames(table).length);
+    expect(adsetRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s50,00$/);
+    expect(adsetRow.cells[impressionsColumn]?.textContent).toBe("1.000");
+    expect(within(adsetRow).queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Beta/, expanded: true })).toBeInTheDocument();
+  });
+
+  it("alinha conjunto e anúncio, respeita colunas ocultas e abre os dois níveis pelo teclado", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [
+            {
+              ...metrics,
+              name: "Campanha com detalhe",
+              platform: "meta_ads",
+              campaign_status: "ACTIVE",
+              spend: 30,
+              leads: 7,
+              impressions: 1234,
+              adsets: [
+                {
+                  ...metrics,
+                  name: "Conjunto alinhado",
+                  spend: 12,
+                  leads: 3,
+                  impressions: 456,
+                  ads: [
+                    {
+                      ...metrics,
+                      name: "Anúncio alinhado",
+                      spend: 4,
+                      leads: 1,
+                      impressions: 123,
+                      thumbnail_url: null,
+                      story_id: null,
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              ...metrics,
+              name: "Campanha sem filhos",
+              platform: "meta_ads",
+              campaign_status: "ACTIVE",
+              adsets: [],
+            },
+          ],
+          ["spend", "leads", "impressions"],
+        ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const campaignButton = await screen.findByRole("button", {
+      name: /^Campanha com detalhe/,
+      expanded: false,
+    });
+    expect(campaignButton).toHaveTextContent("1 conjunto");
+    expect(screen.queryByRole("button", { name: /Campanha sem filhos/ })).not.toBeInTheDocument();
+
+    campaignButton.focus();
+    await user.keyboard("{Enter}");
+    expect(campaignButton).toHaveAttribute("aria-expanded", "true");
+
+    const table = campaignButton.closest("table") as HTMLTableElement;
+    const spendColumn = columnIndex(table, "Valor gasto");
+    const leadsColumn = columnIndex(table, "Leads");
+    const impressionsColumn = columnIndex(table, "Impressões");
+    const adsetButton = screen.getByRole("button", {
+      name: /^Conjunto alinhado/,
+      expanded: false,
+    });
+    expect(adsetButton).toHaveTextContent("1 anúncio");
+    const adsetRow = adsetButton.closest("tr") as HTMLTableRowElement;
+    expect(adsetRow.cells).toHaveLength(headerNames(table).length);
+    expect(adsetRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s12,00$/);
+    expect(adsetRow.cells[leadsColumn]?.textContent).toBe("3");
+    expect(adsetRow.cells[impressionsColumn]?.textContent).toBe("456");
+
+    adsetButton.focus();
+    await user.keyboard(" ");
+    expect(adsetButton).toHaveAttribute("aria-expanded", "true");
+    const adRow = within(table).getByText("Anúncio alinhado").closest("tr") as HTMLTableRowElement;
+    expect(adRow.cells).toHaveLength(headerNames(table).length);
+    expect(adRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s4,00$/);
+    expect(adRow.cells[leadsColumn]?.textContent).toBe("1");
+    expect(adRow.cells[impressionsColumn]?.textContent).toBe("123");
+
+    await user.click(screen.getByText("Colunas (3)"));
+    await user.click(screen.getByRole("checkbox", { name: "Impressões" }));
+    expect(headerNames(table)).toEqual(["Campanha", "Status", "Valor gasto", "Leads"]);
+    expect(adsetRow.cells).toHaveLength(4);
+    expect(adRow.cells).toHaveLength(4);
+    expect(within(adsetRow).queryByText("456")).not.toBeInTheDocument();
+    expect(within(adRow).queryByText("123")).not.toBeInTheDocument();
+
+    adsetButton.focus();
+    await user.keyboard(" ");
+    expect(within(table).queryByText("Anúncio alinhado")).not.toBeInTheDocument();
+    campaignButton.focus();
+    await user.keyboard("{Enter}");
+    expect(within(table).queryByText("Conjunto alinhado")).not.toBeInTheDocument();
   });
 
   it("esconde o filtro e a coluna de status quando nenhuma campanha tem status conhecido", async () => {
@@ -881,9 +983,9 @@ describe("colunas da tabela de campanhas", () => {
     }));
 
     expect(table.tBodies[0]?.rows[0]).toHaveTextContent("Maior investimento");
-    expect(within(table).getByRole("button", {
-      name: "Maior investimento", expanded: false,
-    })).toBeInTheDocument();
+    expect(within(table).queryByRole("button", {
+      name: "Maior investimento",
+    })).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("1 campanha marcada");
   });
 
@@ -1092,6 +1194,7 @@ describe("colunas da tabela de campanhas", () => {
     await user.click(screen.getByRole("button", { name: /RMKT Clínica/, expanded: false }));
     expect(screen.getByText("Conjunto Frio")).toBeInTheDocument();
     expect(screen.getByText("2 anúncios")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Conjunto Frio/, expanded: false }));
     const link = screen.getByRole("link", { name: "Ver anúncio" });
     expect(link).toHaveAttribute("href", "https://www.facebook.com/123/posts/456/");
     expect(screen.getByRole("link", { name: "Ver anúncio: Vídeo depoimento" })).toHaveAttribute(
