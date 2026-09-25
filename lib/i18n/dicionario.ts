@@ -7836,6 +7836,7 @@ export const DICIONARIO: Traducoes = {
   "Ordenar por": { es: "Ordenar por" },
   "Ajustar largura da coluna": { es: "Ajustar ancho de la columna" },
   "Clique duas vezes para restaurar": { es: "Haz doble clic para restaurar" },
+  "Voltar à ordem padrão": { es: "Volver al orden predeterminado" },
   Ativas: { es: "Activas" },
   Pausadas: { es: "Pausadas" },
   Encerrada: { es: "Cerrada" },

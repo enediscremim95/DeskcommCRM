@@ -831,6 +831,7 @@ function CampaignTable({
   currency,
   platform,
   organizationKey,
+  viewerKey,
   labels,
   columns,
   idioma,
@@ -842,6 +843,7 @@ function CampaignTable({
   currency: string;
   platform: "meta_ads" | "google_ads";
   organizationKey: string;
+  viewerKey: string;
   columns: CampaignMetricColumn[];
   idioma: string;
   priorityMetric: PriorityMetricColumn | "conversions";
@@ -872,6 +874,10 @@ function CampaignTable({
   const showStatus = campaigns.some((campaign) => campaignStatus(campaign.campaign_status).known);
   const activeFilter = showStatus ? statusFilter : "all";
   const columnCount = columns.length + (showStatus ? 2 : 1);
+  const defaultColumnOrder = useMemo(
+    () => ["name", ...(showStatus ? ["status" as const] : []), ...columns] as ResizableColumnKey[],
+    [columns, showStatus],
+  );
   const campaignsWithKeys = useMemo(
     () => campaigns.map((campaign, index) => ({
       campaign,
@@ -892,10 +898,23 @@ function CampaignTable({
     return undefined;
   }, [storageKey]);
 
-  const { alcaDaColuna: resizeHandle, estiloDaColuna: columnStyle } = useColunasAjustaveis({
+  const {
+    alcaDaColuna: resizeHandle,
+    estiloDaColuna: columnStyle,
+    ordemDasColunas: columnOrder,
+    propriedadesDeArraste: reorderProps,
+    classeDoIndicadorDeQueda: dropIndicatorClass,
+    restaurarOrdemPadrao: resetColumnOrder,
+    ordemFoiAlterada: columnOrderChanged,
+  } = useColunasAjustaveis({
     storageKey: widthsStorageKey,
     colunas: CAMPAIGN_RESIZABLE_COLUMNS,
     traduzir: t,
+    ordem: {
+      storageKey: `traffic-report-column-order:${organizationKey}:${viewerKey}:${platform}`,
+      padrao: defaultColumnOrder,
+      fixa: "name",
+    },
   });
 
   const statusFilteredCampaigns = useMemo(
@@ -1020,10 +1039,11 @@ function CampaignTable({
       <th
         key={key}
         scope="col"
-        className={`${headerCell} ${align === "right" ? "text-right" : "text-left"} ${priority ? "bg-primary/[0.10] text-foreground" : active ? "text-foreground" : "text-muted-foreground"}`}
+        className={`${headerCell} ${dropIndicatorClass(key)} ${align === "right" ? "text-right" : "text-left"} ${priority ? "bg-primary/[0.10] text-foreground" : active ? "text-foreground" : "text-muted-foreground"}`}
         style={columnStyle(key)}
         data-priority={priority || undefined}
         aria-sort={active ? sortDirection : "none"}
+        {...reorderProps(key)}
       >
         <button
           type="button"
@@ -1109,7 +1129,18 @@ function CampaignTable({
             </Button>
           )}
         </div>
-        <div className="ml-auto">{columnMenu}</div>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={!columnOrderChanged}
+            onClick={resetColumnOrder}
+          >
+            {t("Voltar à ordem padrão")}
+          </Button>
+          {columnMenu}
+        </div>
       </div>
       {selectedCampaigns.length > 0 && (
         <div role="status" aria-live="polite"
@@ -1141,41 +1172,50 @@ function CampaignTable({
         <table className="w-full min-w-max text-sm">
           <thead className="border-b bg-muted/35">
             <tr>
-              <th scope="col" className={`${headerCell} text-left ${sortKey === "name" ? "text-foreground" : "text-muted-foreground"}`}
-                style={columnStyle("name")} aria-sort={sortKey === "name" ? sortDirection : "none"}>
-                <div className="flex min-w-0 items-center gap-3">
-                  <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
-                    <input ref={selectAllRef} type="checkbox"
-                      className="size-5 cursor-pointer accent-primary"
-                      checked={allVisibleSelected} disabled={selectableCampaigns.length === 0}
-                      aria-label={t("Selecionar campanhas visíveis")} onChange={toggleAllVisible} />
-                  </label>
-                  <button type="button"
-                    className={`${headerText} inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-sm text-inherit hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden`}
-                    onClick={() => changeSort("name")} aria-label={`${t("Ordenar por")} ${labels.campaign}`}
-                    title={labels.campaign}>
-                    <span className="min-w-0 truncate">{labels.campaign}</span>
-                    <span aria-hidden="true"
-                      className={`w-3 shrink-0 text-center text-[9px] ${sortKey === "name" ? "" : "opacity-0"}`}>
-                      {sortDirection === "descending" ? "▼" : "▲"}
-                    </span>
-                  </button>
-                </div>
-                {resizeHandle("name", labels.campaign)}
-              </th>
-              {showStatus && (
-                <th
-                  scope="col"
-                  className={`${headerCell} text-left text-muted-foreground`}
-                  style={columnStyle("status")}
-                >
-                  <span className="block truncate">{t("Status")}</span>
-                  {resizeHandle("status", t("Status"))}
-                </th>
-              )}
-              {columns.map((column) =>
-                sortableHeader(column, columnLabel(column, idioma), "right"),
-              )}
+              {columnOrder.map((column) => {
+                if (column === "name") {
+                  return (
+                    <th key={column} scope="col" className={`${headerCell} text-left ${sortKey === "name" ? "text-foreground" : "text-muted-foreground"}`}
+                      style={columnStyle("name")} aria-sort={sortKey === "name" ? sortDirection : "none"}>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
+                          <input ref={selectAllRef} type="checkbox"
+                            className="size-5 cursor-pointer accent-primary"
+                            checked={allVisibleSelected} disabled={selectableCampaigns.length === 0}
+                            aria-label={t("Selecionar campanhas visíveis")} onChange={toggleAllVisible} />
+                        </label>
+                        <button type="button"
+                          className={`${headerText} inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-sm text-inherit hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden`}
+                          onClick={() => changeSort("name")} aria-label={`${t("Ordenar por")} ${labels.campaign}`}
+                          title={labels.campaign}>
+                          <span className="min-w-0 truncate">{labels.campaign}</span>
+                          <span aria-hidden="true"
+                            className={`w-3 shrink-0 text-center text-[9px] ${sortKey === "name" ? "" : "opacity-0"}`}>
+                            {sortDirection === "descending" ? "▼" : "▲"}
+                          </span>
+                        </button>
+                      </div>
+                      {resizeHandle("name", labels.campaign)}
+                    </th>
+                  );
+                }
+                if (column === "status") {
+                  if (!showStatus) return null;
+                  return (
+                    <th
+                      key={column}
+                      scope="col"
+                      className={`${headerCell} ${dropIndicatorClass(column)} text-left text-muted-foreground`}
+                      style={columnStyle("status")}
+                      {...reorderProps(column)}
+                    >
+                      <span className="block truncate">{t("Status")}</span>
+                      {resizeHandle("status", t("Status"))}
+                    </th>
+                  );
+                }
+                return sortableHeader(column, columnLabel(column, idioma), "right");
+              })}
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -1193,62 +1233,39 @@ function CampaignTable({
               return (
                 <Fragment key={key}>
                   <tr className="hover:bg-muted/35">
-                    <td
-                      className="max-w-md overflow-hidden px-4 py-3 font-medium"
-                      style={columnStyle("name")}
-                    >
-                      <div className="flex items-start gap-3">
-                        <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
-                          <input type="checkbox" className="size-5 cursor-pointer accent-primary"
-                            checked={selectedKeys.has(key)} aria-label={`${t("Selecionar campanha")} ${campaign.name}`}
-                            onClick={(event) => event.stopPropagation()} onChange={() => toggleCampaign(key)} />
-                        </label>
-                        <div className="min-w-0 flex-1">
-                        {isMeta ? (
-                          <button
-                          type="button"
-                          aria-expanded={isOpen}
-                          onClick={() => toggleExpanded(key)}
-                          className={`inline-flex max-w-full items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${isOpen ? "text-[#1877F2]" : ""}`}
-                        >
-                          <svg
-                            aria-hidden="true"
-                            viewBox="0 0 16 16"
-                            className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`}
-                          >
-                            <path
-                              d="M6 3.5 10.5 8 6 12.5"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                          <span className="truncate">{campaign.name}</span>
-                          </button>
-                        ) : (
-                          <span className="block truncate">{campaign.name}</span>
-                        )}
-                        {description && (
-                          <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
-                            {t(description)}
-                          </span>
-                        )}
-                        </div>
-                      </div>
-                    </td>
-                    {showStatus && (
-                      <td className="overflow-hidden px-4 py-3" style={columnStyle("status")}>
-                        <Badge
-                          variant={status.variant}
-                          className="px-2 py-0 text-[11px] leading-5 whitespace-nowrap"
-                        >
-                          {t(status.label)}
-                        </Badge>
-                      </td>
-                    )}
-                    {columns.map((column) => metricCell(campaign, column, "text-muted-foreground"))}
+                    {columnOrder.map((column) => {
+                      if (column === "name") return (
+                        <td key={column} className="max-w-md overflow-hidden px-4 py-3 font-medium" style={columnStyle("name")}>
+                          <div className="flex items-start gap-3">
+                            <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
+                              <input type="checkbox" className="size-5 cursor-pointer accent-primary"
+                                checked={selectedKeys.has(key)} aria-label={`${t("Selecionar campanha")} ${campaign.name}`}
+                                onClick={(event) => event.stopPropagation()} onChange={() => toggleCampaign(key)} />
+                            </label>
+                            <div className="min-w-0 flex-1">
+                              {isMeta ? (
+                                <button type="button" aria-expanded={isOpen} onClick={() => toggleExpanded(key)}
+                                  className={`inline-flex max-w-full items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${isOpen ? "text-[#1877F2]" : ""}`}>
+                                  <svg aria-hidden="true" viewBox="0 0 16 16"
+                                    className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`}>
+                                    <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor"
+                                      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                  <span className="truncate">{campaign.name}</span>
+                                </button>
+                              ) : <span className="block truncate">{campaign.name}</span>}
+                              {description && <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">{t(description)}</span>}
+                            </div>
+                          </div>
+                        </td>
+                      );
+                      if (column === "status") return showStatus ? (
+                        <td key={column} className="overflow-hidden px-4 py-3" style={columnStyle("status")}>
+                          <Badge variant={status.variant} className="px-2 py-0 text-[11px] leading-5 whitespace-nowrap">{t(status.label)}</Badge>
+                        </td>
+                      ) : null;
+                      return metricCell(campaign, column, "text-muted-foreground");
+                    })}
                   </tr>
                   {isOpen && (
                     <tr>
@@ -1271,11 +1288,11 @@ function CampaignTable({
           </tbody>
           <tfoot>
             <tr className="border-t bg-muted/45 font-semibold">
-              <td className="overflow-hidden px-4 py-3" style={columnStyle("name")}>
-                {labels.total}
-              </td>
-              {showStatus && <td className="px-4 py-3" style={columnStyle("status")} />}
-              {columns.map((column) => metricCell(visibleTotal, column))}
+              {columnOrder.map((column) => {
+                if (column === "name") return <td key={column} className="overflow-hidden px-4 py-3" style={columnStyle("name")}>{labels.total}</td>;
+                if (column === "status") return showStatus ? <td key={column} className="px-4 py-3" style={columnStyle("status")} /> : null;
+                return metricCell(visibleTotal, column);
+              })}
             </tr>
           </tfoot>
         </table>
@@ -2027,6 +2044,7 @@ export function TrafficDashboard() {
                     currency={group.currency}
                     platform="meta_ads"
                     organizationKey={report.organization_key}
+                    viewerKey={report.viewer_key}
                     labels={campaignLabels}
                     columns={metaColumns}
                     idioma={idioma}
@@ -2128,6 +2146,7 @@ export function TrafficDashboard() {
                     currency={group.currency}
                     platform="google_ads"
                     organizationKey={report.organization_key}
+                    viewerKey={report.viewer_key}
                     labels={campaignLabels}
                     columns={googleColumns}
                     idioma={idioma}
@@ -2177,6 +2196,7 @@ export function TrafficDashboard() {
               threshold={metaThreshold}
               idioma={idioma}
               organizationKey={report.organization_key}
+              viewerKey={report.viewer_key}
               priorityMetric={activeMetric}
             />
           </section>

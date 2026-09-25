@@ -2,9 +2,12 @@
 
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
+  type HTMLAttributes,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
@@ -18,6 +21,30 @@ interface ColunasAjustaveisOptions<Column extends string> {
   colunas: Record<Column, ConfiguracaoColunaAjustavel>;
   traduzir: (texto: string) => string;
   larguraMaxima?: number;
+  ordem?: {
+    storageKey: string;
+    padrao: readonly Column[];
+    fixa: Column;
+  };
+}
+
+type PosicaoDaQueda = "antes" | "depois";
+
+function normalizarOrdem<Column extends string>(
+  candidata: readonly unknown[],
+  padrao: readonly Column[],
+  fixa: Column,
+): Column[] {
+  const validas = new Set<Column>(padrao);
+  const semRepetir = candidata.filter(
+    (coluna, indice): coluna is Column =>
+      typeof coluna === "string" &&
+      validas.has(coluna as Column) &&
+      coluna !== fixa &&
+      candidata.indexOf(coluna) === indice,
+  );
+  const faltantes = padrao.filter((coluna) => coluna !== fixa && !semRepetir.includes(coluna));
+  return [fixa, ...semRepetir, ...faltantes];
 }
 
 export function useColunasAjustaveis<Column extends string>({
@@ -25,6 +52,7 @@ export function useColunasAjustaveis<Column extends string>({
   colunas,
   traduzir,
   larguraMaxima = 1200,
+  ordem,
 }: ColunasAjustaveisOptions<Column>) {
   const [larguras, setLarguras] = useState<Partial<Record<Column, number>>>({});
   const largurasRef = useRef<Partial<Record<Column, number>>>({});
@@ -34,6 +62,27 @@ export function useColunasAjustaveis<Column extends string>({
     inicioX: number;
     larguraInicial: number;
   } | null>(null);
+  const ordemPadrao = ordem?.padrao;
+  const assinaturaDaOrdem = ordemPadrao?.join("|") ?? "";
+  const colunaFixa = ordem?.fixa;
+  const ordemStorageKey = ordem?.storageKey;
+  const ordemNormalizada = useMemo(
+    () => {
+      if (!colunaFixa || !assinaturaDaOrdem) return [] as Column[];
+      const padrao = assinaturaDaOrdem.split("|") as Column[];
+      return normalizarOrdem(padrao, padrao, colunaFixa);
+    },
+    [assinaturaDaOrdem, colunaFixa],
+  );
+  const [ordemDasColunas, setOrdemDasColunas] = useState<Column[]>(ordemNormalizada);
+  const ordemRef = useRef<Column[]>(ordemNormalizada);
+  const [podeReordenar, setPodeReordenar] = useState(false);
+  const [alvoDaQueda, setAlvoDaQueda] = useState<{
+    coluna: Column;
+    posicao: PosicaoDaQueda;
+  } | null>(null);
+  const alvoDaQuedaRef = useRef<typeof alvoDaQueda>(null);
+  const colunaArrastada = useRef<Column | null>(null);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -64,6 +113,33 @@ export function useColunasAjustaveis<Column extends string>({
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [colunas, larguraMaxima, storageKey]);
+
+  useEffect(() => {
+    if (!ordemStorageKey || !colunaFixa) return;
+    const timeout = window.setTimeout(() => {
+      let proxima = ordemNormalizada;
+      try {
+        const armazenada = window.localStorage.getItem(ordemStorageKey);
+        const valor: unknown = armazenada ? JSON.parse(armazenada) : [];
+        if (Array.isArray(valor)) {
+          proxima = normalizarOrdem(valor, ordemNormalizada, colunaFixa);
+        }
+      } catch {
+        window.localStorage.removeItem(ordemStorageKey);
+      }
+      ordemRef.current = proxima;
+      setOrdemDasColunas(proxima);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [assinaturaDaOrdem, colunaFixa, ordemNormalizada, ordemStorageKey]);
+
+  useEffect(() => {
+    const consulta = window.matchMedia?.("(min-width: 768px) and (pointer: fine)");
+    const atualizar = () => setPodeReordenar(consulta?.matches ?? true);
+    atualizar();
+    consulta?.addEventListener?.("change", atualizar);
+    return () => consulta?.removeEventListener?.("change", atualizar);
+  }, []);
 
   const salvarLarguras = (proximo: Partial<Record<Column, number>>) => {
     largurasRef.current = proximo;
@@ -124,6 +200,93 @@ export function useColunasAjustaveis<Column extends string>({
     return largura == null ? undefined : { width: largura, minWidth: largura, maxWidth: largura };
   };
 
+  const salvarOrdem = (proxima: Column[]) => {
+    if (!ordemStorageKey || !colunaFixa) return;
+    const normalizada = normalizarOrdem(proxima, ordemNormalizada, colunaFixa);
+    ordemRef.current = normalizada;
+    setOrdemDasColunas(normalizada);
+    if (normalizada.every((coluna, indice) => coluna === ordemNormalizada[indice])) {
+      window.localStorage.removeItem(ordemStorageKey);
+    } else {
+      window.localStorage.setItem(ordemStorageKey, JSON.stringify(normalizada));
+    }
+  };
+
+  const restaurarOrdemPadrao = () => {
+    if (!ordemStorageKey) return;
+    ordemRef.current = ordemNormalizada;
+    setOrdemDasColunas(ordemNormalizada);
+    alvoDaQuedaRef.current = null;
+    setAlvoDaQueda(null);
+    window.localStorage.removeItem(ordemStorageKey);
+  };
+
+  const propriedadesDeArraste = (
+    coluna: Column,
+  ): HTMLAttributes<HTMLTableCellElement> & { "data-drop-position"?: PosicaoDaQueda } => {
+    const fixa = colunaFixa === coluna;
+    const ativo = Boolean(ordemStorageKey && podeReordenar && !fixa);
+    return {
+      draggable: ativo,
+      onPointerDown: (event) => {
+        if (!ordemStorageKey || event.pointerType !== "mouse" || event.button !== 0) return;
+        if ((event.target as Element).closest('[role="separator"]')) return;
+        event.stopPropagation();
+      },
+      onDragStart: (event: ReactDragEvent<HTMLTableCellElement>) => {
+        if (!ativo || (event.target as Element).closest('[role="separator"]')) {
+          event.preventDefault();
+          return;
+        }
+        colunaArrastada.current = coluna;
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", coluna);
+      },
+      onDragOver: (event: ReactDragEvent<HTMLTableCellElement>) => {
+        const arrastada = colunaArrastada.current;
+        if (!ordemStorageKey || !arrastada || arrastada === coluna) return;
+        event.preventDefault();
+        const caixa = event.currentTarget.getBoundingClientRect();
+        const posicao: PosicaoDaQueda =
+          coluna === colunaFixa || event.clientX >= caixa.left + caixa.width / 2
+            ? "depois"
+            : "antes";
+        alvoDaQuedaRef.current = { coluna, posicao };
+        setAlvoDaQueda(alvoDaQuedaRef.current);
+      },
+      onDrop: (event: ReactDragEvent<HTMLTableCellElement>) => {
+        const arrastada = colunaArrastada.current;
+        if (!ordemStorageKey || !arrastada || arrastada === coluna) return;
+        event.preventDefault();
+        const alvoAtual = alvoDaQuedaRef.current;
+        const posicao = alvoAtual?.coluna === coluna ? alvoAtual.posicao : "depois";
+        const semArrastada = ordemRef.current.filter((item) => item !== arrastada);
+        const indiceDoAlvo = semArrastada.indexOf(coluna);
+        const indice = coluna === colunaFixa ? 1 : indiceDoAlvo + (posicao === "depois" ? 1 : 0);
+        const proxima = [...semArrastada];
+        proxima.splice(Math.max(1, indice), 0, arrastada);
+        salvarOrdem(proxima);
+        colunaArrastada.current = null;
+        alvoDaQuedaRef.current = null;
+        setAlvoDaQueda(null);
+      },
+      onDragEnd: () => {
+        colunaArrastada.current = null;
+        alvoDaQuedaRef.current = null;
+        setAlvoDaQueda(null);
+      },
+      "data-drop-position":
+        alvoDaQueda?.coluna === coluna ? alvoDaQueda.posicao : undefined,
+    };
+  };
+
+  const classeDoIndicadorDeQueda = (coluna: Column) => {
+    if (alvoDaQueda?.coluna !== coluna) return "";
+    return alvoDaQueda.posicao === "antes"
+      ? "before:absolute before:inset-y-1 before:left-0 before:z-20 before:w-1 before:rounded-full before:bg-primary"
+      : "after:absolute after:inset-y-1 after:right-0 after:z-20 after:w-1 after:rounded-full after:bg-primary";
+  };
+
   const alcaDaColuna = (coluna: Column, rotulo: string) => {
     const configuracao = colunas[coluna];
     const descricao = `${traduzir("Ajustar largura da coluna")} ${rotulo}. ${traduzir("Clique duas vezes para restaurar")}`;
@@ -175,5 +338,15 @@ export function useColunasAjustaveis<Column extends string>({
     );
   };
 
-  return { alcaDaColuna, estiloDaColuna };
+  return {
+    alcaDaColuna,
+    estiloDaColuna,
+    ordemDasColunas,
+    propriedadesDeArraste,
+    classeDoIndicadorDeQueda,
+    restaurarOrdemPadrao,
+    ordemFoiAlterada:
+      ordemDasColunas.length === ordemNormalizada.length &&
+      ordemDasColunas.some((coluna, indice) => coluna !== ordemNormalizada[indice]),
+  };
 }
