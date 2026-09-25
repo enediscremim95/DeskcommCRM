@@ -26156,3 +26156,7 @@ begin
     end if;
   end loop;
 end $$;
+
+-- ---- metadata dos avisos da Central (migration 0265) ----
+alter table public.agent_inbox_items
+  add column if not exists metadata jsonb;
