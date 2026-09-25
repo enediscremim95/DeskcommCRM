@@ -11,6 +11,7 @@ import { isEmailConfigured, sendEmail } from "@/lib/email/resend";
 import { env } from "@/lib/env";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { audit } from "@/lib/audit";
+import { DEFAULT_EMAIL_NOTIFICATION_PREFERENCES } from "@/lib/notifications/email-preferences";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const CONSUMER_KEY = "notification.email.lead-alert.v2";
@@ -115,7 +116,9 @@ async function enabledRecipients(
     // O dono da instalação acompanha somente as organizações que marcou.
     if (!pref && platformAdmins.has(userId)) return false;
     if (pref?.email_enabled === false) return false;
-    return kind === "new_lead" ? pref?.new_lead !== false : pref?.urgent_lead !== false;
+    return kind === "new_lead"
+      ? (pref?.new_lead ?? DEFAULT_EMAIL_NOTIFICATION_PREFERENCES.new_lead)
+      : (pref?.urgent_lead ?? DEFAULT_EMAIL_NOTIFICATION_PREFERENCES.urgent_lead);
   });
 }
 

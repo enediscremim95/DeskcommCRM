@@ -85,7 +85,7 @@ describe("handleLeadEmailEvent", () => {
     sendEmail.mockResolvedValue({ ok: true, id: "mail-1" });
   });
 
-  it("enfileira lead novo somente ao responsável ativo, sem enviar antes da janela", async () => {
+  it("não enfileira lead novo sem opt-in do responsável", async () => {
     const admin = adminCom(
       {
         crm_leads: [
@@ -103,12 +103,11 @@ describe("handleLeadEmailEvent", () => {
 
     const result = await handleLeadEmailEvent(evento(), admin);
 
-    expect(result.status).toBe("ok");
-    expect(admin.rpc).toHaveBeenCalledWith("fn_queue_lead_email_batch", {
-      p_event_id: "event-1",
-      p_recipient_user_id: "owner-1",
-      p_window_seconds: 30,
+    expect(result).toMatchObject({
+      status: "skipped",
+      detail: "sem destinatário com email ligado",
     });
+    expect(admin.rpc).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
   });
 

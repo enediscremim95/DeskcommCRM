@@ -26333,6 +26333,14 @@ comment on column public.user_organizations.role is
 
 notify pgrst, 'reload schema';
 
+-- ---- e-mail de lead novo desligado por padrão (migration 0270) ----
+-- Novas preferências exigem opt-in. Escolhas já gravadas permanecem intactas.
+alter table public.notification_email_preferences
+  alter column new_lead set default false;
+
+comment on column public.notification_email_preferences.new_lead is
+  'Opt-in pessoal para e-mail de lead novo; desligado por padrão para preservar a cota transacional.';
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

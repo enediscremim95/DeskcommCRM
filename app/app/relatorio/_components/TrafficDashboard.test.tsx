@@ -457,11 +457,21 @@ describe("colunas da tabela de campanhas", () => {
       configurable: true,
       value: vi.fn(),
     });
-    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-
     const user = userEvent.setup();
     render(<TrafficDashboard />);
-    await user.click(await screen.findByRole("button", { name: "Baixar relatório" }));
+    const downloadButton = await screen.findByRole("button", { name: "Baixar relatório" });
+    const appendChild = document.body.appendChild.bind(document.body);
+    let downloadLink: HTMLAnchorElement | null = null;
+    const click = vi.fn();
+    vi.spyOn(document.body, "appendChild").mockImplementation((node) => {
+      if (node instanceof HTMLAnchorElement) {
+        downloadLink = node;
+        vi.spyOn(node, "click").mockImplementation(click);
+      }
+      return appendChild(node);
+    });
+
+    await user.click(downloadButton);
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -474,6 +484,11 @@ describe("colunas da tabela de campanhas", () => {
     expect(pdfUrl).toContain("to=");
     expect(pdfUrl).toContain("language=pt-BR");
     await waitFor(() => expect(click).toHaveBeenCalledOnce());
+    expect(downloadLink).not.toBeNull();
+    expect(downloadLink).toHaveAttribute(
+      "download",
+      "relatorio-resumido-2026-09-01-a-2026-09-30.pdf",
+    );
   });
 
   it("filtra por status, persiste a escolha e ordena campanhas sem separar seus detalhes", async () => {

@@ -1,3 +1,4 @@
+import type * as RoutingWorkerRouteTypes from "@/app/api/v1/cron/routing-worker/route";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -191,7 +192,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 function requisicaoAutorizada(): Parameters<
-  typeof import("@/app/api/v1/cron/routing-worker/route").GET
+  typeof RoutingWorkerRouteTypes.GET
 >[0] {
   // As rotas só leem `headers.get("authorization")`; montar um `NextRequest` de
   // verdade traria o runtime do Next para dentro de um teste que não o exercita.

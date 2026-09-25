@@ -1,3 +1,4 @@
+import type * as BrandingSaidaTypes from "@/lib/branding/saida";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
@@ -10,7 +11,7 @@ import { marcaDaSaida } from "@/lib/branding/saida";
  */
 
 vi.mock("@/lib/branding/saida", async () => {
-  const real = await vi.importActual<typeof import("@/lib/branding/saida")>(
+  const real = await vi.importActual<typeof BrandingSaidaTypes>(
     "@/lib/branding/saida",
   );
   return { ...real, marcaDaSaida: vi.fn() };
