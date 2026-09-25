@@ -26268,6 +26268,13 @@ create trigger trg_apply_agent_channel_config_on_publish
   after update of status on public.ai_agent_versions
   for each row execute function public.fn_apply_agent_channel_config_on_publish();
 
+-- ---- mestre pessoal de notificações por e-mail (migration 0268) ----
+alter table public.notification_email_preferences
+  add column if not exists email_enabled boolean not null default true;
+
+comment on column public.notification_email_preferences.email_enabled is
+  'Barreira pessoal para qualquer e-mail de notificação; não altera as escolhas por categoria.';
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

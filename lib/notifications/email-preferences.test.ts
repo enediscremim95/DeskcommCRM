@@ -1,7 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
-import { readEmailNotificationPreferences } from "./email-preferences";
+import {
+  applyEmailNotificationPreferencesPatch,
+  readEmailNotificationPreferences,
+} from "./email-preferences";
 
 function dbCom(responses: Record<string, Array<{ data: unknown; error: null }>>) {
   return {
@@ -26,6 +29,7 @@ describe("readEmailNotificationPreferences", () => {
     });
 
     await expect(readEmailNotificationPreferences(db, "org-1", "user-1")).resolves.toEqual({
+      email_enabled: true,
       new_lead: true,
       urgent_lead: true,
     });
@@ -38,8 +42,17 @@ describe("readEmailNotificationPreferences", () => {
     });
 
     await expect(readEmailNotificationPreferences(db, "org-1", "platform-1")).resolves.toEqual({
+      email_enabled: false,
       new_lead: false,
       urgent_lead: false,
     });
+  });
+
+  it("desliga e religa o mestre sem alterar as escolhas por categoria", () => {
+    const escolhas = { email_enabled: true, new_lead: false, urgent_lead: true };
+    const desligadas = applyEmailNotificationPreferencesPatch(escolhas, { email_enabled: false });
+    const religadas = applyEmailNotificationPreferencesPatch(desligadas, { email_enabled: true });
+
+    expect(religadas).toEqual(escolhas);
   });
 });
