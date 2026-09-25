@@ -34,13 +34,15 @@ describe("capacidades não lineares", () => {
     expect((await requirePermission("lead.delete")).ok).toBe(true);
   });
 
-  it("administrador da organização não exclui lead nem gere equipe", async () => {
+  it("administrador da organização gere equipe, mas não exclui lead", async () => {
     autorizado("admin");
     const lead = await requirePermission("lead.delete", { requestId: "req-lead" });
     expect(lead.ok).toBe(false);
+    // Excluir lead é a única coisa que o administrador não faz. Gerir equipe é
+    // dele também: o dono restringiu a exclusão, não a gestão de pessoas.
     const team = await requirePermission("team.manage", { requestId: "req-team" });
-    expect(team.ok).toBe(false);
-    expect(mocks.audit).toHaveBeenCalledTimes(2);
+    expect(team.ok).toBe(true);
+    expect(mocks.audit).toHaveBeenCalledTimes(1);
   });
 
   it("administrador de plataforma continua distinto e acima das capacidades", async () => {

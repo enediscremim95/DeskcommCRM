@@ -50,8 +50,13 @@ export const PERMISSION_MIN_ROLE = {
  * é tratado separadamente porque não é um papel da organização.
  */
 export const PERMISSION_ROLES = {
+  // Excluir lead é o ÚNICO poder que o administrador da organização não tem.
+  // Decisão do dono do produto (25/09/2026): "tem o acesso do gerente, que
+  // inclui adicionar e remover pessoas e excluir leads, e tem o adm, que não
+  // pode excluir leads". Gerir equipe ficou com os dois de propósito: ele
+  // restringiu exclusão, não a gestão de pessoas.
   "lead.delete": ["manager"],
-  "team.manage": ["manager"],
+  "team.manage": ["manager", "admin"],
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Permission = keyof typeof PERMISSION_MIN_ROLE | keyof typeof PERMISSION_ROLES;
