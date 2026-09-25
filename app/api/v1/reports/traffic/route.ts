@@ -35,6 +35,14 @@ import {
 } from "@/lib/windsor/traffic-insights";
 
 export const dynamic = "force-dynamic";
+
+function canManageTrafficDefaults(user: {
+  is_platform_admin: boolean;
+  support?: unknown;
+}): boolean {
+  return user.is_platform_admin && !user.support;
+}
+
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const querySchema = z
   .object({
@@ -402,7 +410,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         google_ads: defaultPresets.google_ads?.id ?? null,
       },
       column_presets: columnPresets,
-      can_manage_defaults: authz.user.is_platform_admin && !authz.user.support,
+      can_manage_defaults: canManageTrafficDefaults(authz.user),
       priority_metrics: validPriorityMetrics(
         typedConfig.priority_metric_columns,
         typedConfig.model,
@@ -446,7 +454,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "reports" });
   if (!authz.ok) return authz.response;
-  if (!authz.user.is_platform_admin || authz.user.support) {
+  if (!canManageTrafficDefaults(authz.user)) {
     return fail("forbidden", "Apenas o admin da plataforma pode alterar o padrão.", 403, {
       requestId,
     });
