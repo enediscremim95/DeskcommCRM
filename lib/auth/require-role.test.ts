@@ -117,6 +117,14 @@ describe("requireRole — helper único (spec 13 §4)", () => {
     expect(audit).not.toHaveBeenCalled();
   });
 
+  it("manager alcança todo gate geral que antes exigia admin", async () => {
+    session("manager");
+    const res = await requireRole("admin");
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("unreachable");
+    expect(res.org.role).toBe("manager");
+  });
+
   it("fail-closed: fn_user_role_in_org null (membership revogado) → 403", async () => {
     session("admin", { dbRole: null });
     const res = await requireRole("viewer");

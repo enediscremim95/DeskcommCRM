@@ -69,17 +69,24 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const removesTags = input.action === "tag" && (input.params.remove?.length ?? 0) > 0;
-  if (input.action === "delete" || removesTags) {
-    const deleteAuthz = await requirePermission("resource.delete", {
+  if (input.action === "delete") {
+    const deleteAuthz = await requirePermission("lead.delete", {
       requestId,
       resource: "crm_leads",
     });
     if (!deleteAuthz.ok) return deleteAuthz.response;
   }
+  if (removesTags) {
+    const tagAuthz = await requirePermission("resource.delete", {
+      requestId,
+      resource: "crm_leads",
+    });
+    if (!tagAuthz.ok) return tagAuthz.response;
+  }
 
   // G3-04: assign é reatribuição de dono em lote → piso ≥manager (spec 04 §6.5,
-  // INB-03). Gate por-action: move/tag continuam agent+; assign e delete
-  // exigem manager. Reusa os helpers centrais (nada de ROLE_RANK na mão).
+  // INB-03). Gate por-action: move/tag continuam agent+; assign exige acesso
+  // geral de gestão e delete exige a capacidade nomeada `lead.delete`.
   if (input.action === "assign") {
     const mgr = await requireRole("manager", { requestId, resource: "crm_leads" });
     if (!mgr.ok) return mgr.response;

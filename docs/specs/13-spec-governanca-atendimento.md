@@ -219,10 +219,10 @@ escopo `own` na RLS.
 | contacts | org:read | org:read+write ³ | org:read+write | org:read+write |
 | crm_leads | org:read | own:read+write (mesmo escopo da decisão G1-06a: os seus + sem dono) | org:read+write | org:read+write |
 | pipelines (config) | org:read ⁴ | org:read ⁴ | org:read+write | org:read+write |
-| settings | none | none | atendimento/routing: org:read+write ⁵; demais: none ⁵ | org:read+write |
-| api_tokens | none | none | none ⁶ | org:read+write |
-| billing | none | none | none (admin-only; derivado: sem decisão explícita do dono, conservador) | org:read+write |
-| team (membros/papéis) | none | none | org:read ⁷ | org:read+write |
+| settings | none | none | org:read+write ⁵ | org:read+write |
+| api_tokens | none | none | org:read+write ⁶ | org:read+write |
+| billing | none | none | org:read+write | org:read+write |
+| team (membros/papéis) | none | none | org:read+write (`team.manage`) ⁷ | org:read |
 | audit | none | none | org:read ⁸ | org:read |
 | métricas | none | own:read (decisão G1-06e: agent só as próprias) | org:read, incl. individuais de todos os atendentes (decisão G1-06e) | org:read |
 
@@ -242,14 +242,12 @@ Notas:
 4. Leitura da estrutura (stages, vocabulário) é necessária pra renderizar
    board/inbox; **write de config é manager+** (invariante "agent NÃO escreve
    config de pipeline" — Apêndice A, GAP G2).
-5. Config de atendimento/roteamento (§3.5 `settings.routing`,
-   `attendant_availability` de terceiros) é manager+ — já fixado pelos acceptances
-   de G5-01/G5-04. As demais chaves de `settings` (perfil da org etc.) ficam
-   admin-only (derivado: sem decisão explícita do dono, conservador — manager
-   gerencia a operação de atendimento, não a configuração geral da org).
-6. Baseline já aplica `api_tokens_admin_only` (baseline.sql:3289) — manter.
-7. Manager lê a lista de membros para o painel de atendentes (G5-04); gestão de
-   papéis (PATCH role) é admin-only (G2-02, "último admin não rebaixa").
+5. Decisão do dono em 2026-09-25: manager alcança toda configuração geral que
+   admin alcança. Os dois têm o mesmo rank para gates gerais.
+6. `api_tokens_admin_only` usa `fn_role_at_least(..., 'admin')`; como manager e
+   admin empatam no acesso geral, os dois passam.
+7. Gestão de equipe é capacidade nomeada `team.manage`, concedida a manager e
+   platform admin. Admin da organização apenas lê a equipe.
 8. Hoje o baseline restringe select de `api_audit_log` a admin
    (baseline.sql:3297); abrir `org:read` a manager é a mudança-alvo aplicada em G2.
 9. Decisão **G1-06c**: o role `agent` existente É o atendente — sem role novo,
@@ -257,8 +255,13 @@ Notas:
    via §3.1 + notificação ao destino), sem aceite — o write de transfer não tem
    etapa de aprovação.
 
-Enforcement em **duas camadas obrigatórias**: RLS (fronteira) + helper único de
-rota (`require-role`, G2-01) — nunca só UI (anti-padrão 3).
+Enforcement em **duas camadas obrigatórias**: RLS (fronteira) + helpers centrais
+de rota (`require-role` para acesso geral e `require-permission` para capacidades)
+— nunca só UI (anti-padrão 3).
+
+Exceções não lineares da decisão de 2026-09-25: `team.manage` e `lead.delete`
+pertencem a manager e platform admin. Admin da organização não recebe nenhuma
+das duas; no restante, manager e admin têm o mesmo acesso.
 
 Para ações destrutivas, `write` não implica `delete`: o `agent` pode criar e atualizar
 o trabalho operacional permitido pela matriz, mas exclusão, cancelamento ou desconexão
@@ -500,8 +503,9 @@ entre orgs (pré-requisito de tudo) já é coberto por
 
 | Eixo | Invariante (arquivo → teste) | Status |
 |---|---|---|
-| 1. RBAC | `gov-1-rbac.test.ts` → "fn_role_at_least ordena viewer < agent < manager < admin" | passa |
-| 1. RBAC | `gov-1-rbac.test.ts` → "fn_user_role_in mapeia viewer→1, agent→2, manager→3, admin→4" | passa |
+| 1. RBAC | `gov-1-rbac.test.ts` → "fn_role_at_least ordena viewer < agent < manager = admin no acesso geral" | passa |
+| 1. RBAC | `gov-1-rbac.test.ts` → "fn_user_role_in mapeia viewer→1, agent→2, manager/admin→4" | passa |
+| 1. RBAC | `capacidades-gerente.test.ts` → manager gere equipe e exclui lead; admin da organização não; platform admin continua distinto | passa |
 | 1. RBAC | `gov-1-rbac.test.ts` → "RLS impede agent de se auto-promover (user_orgs_update é admin-only)" | passa |
 | 1. RBAC | `gov-1-rbac.test.ts` → "role de membro é editável via API — PATCH /api/v1/team/[user_id]/role existe" (gap do plano JÁ fechado pelo EPIC-09) | passa |
 | 1. RBAC | `gov-1-rbac.test.ts` → "agent NÃO escreve config de pipeline (spec 13 §4: manager+)" | passa (fechado por G2-03, migration 0030) |

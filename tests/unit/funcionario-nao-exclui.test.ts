@@ -3,7 +3,11 @@ import { join, relative } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-import { replacementRemovesValues, roleHasPermission } from "@/lib/auth/permissions";
+import {
+  replacementRemovesValues,
+  roleHasPermission,
+  userHasPermission,
+} from "@/lib/auth/permissions";
 
 const ROOT = process.cwd();
 
@@ -67,6 +71,18 @@ describe("Atendente não exclui recursos", () => {
     expect(roleHasPermission("admin", "resource.delete")).toBe(true);
   });
 
+  it("lead.delete libera gerente e plataforma, mas recusa administrador da organização", () => {
+    expect(roleHasPermission("manager", "lead.delete")).toBe(true);
+    expect(roleHasPermission("admin", "lead.delete")).toBe(false);
+    expect(
+      userHasPermission(
+        { is_platform_admin: true, support: null },
+        { role: "viewer" },
+        "lead.delete",
+      ),
+    ).toBe(true);
+  });
+
   it("reconhece remoção escondida na substituição de etiquetas", () => {
     expect(replacementRemovesValues(["quente", "retorno"], ["quente"])).toBe(true);
     expect(replacementRemovesValues(["quente"], ["quente", "novo"])).toBe(false);
@@ -103,7 +119,7 @@ describe("Atendente não exclui recursos", () => {
 
   it("a exclusão de lead por POST também passa pelo gate antes do efeito", () => {
     const source = readFileSync(join(ROOT, "app/api/v1/leads/bulk/route.ts"), "utf8");
-    const gate = source.indexOf('requirePermission("resource.delete"');
+    const gate = source.indexOf('requirePermission("lead.delete"');
     const efeito = source.indexOf('case "delete"');
     expect(gate).toBeGreaterThan(-1);
     expect(efeito).toBeGreaterThan(gate);
@@ -122,10 +138,17 @@ describe("Atendente não exclui recursos", () => {
   });
 
   it("as telas operacionais consultam a mesma permissão para esconder exclusões", () => {
-    const files = [
+    const leadFiles = [
       "components/kanban/BulkActionBar.tsx",
       "components/kanban/KanbanCardActions.tsx",
       "components/leads/LeadPageClient.tsx",
+    ];
+    for (const file of leadFiles) {
+      expect(readFileSync(join(ROOT, file), "utf8"), file).toContain(
+        'usePermission("lead.delete")',
+      );
+    }
+    const resourceFiles = [
       "components/contacts/ContactsTable.tsx",
       "components/inbox/ChatThread.tsx",
       "components/inbox/ContactTagsEditor.tsx",
@@ -136,7 +159,7 @@ describe("Atendente não exclui recursos", () => {
       "app/app/tasks/_components/TarefasClient.tsx",
       "app/app/templates/_components/TemplatesClient.tsx",
     ];
-    for (const file of files) {
+    for (const file of resourceFiles) {
       expect(readFileSync(join(ROOT, file), "utf8"), file).toContain(
         'usePermission("resource.delete")',
       );

@@ -350,20 +350,25 @@ describe("o merge é atômico — e não perde as chaves irmãs", () => {
 });
 
 describe("o gate de papel é do BANCO, não do chamador", () => {
-  it("viewer, agent e manager levam 42501 — e a linha não muda", () => {
+  it("viewer e agent levam 42501, e a linha não muda", () => {
     semearSettings();
     const antes = settingsDe(MARCA_ORG);
 
     for (const [ator, papel] of [
       [MARCA_VIEWER, "viewer"],
       [MARCA_AGENT, "agent"],
-      [MARCA_MANAGER, "manager"],
     ] as const) {
       const erro = erroAoDefinir(MARCA_ORG, ator, `'{"accent_hex":"#b3261e"}'::jsonb`);
       expect(erro, `\`${papel}\` gravou a marca — o gate do banco não existe`).not.toBeNull();
       expect(erro).toContain("marca_da_organizacao_sem_permissao");
       expect(settingsDe(MARCA_ORG), `\`${papel}\` mexeu na linha`).toBe(antes);
     }
+  });
+
+  it("manager grava a marca com o mesmo acesso geral do admin", () => {
+    semearSettings();
+    expect(definirMarca(MARCA_ORG, MARCA_MANAGER, `'{"accent_hex":"#b3261e"}'::jsonb`)).toBe(1);
+    expect(caminho(MARCA_ORG, "branding,accent_hex")).toBe("#b3261e");
   });
 
   it("admin de OUTRA organização também leva 42501 — é escrita cross-tenant", () => {

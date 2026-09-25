@@ -13,6 +13,7 @@ import { revalidatePath } from "next/cache";
 import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { roleAtLeast } from "@/lib/auth/types";
 
 export type DisconnectResult =
   | { ok: true }
@@ -26,7 +27,7 @@ export async function disconnectNuvemshop(): Promise<DisconnectResult> {
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) return { ok: false, error: "no_active_org" };
 
-  if (activeOrg.role !== "admin" && !user.is_platform_admin) {
+  if (!roleAtLeast(activeOrg.role, "admin") && !user.is_platform_admin) {
     return { ok: false, error: "forbidden" };
   }
 

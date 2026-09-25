@@ -43,14 +43,14 @@ function roleVector(userId: string): string {
 }
 
 describe("eixo 1 — RBAC", () => {
-  it("fn_role_at_least ordena viewer < agent < manager < admin", () => {
+  it("fn_role_at_least ordena viewer < agent < manager = admin no acesso geral", () => {
     expect(roleVector(GOV_VIEWER)).toBe("1,0,0,0");
     expect(roleVector(GOV_AGENT_A)).toBe("1,1,0,0");
-    expect(roleVector(GOV_MANAGER)).toBe("1,1,1,0");
+    expect(roleVector(GOV_MANAGER)).toBe("1,1,1,1");
     expect(roleVector(GOV_ADMIN)).toBe("1,1,1,1");
   });
 
-  it("fn_user_role_in mapeia viewer→1, agent→2, manager→3, admin→4", () => {
+  it("fn_user_role_in mapeia viewer→1, agent→2, manager/admin→4", () => {
     const rank = (userId: string): string =>
       lastLine(
         sql(`
@@ -60,7 +60,7 @@ describe("eixo 1 — RBAC", () => {
       );
     expect(rank(GOV_VIEWER)).toBe("1");
     expect(rank(GOV_AGENT_A)).toBe("2");
-    expect(rank(GOV_MANAGER)).toBe("3");
+    expect(rank(GOV_MANAGER)).toBe("4");
     expect(rank(GOV_ADMIN)).toBe("4");
   });
 

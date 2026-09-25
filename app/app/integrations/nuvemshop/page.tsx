@@ -22,6 +22,7 @@ import { Suspense } from "react";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { roleAtLeast } from "@/lib/auth/types";
 
 interface IntegrationRow {
   id: string;
@@ -52,7 +53,7 @@ export default async function NuvemshopIntegrationPage() {
   const integration =
     activeOrg && configured ? await loadIntegration(activeOrg.orgId) : null;
 
-  const isAdmin = activeOrg?.role === "admin" || (user?.is_platform_admin === true && !user.support);
+  const isAdmin = roleAtLeast(activeOrg?.role, "admin") || (user?.is_platform_admin === true && !user.support);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
@@ -112,7 +113,7 @@ export default async function NuvemshopIntegrationPage() {
             <ConnectButton disabled={!isAdmin} />
             {!isAdmin ? (
               <p className="text-xs text-muted-foreground">
-                {traduzir("Somente administradores podem conectar integrações.", idioma)}
+                {traduzir("Somente quem administra a empresa pode conectar integrações.", idioma)}
               </p>
             ) : null}
           </CardContent>

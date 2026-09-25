@@ -43,7 +43,7 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
   // spec 13 §4: escrita no funil é agent+ — viewer não reatribui (a rota
   // PATCH também recusa; aqui é só não oferecer o que seria negado).
   const canAssign = usePermission("pipeline.move_card");
-  const canDelete = usePermission("resource.delete");
+  const canDelete = usePermission("lead.delete");
   const { data: members } = useAssignableMembers(canAssign);
   // A rota já devolve só agente ativo e não arquivado — é o picker.
   const { data: agents } = useAssignableAgents(canAssign);

@@ -38,7 +38,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -54,7 +54,7 @@ export async function POST(
   const requestId = randomUUID();
   const { user_id: targetUserId } = await ctx.params;
 
-  const authz = await requireRole("admin", { requestId, resource: "team" });
+  const authz = await requirePermission("team.manage", { requestId, resource: "team" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
