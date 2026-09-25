@@ -30,8 +30,8 @@ describe("lote de notificações de lead", () => {
   });
 
   it("o mesmo evento e destinatário entra uma vez, mesmo reprocessado", () => {
-    sql(`select * from public.fn_queue_lead_email_batch('${EVENT_1}', '${GOV_ADMIN}', 30);`);
-    sql(`select * from public.fn_queue_lead_email_batch('${EVENT_1}', '${GOV_ADMIN}', 30);`);
+    sql(`select * from public.fn_queue_lead_email_batch('${EVENT_1}', '${GOV_ADMIN}', 90);`);
+    sql(`select * from public.fn_queue_lead_email_batch('${EVENT_1}', '${GOV_ADMIN}', 90);`);
 
     const count = Number(
       sql(`
@@ -43,8 +43,30 @@ describe("lote de notificações de lead", () => {
   });
 
   it("rajada compartilha um lote, mas destinatários diferentes nunca se misturam", () => {
-    sql(`select * from public.fn_queue_lead_email_batch('${EVENT_2}', '${GOV_ADMIN}', 30);`);
-    sql(`select * from public.fn_queue_lead_email_batch('${EVENT_3}', '${GOV_MANAGER}', 30);`);
+    const dueBefore = String(
+      sql(`
+        select due_at::text
+          from public.notification_email_batches
+         where organization_id = '${GOV_ORG}'
+           and recipient_user_id = '${GOV_ADMIN}'
+           and kind = 'new_lead'
+           and status = 'pending';
+      `),
+    );
+
+    sql(`select * from public.fn_queue_lead_email_batch('${EVENT_2}', '${GOV_ADMIN}', 90);`);
+    sql(`select * from public.fn_queue_lead_email_batch('${EVENT_3}', '${GOV_MANAGER}', 90);`);
+
+    const dueAfter = String(
+      sql(`
+        select due_at::text
+          from public.notification_email_batches
+         where organization_id = '${GOV_ORG}'
+           and recipient_user_id = '${GOV_ADMIN}'
+           and kind = 'new_lead'
+           and status = 'pending';
+      `),
+    );
 
     const adminBatches = Number(
       sql(`
@@ -82,6 +104,7 @@ describe("lote de notificações de lead", () => {
     expect(adminItems).toBe(2);
     expect(managerItems).toBe(1);
     expect(flushes).toBe(2);
+    expect(dueAfter).toBe(dueBefore);
   });
 
   it("RLS deixa cada pessoa enxergar somente os próprios lotes", () => {

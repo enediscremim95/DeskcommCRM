@@ -12,8 +12,8 @@ export interface LeadAlertEmailOptions {
 }
 
 /**
- * O assunto leva somente o título operacional do lead e a organização. Telefone,
- * e-mail, mensagem, descrição e campos personalizados continuam restritos à ficha.
+ * O aviso de lead novo não leva dado individual. A urgência ainda usa o título
+ * operacional; telefone, e-mail, mensagem e campos personalizados ficam na ficha.
  */
 export function buildLeadAlertEmail(opts: LeadAlertEmailOptions): {
   subject: string;
@@ -29,7 +29,7 @@ export function buildLeadAlertEmail(opts: LeadAlertEmailOptions): {
       : "O Radar identificou um lead que exige atenção agora.";
   const acao = novo ? "Abrir lead" : "Ver ação urgente";
   const subject = novo
-    ? `Novo lead na ${opts.organizationName}: ${opts.leadTitle}`
+    ? `Novo lead aguardando atendimento na ${opts.organizationName}`
     : `Ação urgente na ${opts.organizationName}: ${opts.leadTitle}`;
   const logo = opts.marca.logoUrl
     ? `<p style="margin:0 0 24px"><img src="${escapeHtml(opts.marca.logoUrl)}" alt="${escapeHtml(opts.marca.nome)}" height="40" style="height:40px;width:auto;max-width:200px;border:0;display:block"></p>`
@@ -64,8 +64,8 @@ export function buildLeadAlertEmail(opts: LeadAlertEmailOptions): {
   return { subject: `${subject} | ${opts.marca.nome}`, html, text };
 }
 
-export interface LeadBatchItem {
-  title: string;
+export interface LeadBatchLink {
+  count: number;
   href: string;
 }
 
@@ -77,35 +77,31 @@ export interface UrgentLeadBatchItem {
 }
 
 export function buildLeadBatchEmail(opts: {
-  items: LeadBatchItem[];
+  total: number;
+  links: LeadBatchLink[];
   marca: MarcaDeSaida;
   organizationName: string;
 }): { subject: string; html: string; text: string } {
-  const total = opts.items.length;
-  const visiveis = opts.items.slice(0, 20);
-  const restantes = Math.max(0, total - visiveis.length);
-  const titulo = `${total} leads novos na ${opts.organizationName}`;
+  const total = opts.total;
+  const singular = total === 1;
+  const titulo = `${total} ${singular ? "lead novo" : "leads novos"} aguardando atendimento na ${opts.organizationName}`;
   const logo = opts.marca.logoUrl
     ? `<p style="margin:0 0 24px"><img src="${escapeHtml(opts.marca.logoUrl)}" alt="${escapeHtml(opts.marca.nome)}" height="40" style="height:40px;width:auto;max-width:200px;border:0;display:block"></p>`
     : "";
-  const listaHtml = visiveis
+  const linksHtml = opts.links
     .map(
-      (item) =>
-        `<li style="margin:0 0 10px"><a href="${escapeHtml(item.href)}" style="color:${opts.marca.accent};font-weight:600">${escapeHtml(item.title)}</a></li>`,
+      (link) =>
+        `<p style="margin:12px 0"><a href="${escapeHtml(link.href)}" style="display:inline-block;padding:12px 24px;background:${opts.marca.accent};color:${opts.marca.accentFg};border-radius:6px;text-decoration:none;font-weight:600">${opts.links.length === 1 ? "Abrir lista filtrada" : `Abrir ${link.count} ${link.count === 1 ? "lead" : "leads"}`}</a></p>`,
     )
     .join("");
-  const complementoHtml = restantes
-    ? `<p style="margin:16px 0 0;font-size:14px">E mais ${restantes} lead${restantes === 1 ? "" : "s"} no sistema.</p>`
-    : "";
   const html = `<!doctype html>
 <html lang="pt-BR">
 <body style="margin:0;padding:0;background:${NEUTROS_DE_SAIDA.fundo};font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:${NEUTROS_DE_SAIDA.texto}">
   <div style="max-width:560px;margin:0 auto;padding:32px 24px">
     ${logo}
     <h1 style="font-size:22px;line-height:1.3;margin:0 0 16px;color:${NEUTROS_DE_SAIDA.texto}">${escapeHtml(titulo)}</h1>
-    <p style="margin:0 0 16px;font-size:15px;line-height:1.5">Uma rajada de novos leads foi agrupada para não inundar sua caixa de entrada.</p>
-    <ul style="margin:20px 0;padding-left:20px">${listaHtml}</ul>
-    ${complementoHtml}
+    <p style="margin:0 0 16px;font-size:15px;line-height:1.5">${singular ? "Um novo lead entrou no funil." : "Novos leads entraram no funil e foram agrupados para não inundar sua caixa de entrada."}</p>
+    ${linksHtml}
     <p style="margin:24px 0 0;font-size:13px;color:${NEUTROS_DE_SAIDA.suave}">Telefone, e-mail, mensagens e demais dados ficam somente no sistema.</p>
   </div>
 </body>
@@ -113,8 +109,11 @@ export function buildLeadBatchEmail(opts: {
   const text = [
     titulo,
     "",
-    ...visiveis.map((item) => `${item.title}: ${item.href}`),
-    ...(restantes ? ["", `E mais ${restantes} lead${restantes === 1 ? "" : "s"} no sistema.`] : []),
+    ...opts.links.map((link) =>
+      opts.links.length === 1
+        ? `Abrir lista filtrada: ${link.href}`
+        : `Abrir ${link.count} ${link.count === 1 ? "lead" : "leads"}: ${link.href}`,
+    ),
     "",
     "Telefone, e-mail, mensagens e demais dados ficam somente no sistema.",
   ].join("\n");

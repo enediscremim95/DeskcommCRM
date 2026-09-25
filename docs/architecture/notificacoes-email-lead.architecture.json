@@ -40,7 +40,7 @@
       "lane": "db",
       "col": 3,
       "type": "database",
-      "label": "Lote pendente por organização, destinatário e categoria, com janela curta"
+      "label": "Lote pendente por organização, destinatário e categoria, com janela fixa de 90 segundos"
     },
     {
       "id": "batch_items",
@@ -54,7 +54,7 @@
       "lane": "app",
       "col": 4,
       "type": "service",
-      "label": "Flush envia um lead isolado ou um resumo da rajada com chave idempotente estável"
+      "label": "Flush envia contagem e links para listas filtradas, com chave idempotente estável"
     },
     {
       "id": "preferencias",
@@ -82,14 +82,14 @@
       "lane": "externo",
       "col": 4,
       "type": "external",
-      "label": "Resend com chave de idempotência por evento e pessoa"
+      "label": "Resend com chave de idempotência por lote e pessoa"
     },
     {
       "id": "destinatario",
       "lane": "humano",
       "col": 5,
       "type": "ui",
-      "label": "E-mail leva à ficha autenticada do lead"
+      "label": "E-mail sem dados individuais leva a listas autenticadas e filtradas"
     },
     {
       "id": "configuracao",
@@ -116,7 +116,7 @@
     },
     { "id": "e10", "from": "handler", "to": "batch_items", "label": "deduplica evento e pessoa" },
     { "id": "e11", "from": "batch_items", "to": "batch", "label": "compõe resumo" },
-    { "id": "e12", "from": "batch", "to": "flush", "label": "vence após silêncio curto" },
+    { "id": "e12", "from": "batch", "to": "flush", "label": "vence 90 segundos após o primeiro lead" },
     { "id": "e13", "from": "flush", "to": "resend", "label": "um envio por lote" }
   ]
 }

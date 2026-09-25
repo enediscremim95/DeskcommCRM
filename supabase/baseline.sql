@@ -26268,6 +26268,30 @@ create trigger trg_apply_agent_channel_config_on_publish
   after update of status on public.ai_agent_versions
   for each row execute function public.fn_apply_agent_channel_config_on_publish();
 
+-- ---- janela fixa do e-mail de lead novo (migration 0267) ----
+create or replace function public.fn_preserve_new_lead_batch_due_at()
+returns trigger
+language plpgsql
+set search_path to 'public', 'pg_temp'
+as $$
+begin
+  if old.kind = 'new_lead'
+     and old.status = 'pending'
+     and new.due_at > old.due_at then
+    new.due_at := old.due_at;
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_preserve_new_lead_batch_due_at()
+  from public, anon, authenticated;
+drop trigger if exists trg_preserve_new_lead_batch_due_at
+  on public.notification_email_batches;
+create trigger trg_preserve_new_lead_batch_due_at
+  before update of due_at on public.notification_email_batches
+  for each row
+  execute function public.fn_preserve_new_lead_batch_due_at();
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$
