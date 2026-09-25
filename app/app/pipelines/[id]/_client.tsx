@@ -3,23 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/hooks/i18n/useT";
 import { useBoard } from "@/hooks/kanban/useBoard";
-
-function formatError(err: unknown, t: (texto: string) => string): string {
-  if (err instanceof Error) return err.message;
-  if (err && typeof err === "object") {
-    const obj = err as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown };
-    if (typeof obj.message === "string") {
-      const code = typeof obj.code === "string" ? ` [${obj.code}]` : "";
-      return `${obj.message}${code}`;
-    }
-    try {
-      return JSON.stringify(err);
-    } catch {
-      return t("Erro desconhecido");
-    }
-  }
-  return String(err);
-}
 import { KanbanBoard } from "@/components/kanban/KanbanBoard";
 import { FilterBar } from "@/components/kanban/FilterBar";
 import { BulkActionBar } from "@/components/kanban/BulkActionBar";
@@ -54,7 +37,18 @@ export function PipelinePageClient({
   initialName: string;
 }) {
   const t = useT();
-  const { data, isLoading, error, pulses, realtimeStatus, seguranca } = useBoard(pipelineId);
+  const {
+    data,
+    isLoading,
+    error,
+    refetch,
+    pulses,
+    realtimeStatus,
+    seguranca,
+    loadMoreStage,
+    loadingStageIds,
+    stageLoadErrors,
+  } = useBoard(pipelineId);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -84,8 +78,8 @@ export function PipelinePageClient({
   // pode editar não vê o botão, em vez de cair numa tela que recusa.
   const podeEditarEtapas = Boolean(
     activeOrg &&
-      ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager &&
-      user.support?.access_mode !== "support_readonly",
+    ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager &&
+    user.support?.access_mode !== "support_readonly",
   );
   const [etapasOpen, setEtapasOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -179,8 +173,11 @@ export function PipelinePageClient({
         }
       />
       {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
-          {t("Não consegui carregar este funil:")} {formatError(error, t)}
+        <div className="flex items-center justify-between gap-4 rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
+          <span>{t("Não foi possível carregar este funil agora. Tente novamente.")}</span>
+          <Button variant="outline" size="sm" onClick={() => void refetch()}>
+            {t("Tentar novamente")}
+          </Button>
         </div>
       ) : isLoading || !data ? (
         <div className="flex flex-1 animate-pulse items-center justify-center text-muted-foreground">
@@ -193,6 +190,10 @@ export function PipelinePageClient({
           leads={filteredLeads}
           pulses={pulses}
           pipeline={data.pipeline}
+          stagePages={data.stage_pages}
+          loadingStageIds={loadingStageIds}
+          stageLoadErrors={stageLoadErrors}
+          onLoadMoreStage={(stageId) => void loadMoreStage(stageId)}
           selectedIds={selectedIdsVisiveis}
           onSelectionChange={setSelectedIds}
           leadInicial={searchParams.get("lead")}

@@ -32,6 +32,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useT } from "@/hooks/i18n/useT";
+import Link from "next/link";
+import { comandosDoTokenMcp } from "@/lib/mcp/conexao";
 
 /**
  * `mcp:read`/`mcp:write` faltavam nesta lista, e sem eles NENHUMA ferramenta
@@ -58,7 +60,7 @@ const SCOPES: { id: string; label: string }[] = [
   { id: "audit:read", label: "Ler o log de auditoria" },
 ];
 
-export function ApiTokensClient() {
+export function ApiTokensClient({ connectorUrl }: { connectorUrl: string }) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   const { data, isLoading } = useApiTokens();
@@ -72,6 +74,9 @@ export function ApiTokensClient() {
   const [created, setCreated] = useState<CreatedApiToken | null>(null);
 
   const tokens = data?.data ?? [];
+  const comandosCriados = created
+    ? comandosDoTokenMcp(connectorUrl, created.scopes, created.plaintext)
+    : null;
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,7 +153,7 @@ export function ApiTokensClient() {
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {tok.expires_at ? new Date(tok.expires_at).toLocaleDateString(tagDoIdioma) : "—"}
+                    {tok.expires_at ? new Date(tok.expires_at).toLocaleDateString(tagDoIdioma) : t("Sem expiração")}
                   </TableCell>
                   <TableCell>
                     {!tok.revoked_at ? (
@@ -259,7 +264,7 @@ export function ApiTokensClient() {
           <DialogHeader>
             <DialogTitle>{t("Token criado")}</DialogTitle>
             <DialogDescription>
-              {t("Copie e guarde agora — não conseguiremos exibir novamente.")}
+              {t("Copie e guarde agora. Não conseguiremos exibir novamente.")}
             </DialogDescription>
           </DialogHeader>
           {created ? (
@@ -273,13 +278,40 @@ export function ApiTokensClient() {
                 onClick={() => {
                   void copyToClipboard(created.plaintext).then((ok) => {
                     if (ok) toast.success(t("Token copiado."));
-                    else toast.error(t("Não foi possível copiar — selecione o token acima."));
+                    else toast.error(t("Não foi possível copiar. Selecione o token acima."));
                   });
                 }}
               >
                 {t("Copiar para clipboard")}
               </Button>
               <p className="text-xs text-muted-foreground">{created._warning}</p>
+              {comandosCriados ? (
+                <div className="space-y-3 rounded-md border p-3">
+                  <p className="text-sm font-medium">{t("Comando para conectar pelo MCP")}</p>
+                  <p className="text-xs text-muted-foreground">{t("O comando exibido protege o token. Ao copiar, o token recém-criado será incluído.")}</p>
+                  <code className="block overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted p-3 text-xs">
+                    {comandosCriados.exibido}
+                  </code>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      void copyToClipboard(comandosCriados.copiado).then((ok) => {
+                        if (ok) toast.success(t("Comando copiado."));
+                        else toast.error(t("Não foi possível copiar. Selecione o comando acima."));
+                      });
+                    }}
+                  >
+                    {t("Copiar comando")}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    {t("Não salve o token em arquivo de texto.")} {" "}
+                    <Link className="underline" href="/app/mcp">
+                      {t("Ver instruções completas do conector")}
+                    </Link>
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <DialogFooter>

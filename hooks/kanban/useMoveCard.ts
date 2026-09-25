@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api/types";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Lead } from "@/lib/types/leads";
 import type { BoardData } from "@/lib/kanban/types";
+import { applyPaginatedMove } from "@/lib/kanban/paginated-move";
 
 interface MoveArgs {
   leadId: string;
@@ -32,14 +33,7 @@ export function useMoveCard(pipelineId: string) {
       await qc.cancelQueries({ queryKey });
       const snapshot = qc.getQueryData<BoardData>(queryKey);
       if (snapshot) {
-        qc.setQueryData<BoardData>(queryKey, {
-          ...snapshot,
-          leads: snapshot.leads.map((l) =>
-            l.id === args.leadId
-              ? { ...l, stage_id: args.stageId, position_in_stage: args.positionInStage }
-              : l,
-          ),
-        });
+        qc.setQueryData<BoardData>(queryKey, applyPaginatedMove(snapshot, args));
       }
       return { snapshot };
     },

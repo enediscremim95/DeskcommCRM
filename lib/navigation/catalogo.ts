@@ -494,6 +494,15 @@ export const NAV_CATALOG = [
     minRole: "manager",
     sidebar: true,
   },
+  {
+    href: "/app/mcp",
+    label: "MCP",
+    description: "Conecte uma IA ou assistente ao CRM para consultar e registrar informações.",
+    icon: "Brain",
+    group: "canais",
+    minRole: "admin",
+    sidebar: true,
+  },
 
   // ---- Análise — olhar o sistema funcionando ----
   //

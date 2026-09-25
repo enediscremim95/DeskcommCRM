@@ -18,6 +18,7 @@ import { ensureRole, ensureScope, type McpAuthResult } from "./auth";
 import { allTools } from "./tools";
 import { higienizarUuidsDeAterro } from "./uuid-de-aterro";
 import type { McpContext } from "./types";
+import { opcoesDoServidorMcp } from "./configuracao";
 
 const SERVER_NAME = "deskcomm-crm";
 const SERVER_VERSION = "0.1.0";
@@ -33,10 +34,13 @@ function summarizeResult(result: unknown): string | undefined {
 }
 
 export function createMcpServer(auth: McpAuthResult, requestId: string): McpServer {
-  const server = new McpServer({
-    name: SERVER_NAME,
-    version: SERVER_VERSION,
-  });
+  const server = new McpServer(
+    {
+      name: SERVER_NAME,
+      version: SERVER_VERSION,
+    },
+    opcoesDoServidorMcp(auth.apresentacao ?? ""),
+  );
 
   const supabase = createAdminClient();
 
@@ -66,6 +70,7 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
           actor: auth.actor,
           apiTokenId: auth.apiTokenId,
           requestId,
+          apresentacao: auth.apresentacao,
           supabase,
         };
 
@@ -84,6 +89,10 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
             success: true,
             resultSummary: summarizeResult(result),
           });
+
+          if (typeof result === "string") {
+            return { content: [{ type: "text", text: result }] };
+          }
 
           return {
             content: [{ type: "text", text: JSON.stringify(result) }],

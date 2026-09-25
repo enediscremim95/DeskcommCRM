@@ -5,15 +5,16 @@ import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
 import { useT } from "@/hooks/i18n/useT";
 import { usePermission } from "@/hooks/auth/AuthProvider";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBoard } from "@/hooks/kanban/useBoard";
 import { useMoveCard } from "@/hooks/kanban/useMoveCard";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAtRiskLeads } from "@/hooks/leads/useAtRiskLeads";
 import { useReactivations } from "@/hooks/leads/useReactivations";
-import { midpoint } from "@/lib/kanban/fractional-indexing";
+import { positionForPaginatedDrop } from "@/lib/kanban/paginated-move";
 import type { Lead } from "@/lib/types/leads";
-import type { Pipeline, Stage } from "@/lib/kanban/types";
+import type { BoardStagePage, Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
@@ -24,6 +25,10 @@ interface KanbanBoardProps {
   stages?: Stage[];
   leads?: Lead[];
   pipeline?: Pipeline;
+  stagePages?: Record<string, BoardStagePage>;
+  loadingStageIds?: Set<string>;
+  stageLoadErrors?: Set<string>;
+  onLoadMoreStage?: (stageId: string) => void;
   selectedIds?: string[];
   /**
    * Ids que chegaram por evento remoto, quando o board recebe os dados de fora.
@@ -76,6 +81,10 @@ export function KanbanBoard({
   stages: stagesProp,
   leads: leadsProp,
   pipeline: pipelineProp,
+  stagePages: stagePagesProp,
+  loadingStageIds: loadingStageIdsProp,
+  stageLoadErrors: stageLoadErrorsProp,
+  onLoadMoreStage,
   selectedIds,
   pulses: pulsesProp,
   onSelectionChange,
@@ -140,13 +149,13 @@ export function KanbanBoard({
             pipeline: pipelineProp ?? ({} as Pipeline),
             stages: stagesProp,
             leads: leadsProp,
+            stage_pages: stagePagesProp,
           }
         : queryResult.data,
-    [leadsProp, pipelineProp, queryResult.data, stagesProp, useExternal],
+    [leadsProp, pipelineProp, queryResult.data, stagePagesProp, stagesProp, useExternal],
   );
   const isLoading = useExternal ? false : queryResult.isLoading;
   const isError = useExternal ? false : queryResult.isError;
-  const error = useExternal ? null : queryResult.error;
 
   const grouped = useMemo(() => {
     if (!data) return null;
@@ -191,12 +200,11 @@ export function KanbanBoard({
       const destStageId = destination.droppableId;
       const destList = (grouped.get(destStageId) ?? []).filter((l) => l.id !== draggableId);
 
-      const before = destination.index > 0 ? destList[destination.index - 1] : null;
-      const after = destination.index < destList.length ? destList[destination.index] : null;
-
-      const newPosition = midpoint(
-        before?.position_in_stage ?? null,
-        after?.position_in_stage ?? null,
+      const newPosition = positionForPaginatedDrop(
+        destList,
+        destination.index,
+        draggableId,
+        data.stage_pages?.[destStageId]?.next_position_in_stage ?? null,
       );
 
       if (Number.isNaN(newPosition)) {
@@ -220,9 +228,11 @@ export function KanbanBoard({
 
   if (isError) {
     return (
-      <Card className="m-4 p-6 text-sm text-text-muted">
-        {t("Falha ao carregar o board.")}
-        {error instanceof Error ? ` ${error.message}` : null}
+      <Card className="m-4 flex items-center justify-between gap-4 p-6 text-sm text-text-muted">
+        <span>{t("Não foi possível carregar este funil agora. Tente novamente.")}</span>
+        <Button variant="outline" size="sm" onClick={() => void queryResult.refetch()}>
+          {t("Tentar novamente")}
+        </Button>
       </Card>
     );
   }
@@ -246,42 +256,53 @@ export function KanbanBoard({
 
   return (
     <>
-    <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="flex min-h-[480px] flex-1 gap-3 overflow-x-auto p-4">
-        {data.stages.map((stage) => (
-          <StageColumn
-            key={stage.id}
-            stage={stage}
-            leads={grouped.get(stage.id) ?? []}
-            pipelineId={pipelineId}
-            ownerNames={ownerNames}
-            coolingIds={coolingIds}
-            reactivations={reactivations}
-            pulses={pulsesProp ?? queryResult.pulses}
-            canonicalTags={canonicalTags}
-            canMove={podeMover}
-            selectedLeadIds={selectedLeadIds}
-            onSelectMany={handleSelectMany}
-            onOpen={(leadId) => router.push(`/app/leads/${leadId}`)}
-            onSummary={setSummaryLeadId}
-          />
-        ))}
-      </div>
-    </DragDropContext>
-    {summaryLead && (
-      <LeadDossier
-        open
-        onOpenChange={(open) => {
-          if (!open) setSummaryLeadId(null);
-        }}
-        lead={summaryLead}
-        pipelineId={pipelineId}
-        pipelineName={data.pipeline.name}
-        fieldDefs={camposDoFunil(data.pipeline.settings ?? null)}
-        stageName={summaryStage?.name ?? t("Não informado")}
-        ownerNames={ownerNames}
-      />
-    )}
+      <DragDropContext onDragEnd={handleDragEnd}>
+        <div className="flex min-h-[480px] flex-1 gap-3 overflow-x-auto p-4">
+          {data.stages.map((stage) => {
+            const leads = grouped.get(stage.id) ?? [];
+            const page = data.stage_pages?.[stage.id];
+            const loadingIds = loadingStageIdsProp ?? queryResult.loadingStageIds;
+            const loadErrors = stageLoadErrorsProp ?? queryResult.stageLoadErrors;
+            return (
+              <StageColumn
+                key={stage.id}
+                stage={stage}
+                leads={leads}
+                total={page?.total ?? leads.length}
+                hasMore={page?.has_more ?? false}
+                isLoadingMore={loadingIds.has(stage.id)}
+                loadError={loadErrors.has(stage.id)}
+                onLoadMore={() => (onLoadMoreStage ?? queryResult.loadMoreStage)(stage.id)}
+                pipelineId={pipelineId}
+                ownerNames={ownerNames}
+                coolingIds={coolingIds}
+                reactivations={reactivations}
+                pulses={pulsesProp ?? queryResult.pulses}
+                canonicalTags={canonicalTags}
+                canMove={podeMover}
+                selectedLeadIds={selectedLeadIds}
+                onSelectMany={handleSelectMany}
+                onOpen={(leadId) => router.push(`/app/leads/${leadId}`)}
+                onSummary={setSummaryLeadId}
+              />
+            );
+          })}
+        </div>
+      </DragDropContext>
+      {summaryLead && (
+        <LeadDossier
+          open
+          onOpenChange={(open) => {
+            if (!open) setSummaryLeadId(null);
+          }}
+          lead={summaryLead}
+          pipelineId={pipelineId}
+          pipelineName={data.pipeline.name}
+          fieldDefs={camposDoFunil(data.pipeline.settings ?? null)}
+          stageName={summaryStage?.name ?? t("Não informado")}
+          ownerNames={ownerNames}
+        />
+      )}
     </>
   );
 }

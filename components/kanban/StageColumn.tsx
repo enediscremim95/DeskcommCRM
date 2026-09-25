@@ -1,6 +1,6 @@
 "use client";
 import { Droppable } from "@hello-pangea/dnd";
-import { useRef, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
@@ -12,6 +12,11 @@ import { KanbanCard, type GestoDeSelecao } from "./KanbanCard";
 interface StageColumnProps {
   stage: Stage;
   leads: Lead[];
+  total: number;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  loadError?: boolean;
+  onLoadMore?: () => void;
   pipelineId: string;
   /** owner_user_id → nome, resolvido no board. O dono agente vem no lead. */
   ownerNames?: Map<string, string | null>;
@@ -52,12 +57,17 @@ function formatBRL(cents: number): string {
 /**
  * A coluna do quadro, com o cabeçalho no formato do Kommo: o nome da etapa em
  * caixa alta, "7 leads: R$ 19.700" logo abaixo e uma linha na cor da etapa
- * fechando o cabeçalho. A soma dos valores sai da própria lista que a coluna
- * recebe — nenhuma consulta nova.
+ * fechando o cabeçalho. A contagem vem do total exato da etapa; a soma só
+ * aparece quando a lista inteira já foi carregada, para não fingir um total.
  */
 export function StageColumn({
   stage,
   leads,
+  total,
+  hasMore = false,
+  isLoadingMore = false,
+  loadError = false,
+  onLoadMore,
   pipelineId,
   ownerNames,
   coolingIds,
@@ -72,6 +82,7 @@ export function StageColumn({
 }: StageColumnProps) {
   const t = useT();
   const totalCents = leads.reduce((sum, l) => sum + (l.value_cents ?? 0), 0);
+  const listaCompleta = !hasMore && total === leads.length;
 
   const idsVisiveis = leads.map((l) => l.id);
   const selecionadosAqui = idsVisiveis.filter((id) => selectedLeadIds?.has(id)).length;
@@ -81,6 +92,20 @@ export function StageColumn({
   // âncora não muda nada na tela, e um `setState` aqui remontaria a coluna
   // inteira — inclusive o `Droppable` — a cada card marcado.
   const ancora = useRef<string | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target || !hasMore || isLoadingMore || loadError || !onLoadMore) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) onLoadMore();
+      },
+      { rootMargin: "240px 0px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, loadError, onLoadMore]);
 
   const aoSelecionar = (leadId: string, gesto: GestoDeSelecao) => {
     if (gesto === "intervalo") {
@@ -140,7 +165,7 @@ export function StageColumn({
             {stage.name}
           </h2>
           {selecionadosAqui > 0 && (
-            <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[10px] font-semibold leading-4 text-accent tabular-nums">
+            <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[10px] leading-4 font-semibold text-accent tabular-nums">
               {selecionadosAqui}/{leads.length}
             </span>
           )}
@@ -149,8 +174,8 @@ export function StageColumn({
             Sem valor nenhum na coluna fica só a contagem: um "R$ 0" seria
             informação falsa com cara de número. */}
         <p className="mt-0.5 truncate pl-5 text-[11px] leading-4 text-text-muted tabular-nums">
-          {leads.length} {leads.length === 1 ? t("lead") : t("leads")}
-          {totalCents > 0 && (
+          {total} {total === 1 ? t("lead") : t("leads")}
+          {listaCompleta && totalCents > 0 && (
             <>
               : <span className="font-medium text-text">{formatBRL(totalCents)}</span>
             </>
@@ -192,6 +217,29 @@ export function StageColumn({
               />
             ))}
             {provided.placeholder}
+            {hasMore && (
+              <div
+                ref={loadMoreRef}
+                className="flex min-h-10 items-center justify-center px-2 py-2 text-center text-[11px] text-text-muted"
+              >
+                {loadError ? (
+                  <div className="flex flex-col items-center gap-1.5">
+                    <span>{t("Não foi possível carregar mais negócios.")}</span>
+                    <button
+                      type="button"
+                      className="rounded-md border border-border px-2 py-1 hover:bg-surface"
+                      onClick={onLoadMore}
+                    >
+                      {t("Tentar novamente")}
+                    </button>
+                  </div>
+                ) : isLoadingMore ? (
+                  t("Carregando…")
+                ) : (
+                  <span className="sr-only">{t("Carregar mais")}</span>
+                )}
+              </div>
+            )}
             {leads.length === 0 && !snapshot.isDraggingOver && (
               <div className="flex h-16 items-center justify-center rounded-md border border-dashed border-border text-[11px] text-text-subtle">
                 {t("vazio")}
