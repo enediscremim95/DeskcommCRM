@@ -101,6 +101,7 @@ describe("colunas da tabela de campanhas", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("carrega o preset padrão e permite ao admin salvar as colunas na ordem escolhida", async () => {
@@ -715,6 +716,30 @@ describe("colunas da tabela de campanhas", () => {
     );
   const columnIndex = (table: HTMLTableElement, header: string) =>
     headerNames(table).findIndex((name) => name.includes(header));
+  const dragColumn = (
+    source: HTMLElement,
+    target: HTMLElement,
+    clientX = 90,
+  ) => {
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      setData: vi.fn(),
+      getData: vi.fn(),
+    };
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue({
+      width: 0, height: 40, top: 0, right: 0, bottom: 40,
+      left: 0, x: 0, y: 0, toJSON: () => ({}),
+    });
+    fireEvent.dragStart(source, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer, clientX });
+    return {
+      drop: () => {
+        fireEvent.drop(target, { dataTransfer, clientX });
+        fireEvent.dragEnd(source, { dataTransfer });
+      },
+    };
+  };
 
   it("campanhas com o MESMO nome ordenam certo e não se repetem (print do dono, 21/09/2026)", async () => {
     const mesmoNome = (id: string, spend: number) => ({
@@ -800,7 +825,7 @@ describe("colunas da tabela de campanhas", () => {
     const totalRow = screen.getByText("Total").closest("tr") as HTMLTableRowElement;
     expect(totalRow.cells).toHaveLength(headerNames(table).length);
     expect(totalRow.cells[statusColumn]?.textContent).toBe("");
-    expect(totalRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s50,00$/);
+    expect(totalRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s40,00$/);
 
     // Sem status conhecido a campanha só aparece em "Todas".
     await user.click(screen.getByRole("button", { name: "Ativas" }));
@@ -840,6 +865,168 @@ describe("colunas da tabela de campanhas", () => {
       expect(row.cells).toHaveLength(4);
     }
     expect(screen.getByText("Total").closest("tr")?.cells).toHaveLength(4);
+  });
+
+  it("marca uma campanha sem ordenar nem abrir o detalhamento", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(baseResponse([
+      campaignWithStatus("Maior investimento", "ACTIVE", 80),
+      campaignWithStatus("Menor investimento", "ACTIVE", 20),
+    ], ["spend"])));
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Maior investimento")).closest("table") as HTMLTableElement;
+
+    await user.click(within(table).getByRole("checkbox", {
+      name: "Selecionar campanha Menor investimento",
+    }));
+
+    expect(table.tBodies[0]?.rows[0]).toHaveTextContent("Maior investimento");
+    expect(within(table).getByRole("button", {
+      name: "Maior investimento", expanded: false,
+    })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("1 campanha marcada");
+  });
+
+  it("marcar tudo respeita o filtro de status e mantém seleções fora dele", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(baseResponse([
+      campaignWithStatus("Meta ativa", "ACTIVE", 70),
+      campaignWithStatus("Meta pausada", "PAUSED", 30),
+    ], ["spend"])));
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Meta ativa")).closest("table") as HTMLTableElement;
+
+    await user.click(screen.getByRole("button", { name: "Pausadas" }));
+    await user.click(within(table).getByRole("checkbox", {
+      name: "Selecionar campanhas visíveis",
+    }));
+    expect(within(table).getByRole("checkbox", {
+      name: "Selecionar campanha Meta pausada",
+    })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Todas" }));
+    expect(within(table).getByRole("checkbox", {
+      name: "Selecionar campanha Meta ativa",
+    })).not.toBeChecked();
+    expect(screen.getByRole("status")).toHaveTextContent("1 campanha marcada");
+    await user.click(screen.getByRole("button", { name: "Pausadas" }));
+    await user.click(within(table).getByRole("checkbox", {
+      name: "Selecionar campanhas visíveis",
+    }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("busca sem acento, marca só o resultado e limpa sem perder a seleção", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(baseResponse([
+      campaignWithStatus("Promoção de Inverno", "ACTIVE", 50),
+      campaignWithStatus("Sempre Visível", "ACTIVE", 30),
+      campaignWithStatus("Outra Campanha", "ACTIVE", 20),
+    ], ["spend"])));
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Promoção de Inverno")).closest("table") as HTMLTableElement;
+
+    await user.click(within(table).getByRole("checkbox", {
+      name: "Selecionar campanha Sempre Visível",
+    }));
+    await user.type(screen.getByRole("searchbox", { name: "Pesquisar campanha" }), "promocao");
+
+    expect(within(table).getByText("Promoção de Inverno")).toBeInTheDocument();
+    expect(within(table).queryByText("Sempre Visível")).not.toBeInTheDocument();
+    expect(screen.getByText("1 campanha encontrada")).toBeInTheDocument();
+
+    await user.click(within(table).getByRole("checkbox", {
+      name: "Selecionar campanhas visíveis",
+    }));
+    expect(screen.getByRole("status")).toHaveTextContent("2 campanhas marcadas");
+
+    await user.click(screen.getByRole("button", { name: "Limpar pesquisa" }));
+    expect(within(table).getByRole("checkbox", {
+      name: "Selecionar campanha Promoção de Inverno",
+    })).toBeChecked();
+    expect(within(table).getByRole("checkbox", {
+      name: "Selecionar campanha Sempre Visível",
+    })).toBeChecked();
+    expect(within(table).getByRole("checkbox", {
+      name: "Selecionar campanha Outra Campanha",
+    })).not.toBeChecked();
+
+    await user.type(screen.getByRole("searchbox", { name: "Pesquisar campanha" }), "inexistente");
+    expect(within(table).getByText("Nenhuma campanha corresponde à pesquisa e aos filtros."))
+      .toBeInTheDocument();
+  });
+
+  it("resume as marcadas e o total acompanha exatamente as linhas visíveis", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(baseResponse([
+      { ...campaignWithStatus("Campanha A", "ACTIVE", 30), conversions: 3, leads: 3 },
+      { ...campaignWithStatus("Campanha B", "ACTIVE", 20), conversions: 1, leads: 1 },
+      { ...campaignWithStatus("Campanha C", "PAUSED", 50), conversions: 5, leads: 5 },
+    ], ["spend", "leads"])));
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Campanha A")).closest("table") as HTMLTableElement;
+    const spendColumn = columnIndex(table, "Valor gasto");
+    const leadsColumn = columnIndex(table, "Leads");
+
+    await user.click(within(table).getByRole("checkbox", { name: "Selecionar campanha Campanha A" }));
+    await user.click(within(table).getByRole("checkbox", { name: "Selecionar campanha Campanha B" }));
+
+    const bar = screen.getByRole("status");
+    expect(bar).toHaveTextContent("2 campanhas marcadas");
+    expect(bar).toHaveTextContent(/Investimento:\s*R\$\s*50,00/);
+    expect(bar).toHaveTextContent(/Conversões:\s*4/);
+    expect(bar).toHaveTextContent(/Custo por conversão:\s*R\$\s*12,50/);
+    expect(bar).toHaveTextContent("Os cards do topo e o funil mostram o período inteiro.");
+
+    await user.click(screen.getByRole("button", { name: "Ver só as selecionadas" }));
+    expect(screen.queryByText("Campanha C")).not.toBeInTheDocument();
+    const totalRow = screen.getByText("Total").closest("tr") as HTMLTableRowElement;
+    expect(totalRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s50,00$/);
+    expect(totalRow.cells[leadsColumn]?.textContent).toBe("4");
+
+    await user.click(screen.getByRole("button", { name: "Ver todas as campanhas" }));
+    expect(screen.getByText("Campanha C")).toBeInTheDocument();
+    expect(totalRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s100,00$/);
+    await user.click(screen.getByRole("button", { name: "Limpar seleção" }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("limpa a seleção quando o período muda", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(baseResponse([campaignWithStatus("Campanha do período", "ACTIVE", 50)])));
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    await user.click(await screen.findByRole("checkbox", {
+      name: "Selecionar campanha Campanha do período",
+    }));
+    expect(screen.getByRole("status")).toHaveTextContent("1 campanha marcada");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Período" }), "7");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await screen.findByText("Campanha do período");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", {
+      name: "Selecionar campanha Campanha do período",
+    })).not.toBeChecked();
+  });
+
+  it("mantém as seleções de Meta e Google independentes", async () => {
+    const response = baseResponse([
+      campaignWithStatus("Meta escolhida", "ACTIVE", 30),
+      { ...metrics, id: "google_ads:1", name: "Google separada", platform: "google_ads",
+        campaign_status: "ENABLED", spend: 20, adsets: [] },
+    ]);
+    response.data.currencies[0]!.platforms.push({ ...metrics, platform: "google_ads" });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(response));
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+
+    await user.click(await screen.findByRole("checkbox", {
+      name: "Selecionar campanha Meta escolhida",
+    }));
+
+    expect(screen.getByRole("checkbox", { name: "Selecionar campanha Meta escolhida" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Selecionar campanha Google separada" })).not.toBeChecked();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
   });
 
   it("fala em linguagem simples: nome da organização, frases nos KPIs, retenção real e detalhe do anúncio", async () => {
@@ -933,6 +1120,81 @@ describe("colunas da tabela de campanhas", () => {
     expect(row.cells[3]?.textContent).toBe("5%");
     expect(row.cells[4]?.textContent).toMatch(/^R\$\s50,00$/);
     expect(screen.getByText("Pausada")).toBeInTheDocument();
+  });
+
+  it("arrasta a métrica, persiste por pessoa e organização e volta à ordem padrão", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(baseResponse([
+        campaignWithStatus("Campanha reordenável", "ACTIVE", 50),
+      ], ["spend", "leads"])),
+    );
+
+    const firstMount = render(<TrafficDashboard />);
+    const firstTable = (await screen.findByText("Campanha reordenável")).closest("table") as HTMLTableElement;
+    const spendHeader = within(firstTable).getByRole("columnheader", { name: /Valor gasto/ });
+    const leadsHeader = within(firstTable).getByRole("columnheader", { name: /Leads/ });
+
+    expect(within(firstTable).getByRole("columnheader", { name: /Campanha/ })).not.toHaveAttribute("draggable", "true");
+    expect(spendHeader).toHaveAttribute("draggable", "true");
+    const drag = dragColumn(leadsHeader, spendHeader);
+    expect(spendHeader).toHaveAttribute("data-drop-position", "antes");
+    drag.drop();
+
+    expect(headerNames(firstTable)).toEqual(["Campanha", "Status", "Leads", "Valor gasto"]);
+    const storageKey = "traffic-report-column-order:org-1:viewer-1:meta_ads";
+    expect(JSON.parse(localStorage.getItem(storageKey) ?? "[]")).toEqual([
+      "name", "status", "leads", "spend",
+    ]);
+
+    firstMount.unmount();
+    render(<TrafficDashboard />);
+    const restoredTable = (await screen.findByText("Campanha reordenável")).closest("table") as HTMLTableElement;
+    await waitFor(() => expect(headerNames(restoredTable)).toEqual([
+      "Campanha", "Status", "Leads", "Valor gasto",
+    ]));
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Voltar à ordem padrão" }));
+    expect(headerNames(restoredTable)).toEqual(["Campanha", "Status", "Valor gasto", "Leads"]);
+    expect(localStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it("reordena também as colunas de Anúncios Meta sem mover o criativo", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(creativeResponse()));
+    render(<TrafficDashboard />);
+    const section = (await screen.findByText("Anúncios Meta")).closest("section") as HTMLElement;
+    const table = section.querySelector("table") as HTMLTableElement;
+    const spendHeader = within(table).getByRole("columnheader", { name: /Investimento/ });
+    const impressionsHeader = within(table).getByRole("columnheader", { name: /Impressões/ });
+
+    expect(within(table).getByRole("columnheader", { name: /Criativo/ })).not.toHaveAttribute("draggable", "true");
+    const drag = dragColumn(impressionsHeader, spendHeader);
+    expect(spendHeader).toHaveAttribute("data-drop-position", "antes");
+    drag.drop();
+
+    expect(headerNames(table).slice(0, 4)).toEqual(["Criativo", "Impressões", "Investimento", "Cliques"]);
+    expect(JSON.parse(
+      localStorage.getItem("traffic-report-column-order:org-1:viewer-1:meta-ads-creatives") ?? "[]",
+    ).slice(0, 4)).toEqual(["creative", "impressions", "spend", "clicks"]);
+  });
+
+  it("desliga a reordenação de colunas no celular", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(baseResponse([
+        campaignWithStatus("Campanha no celular", "ACTIVE", 50),
+      ], ["spend", "leads"])),
+    );
+
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Campanha no celular")).closest("table") as HTMLTableElement;
+    expect(within(table).getByRole("columnheader", { name: /Valor gasto/ })).not.toHaveAttribute(
+      "draggable",
+      "true",
+    );
   });
 
   it("redimensiona sem ordenar e restaura a largura persistida pela organização", async () => {
