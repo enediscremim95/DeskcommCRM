@@ -61,7 +61,16 @@ async function ensureCredential(orgId: string): Promise<string> {
     .eq("organization_id", orgId)
     .eq("label", CREDENTIAL_LABEL)
     .maybeSingle();
-  if (existing) return (existing as { id: string }).id;
+  if (existing) {
+    const id = (existing as { id: string }).id;
+    const { error } = await admin
+      .from("ai_provider_credentials")
+      .update({ is_active: true, validated_at: "2026-01-01T00:00:00.000Z" })
+      .eq("id", id)
+      .eq("organization_id", orgId);
+    if (error) throw new Error(`update ai_provider_credentials: ${error.message}`);
+    return id;
+  }
 
   const { data, error } = await admin
     .from("ai_provider_credentials")
@@ -74,6 +83,7 @@ async function ensureCredential(orgId: string): Promise<string> {
       api_key_tag: "\\x00",
       api_key_last4: "e2e1",
       is_active: true,
+      validated_at: "2026-01-01T00:00:00.000Z",
     } as never)
     .select("id")
     .single();

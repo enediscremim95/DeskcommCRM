@@ -12,6 +12,7 @@ const agentActions = vi.hoisted(() => ({
   revertToVersionAction: vi.fn(),
 }));
 const atendimentoActions = vi.hoisted(() => ({
+  auditDisabledGuardrailsAction: vi.fn(),
   proposeAttendanceInstructionAction: vi.fn(),
   saveAtendimentoDraftAction: vi.fn(),
 }));
@@ -134,6 +135,10 @@ describe("atendimento em um fluxo", () => {
       ok: true,
       data: { version_id: "66666666-6666-4666-8666-666666666666" },
     });
+    atendimentoActions.auditDisabledGuardrailsAction.mockResolvedValue({
+      ok: true,
+      data: { version_id: "66666666-6666-4666-8666-666666666666" },
+    });
   });
 
   it("deixa no menu principal somente Atendimento, Casos e Alertas", () => {
@@ -196,6 +201,38 @@ describe("atendimento em um fluxo", () => {
     await user.click(screen.getByRole("button", { name: "Publicar" }));
     expect(agentActions.publishAgentAction).toHaveBeenCalledWith(agent.id, baseProps.versions[0]!.id);
     expect(fetch).toHaveBeenCalledWith("/api/v1/ai/pacing", expect.objectContaining({ method: "PUT" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("cria do zero e audita a trava sem fabricar uma segunda versão", async () => {
+    const user = userEvent.setup();
+    agentActions.createMcpAgentAction.mockResolvedValue({
+      ok: true,
+      data: {
+        agent_id: agent.id,
+        version_id: "66666666-6666-4666-8666-666666666666",
+      },
+    });
+    agentActions.publishAgentAction.mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    render(<AtendimentoBuilder {...baseProps} agent={null} versions={[]} />);
+
+    await user.click(screen.getAllByRole("button", { name: "Limites e travas" })[0]!);
+    await user.click(within(screen.getByTestId("guardrail-uma_conversa")).getByRole("switch"));
+    await user.click(screen.getByRole("button", { name: "Entendo a consequência e quero desligar" }));
+    await user.click(screen.getByRole("button", { name: "Publicar" }));
+
+    expect(agentActions.createMcpAgentAction).toHaveBeenCalledOnce();
+    expect(atendimentoActions.auditDisabledGuardrailsAction).toHaveBeenCalledWith(
+      agent.id,
+      "66666666-6666-4666-8666-666666666666",
+      ["uma_conversa"],
+    );
+    expect(atendimentoActions.saveAtendimentoDraftAction).not.toHaveBeenCalled();
+    expect(agentActions.publishAgentAction).toHaveBeenCalledWith(
+      agent.id,
+      "66666666-6666-4666-8666-666666666666",
+    );
     vi.unstubAllGlobals();
   });
 

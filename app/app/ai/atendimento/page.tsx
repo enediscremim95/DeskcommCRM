@@ -95,6 +95,10 @@ export default async function AtendimentoPage() {
   const versions = selectedAgent
     ? allVersions.filter((version) => version.agent_id === selectedAgent.id)
     : [];
+  const selectedVersion = versions.find((version) => version.status === 'draft')
+    ?? versions.find((version) => version.id === selectedAgent?.published_version_id)
+    ?? versions[0]
+    ?? null;
   const selectedChannel = channels.find((channel) => channel.status === 'WORKING') ?? channels[0] ?? null;
   const dailyLimitRes = selectedChannel
     ? await supabase
@@ -107,6 +111,7 @@ export default async function AtendimentoPage() {
 
   return (
     <AtendimentoBuilder
+      key={`${selectedAgent?.id ?? 'novo'}:${selectedVersion?.id ?? 'sem-versao'}:${selectedAgent?.published_version_id ?? 'sem-publicada'}`}
       channels={channels}
       provider={selectedModel?.provider ?? null}
       model={selectedModel?.model_id ?? null}
