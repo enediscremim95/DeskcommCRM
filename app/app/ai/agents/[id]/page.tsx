@@ -4,6 +4,7 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { listSelectableChannels } from "@/lib/channels/selectable";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 import type { CredentialRow } from "@/hooks/ai/useCredentials";
@@ -25,7 +26,7 @@ const AGENT_COLUMNS =
   "id, organization_id, name, description, model, system_prompt, is_active, is_default, kind, priority, published_version_id, paused_at, operation_mode, operation_revision, archived_at, config, guardrails, active_kb_version_id, created_at, updated_at";
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,skill_names,channel_config,provisioning_origin,mcp_api_token_id,mcp_change_summary";
 
 const CREDENTIAL_COLUMNS =
   "id, organization_id, provider, label, api_key_last4, validated_at, validation_error, models_available, is_active, created_by, created_at, updated_at";
@@ -153,6 +154,17 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
     agent.published_version_id ?? null,
   );
 
+  let mcpToken: { name: string; prefix: string } | null = null;
+  if (draft?.provisioning_origin === "mcp" && draft.mcp_api_token_id) {
+    const { data } = await createAdminClient()
+      .from("api_tokens")
+      .select("name, prefix")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("id", draft.mcp_api_token_id)
+      .maybeSingle();
+    mcpToken = data ? { name: data.name, prefix: data.prefix } : null;
+  }
+
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <Voltar href="/app/ai/agents">Agentes</Voltar>
@@ -181,6 +193,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
         materiais={materiais}
         routerMembership={routerMembership}
         readOnly={readOnly}
+        mcpToken={mcpToken}
       />
     </div>
   );

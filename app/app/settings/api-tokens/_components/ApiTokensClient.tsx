@@ -46,6 +46,10 @@ import { comandosDoTokenMcp } from "@/lib/mcp/conexao";
 const SCOPES: { id: string; label: string }[] = [
   { id: "mcp:read", label: "Agentes de IA podem LER o CRM (MCP)" },
   { id: "mcp:write", label: "Agentes de IA podem AGIR no CRM (MCP)" },
+  {
+    id: "mcp:configure",
+    label: "Agentes de IA podem MONTAR o atendimento em rascunho (MCP, não publica)",
+  },
   // Sem isto o token nasce como 'agent' e as ferramentas de nível gerente
   // (criar lead, atribuir conversa) respondem "Role 'agent' insufficient".
   // O papel viaja junto dos escopos (ver lib/mcp/auth.ts) e também não

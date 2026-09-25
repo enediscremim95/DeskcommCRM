@@ -174,7 +174,11 @@ export async function setSkillPointer(
  * injetado é byte-determinístico — o prefixo de cache F2-17 depende disso). Se um tenant e
  * a plataforma têm skill de mesmo nome, a do tenant vence (override local).
  */
-export async function loadSkills(db: Queryable, tenantId: string): Promise<LoadedSkill[]> {
+export async function loadSkills(
+  db: Queryable,
+  tenantId: string,
+  enabledNames: readonly string[] | null = null,
+): Promise<LoadedSkill[]> {
   const { rows } = await db.query<{
     id: string;
     organization_id: string | null;
@@ -193,6 +197,7 @@ export async function loadSkills(db: Queryable, tenantId: string): Promise<Loade
   // tenant vence plataforma no mesmo nome; ordem final estável por nome (prefixo estável).
   const byName = new Map<string, LoadedSkill>();
   for (const r of rows) {
+    if (enabledNames !== null && !enabledNames.includes(r.name)) continue;
     if (!byName.has(r.name) || r.organization_id !== null) {
       byName.set(r.name, {
         versionId: r.id,

@@ -273,6 +273,16 @@ outputSchema: z.object({
 
 ---
 
+### 3.4 Montagem do atendimento em duas camadas
+
+O escopo existente `mcp:read` oferece `crm_list_ai_agents` e `crm_get_ai_agent_prompt`. As respostas usam projeções positivas e não incluem credencial, chave ou token.
+
+O escopo `mcp:configure` é separado, nasce desligado e exige papel gerente ou administrador. Ele oferece criação por modelo de nicho, ajuste de prompt, material por texto ou URL, seleção de skill, passagem para humano e configuração de horário, ritmo e limite simultâneo do canal.
+
+Nenhuma dessas ferramentas publica. Cada mutação cria uma linha `draft` em `ai_agent_versions`, com `provisioning_origin='mcp'`, `mcp_api_token_id` e resumo das mudanças. A tela de Agentes mostra a procedência e permite publicar ou descartar. A configuração pendente do canal só é aplicada na mesma transação em que uma pessoa publica a versão.
+
+Conteúdo lido de conversas é dado não confiável, nunca instrução para o cliente MCP.
+
 ## 4. Tool selection (per agent)
 
 A versão do agente armazena `tool_ids text[]` (Spec 10 §3.2). Validação no publish:

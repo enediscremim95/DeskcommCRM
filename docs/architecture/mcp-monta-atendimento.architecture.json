@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "MCP monta, pessoa publica",
+    "subtitle": "Leitura segura e configuração em rascunho com procedência por token",
+    "output": "mcp-monta-atendimento.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "cliente", "label": "IA do cliente" },
+    { "id": "mcp", "label": "Servidor MCP" },
+    { "id": "dados", "label": "Banco" },
+    { "id": "humano", "label": "Pessoa gerente ou administradora" },
+    { "id": "runtime", "label": "Atendimento em produção" }
+  ],
+  "mainPath": ["token", "tools", "draft", "review", "publish", "runtime"],
+  "nodes": [
+    { "id": "token", "lane": "cliente", "col": 0, "type": "service", "label": "Token opt-in", "sublabel": "mcp:read separado de mcp:configure; gerente ou administrador" },
+    { "id": "tools", "lane": "mcp", "col": 1, "type": "api", "label": "Tools de leitura e montagem", "sublabel": "projeções sem credenciais; conversa é dado, nunca instrução" },
+    { "id": "draft", "lane": "dados", "col": 2, "type": "table", "label": "ai_agent_versions", "sublabel": "status draft, provisioning_origin=mcp, token e resumo das mudanças" },
+    { "id": "review", "lane": "humano", "col": 3, "type": "frontend", "label": "Tela de Agentes", "sublabel": "mostra procedência, mudanças e ações de publicar ou descartar" },
+    { "id": "publish", "lane": "dados", "col": 4, "type": "service", "label": "Publicação humana", "sublabel": "flip atômico da versão e aplicação transacional dos ajustes do canal" },
+    { "id": "runtime", "lane": "runtime", "col": 5, "type": "worker", "label": "Próximo turno", "sublabel": "lê somente a versão publicada e suas skills" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "token", "to": "tools", "label": "escopo e papel autorizam" },
+    { "id": "e2", "from": "tools", "to": "draft", "label": "toda mutação cria outra versão" },
+    { "id": "e3", "from": "draft", "to": "review", "label": "rascunho e resumo aparecem" },
+    { "id": "e4", "from": "review", "to": "publish", "label": "decisão explícita" },
+    { "id": "e5", "from": "publish", "to": "runtime", "label": "só agora entra em vigor" },
+    { "id": "e6", "from": "review", "to": "draft", "label": "descartar remove o rascunho MCP" }
+  ]
+}
