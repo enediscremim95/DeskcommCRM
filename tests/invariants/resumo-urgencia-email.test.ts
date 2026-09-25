@@ -120,7 +120,7 @@ describe("resumo de urgência por pessoa", () => {
     `);
     expect(repeated).toBe("f");
 
-    const deferred = sql(`
+    const deferredBatchId = sql(`
       update public.notification_email_batches
          set status = 'sent', sent_at = now()
        where organization_id = '${ORG}' and kind = 'urgent_lead' and status = 'pending';
@@ -135,10 +135,19 @@ describe("resumo de urgência por pessoa", () => {
         (id, organization_id, event_type, entity_kind, entity_id, payload, metadata)
       values ('a2590000-0000-4000-8002-000000000002', '${ORG}', 'lead.action_required', 'crm_lead',
         'a2590000-0000-4000-8000-000000000200', '{"reason":"risk"}'::jsonb, '{}'::jsonb);
-      select (b.due_at > date_trunc('day', now()) + interval '1 day')::text || '|' || b.deferred_count
-        from public.fn_queue_lead_email_batch(
-          'a2590000-0000-4000-8002-000000000002', '${USER}', 30
-        ) q join public.notification_email_batches b on b.id = q.batch_id;
+      select batch_id from public.fn_queue_lead_email_batch(
+        'a2590000-0000-4000-8002-000000000002', '${USER}', 30
+      );
+    `);
+    expect(deferredBatchId, "a fila devolveu uma linha para o novo evento urgente").not.toBe("");
+
+    // O batch é criado dentro da função chamada no SELECT anterior. A leitura
+    // fica após o command boundary para observar o estado persistido, em vez de
+    // disputar o mesmo snapshot num JOIN da própria chamada mutante.
+    const deferred = sql(`
+      select (due_at > date_trunc('day', now()) + interval '1 day')::text || '|' || deferred_count
+        from public.notification_email_batches
+       where id = '${deferredBatchId}'::uuid;
     `);
     expect(deferred).toBe("true|1");
   });

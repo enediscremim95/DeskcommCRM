@@ -30,11 +30,19 @@ export function credencial(extra: Partial<CredentialRow> = {}): CredentialRow {
   };
 }
 
-export function montar(row: CredentialRow, props: { canWrite?: boolean; usageCount?: number } = {}) {
+export function montar(
+  row: CredentialRow,
+  props: { canWrite?: boolean; canDelete?: boolean; usageCount?: number } = {},
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <CredentialCard credential={row} canWrite={props.canWrite ?? true} usageCount={props.usageCount ?? 0} />
+      <CredentialCard
+        credential={row}
+        canWrite={props.canWrite ?? true}
+        canDelete={props.canDelete ?? true}
+        usageCount={props.usageCount ?? 0}
+      />
     </QueryClientProvider>,
   );
 }
@@ -66,5 +74,14 @@ describe("CredentialCard — erro de validação", () => {
   it("erro de rede não oferece link: a chave não é o problema", () => {
     montar(credencial({ validated_at: null, validation_error: "network_error" }));
     expect(screen.queryByRole("link", { name: /Pegar chave em/ })).toBeNull();
+  });
+});
+
+describe("CredentialCard — autoridade para exclusão", () => {
+  it("mantém a revalidação, mas não oferece exclusão sem a capacidade nomeada", () => {
+    montar(credencial(), { canWrite: true, canDelete: false });
+
+    expect(screen.getByRole("button", { name: "Revalidar credencial" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Excluir credencial" })).toBeNull();
   });
 });

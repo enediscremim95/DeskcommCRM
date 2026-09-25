@@ -45,9 +45,10 @@ export const PERMISSION_MIN_ROLE = {
 /**
  * Capacidades que NÃO cabem na escada de papéis.
  *
- * Gerente e administrador têm o mesmo piso para o acesso geral, mas somente o
- * gerente pode gerir a equipe e excluir leads. O administrador de plataforma
- * é tratado separadamente porque não é um papel da organização.
+ * Gerente e administrador têm o mesmo piso para o acesso geral, mas as
+ * operações destrutivas que podem interromper o negócio são capacidades
+ * nomeadas. O administrador de plataforma é tratado separadamente porque não é
+ * um papel da organização.
  */
 export const PERMISSION_ROLES = {
   // Excluir lead é o ÚNICO poder que o administrador da organização não tem.
@@ -57,6 +58,10 @@ export const PERMISSION_ROLES = {
   // restringiu exclusão, não a gestão de pessoas.
   "lead.delete": ["manager"],
   "team.manage": ["manager", "admin"],
+  // A chave do provedor sustenta o atendimento inteiro. Uma exclusão acidental
+  // derruba o agente para todos os clientes da organização, por isso o gerente
+  // pode criar e revalidar credenciais, mas não apagá-las.
+  "ai.credentials.delete": ["admin"],
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Permission = keyof typeof PERMISSION_MIN_ROLE | keyof typeof PERMISSION_ROLES;

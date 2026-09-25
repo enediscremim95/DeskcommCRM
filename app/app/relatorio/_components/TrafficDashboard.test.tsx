@@ -473,7 +473,7 @@ describe("colunas da tabela de campanhas", () => {
     expect(pdfUrl).toContain("from=");
     expect(pdfUrl).toContain("to=");
     expect(pdfUrl).toContain("language=pt-BR");
-    expect(click).toHaveBeenCalledOnce();
+    await waitFor(() => expect(click).toHaveBeenCalledOnce());
   });
 
   it("filtra por status, persiste a escolha e ordena campanhas sem separar seus detalhes", async () => {
