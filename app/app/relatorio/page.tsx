@@ -15,17 +15,26 @@ export default async function RelatorioPage() {
   if (!activeOrg) redirect("/app");
 
   const admin = createAdminClient();
-  if (
-    !(user.is_platform_admin && !user.support) &&
-    !(await clientCanViewIntegration(admin, activeOrg.orgId, "windsor"))
-  ) redirect("/403");
-  const [{ data: organization }, { data: nativeConfig }] = await Promise.all([admin
-    .from("organizations")
-    .select("report_url")
-    .eq("id", activeOrg.orgId)
-    .maybeSingle(), admin.from("traffic_dashboard_configs" as never)
-      .select("organization_id").eq("organization_id", activeOrg.orgId)
-      .eq("enabled", true).maybeSingle()]);
+  const [{ data: organization }, { data: nativeConfig }, canViewWindsor] = await Promise.all([
+    admin
+      .from("organizations")
+      .select("report_url")
+      .eq("id", activeOrg.orgId)
+      .maybeSingle(),
+    admin
+      .from("traffic_dashboard_configs" as never)
+      .select("organization_id")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("enabled", true)
+      .maybeSingle(),
+    clientCanViewIntegration(admin, activeOrg.orgId, "windsor"),
+  ]);
+
+  // O relatório nativo habilitado é a fonte de verdade. Uma permissão antiga ou
+  // inconsistente não pode expulsar o cliente de uma tela que já está ativa.
+  if (!(user.is_platform_admin && !user.support) && !nativeConfig && !canViewWindsor) {
+    redirect("/403");
+  }
 
   // O texto da tela vive no componente cliente: `useT()` é hook de contexto e
   // não existe aqui. Ver o cabeçalho de `_client.tsx`.
