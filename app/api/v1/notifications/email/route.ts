@@ -11,7 +11,10 @@ import {
   parseEmailNotificationPolicy,
   readEmailNotificationPolicy,
 } from "@/lib/notifications/email-policy";
-import { readEmailNotificationPreferences } from "@/lib/notifications/email-preferences";
+import {
+  applyEmailNotificationPreferencesPatch,
+  readEmailNotificationPreferences,
+} from "@/lib/notifications/email-preferences";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -19,6 +22,7 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z
   .object({
+    email_enabled: z.boolean().optional(),
     new_lead: z.boolean().optional(),
     urgent_lead: z.boolean().optional(),
     urgent_batch_window_minutes: z.number().int().min(5).max(1_440).optional(),
@@ -81,6 +85,9 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   const db = await createClient();
   const personalPatch = {
+    ...(parsed.data.email_enabled === undefined
+      ? {}
+      : { email_enabled: parsed.data.email_enabled }),
     ...(parsed.data.new_lead === undefined ? {} : { new_lead: parsed.data.new_lead }),
     ...(parsed.data.urgent_lead === undefined ? {} : { urgent_lead: parsed.data.urgent_lead }),
   };
@@ -102,12 +109,13 @@ export async function PUT(req: NextRequest): Promise<Response> {
   }
 
   const current = await readEmailNotificationPreferences(db, authz.org.orgId, authz.user.id);
-  const next = { ...current, ...personalPatch };
+  const next = applyEmailNotificationPreferencesPatch(current, personalPatch);
   if (Object.keys(personalPatch).length > 0) {
     const { error } = await db.from("notification_email_preferences" as never).upsert(
       {
         organization_id: authz.org.orgId,
         user_id: authz.user.id,
+        email_enabled: next.email_enabled,
         new_lead: next.new_lead,
         urgent_lead: next.urgent_lead,
         updated_at: new Date().toISOString(),

@@ -55,7 +55,7 @@ export default async function NotificationsPage() {
   const activeOrg = await resolveActiveOrg(user);
   const emailPrefs = activeOrg
     ? await readEmailNotificationPreferences(await createClient(), activeOrg.orgId, user.id)
-    : { new_lead: true, urgent_lead: true };
+    : { email_enabled: true, new_lead: true, urgent_lead: true };
   const emailPolicy = activeOrg
     ? await readEmailNotificationPolicy(await createClient(), activeOrg.orgId)
     : { urgent_batch_window_minutes: 60, urgent_daily_limit: 6 };

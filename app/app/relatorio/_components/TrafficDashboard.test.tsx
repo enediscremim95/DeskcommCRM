@@ -1195,7 +1195,11 @@ describe("colunas da tabela de campanhas", () => {
     expect(screen.getByText("Conjunto Frio")).toBeInTheDocument();
     expect(screen.getByText("2 anúncios")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Conjunto Frio/, expanded: false }));
+    // O CTA agora fica junto do nome do anúncio, não na última coluna de métricas.
     const link = screen.getByRole("link", { name: "Ver anúncio" });
+    const adNameCell = link.closest("td");
+    expect(adNameCell).not.toBeNull();
+    expect(within(adNameCell!).getByText("Vídeo depoimento")).toBeInTheDocument();
     expect(link).toHaveAttribute("href", "https://www.facebook.com/123/posts/456/");
     expect(screen.getByRole("link", { name: "Ver anúncio: Vídeo depoimento" })).toHaveAttribute(
       "href",

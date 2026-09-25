@@ -26268,7 +26268,14 @@ create trigger trg_apply_agent_channel_config_on_publish
   after update of status on public.ai_agent_versions
   for each row execute function public.fn_apply_agent_channel_config_on_publish();
 
--- ---- gerente não apaga credencial de IA (migration 0267) ----
+-- ---- mestre pessoal de notificações por e-mail (migration 0268) ----
+alter table public.notification_email_preferences
+  add column if not exists email_enabled boolean not null default true;
+
+comment on column public.notification_email_preferences.email_enabled is
+  'Barreira pessoal para qualquer e-mail de notificação; não altera as escolhas por categoria.';
+
+-- ---- gerente não apaga credencial de IA (migration 0269) ----
 -- A chave do provedor sustenta o atendimento inteiro. Uma exclusão acidental
 -- derruba o agente para todos os clientes da organização, então o DELETE é uma
 -- capacidade nomeada de admin/plataforma, não uma consequência do rank geral.

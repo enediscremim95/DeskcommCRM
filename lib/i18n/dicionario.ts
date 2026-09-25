@@ -6917,6 +6917,8 @@ export const DICIONARIO: Traducoes = {
   "Avisos importantes por e-mail": { es: "Avisos importantes por correo" },
   "Ligados por padrão para você não perder uma oportunidade. Cada pessoa controla os próprios avisos.": { es: "Activados de forma predeterminada para que no pierdas una oportunidad. Cada persona controla sus propios avisos." },
   "O envio de e-mail ainda não foi configurado nesta instalação.": { es: "El envío de correo todavía no fue configurado en esta instalación." },
+  "Receber avisos por e-mail": { es: "Recibir avisos por correo" },
+  "Os avisos por e-mail estão desligados.": { es: "Los avisos por correo están desactivados." },
   "Novo lead entrou": { es: "Entró un nuevo lead" },
   "Formulário, WhatsApp, importação ou API.": { es: "Formulario, WhatsApp, importación o API." },
   "Novo lead via email": { es: "Nuevo lead por correo" },
