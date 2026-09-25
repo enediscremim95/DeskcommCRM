@@ -101,6 +101,7 @@ describe("colunas da tabela de campanhas", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("carrega o preset padrão e permite ao admin salvar as colunas na ordem escolhida", async () => {
@@ -715,6 +716,30 @@ describe("colunas da tabela de campanhas", () => {
     );
   const columnIndex = (table: HTMLTableElement, header: string) =>
     headerNames(table).findIndex((name) => name.includes(header));
+  const dragColumn = (
+    source: HTMLElement,
+    target: HTMLElement,
+    clientX = 90,
+  ) => {
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      setData: vi.fn(),
+      getData: vi.fn(),
+    };
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue({
+      width: 0, height: 40, top: 0, right: 0, bottom: 40,
+      left: 0, x: 0, y: 0, toJSON: () => ({}),
+    });
+    fireEvent.dragStart(source, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer, clientX });
+    return {
+      drop: () => {
+        fireEvent.drop(target, { dataTransfer, clientX });
+        fireEvent.dragEnd(source, { dataTransfer });
+      },
+    };
+  };
 
   it("campanhas com o MESMO nome ordenam certo e não se repetem (print do dono, 21/09/2026)", async () => {
     const mesmoNome = (id: string, spend: number) => ({
@@ -1095,6 +1120,81 @@ describe("colunas da tabela de campanhas", () => {
     expect(row.cells[3]?.textContent).toBe("5%");
     expect(row.cells[4]?.textContent).toMatch(/^R\$\s50,00$/);
     expect(screen.getByText("Pausada")).toBeInTheDocument();
+  });
+
+  it("arrasta a métrica, persiste por pessoa e organização e volta à ordem padrão", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(baseResponse([
+        campaignWithStatus("Campanha reordenável", "ACTIVE", 50),
+      ], ["spend", "leads"])),
+    );
+
+    const firstMount = render(<TrafficDashboard />);
+    const firstTable = (await screen.findByText("Campanha reordenável")).closest("table") as HTMLTableElement;
+    const spendHeader = within(firstTable).getByRole("columnheader", { name: /Valor gasto/ });
+    const leadsHeader = within(firstTable).getByRole("columnheader", { name: /Leads/ });
+
+    expect(within(firstTable).getByRole("columnheader", { name: /Campanha/ })).not.toHaveAttribute("draggable", "true");
+    expect(spendHeader).toHaveAttribute("draggable", "true");
+    const drag = dragColumn(leadsHeader, spendHeader);
+    expect(spendHeader).toHaveAttribute("data-drop-position", "antes");
+    drag.drop();
+
+    expect(headerNames(firstTable)).toEqual(["Campanha", "Status", "Leads", "Valor gasto"]);
+    const storageKey = "traffic-report-column-order:org-1:viewer-1:meta_ads";
+    expect(JSON.parse(localStorage.getItem(storageKey) ?? "[]")).toEqual([
+      "name", "status", "leads", "spend",
+    ]);
+
+    firstMount.unmount();
+    render(<TrafficDashboard />);
+    const restoredTable = (await screen.findByText("Campanha reordenável")).closest("table") as HTMLTableElement;
+    await waitFor(() => expect(headerNames(restoredTable)).toEqual([
+      "Campanha", "Status", "Leads", "Valor gasto",
+    ]));
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Voltar à ordem padrão" }));
+    expect(headerNames(restoredTable)).toEqual(["Campanha", "Status", "Valor gasto", "Leads"]);
+    expect(localStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it("reordena também as colunas de Anúncios Meta sem mover o criativo", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(creativeResponse()));
+    render(<TrafficDashboard />);
+    const section = (await screen.findByText("Anúncios Meta")).closest("section") as HTMLElement;
+    const table = section.querySelector("table") as HTMLTableElement;
+    const spendHeader = within(table).getByRole("columnheader", { name: /Investimento/ });
+    const impressionsHeader = within(table).getByRole("columnheader", { name: /Impressões/ });
+
+    expect(within(table).getByRole("columnheader", { name: /Criativo/ })).not.toHaveAttribute("draggable", "true");
+    const drag = dragColumn(impressionsHeader, spendHeader);
+    expect(spendHeader).toHaveAttribute("data-drop-position", "antes");
+    drag.drop();
+
+    expect(headerNames(table).slice(0, 4)).toEqual(["Criativo", "Impressões", "Investimento", "Cliques"]);
+    expect(JSON.parse(
+      localStorage.getItem("traffic-report-column-order:org-1:viewer-1:meta-ads-creatives") ?? "[]",
+    ).slice(0, 4)).toEqual(["creative", "impressions", "spend", "clicks"]);
+  });
+
+  it("desliga a reordenação de colunas no celular", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(baseResponse([
+        campaignWithStatus("Campanha no celular", "ACTIVE", 50),
+      ], ["spend", "leads"])),
+    );
+
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Campanha no celular")).closest("table") as HTMLTableElement;
+    expect(within(table).getByRole("columnheader", { name: /Valor gasto/ })).not.toHaveAttribute(
+      "draggable",
+      "true",
+    );
   });
 
   it("redimensiona sem ordenar e restaura a largura persistida pela organização", async () => {
