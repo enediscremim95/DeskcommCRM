@@ -8945,6 +8945,8 @@ export const DICIONARIO: Traducoes = {
   "pararam para assistir": { es: "se detuvieron a mirar" },
   "viram até o fim": { es: "vieron hasta el final" },
   "Gasto": { es: "Gasto" },
+  "conjunto": { es: "conjunto" },
+  "conjuntos": { es: "conjuntos" },
   "anúncio": { es: "anuncio" },
   "anúncios": { es: "anuncios" },
   "Ver anúncio": { es: "Ver anuncio" },

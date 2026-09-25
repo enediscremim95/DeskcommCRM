@@ -698,7 +698,7 @@ function PlatformMark({ platform }: { platform: "meta_ads" | "google_ads" }) {
   );
 }
 
-/** Custo por resultado do conjunto/anúncio no período: gasto ÷ conversões. */
+/** Custo por resultado no período: gasto ÷ conversões. */
 function costPerResult(metrics: Pick<Metrics, "spend" | "conversions">): number | null {
   return metrics.conversions > 0 ? metrics.spend / metrics.conversions : null;
 }
@@ -742,90 +742,6 @@ function AdThumbnail({
   );
 }
 
-/**
- * Detalhamento conjunto → anúncio como o painel antigo mostrava: o conjunto
- * abre com gasto, conversões, custo por resultado e quantos anúncios tem; cada
- * anúncio traz miniatura (ou as iniciais), gasto, conversões, custo e o botão
- * que abre o post no Facebook.
- */
-function AdsetDrill({
-  adset,
-  currency,
-  conversionsLabel,
-  threshold,
-}: {
-  adset: Campaign["adsets"][number];
-  currency: string;
-  conversionsLabel: string;
-  threshold?: CostThreshold;
-}) {
-  const t = useT();
-  const adsetCost = costPerResult(adset);
-  const adsCount = adset.ads.length;
-  const stat = (label: string, value: ReactNode, tone = "text-foreground") => (
-    <span className="flex flex-col items-end leading-tight">
-      <span className="text-[10px] tracking-[0.08em] text-muted-foreground uppercase">{label}</span>
-      <span className={`text-sm font-semibold tabular-nums ${tone}`}>{value}</span>
-    </span>
-  );
-  return (
-    <details className="border-b last:border-b-0">
-      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-4 gap-y-1 py-2.5">
-        <span className="min-w-0 flex-1 basis-40 truncate text-sm font-medium">{adset.name}</span>
-        <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          {stat(t("Gasto"), money(adset.spend, currency), "text-warning-fg")}
-          {stat(conversionsLabel, number(adset.conversions), "text-success-fg")}
-          {stat(
-            t("Custo por resultado"),
-            <CostSignal value={adsetCost} threshold={threshold}>
-              {adsetCost == null ? t("sem dado") : money(adsetCost, currency)}
-            </CostSignal>,
-            "text-info-fg",
-          )}
-          <span className="rounded-full border bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
-            {adsCount} {adsCount === 1 ? t("anúncio") : t("anúncios")}
-          </span>
-        </span>
-      </summary>
-      <ul className="space-y-2 pb-3 sm:pl-3">
-        {adset.ads.map((ad, adIndex) => {
-          const adCost = costPerResult(ad);
-          return (
-            <li
-              key={`${ad.name}-${adIndex}`}
-              className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-card px-3 py-2"
-            >
-              <AdThumbnail ad={ad} label={t("Ver anúncio")} />
-              <span className="min-w-0 flex-1 basis-40 truncate text-sm">{ad.name}</span>
-              <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                {stat(t("Gasto"), money(ad.spend, currency))}
-                {stat(conversionsLabel, number(ad.conversions))}
-                {stat(
-                  t("Custo por resultado"),
-                  <CostSignal value={adCost} threshold={threshold}>
-                    {adCost == null ? t("sem dado") : money(adCost, currency)}
-                  </CostSignal>,
-                )}
-                {ad.story_id && (
-                  <a
-                    href={postUrl(ad.story_id)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-                  >
-                    <span aria-hidden="true">👁</span>
-                    {t("Ver anúncio")}
-                  </a>
-                )}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </details>
-  );
-}
-
 function CampaignTable({
   campaigns,
   currency,
@@ -863,6 +779,7 @@ function CampaignTable({
   const [sortKey, setSortKey] = useState<CampaignSortKey>("spend");
   const [sortDirection, setSortDirection] = useState<SortDirection>("descending");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [expandedAdsets, setExpandedAdsets] = useState<ReadonlySet<string>>(() => new Set());
   const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(() => new Set());
   const [onlySelected, setOnlySelected] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -985,6 +902,15 @@ function CampaignTable({
     });
   };
 
+  const toggleAdset = (key: string) => {
+    setExpandedAdsets((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const toggleCampaign = (key: string) => {
     const selectionWillBeEmpty = selectedKeys.size === 1 && selectedKeys.has(key);
     setSelectedKeys((current) => {
@@ -1061,7 +987,12 @@ function CampaignTable({
     );
   };
 
-  const metricCell = (metrics: Metrics, column: CampaignMetricColumn, className = "") => {
+  const metricCell = (
+    metrics: Metrics,
+    column: CampaignMetricColumn,
+    className = "",
+    trailing?: ReactNode,
+  ) => {
     const priority = column === priorityMetric;
     return (
       <td
@@ -1070,12 +1001,42 @@ function CampaignTable({
         style={columnStyle(column)}
         data-priority={priority || undefined}
       >
-        <CostSignal value={costColumnValue(metrics, column)} threshold={threshold}>
-          {metricValue(metrics, column, currency, platform)}
-        </CostSignal>
+        <span
+          className={
+            trailing ? "flex flex-col items-end gap-1" : "flex items-center justify-end"
+          }
+        >
+          <CostSignal value={costColumnValue(metrics, column)} threshold={threshold}>
+            {metricValue(metrics, column, currency, platform)}
+          </CostSignal>
+          {trailing}
+        </span>
       </td>
     );
   };
+
+  const childCount = (count: number, singular: string, plural: string) => (
+    <span className="block truncate text-xs font-normal text-muted-foreground">
+      {number(count)} {t(count === 1 ? singular : plural)}
+    </span>
+  );
+
+  const chevron = (open: boolean) => (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      className={`size-4 shrink-0 text-foreground transition-transform ${open ? "rotate-90" : ""}`}
+    >
+      <path
+        d="M6 3.5 10.5 8 6 12.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 
   return (
     <div className="rounded-xl border bg-card">
@@ -1229,10 +1190,16 @@ function CampaignTable({
             {visibleCampaigns.map(({ campaign, key }) => {
               const status = campaignStatus(campaign.campaign_status);
               const description = campaignDescription(campaign.name);
-              const isOpen = isMeta && expanded.has(key);
+              const hasAdsets = isMeta && campaign.adsets.length > 0;
+              const isOpen = hasAdsets && expanded.has(key);
+              const lastMetricColumn = [...columnOrder]
+                .reverse()
+                .find((column): column is CampaignMetricColumn =>
+                  column !== "name" && column !== "status",
+                );
               return (
                 <Fragment key={key}>
-                  <tr className="hover:bg-muted/35">
+                  <tr className="transition-colors hover:bg-muted/45">
                     {columnOrder.map((column) => {
                       if (column === "name") return (
                         <td key={column} className="max-w-md overflow-hidden px-4 py-3 font-medium" style={columnStyle("name")}>
@@ -1242,20 +1209,32 @@ function CampaignTable({
                                 checked={selectedKeys.has(key)} aria-label={`${t("Selecionar campanha")} ${campaign.name}`}
                                 onClick={(event) => event.stopPropagation()} onChange={() => toggleCampaign(key)} />
                             </label>
-                            <div className="min-w-0 flex-1">
-                              {isMeta ? (
-                                <button type="button" aria-expanded={isOpen} onClick={() => toggleExpanded(key)}
-                                  className={`inline-flex max-w-full items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${isOpen ? "text-[#1877F2]" : ""}`}>
-                                  <svg aria-hidden="true" viewBox="0 0 16 16"
-                                    className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`}>
-                                    <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor"
-                                      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                                  </svg>
-                                  <span className="truncate">{campaign.name}</span>
-                                </button>
-                              ) : <span className="block truncate">{campaign.name}</span>}
-                              {description && <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">{t(description)}</span>}
-                            </div>
+                            {hasAdsets ? (
+                              <button
+                                type="button"
+                                aria-expanded={isOpen}
+                                onClick={() => toggleExpanded(key)}
+                                className={`group -my-2 min-w-0 flex-1 cursor-pointer rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${isOpen ? "text-[#1877F2]" : ""}`}
+                              >
+                                <span className="flex min-w-0 items-center gap-2">
+                                  {chevron(isOpen)}
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate">{campaign.name}</span>
+                                    {childCount(campaign.adsets.length, "conjunto", "conjuntos")}
+                                    {description && (
+                                      <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
+                                        {t(description)}
+                                      </span>
+                                    )}
+                                  </span>
+                                </span>
+                              </button>
+                            ) : (
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate">{campaign.name}</span>
+                                {description && <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">{t(description)}</span>}
+                              </span>
+                            )}
                           </div>
                         </td>
                       );
@@ -1267,21 +1246,88 @@ function CampaignTable({
                       return metricCell(campaign, column, "text-muted-foreground");
                     })}
                   </tr>
-                  {isOpen && (
-                    <tr>
-                      <td colSpan={columnCount} className="bg-muted/15 px-2 py-2 sm:px-4">
-                        {campaign.adsets.map((adset, adsetIndex) => (
-                          <AdsetDrill
-                            key={`${adset.name}-${adsetIndex}`}
-                            adset={adset}
-                            currency={currency}
-                            conversionsLabel={labels.conversions}
-                            threshold={threshold}
-                          />
-                        ))}
-                      </td>
-                    </tr>
-                  )}
+                  {isOpen && campaign.adsets.map((adset, adsetIndex) => {
+                    const adsetKey = `${key}:adset:${adsetIndex}`;
+                    const hasAds = adset.ads.length > 0;
+                    const adsetOpen = hasAds && expandedAdsets.has(adsetKey);
+                    return (
+                      <Fragment key={adsetKey}>
+                        <tr className="bg-muted/15 transition-colors hover:bg-muted/45">
+                          {columnOrder.map((column) => {
+                            if (column === "name") return (
+                              <td key={column} className="max-w-md overflow-hidden px-4 py-2.5 font-medium" style={columnStyle("name")}>
+                                <div className="flex min-w-0 items-stretch pl-4">
+                                  <span aria-hidden="true" className="mr-2 w-3 shrink-0 border-b border-l border-border" />
+                                  {hasAds ? (
+                                    <button
+                                      type="button"
+                                      aria-expanded={adsetOpen}
+                                      onClick={() => toggleAdset(adsetKey)}
+                                      className={`group -my-1 min-w-0 flex-1 cursor-pointer rounded-md px-2 py-1 text-left transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${adsetOpen ? "text-[#1877F2]" : ""}`}
+                                    >
+                                      <span className="flex min-w-0 items-center gap-2">
+                                        {chevron(adsetOpen)}
+                                        <span className="min-w-0 flex-1">
+                                          <span className="block truncate">{adset.name}</span>
+                                          {childCount(adset.ads.length, "anúncio", "anúncios")}
+                                        </span>
+                                      </span>
+                                    </button>
+                                  ) : (
+                                    <span className="min-w-0 flex-1 px-2 py-1">
+                                      <span className="block truncate">{adset.name}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            );
+                            if (column === "status") return showStatus ? (
+                              <td key={column} className="overflow-hidden px-4 py-2.5" style={columnStyle("status")} />
+                            ) : null;
+                            return metricCell(adset, column, "text-muted-foreground");
+                          })}
+                        </tr>
+                        {adsetOpen && adset.ads.map((ad, adIndex) => {
+                          const adLink = ad.story_id ? (
+                            <a
+                              href={postUrl(ad.story_id)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                            >
+                              <span aria-hidden="true">👁</span>
+                              {t("Ver anúncio")}
+                            </a>
+                          ) : undefined;
+                          return (
+                            <tr key={`${adsetKey}:ad:${adIndex}`} className="bg-card transition-colors hover:bg-muted/35">
+                              {columnOrder.map((column) => {
+                                if (column === "name") return (
+                                  <td key={column} className="max-w-md overflow-hidden px-4 py-2.5" style={columnStyle("name")}>
+                                    <div className="flex min-w-0 items-center gap-2 pl-8">
+                                      <span aria-hidden="true" className="h-5 w-3 shrink-0 border-b border-l border-border" />
+                                      <AdThumbnail ad={ad} label={t("Ver anúncio")} />
+                                      <span className="min-w-0 flex-1 truncate">{ad.name}</span>
+                                      {!lastMetricColumn && adLink}
+                                    </div>
+                                  </td>
+                                );
+                                if (column === "status") return showStatus ? (
+                                  <td key={column} className="overflow-hidden px-4 py-2.5" style={columnStyle("status")} />
+                                ) : null;
+                                return metricCell(
+                                  ad,
+                                  column,
+                                  "text-muted-foreground",
+                                  column === lastMetricColumn ? adLink : undefined,
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </Fragment>
+                    );
+                  })}
                 </Fragment>
               );
             })}
