@@ -6910,7 +6910,7 @@ export const DICIONARIO: Traducoes = {
   "O e-mail também precisa ser configurado por quem administra o servidor.": { es: "El correo también debe ser configurado por quien administra el servidor." },
   "Não foi possível salvar a preferência de e-mail.": { es: "No se pudo guardar la preferencia de correo." },
   "Avisos importantes por e-mail": { es: "Avisos importantes por correo" },
-  "Ligados por padrão para você não perder uma oportunidade. Cada pessoa controla os próprios avisos.": { es: "Activados de forma predeterminada para que no pierdas una oportunidad. Cada persona controla sus propios avisos." },
+  "O aviso de novo lead começa desligado e pode ser ligado aqui, enquanto a ação urgente continua ligada por padrão.": { es: "El aviso de nuevo lead comienza desactivado y puede activarse aquí, mientras que la acción urgente sigue activada de forma predeterminada." },
   "O envio de e-mail ainda não foi configurado nesta instalação.": { es: "El envío de correo todavía no fue configurado en esta instalación." },
   "Novo lead entrou": { es: "Entró un nuevo lead" },
   "Formulário, WhatsApp, importação ou API.": { es: "Formulario, WhatsApp, importación o API." },

@@ -85,7 +85,7 @@ describe("handleLeadEmailEvent", () => {
     sendEmail.mockResolvedValue({ ok: true, id: "mail-1" });
   });
 
-  it("enfileira lead novo somente ao responsável ativo, sem enviar antes da janela", async () => {
+  it("não enfileira lead novo para responsável sem preferência gravada", async () => {
     const admin = adminCom(
       {
         crm_leads: [
@@ -102,6 +102,66 @@ describe("handleLeadEmailEvent", () => {
     );
 
     const result = await handleLeadEmailEvent(evento(), admin);
+
+    expect(result).toMatchObject({
+      status: "skipped",
+      detail: "sem destinatário com email ligado",
+    });
+    expect(admin.rpc).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("enfileira lead novo quando o responsável fez opt-in explícito", async () => {
+    const admin = adminCom(
+      {
+        crm_leads: [
+          {
+            data: { id: "lead-1", owner_user_id: "owner-1", status: "open", title: "Jatobá" },
+            error: null,
+          },
+        ],
+        user_organizations: [{ data: { user_id: "owner-1" }, error: null }],
+        notification_email_preferences: [
+          {
+            data: [{ user_id: "owner-1", new_lead: true, urgent_lead: true }],
+            error: null,
+          },
+        ],
+      },
+      { "owner-1": "owner@example.com" },
+    );
+
+    const result = await handleLeadEmailEvent(evento(), admin);
+
+    expect(result.status).toBe("ok");
+    expect(admin.rpc).toHaveBeenCalledWith("fn_queue_lead_email_batch", {
+      p_event_id: "event-1",
+      p_recipient_user_id: "owner-1",
+      p_window_seconds: 30,
+    });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("mantém ação urgente ligada por padrão sem preferência gravada", async () => {
+    const admin = adminCom(
+      {
+        crm_leads: [
+          {
+            data: { id: "lead-1", owner_user_id: "owner-1", status: "open", title: "Jatobá" },
+            error: null,
+          },
+        ],
+        user_organizations: [{ data: { user_id: "owner-1" }, error: null }],
+        notification_email_preferences: [{ data: [], error: null }],
+        platform_admins: [{ data: [], error: null }],
+      },
+      { "owner-1": "owner@example.com" },
+    );
+
+    const result = await handleLeadEmailEvent(
+      evento({ event_type: "lead.action_required", payload: { reason: "risk" } }),
+      admin,
+    );
 
     expect(result.status).toBe("ok");
     expect(admin.rpc).toHaveBeenCalledWith("fn_queue_lead_email_batch", {

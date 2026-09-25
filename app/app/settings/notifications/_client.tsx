@@ -19,7 +19,10 @@ import {
   type NotifyCategory,
   type NotifyChannelPref,
 } from "@/lib/notifications/prefs";
-import type { EmailNotificationPreferences } from "@/lib/notifications/email-preferences";
+import {
+  DEFAULT_EMAIL_NOTIFICATION_PREFERENCES,
+  type EmailNotificationPreferences,
+} from "@/lib/notifications/email-preferences";
 import type { EmailNotificationPolicy } from "@/lib/notifications/email-policy";
 
 const LABELS: Record<NotifyCategory, string> = {
@@ -31,7 +34,7 @@ const LABELS: Record<NotifyCategory, string> = {
 };
 
 export function NotificationPrefsClient({
-  initialEmailPrefs = { new_lead: true, urgent_lead: true },
+  initialEmailPrefs = DEFAULT_EMAIL_NOTIFICATION_PREFERENCES,
   initialEmailPolicy = { urgent_batch_window_minutes: 60, urgent_daily_limit: 6 },
   canManageEmailPolicy = false,
   emailConfigured = false,
@@ -104,7 +107,7 @@ export function NotificationPrefsClient({
           <h2 className="font-medium">{t("Avisos importantes por e-mail")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {t(
-              "Ligados por padrão para você não perder uma oportunidade. Cada pessoa controla os próprios avisos.",
+              "O aviso de novo lead começa desligado e pode ser ligado aqui, enquanto a ação urgente continua ligada por padrão.",
             )}
           </p>
           {!emailConfigured ? (
