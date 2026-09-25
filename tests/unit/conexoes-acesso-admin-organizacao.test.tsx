@@ -70,6 +70,21 @@ describe("acesso à tela de Conexões", () => {
     expect(redirect).not.toHaveBeenCalled();
   });
 
+  it("mostra as ações ao gerente, que tem acesso total às conexões", async () => {
+    state.role = "manager";
+
+    const html = renderToStaticMarkup(await ConnectionsPage());
+
+    expect(html).toContain("Ações da conexão");
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("continua recusando quem está abaixo de gerente", async () => {
+    state.role = "agent";
+
+    await expect(ConnectionsPage()).rejects.toThrow("redirect:/403");
+  });
+
   it("mostra as ações ao admin da plataforma sem suporte mesmo sem papel admin na organização", async () => {
     state.role = "viewer";
     state.isPlatformAdmin = true;

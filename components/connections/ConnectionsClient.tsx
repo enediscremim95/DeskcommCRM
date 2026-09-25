@@ -13,10 +13,10 @@ import { randomId } from "@/lib/random-id";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import {
-  channelLabel,
   useChannelSessions,
   type ChannelSession,
 } from "@/hooks/channels/useChannelSessions";
+import { phoneForChannelCard } from "@/lib/channels/phone-variants";
 import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
 import { AntiBanSheet } from "./AntiBanSheet";
 import { ChannelAiAccess } from "./ChannelAiAccess";
@@ -35,6 +35,7 @@ import {
   CheckCircle,
   CircleNotch,
   Phone,
+  PlugsConnected,
   Plus,
   ShieldCheck,
   Trash,
@@ -57,7 +58,7 @@ function statusInfo(
   t: (texto: string) => string,
 ): { label: string; variant: Variant } {
   const l = lerEstadoDoCanal(status);
-  return { label: t(l.rotulo), variant: l.tom };
+  return { label: t(status === "STOPPED" ? "Desconectado" : l.rotulo), variant: l.tom };
 }
 
 function errMsg(err: unknown, fallback: string, t: (texto: string) => string): string {
@@ -84,6 +85,16 @@ function errMsg(err: unknown, fallback: string, t: (texto: string) => string): s
  */
 function dependeDoTransporte(c: ChannelSession): boolean {
   return Boolean(c.waha_session_name);
+}
+
+/** Identidade que a pessoa reconhece; o identificador técnico nunca é fallback. */
+export function tituloDoCartaoDoCanal(
+  c: Pick<ChannelSession, "phone_number" | "status">,
+  t: (texto: string) => string = (texto) => texto,
+): string {
+  if (c.phone_number) return phoneForChannelCard(c.phone_number);
+  if (c.status === "STOPPED") return t("Desconectado");
+  return t(lerEstadoDoCanal(c.status).rotulo);
 }
 
 /** "3 conversas" / "1 conversa" — ou nada, quando não há o que contar. */
@@ -123,6 +134,8 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(null);
   const [antiBanId, setAntiBanId] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<ChannelSession | null>(null);
+  const [toDisconnect, setToDisconnect] = useState<ChannelSession | null>(null);
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({});
   const pacingItems = usePacingKnobs().data?.items ?? [];
 
   const invalidate = useCallback(
@@ -186,9 +199,16 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     async (c: ChannelSession) => {
       setBusyId(c.id);
       try {
-        await apiClient.post(`/api/v1/channel-sessions/${c.id}/reconnect`, {});
+        const res = await apiClient.post<{ data: { status: string } }>(
+          `/api/v1/channel-sessions/${c.id}/reconnect`,
+          {},
+        );
+        setStatusOverrides((old) => ({ ...old, [c.id]: res.data.status }));
         invalidate();
-        setQr({ sessionId: c.id, title: `${t("Reconectar")} ${channelLabel(c, t)}` });
+        setQr({
+          sessionId: c.id,
+          title: `${t("Reconectar")} ${tituloDoCartaoDoCanal(c, t)}`,
+        });
       } catch (err) {
         toast.error(errMsg(err, "Não foi possível reconectar.", t));
       } finally {
@@ -211,8 +231,9 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     invalidate();
   }, [invalidate]);
 
-  const handleConnected = useCallback(() => {
+  const handleConnected = useCallback((sessionId: string) => {
     toast.success(t("WhatsApp conectado!"));
+    setStatusOverrides((old) => ({ ...old, [sessionId]: "WORKING" }));
     setQr(null);
     invalidate();
   }, [invalidate, t]);
@@ -325,13 +346,15 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {list.map((c) => {
-            const info = statusInfo(c.status, t);
+            const status = statusOverrides[c.id] ?? c.status;
+            const canal = status === c.status ? c : { ...c, status };
+            const info = statusInfo(status, t);
             const policy = routing.data?.data?.channels?.find((channel) => channel.id === c.id);
             // Sem o serviço no ar a rota de exclusão falha fechado (503) para
             // quem depende dele: oferecer o botão seria prometer uma ação que
             // não acontece. O canal oficial não passa pelo transporte e continua
             // podendo ser excluído.
-            const vivaNoTransporte = dependeDoTransporte(c);
+            const vivaNoTransporte = dependeDoTransporte(canal);
             const podeExcluir = wahaConfigured || !vivaNoTransporte;
             return (
               <Card key={c.id} className="flex flex-col gap-3 p-4">
@@ -339,12 +362,18 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <Phone size={16} className="text-muted-foreground" aria-hidden />
-                      <span className="truncate text-sm font-medium">{channelLabel(c, t)}</span>
+                      <span className="truncate text-sm font-medium">
+                        {tituloDoCartaoDoCanal(canal, t)}
+                      </span>
                     </div>
-                    {c.phone_number && c.display_name && (
-                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                        {c.phone_number}
-                      </p>
+                    {c.display_name && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">{c.display_name}</p>
+                    )}
+                    {c.waha_session_name && (
+                      <details className="mt-1 text-[11px] text-muted-foreground">
+                        <summary>{t("Detalhes para suporte")}</summary>
+                        <code className="break-all">{c.waha_session_name}</code>
+                      </details>
                     )}
                   </div>
                   <Badge variant={info.variant}>{info.label}</Badge>
@@ -373,7 +402,18 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                       ) : (
                         <ArrowsClockwise size={14} aria-hidden />
                       )}
-                      {t("Reconectar")}
+                      {t(status === "STOPPED" ? "Conectar novamente" : "Reconectar")}
+                    </Button>
+                  )}
+                  {vivaNoTransporte && status !== "STOPPED" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busyId === c.id || !wahaConfigured}
+                      onClick={() => setToDisconnect(canal)}
+                    >
+                      <PlugsConnected size={14} aria-hidden />
+                      {t("Desconectar")}
                     </Button>
                   )}
                   <Button variant="outline" size="sm" onClick={() => setAntiBanId(c.id)}>
@@ -386,8 +426,8 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     disabled={!podeExcluir}
                     aria-label={
                       podeExcluir
-                        ? `${t("Excluir")} ${channelLabel(c, t)}`
-                        : `${t("Excluir")} ${channelLabel(c, t)} — ${t("indisponível enquanto o serviço do WhatsApp não estiver ativo")}`
+                        ? `${t("Excluir")} ${tituloDoCartaoDoCanal(canal, t)}`
+                        : `${t("Excluir")} ${tituloDoCartaoDoCanal(canal, t)}. ${t("Indisponível enquanto o serviço do WhatsApp não estiver ativo")}`
                     }
                     onClick={() => setToDelete(c)}
                   >
@@ -414,17 +454,83 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
         />
       )}
 
+      {toDisconnect && (
+        <DesconectarCanalDialog
+          canal={toDisconnect}
+          onCancel={() => setToDisconnect(null)}
+          onDisconnected={() => {
+            setStatusOverrides((old) => ({ ...old, [toDisconnect.id]: "STOPPED" }));
+            setToDisconnect(null);
+            invalidate();
+          }}
+        />
+      )}
+
       {qr && (
         <QrDialog
           sessionId={qr.sessionId}
           title={qr.title}
           wahaConfigured={wahaConfigured}
           onClose={() => setQr(null)}
-          onConnected={handleConnected}
+          onConnected={() => handleConnected(qr.sessionId)}
           onForcePair={forcePair}
         />
       )}
     </div>
+  );
+}
+
+function DesconectarCanalDialog({
+  canal,
+  onCancel,
+  onDisconnected,
+}: {
+  canal: ChannelSession;
+  onCancel: () => void;
+  onDisconnected: () => void;
+}) {
+  const t = useT();
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const disconnect = async () => {
+    setDisconnecting(true);
+    try {
+      await apiClient.patch(`/api/v1/channel-sessions/${canal.id}`, {});
+      toast.success(t("Número desconectado. O canal e o histórico foram preservados."));
+      onDisconnected();
+    } catch (err) {
+      toast.error(errMsg(err, "Não foi possível desconectar. O número continua no estado anterior.", t));
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && !disconnecting && onCancel()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t("Desconectar este número?")}</DialogTitle>
+          <DialogDescription>
+            {t(
+              "A sessão deste número será encerrada. O canal e todo o histórico serão preservados, e você poderá conectar novamente depois.",
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" disabled={disconnecting} onClick={onCancel}>
+            {t("Cancelar")}
+          </Button>
+          <Button variant="destructive" disabled={disconnecting} onClick={disconnect}>
+            {disconnecting ? (
+              <CircleNotch size={14} className="animate-spin" aria-hidden />
+            ) : (
+              <PlugsConnected size={14} aria-hidden />
+            )}
+            {disconnecting ? t("Desconectando…") : t("Desconectar")}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -552,7 +658,7 @@ function ExcluirCanalDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {t("Excluir")} {channelLabel(canal, t)}?
+            {t("Excluir")} {tituloDoCartaoDoCanal(canal, t)}?
           </DialogTitle>
           <DialogDescription asChild>
             <div className="space-y-2">
