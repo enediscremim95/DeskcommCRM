@@ -254,7 +254,7 @@ export async function GET(
   );
 }
 
-/**
+/*
  * DELETE /api/v1/channel-sessions/[id] — remove um canal da Central de Conexões.
  *
  * Duas saídas, escolhidas pelo banco e não por parâmetro:
@@ -292,8 +292,103 @@ export async function GET(
  *    num inbox onde o operador nem consegue responder (o arquivamento grava
  *    STOPPED).
  *
- * Admin only. organization_id vem da sessão — nunca do path/body.
+ * Gerente ou administrador. organization_id vem da sessão, nunca do path/body.
  */
+/**
+ * Para a sessão sem apagar o canal. O transporte confirma primeiro; somente
+ * depois o banco passa a mostrar STOPPED. Falha externa preserva o estado
+ * anterior e nunca vira sucesso otimista na tela.
+ */
+export async function PATCH(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
+  const requestId = randomUUID();
+  const { id } = await params;
+  const authz = await requireRole("manager", {
+    requestId,
+    resource: "channel_sessions",
+    allowPlatformAdmin: true,
+  });
+  if (!authz.ok) return authz.response;
+
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const supabase = await createClient();
+  const { data: session } = await supabase
+    .from("channel_sessions")
+    .select("id, provider, waha_session_name, phone_number, status")
+    .eq("organization_id", authz.org.orgId)
+    .eq("id", id)
+    .maybeSingle();
+  if (!session) return fail("not_found", t("Canal não encontrado."), 404, { requestId });
+
+  if (session.provider !== CHANNEL_PROVIDER_WAHA || !session.waha_session_name) {
+    return fail(
+      "channel_without_session",
+      t("Este canal não tem uma sessão para desconectar."),
+      422,
+      { requestId },
+    );
+  }
+
+  const waha = getWahaClient();
+  if (!waha) {
+    return fail(
+      "waha_not_configured",
+      t("O serviço do WhatsApp não está configurado neste ambiente."),
+      503,
+      { requestId },
+    );
+  }
+
+  try {
+    await assertWahaConnectionIdle(createAdminClient(), authz.org.orgId, id);
+    await waha.stopSession(session.waha_session_name);
+  } catch (err) {
+    if (err instanceof ChannelConnectionError) {
+      return fail(
+        err.code,
+        t("Uma conexão está em andamento. Aguarde e tente novamente."),
+        err.status,
+        { requestId },
+      );
+    }
+    return fail("waha_error", t(wahaFriendlyError(err)), 502, { requestId });
+  }
+
+  const changedAt = new Date().toISOString();
+  const { error: syncError } = await supabase
+    .from("channel_sessions")
+    .update({
+      status: "STOPPED",
+      status_reason: null,
+      last_status_change_at: changedAt,
+      consecutive_health_fails: 0,
+    })
+    .eq("organization_id", authz.org.orgId)
+    .eq("id", id);
+  if (syncError) return fail("internal_error", syncError.message, 500, { requestId });
+
+  void audit({
+    action: "channel.disconnected",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
+    resourceType: "channel_session",
+    resourceId: id,
+    requestId,
+    metadata: {
+      waha_session_name: session.waha_session_name,
+      phone_number: session.phone_number,
+      previous_status: session.status,
+    },
+  });
+
+  return ok({ id, status: "STOPPED", disconnected: true }, { requestId });
+}
+
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -304,7 +399,7 @@ export async function DELETE(
   const requestId = randomUUID();
   const { id } = await params;
 
-  const authz = await requireRole("admin", {
+  const authz = await requireRole("manager", {
     requestId,
     resource: "channel_sessions",
     allowPlatformAdmin: true,
