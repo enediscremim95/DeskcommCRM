@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  Fragment,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
-} from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DragScroll } from "@/components/ui/drag-scroll";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +36,7 @@ import { buildTrafficFunnelStages, ConversionFunnel, type FunnelStage } from "./
 import { CostSignal, CostThresholdControl, type CostThreshold } from "./CostThresholds";
 import { PriorityMetricSelector } from "./PriorityMetricSelector";
 import { CreativePerformance, TrafficTimeline } from "./RichReportSections";
+import { useColunasAjustaveis, type ConfiguracaoColunaAjustavel } from "./colunas-ajustaveis";
 
 interface Metrics {
   budget: number | null;
@@ -482,38 +474,16 @@ type CampaignSortKey = "name" | CampaignMetricColumn;
 type SortDirection = "ascending" | "descending";
 type ResizableColumnKey = "name" | "status" | CampaignMetricColumn;
 
-const COLUMN_MIN_WIDTH: Record<"name" | "status" | "metric", number> = {
-  name: 180,
-  status: 112,
-  metric: 104,
-};
-
-const COLUMN_FALLBACK_WIDTH: Record<"name" | "status" | "metric", number> = {
-  name: 280,
-  status: 132,
-  metric: 144,
-};
-const MAX_COLUMN_WIDTH = 1200;
-const RESIZABLE_COLUMN_KEYS = new Set<string>(["name", "status", ...CAMPAIGN_METRIC_COLUMNS]);
-
-function columnWidthKind(column: ResizableColumnKey): keyof typeof COLUMN_MIN_WIDTH {
-  if (column === "name" || column === "status") return column;
-  return "metric";
-}
-
-function validStoredWidths(value: unknown): Partial<Record<ResizableColumnKey, number>> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return Object.fromEntries(
-    Object.entries(value).filter(
-      ([column, width]) =>
-        RESIZABLE_COLUMN_KEYS.has(column) &&
-        typeof width === "number" &&
-        Number.isFinite(width) &&
-        width >= COLUMN_MIN_WIDTH[columnWidthKind(column as ResizableColumnKey)] &&
-        width <= MAX_COLUMN_WIDTH,
-    ),
-  ) as Partial<Record<ResizableColumnKey, number>>;
-}
+const CAMPAIGN_RESIZABLE_COLUMNS = Object.fromEntries(
+  (["name", "status", ...CAMPAIGN_METRIC_COLUMNS] as ResizableColumnKey[]).map((column) => [
+    column,
+    column === "name"
+      ? { larguraMinima: 180, larguraPadrao: 280 }
+      : column === "status"
+        ? { larguraMinima: 112, larguraPadrao: 132 }
+        : { larguraMinima: 104, larguraPadrao: 144 },
+  ]),
+) as Record<ResizableColumnKey, ConfiguracaoColunaAjustavel>;
 
 const CAMPAIGN_STATUS: Record<
   string,
@@ -893,14 +863,6 @@ function CampaignTable({
   const [sortKey, setSortKey] = useState<CampaignSortKey>("spend");
   const [sortDirection, setSortDirection] = useState<SortDirection>("descending");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
-  const [columnWidths, setColumnWidths] = useState<Partial<Record<ResizableColumnKey, number>>>({});
-  const columnWidthsRef = useRef<Partial<Record<ResizableColumnKey, number>>>({});
-  const resizing = useRef<{
-    column: ResizableColumnKey;
-    pointerId: number;
-    startX: number;
-    startWidth: number;
-  } | null>(null);
   const statusChangedByUser = useRef(false);
   // Antes da primeira sincronização que traz o status, nenhuma campanha o conhece.
   // Nesse caso a coluna e o filtro somem em vez de mostrar "Não informada" em tudo.
@@ -920,20 +882,11 @@ function CampaignTable({
     return undefined;
   }, [storageKey]);
 
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      try {
-        const stored = window.localStorage.getItem(widthsStorageKey);
-        const next = stored ? validStoredWidths(JSON.parse(stored)) : {};
-        columnWidthsRef.current = next;
-        setColumnWidths(next);
-      } catch {
-        columnWidthsRef.current = {};
-        setColumnWidths({});
-      }
-    }, 0);
-    return () => window.clearTimeout(timeout);
-  }, [widthsStorageKey]);
+  const { alcaDaColuna: resizeHandle, estiloDaColuna: columnStyle } = useColunasAjustaveis({
+    storageKey: widthsStorageKey,
+    colunas: CAMPAIGN_RESIZABLE_COLUMNS,
+    traduzir: t,
+  });
 
   const visibleCampaigns = useMemo(
     () =>
@@ -973,111 +926,6 @@ function CampaignTable({
       else next.add(key);
       return next;
     });
-  };
-
-  const saveColumnWidths = (next: Partial<Record<ResizableColumnKey, number>>) => {
-    columnWidthsRef.current = next;
-    setColumnWidths(next);
-    if (Object.keys(next).length === 0) window.localStorage.removeItem(widthsStorageKey);
-    else window.localStorage.setItem(widthsStorageKey, JSON.stringify(next));
-  };
-
-  const setColumnWidth = (column: ResizableColumnKey, width: number) => {
-    const kind = columnWidthKind(column);
-    saveColumnWidths({
-      ...columnWidthsRef.current,
-      [column]: Math.min(MAX_COLUMN_WIDTH, Math.max(COLUMN_MIN_WIDTH[kind], Math.round(width))),
-    });
-  };
-
-  const startResize = (event: ReactPointerEvent<HTMLButtonElement>, column: ResizableColumnKey) => {
-    if (event.pointerType !== "mouse" || event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const kind = columnWidthKind(column);
-    const measured = event.currentTarget.parentElement?.getBoundingClientRect().width ?? 0;
-    resizing.current = {
-      column,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startWidth: columnWidthsRef.current[column] ?? (measured || COLUMN_FALLBACK_WIDTH[kind]),
-    };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-
-  const continueResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    const current = resizing.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    event.stopPropagation();
-    setColumnWidth(current.column, current.startWidth + event.clientX - current.startX);
-  };
-
-  const stopResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (resizing.current?.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    event.stopPropagation();
-    resizing.current = null;
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-    }
-  };
-
-  const resetColumnWidth = (column: ResizableColumnKey) => {
-    const next = { ...columnWidthsRef.current };
-    delete next[column];
-    saveColumnWidths(next);
-  };
-
-  const columnStyle = (column: ResizableColumnKey): CSSProperties | undefined => {
-    const width = columnWidths[column];
-    return width == null ? undefined : { width, minWidth: width, maxWidth: width };
-  };
-
-  const resizeHandle = (column: ResizableColumnKey, label: string) => {
-    const kind = columnWidthKind(column);
-    const description = `${t("Ajustar largura da coluna")} ${label}. ${t("Clique duas vezes para restaurar")}`;
-    return (
-      <button
-        type="button"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={description}
-        aria-valuemin={COLUMN_MIN_WIDTH[kind]}
-        aria-valuemax={MAX_COLUMN_WIDTH}
-        aria-valuenow={columnWidths[column] ?? COLUMN_FALLBACK_WIDTH[kind]}
-        title={description}
-        className="group absolute inset-y-0 right-0 z-10 hidden w-3 translate-x-1/2 cursor-col-resize touch-none select-none [@media(pointer:fine)]:block"
-        onPointerDown={(event) => startResize(event, column)}
-        onPointerMove={continueResize}
-        onPointerUp={stopResize}
-        onPointerCancel={stopResize}
-        onDoubleClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          resetColumnWidth(column);
-        }}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Home") {
-            event.preventDefault();
-            event.stopPropagation();
-            resetColumnWidth(column);
-            return;
-          }
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-          event.preventDefault();
-          event.stopPropagation();
-          const current = columnWidthsRef.current[column] ?? COLUMN_FALLBACK_WIDTH[kind];
-          setColumnWidth(column, current + (event.key === "ArrowRight" ? 8 : -8));
-        }}
-      >
-        <span className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-primary group-focus-visible:bg-primary" />
-      </button>
-    );
   };
 
   // Um único estilo para todo cabeçalho. O <button> de ordenar repete as classes
@@ -2175,6 +2023,8 @@ export function TrafficDashboard() {
               model={report.model}
               threshold={metaThreshold}
               idioma={idioma}
+              organizationKey={report.organization_key}
+              priorityMetric={activeMetric}
             />
           </section>
         );

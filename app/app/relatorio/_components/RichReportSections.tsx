@@ -16,10 +16,61 @@ import {
 import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { buildFunnelReadings, type TrafficRichCrmInsights } from "@/lib/windsor/traffic-insights";
+import type { PriorityMetricColumn } from "@/lib/windsor/priority-metrics";
 import { CostSignal, type CostThreshold } from "./CostThresholds";
+import { useColunasAjustaveis, type ConfiguracaoColunaAjustavel } from "./colunas-ajustaveis";
 
 type Platform = "meta_ads" | "google_ads";
 type Model = "leads" | "messages" | "ecommerce";
+type CreativeResizableColumnKey =
+  | "creative"
+  | "spend"
+  | "impressions"
+  | "clicks"
+  | "ctr"
+  | "conversions"
+  | "cost_per_conversion"
+  | "conversion_rate"
+  | "revenue"
+  | "roas";
+
+const CREATIVE_RESIZABLE_COLUMNS: Record<CreativeResizableColumnKey, ConfiguracaoColunaAjustavel> =
+  {
+    creative: { larguraMinima: 180, larguraPadrao: 280 },
+    spend: { larguraMinima: 104, larguraPadrao: 144 },
+    impressions: { larguraMinima: 104, larguraPadrao: 144 },
+    clicks: { larguraMinima: 104, larguraPadrao: 144 },
+    ctr: { larguraMinima: 104, larguraPadrao: 144 },
+    conversions: { larguraMinima: 104, larguraPadrao: 144 },
+    cost_per_conversion: { larguraMinima: 104, larguraPadrao: 144 },
+    conversion_rate: { larguraMinima: 104, larguraPadrao: 144 },
+    revenue: { larguraMinima: 104, larguraPadrao: 144 },
+    roas: { larguraMinima: 104, larguraPadrao: 144 },
+  };
+
+function creativePriorityColumn(
+  metric: PriorityMetricColumn | "conversions",
+): CreativeResizableColumnKey | null {
+  if (
+    metric === "leads" ||
+    metric === "purchases" ||
+    metric === "messaging_conversations" ||
+    metric === "conversions"
+  ) {
+    return "conversions";
+  }
+  if (
+    metric === "cost_per_lead" ||
+    metric === "cost_per_purchase" ||
+    metric === "cost_per_messaging_conversation"
+  ) {
+    return "cost_per_conversion";
+  }
+  if (metric === "link_clicks") return "clicks";
+  if (metric === "spend" || metric === "impressions" || metric === "ctr") return metric;
+  if (metric === "revenue" || metric === "roas") return metric;
+  return null;
+}
 
 interface Metrics {
   spend: number;
@@ -388,15 +439,24 @@ export function CreativePerformance({
   model,
   threshold,
   idioma,
+  organizationKey,
+  priorityMetric,
 }: {
   group: RichCurrencyGroup;
   model: Model;
   threshold?: CostThreshold;
   idioma: string;
+  organizationKey: string;
+  priorityMetric: PriorityMetricColumn | "conversions";
 }) {
   const t = useT();
   const [showAll, setShowAll] = useState(false);
   const [sort, setSort] = useState<"conversions" | "spend" | "cost">("conversions");
+  const { alcaDaColuna, estiloDaColuna } = useColunasAjustaveis({
+    storageKey: `traffic-report-column-widths:${organizationKey}:meta-ads-creatives`,
+    colunas: CREATIVE_RESIZABLE_COLUMNS,
+    traduzir: t,
+  });
   const creatives = flattenCreatives(group);
   if (creatives.length === 0) return null;
   const conversionLabel = model === "ecommerce" ? t("Compras") : t("Leads");
@@ -434,6 +494,30 @@ export function CreativePerformance({
         (b.clicks > 0 ? b.conversions / b.clicks : 0) -
         (a.clicks > 0 ? a.conversions / a.clicks : 0),
     )[0];
+  const priorityColumn = creativePriorityColumn(priorityMetric);
+  const header = (
+    column: CreativeResizableColumnKey,
+    label: string,
+    align: "left" | "right" = "right",
+  ) => {
+    const priority = column === priorityColumn;
+    return (
+      <th
+        key={column}
+        scope="col"
+        className={`relative overflow-hidden px-3 py-2 whitespace-nowrap ${align === "left" ? "text-left" : "text-right"} ${priority ? "bg-primary/[0.10] font-semibold text-foreground" : ""}`}
+        style={estiloDaColuna(column)}
+        data-priority={priority || undefined}
+      >
+        <span className="block truncate" title={label}>
+          {label}
+        </span>
+        {alcaDaColuna(column, label)}
+      </th>
+    );
+  };
+  const cellClass = (column: CreativeResizableColumnKey, align = "text-right") =>
+    `overflow-hidden px-3 py-2 whitespace-nowrap ${align} ${column === priorityColumn ? "bg-primary/[0.06] text-base font-semibold" : ""}`;
   return (
     <section className="rounded-2xl border bg-card p-4 sm:p-5">
       <h3 className="text-lg font-semibold">{t("Criativos que mais trazem resultado")}</h3>
@@ -461,16 +545,16 @@ export function CreativePerformance({
         ]
           .filter(([, creative]) => creative && typeof creative === "object")
           .map(([label, creative, value]) => (
-          <div key={String(label)} className="rounded-xl border p-4">
-            <p className="text-sm text-muted-foreground">{label as string}</p>
-            <p className="mt-1 font-semibold">
-              {creative && typeof creative === "object"
-                ? creative.name
-                : t("Sem dados suficientes")}
-            </p>
-            <p className="text-sm">{value as string}</p>
-          </div>
-        ))}
+            <div key={String(label)} className="rounded-xl border p-4">
+              <p className="text-sm text-muted-foreground">{label as string}</p>
+              <p className="mt-1 font-semibold">
+                {creative && typeof creative === "object"
+                  ? creative.name
+                  : t("Sem dados suficientes")}
+              </p>
+              <p className="text-sm">{value as string}</p>
+            </div>
+          ))}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">{t("Anúncios Meta")}</span>
@@ -488,18 +572,18 @@ export function CreativePerformance({
         <table className="w-full min-w-max text-sm">
           <thead className="border-y bg-muted/35">
             <tr>
-              <th className="px-3 py-2 text-left">{t("Criativo")}</th>
-              <th className="px-3 py-2 text-right">{t("Investimento")}</th>
-              <th className="px-3 py-2 text-right">{t("Impressões")}</th>
-              <th className="px-3 py-2 text-right">{t("Cliques")}</th>
-              <th className="px-3 py-2 text-right">CTR</th>
-              <th className="px-3 py-2 text-right">{conversionLabel}</th>
-              <th className="px-3 py-2 text-right">{compactCostLabel}</th>
-              <th className="px-3 py-2 text-right">{rateLabel}</th>
+              {header("creative", t("Criativo"), "left")}
+              {header("spend", t("Investimento"))}
+              {header("impressions", t("Impressões"))}
+              {header("clicks", t("Cliques"))}
+              {header("ctr", "CTR")}
+              {header("conversions", conversionLabel)}
+              {header("cost_per_conversion", compactCostLabel)}
+              {header("conversion_rate", rateLabel)}
               {model === "ecommerce" && (
                 <>
-                  <th className="px-3 py-2 text-right">{t("Receita")}</th>
-                  <th className="px-3 py-2 text-right">ROAS</th>
+                  {header("revenue", t("Receita"))}
+                  {header("roas", "ROAS")}
                 </>
               )}
             </tr>
@@ -507,31 +591,67 @@ export function CreativePerformance({
           <tbody className="divide-y">
             {sorted.slice(0, showAll ? sorted.length : 10).map((row) => (
               <tr key={`${row.campaign}:${row.adset}:${row.name}`}>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
+                <td
+                  className={cellClass("creative", "text-left")}
+                  style={estiloDaColuna("creative")}
+                >
+                  <div className="flex min-w-0 items-center gap-2">
                     {row.thumbnail_url ? (
                       <span
-                        className="size-10 rounded-md bg-cover bg-center"
+                        className="size-10 shrink-0 rounded-md bg-cover bg-center"
                         style={{ backgroundImage: `url(${row.thumbnail_url})` }}
                       />
                     ) : (
-                      <span className="grid size-10 place-items-center rounded-md bg-muted text-xs font-bold">
+                      <span className="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-xs font-bold">
                         {row.name.slice(0, 2).toUpperCase()}
                       </span>
                     )}
-                    <span>
-                      <span className="block font-medium">{row.name}</span>
-                      <span className="text-xs text-muted-foreground">
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium" title={row.name}>
+                        {row.name}
+                      </span>
+                      <span
+                        className="block truncate text-xs text-muted-foreground"
+                        title={`${row.campaign} › ${row.adset}`}
+                      >
                         {row.campaign} › {row.adset}
                       </span>
                     </span>
                   </div>
                 </td>
-                <td className="px-3 py-2 text-right">{money(row.spend, group.currency, idioma)}</td>
-                <td className="px-3 py-2 text-right">{number(row.impressions, idioma)}</td>
-                <td className="px-3 py-2 text-right">{number(row.clicks, idioma)}</td>
-                <td className="px-3 py-2 text-right">{percent(row.ctr, idioma)}</td>
-                <td className="px-3 py-2 text-right">
+                <td
+                  className={cellClass("spend")}
+                  style={estiloDaColuna("spend")}
+                  data-priority={priorityColumn === "spend" || undefined}
+                >
+                  {money(row.spend, group.currency, idioma)}
+                </td>
+                <td
+                  className={cellClass("impressions")}
+                  style={estiloDaColuna("impressions")}
+                  data-priority={priorityColumn === "impressions" || undefined}
+                >
+                  {number(row.impressions, idioma)}
+                </td>
+                <td
+                  className={cellClass("clicks")}
+                  style={estiloDaColuna("clicks")}
+                  data-priority={priorityColumn === "clicks" || undefined}
+                >
+                  {number(row.clicks, idioma)}
+                </td>
+                <td
+                  className={cellClass("ctr")}
+                  style={estiloDaColuna("ctr")}
+                  data-priority={priorityColumn === "ctr" || undefined}
+                >
+                  {percent(row.ctr, idioma)}
+                </td>
+                <td
+                  className={cellClass("conversions")}
+                  style={estiloDaColuna("conversions")}
+                  data-priority={priorityColumn === "conversions" || undefined}
+                >
                   <span className="relative ml-auto block min-w-16 overflow-hidden rounded-md bg-muted/60 py-0.5">
                     <span
                       aria-hidden="true"
@@ -543,22 +663,38 @@ export function CreativePerformance({
                     </span>
                   </span>
                 </td>
-                <td className="px-3 py-2 text-right">
+                <td
+                  className={cellClass("cost_per_conversion")}
+                  style={estiloDaColuna("cost_per_conversion")}
+                  data-priority={priorityColumn === "cost_per_conversion" || undefined}
+                >
                   <CostSignal value={row.cost_per_conversion} threshold={threshold}>
                     {row.cost_per_conversion == null
                       ? ""
                       : money(row.cost_per_conversion, group.currency, idioma)}
                   </CostSignal>
                 </td>
-                <td className="px-3 py-2 text-right">
+                <td
+                  className={cellClass("conversion_rate")}
+                  style={estiloDaColuna("conversion_rate")}
+                  data-priority={priorityColumn === "conversion_rate" || undefined}
+                >
                   {row.clicks > 0 ? percent((row.conversions / row.clicks) * 100, idioma) : ""}
                 </td>
                 {model === "ecommerce" && (
                   <>
-                    <td className="px-3 py-2 text-right">
+                    <td
+                      className={cellClass("revenue")}
+                      style={estiloDaColuna("revenue")}
+                      data-priority={priorityColumn === "revenue" || undefined}
+                    >
                       {money(row.revenue, group.currency, idioma)}
                     </td>
-                    <td className="px-3 py-2 text-right">
+                    <td
+                      className={cellClass("roas")}
+                      style={estiloDaColuna("roas")}
+                      data-priority={priorityColumn === "roas" || undefined}
+                    >
                       {row.roas == null ? "" : `${number(row.roas, idioma)}x`}
                     </td>
                   </>
