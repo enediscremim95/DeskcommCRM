@@ -198,6 +198,7 @@ export const AUDIT_ACTIONS = [
   "channel.connected",
   "channel.ai_access_updated",
   "channel.reconnected",
+  "channel.disconnected",
   "channel.managed_configured",
   "channel.managed_qr_requested",
   "channel.managed_opened",

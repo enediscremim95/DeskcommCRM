@@ -781,8 +781,28 @@ export const DICIONARIO: Traducoes = {
   Cancelar: { es: "Cancelar" },
   "Enviar para revisão": { es: "Enviar a revisión" },
   Reconectar: { es: "Reconectar" },
+  "Conectar novamente": { es: "Conectar de nuevo" },
   Conectar: { es: "Conectar" },
   Desconectar: { es: "Desconectar" },
+  "Desconectar este número?": { es: "¿Desconectar este número?" },
+  "A sessão deste número será encerrada. O canal e todo o histórico serão preservados, e você poderá conectar novamente depois.": {
+    es: "La sesión de este número se cerrará. El canal y todo el historial se conservarán, y podrás conectarlo de nuevo más adelante.",
+  },
+  "Número desconectado. O canal e o histórico foram preservados.": {
+    es: "Número desconectado. El canal y el historial se conservaron.",
+  },
+  "Não foi possível desconectar. O número continua no estado anterior.": {
+    es: "No fue posible desconectar. El número continúa en el estado anterior.",
+  },
+  "Este canal não tem uma sessão para desconectar.": {
+    es: "Este canal no tiene una sesión para desconectar.",
+  },
+  "O serviço do WhatsApp não está configurado neste ambiente.": {
+    es: "El servicio de WhatsApp no está configurado en este entorno.",
+  },
+  "Indisponível enquanto o serviço do WhatsApp não estiver ativo": {
+    es: "No disponible mientras el servicio de WhatsApp no esté activo",
+  },
   "Fuso horário da janela": { es: "Huso horario de la ventana" },
 
   // ─── Estados e avisos que aparecem em várias telas ───
