@@ -631,6 +631,7 @@ export const DICIONARIO: Traducoes = {
   },
   "Tipos de agendamento": { es: "Tipos de cita" },
   Automação: { es: "Automatización" },
+  "Atendimento com IA": { es: "Atención con IA" },
   Agentes: { es: "Agentes" },
   "Follow-ups": { es: "Seguimientos" },
   "Próximos contatos deste negócio. Quando vencem, aparecem no Radar.": { es: "Próximos contactos de este negocio. Cuando vencen, aparecen en el Radar." },

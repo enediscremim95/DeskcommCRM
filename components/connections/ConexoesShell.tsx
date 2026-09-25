@@ -38,9 +38,13 @@ import { useT } from "@/hooks/i18n/useT";
 export function ConexoesShell({
   wahaConfigured,
   wacallsConfigured,
+  parceiroEmUso,
+  vozEmUso,
 }: {
   wahaConfigured: boolean;
   wacallsConfigured: boolean;
+  parceiroEmUso: boolean;
+  vozEmUso: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -85,8 +89,10 @@ export function ConexoesShell({
             (`lib/channels/connect`), porque a tela não pode nomear provider — e
             porque no dia em que houver um segundo parceiro esta aba não muda.
             Aqui fica o CONCEITO; lá dentro o cartão diz de quem se trata. */}
-        <TabsTrigger value="parceiro">{t("Provedor parceiro")}</TabsTrigger>
-        <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
+        {parceiroEmUso ? (
+          <TabsTrigger value="parceiro">{t("Provedor parceiro")}</TabsTrigger>
+        ) : null}
+        {vozEmUso ? <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger> : null}
       </TabsList>
 
       <TabsContent value="numeros" className="mt-0">

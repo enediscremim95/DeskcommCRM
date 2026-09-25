@@ -83,9 +83,8 @@ describe("sidebarGroups", () => {
 
   it("só inclui destino marcado como sidebar", () => {
     const hrefs = sidebarGroups(true, null).flatMap((g) => g.items.map((i) => i.href));
-    // Conhecimento existe no registro, mas é do hub — não do sidebar.
-    expect(hrefs).not.toContain("/app/ai/knowledge/sources");
-    expect(hrefs).toContain("/app/ai/workflows");
+    expect(hrefs).toContain("/app/ai/knowledge/sources");
+    expect(hrefs).not.toContain("/app/ai/workflows");
   });
 
   it("Etapas do funil é CRM, não Configurações — o achado que originou esta mudança", () => {
@@ -127,16 +126,25 @@ describe("sidebarGroups", () => {
     expect(ids).toContain("atendimento");
   });
 
-  it("a ordem dentro do grupo de IA é a do uso real: n8n e follow-ups", () => {
-    // Provedores e Execuções NÃO entram aqui, e a razão é medida: pô-las na
-    // sidebar estourou a dobra em 900px (e2e `navegacao.spec.ts`). Elas seguem
-    // o padrão das outras nove telas do grupo — alcançáveis pelo hub "Ver tudo
-    // em IA", que é o desenho existente para tela de configuração.
+  it("a ordem dentro do grupo de IA acompanha a montagem e a operação", () => {
     const ia = sidebarGroups(true, null).find((g) => g.group.id === "ia");
     expect(ia?.items.map((i) => i.href)).toEqual([
-      "/app/ai/workflows",
+      "/app/ai/atendimento",
+      "/app/ai/agents",
+      "/app/ai/knowledge/sources",
+      "/app/ai/skills",
+      "/app/ai/routers",
       "/app/ai/followups",
+      "/app/ai/cases",
+      "/app/ai/inbox",
     ]);
+  });
+
+  it("mantém o N8N fora do menu, mas alcançável pela busca", () => {
+    const menu = sidebarGroups(true, null).flatMap((g) => g.items.map((i) => i.href));
+    const busca = searchable(true, null).map((i) => i.href);
+    expect(menu).not.toContain("/app/ai/workflows");
+    expect(busca).toContain("/app/ai/workflows");
   });
 });
 

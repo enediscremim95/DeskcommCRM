@@ -22,7 +22,7 @@ export default async function AiHubPage() {
       isPlatformAdmin={user.is_platform_admin && !user.support}
       role={activeOrg?.role ?? null}
       interfaceSettings={activeOrg?.interface_settings}
-      title={traduzir("Automação", user.idioma)}
+      title={traduzir("Atendimento com IA", user.idioma)}
       subtitle="Tudo que define quem atende por você — e como acompanhar o que ele faz."
     />
   );
