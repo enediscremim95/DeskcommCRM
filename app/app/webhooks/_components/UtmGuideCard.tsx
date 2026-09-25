@@ -33,8 +33,11 @@ export function UtmGuideCard() {
             "Acrescente este padrão ao fim do endereço da página. Troque somente os exemplos pelos nomes reais da campanha e do anúncio.",
           )}
         </p>
+        {/* O exemplo encolhe até o texto: esticado na largura do cartão, sobrava
+            uma faixa vazia depois do último parâmetro. `max-w-full` mantém a
+            rolagem no celular, onde a linha não cabe inteira. */}
         <div className="flex items-center gap-2">
-          <code className="min-w-0 flex-1 overflow-x-auto rounded-sm border border-border bg-muted px-3 py-2 text-xs">
+          <code className="max-w-full min-w-0 overflow-x-auto rounded-sm border border-border bg-muted px-3 py-2 text-xs">
             {PADRAO_UTM}
           </code>
           <Button type="button" variant="secondary" size="icon" onClick={copiar}>
