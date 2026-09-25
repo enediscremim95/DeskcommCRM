@@ -4,4 +4,4 @@ secao: adicionado
 titulo: CRM pronto
 ---
 
-Login por e-mail.
+O cliente entra por e-mail e senha e encontra o CRM já pronto para usar, sem passo de configuração.
