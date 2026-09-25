@@ -61,7 +61,7 @@ beforeAll(() => {
   seedConfig();
 });
 
-describe("0150 — escrita de config de IA/canais exige admin", () => {
+describe("0150 + 0264: escrita de config de IA/canais exige acesso geral de gestão", () => {
   it("viewer NÃO reescreve o system_prompt do agente", () => {
     expect(
       writeCountAs(
@@ -71,13 +71,13 @@ describe("0150 — escrita de config de IA/canais exige admin", () => {
     ).toBe(0);
   });
 
-  it("manager NÃO reescreve o system_prompt (a rota pede admin — a policy espelha)", () => {
+  it("manager reescreve o system_prompt como o admin", () => {
     expect(
       writeCountAs(
         GOV_MANAGER,
-        `update public.ai_agents set system_prompt = 'SEQUESTRADO' where id = '${AGENTE_CONFIG}'`,
+        `update public.ai_agents set system_prompt = 'TROCADO PELO GERENTE' where id = '${AGENTE_CONFIG}'`,
       ),
-    ).toBe(0);
+    ).toBe(1);
   });
 
   it("CONTROLE POSITIVO: admin reescreve o system_prompt", () => {

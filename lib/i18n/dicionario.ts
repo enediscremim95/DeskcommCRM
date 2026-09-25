@@ -3835,8 +3835,8 @@ export const DICIONARIO: Traducoes = {
   "Você será redirecionado para autorizar o app na sua loja.": {
     es: "Serás redirigido para autorizar la app en tu tienda.",
   },
-  "Somente administradores podem conectar integrações.": {
-    es: "Solo los administradores pueden conectar integraciones.",
+  "Somente quem administra a empresa pode conectar integrações.": {
+    es: "Solo quien administra la empresa puede conectar integraciones.",
   },
   Loja: { es: "Tienda" },
   "última sync:": { es: "última sync:" },
@@ -6314,11 +6314,24 @@ export const DICIONARIO: Traducoes = {
   "Nenhum membro ativo.": { es: "Ningún miembro activo." },
   "Membro": { es: "Miembro" },
   "Papel de": { es: "Rol de" },
+  "Tem acesso total, gerencia a equipe e pode excluir leads.": {
+    es: "Tiene acceso total, gestiona el equipo y puede eliminar leads.",
+  },
+  "Tem acesso total às configurações e à operação, mas não gerencia a equipe nem exclui leads.": {
+    es: "Tiene acceso total a la configuración y a la operación, pero no gestiona el equipo ni elimina leads.",
+  },
+  "Confirmar mudança de papel": { es: "Confirmar cambio de rol" },
+  "O acesso de": { es: "El acceso de" },
+  "mudará de": { es: "cambiará de" },
+  "A alteração ficará registrada na auditoria.": {
+    es: "El cambio quedará registrado en la auditoría.",
+  },
+  "Confirmar alteração": { es: "Confirmar cambio" },
   "Aceito": { es: "Aceptado" },
   "Revogar acesso": { es: "Revocar acceso" },
   "você": { es: "tú" },
-  "perderá acesso ao tenant. Esta ação pode ser desfeita reconvidando o membro.": {
-    es: "perderá acceso al tenant. Esta acción se puede deshacer reinvitando al miembro.",
+  "perderá acesso à empresa. Você poderá devolver o acesso depois.": {
+    es: "perderá acceso a la empresa. Podrás devolverle el acceso después.",
   },
   "Acesso revogado.": { es: "Acceso revocado." },
   "Manual (atendente puxa da fila)": { es: "Manual (el agente toma de la cola)" },

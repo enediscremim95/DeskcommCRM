@@ -45,7 +45,7 @@ export function BulkActionBar({
   const activeOrg = useActiveOrg();
   const vocab = resolveVocabulary(vocabulary);
   const bulk = useBulkAction(pipelineId);
-  const podeExcluir = usePermission("resource.delete");
+  const podeExcluir = usePermission("lead.delete");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [tagInput, setTagInput] = useState("");
 

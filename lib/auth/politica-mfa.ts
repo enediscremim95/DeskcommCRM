@@ -37,7 +37,7 @@
  * verdade.
  */
 
-import type { Role } from "@/lib/auth/types";
+import { roleAtLeast, type Role } from "@/lib/auth/types";
 
 export interface PoliticaDeMfa {
   /** O papel na organização ativa. `undefined` = sem organização resolvida. */
@@ -66,7 +66,7 @@ export interface PoliticaDeMfa {
  */
 export function exigeCadastroDeMfa(p: PoliticaDeMfa): boolean {
   if (p.isPlatformAdmin && p.plataformaExige === true) return true;
-  if (p.role === "admin" && p.empresaExige) return true;
+  if (roleAtLeast(p.role, "admin") && p.empresaExige) return true;
   return false;
 }
 

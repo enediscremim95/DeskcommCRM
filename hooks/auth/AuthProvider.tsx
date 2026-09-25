@@ -11,7 +11,7 @@ import {
 import { Providers } from "@/app/providers";
 import { createClient, resetRealtimeAuthentication } from "@/lib/supabase/browser";
 import type { AuthUser, ActiveOrg } from "@/lib/auth/types";
-import { roleHasPermission, type Permission } from "@/lib/auth/permissions";
+import { userHasPermission, type Permission } from "@/lib/auth/permissions";
 
 interface AuthCtx {
   user: AuthUser;
@@ -114,7 +114,5 @@ export function useActiveOrg(): ActiveOrg | null {
 
 export function usePermission(action: Permission): boolean {
   const { user, activeOrg } = useAuth();
-  if (user.is_platform_admin && !user.support) return true;
-  if (!activeOrg) return false;
-  return roleHasPermission(activeOrg.role, action);
+  return userHasPermission(user, activeOrg, action);
 }

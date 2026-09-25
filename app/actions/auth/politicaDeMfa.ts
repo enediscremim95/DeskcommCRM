@@ -19,6 +19,7 @@ import { revalidatePath } from "next/cache";
 import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg, sessionAal, isMfaEnrolled } from "@/lib/auth/server";
 import { empresaExigeMfa, exigeCadastroDeMfa } from "@/lib/auth/politica-mfa";
+import { roleAtLeast } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -40,8 +41,8 @@ export async function definirExigenciaDeMfa(exigir: boolean): Promise<ResultadoD
   const org = await resolveActiveOrg(user);
   if (!org) return { ok: false, erro: "Nenhuma empresa ativa." };
 
-  if (org.role !== "admin") {
-    return { ok: false, erro: "Só um administrador pode mudar essa regra." };
+  if (!roleAtLeast(org.role, "admin")) {
+    return { ok: false, erro: "Só quem administra a empresa pode mudar essa regra." };
   }
 
   const admin = createAdminClient();

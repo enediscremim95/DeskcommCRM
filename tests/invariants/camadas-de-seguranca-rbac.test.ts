@@ -1,5 +1,5 @@
 /**
- * DESLIGAR UMA CAMADA DE SEGURANÇA É AÇÃO DE ADMIN — NO BANCO, NÃO NA ROTA.
+ * DESLIGAR UMA CAMADA DE SEGURANÇA EXIGE ACESSO GERAL DE GESTÃO NO BANCO.
  *
  * ## O que se pagava
  *
@@ -55,11 +55,10 @@ beforeAll(() => {
   `);
 });
 
-describe("escrita em org_guardrail_layers exige admin", () => {
+describe("escrita em org_guardrail_layers exige acesso geral de gestão", () => {
   for (const [rotulo, usuario] of [
     ["viewer", GOV_VIEWER],
     ["agent", GOV_AGENT_A],
-    ["manager", GOV_MANAGER],
   ] as const) {
     it(`${rotulo} NÃO desliga uma camada já escolhida`, () => {
       const escritas = writeCountAs(
@@ -82,6 +81,16 @@ describe("escrita em org_guardrail_layers exige admin", () => {
       expect(escritas).toBe(0);
     });
   }
+
+  it("manager desliga uma camada como o admin", () => {
+    expect(
+      writeCountAs(
+        GOV_MANAGER,
+        `update public.org_guardrail_layers set enabled = false
+           where organization_id = '${GOV_ORG}' and layer = '${CAMADA_EXISTENTE}'`,
+      ),
+    ).toBe(1);
+  });
 
   it("admin ESCREVE — guarda de vacuidade da suíte", () => {
     // Sem este caso, uma policy que barra TODO MUNDO passaria em todos os de cima e

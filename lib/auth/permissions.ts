@@ -1,4 +1,4 @@
-import { ROLE_RANK, type Role } from "@/lib/auth/types";
+import { ROLE_RANK, type ActiveOrg, type AuthUser, type Role } from "@/lib/auth/types";
 
 /**
  * Mapa canônico das permissões semânticas usadas pela API e pela interface.
@@ -20,8 +20,6 @@ export const PERMISSION_MIN_ROLE = {
   "pipeline.view": "viewer",
   "pipeline.create": "manager",
   "pipeline.move_card": "agent",
-  "team.invite": "admin",
-  "team.change_role": "admin",
   "settings.write": "admin",
   "lgpd.execute_redact": "admin",
   "audit.view": "manager",
@@ -44,14 +42,49 @@ export const PERMISSION_MIN_ROLE = {
   "voice.call": "agent",
 } as const satisfies Record<string, Role>;
 
-export type Permission = keyof typeof PERMISSION_MIN_ROLE;
+/**
+ * Capacidades que NÃO cabem na escada de papéis.
+ *
+ * Gerente e administrador têm o mesmo piso para o acesso geral, mas somente o
+ * gerente pode gerir a equipe e excluir leads. O administrador de plataforma
+ * é tratado separadamente porque não é um papel da organização.
+ */
+export const PERMISSION_ROLES = {
+  // Excluir lead é o ÚNICO poder que o administrador da organização não tem.
+  // Decisão do dono do produto (25/09/2026): "tem o acesso do gerente, que
+  // inclui adicionar e remover pessoas e excluir leads, e tem o adm, que não
+  // pode excluir leads". Gerir equipe ficou com os dois de propósito: ele
+  // restringiu exclusão, não a gestão de pessoas.
+  "lead.delete": ["manager"],
+  "team.manage": ["manager", "admin"],
+} as const satisfies Record<string, readonly Role[]>;
 
-export function minimumRoleForPermission(permission: Permission): Role {
-  return PERMISSION_MIN_ROLE[permission];
+export type Permission = keyof typeof PERMISSION_MIN_ROLE | keyof typeof PERMISSION_ROLES;
+
+export function minimumRoleForPermission(permission: Permission): Role | null {
+  return permission in PERMISSION_MIN_ROLE
+    ? PERMISSION_MIN_ROLE[permission as keyof typeof PERMISSION_MIN_ROLE]
+    : null;
 }
 
 export function roleHasPermission(role: Role, permission: Permission): boolean {
-  return ROLE_RANK[role] >= ROLE_RANK[minimumRoleForPermission(permission)];
+  if (permission in PERMISSION_ROLES) {
+    return (PERMISSION_ROLES[permission as keyof typeof PERMISSION_ROLES] as readonly Role[]).includes(
+      role,
+    );
+  }
+  const minimumRole = minimumRoleForPermission(permission);
+  return minimumRole !== null && ROLE_RANK[role] >= ROLE_RANK[minimumRole];
+}
+
+/** Mesma decisão semântica usada por páginas servidoras e pelo contexto React. */
+export function userHasPermission(
+  user: Pick<AuthUser, "is_platform_admin" | "support">,
+  activeOrg: Pick<ActiveOrg, "role"> | null,
+  permission: Permission,
+): boolean {
+  if (user.is_platform_admin && !user.support) return true;
+  return !!activeOrg && roleHasPermission(activeOrg.role, permission);
 }
 
 /** Detecta remoção disfarçada de atualização por substituição de uma lista. */

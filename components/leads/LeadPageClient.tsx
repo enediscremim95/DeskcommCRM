@@ -23,7 +23,7 @@ import { OpenConversationProvider } from "@/hooks/notifications/OpenConversation
 import { useT } from "@/hooks/i18n/useT";
 import { usePipelineStages } from "@/hooks/webhooks/useWebhookSources";
 import { estadoDaJanela, formatarDecorrido } from "@/lib/channels/janela";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { roleAtLeast, ROLE_RANK } from "@/lib/auth/types";
 import { activityLabel, actorName } from "@/lib/leads/activity-vocabulary";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import type { Lead } from "@/lib/types/leads";
@@ -105,8 +105,8 @@ export function LeadPageClient({
   const podeEditar = Boolean(
     activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && !supportReadonly,
   );
-  const podeConfigurar = activeOrg?.role === "admin" && !supportReadonly;
-  const podeExcluir = usePermission("resource.delete") && !supportReadonly;
+  const podeConfigurar = roleAtLeast(activeOrg?.role, "admin") && !supportReadonly;
+  const podeExcluir = usePermission("lead.delete") && !supportReadonly;
   const timeline = useLeadTimeline(lead.id, lead.contact_id);
   const conversation = useConversation(conversationId, Boolean(conversationId));
   const selectedConversation = conversation.data ?? null;

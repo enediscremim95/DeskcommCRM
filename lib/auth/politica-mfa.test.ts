@@ -25,12 +25,13 @@ describe("exigeCadastroDeMfa", () => {
     expect(exigeCadastroDeMfa(BASE)).toBe(false);
   });
 
-  it("a empresa pode exigir dos administradores dela", () => {
+  it("a empresa pode exigir de quem tem acesso geral de gestão", () => {
     expect(exigeCadastroDeMfa({ ...BASE, empresaExige: true })).toBe(true);
+    expect(exigeCadastroDeMfa({ ...BASE, role: "manager", empresaExige: true })).toBe(true);
   });
 
-  it("mas só dos ADMINISTRADORES — quem não administra nada não é cobrado", () => {
-    for (const role of ["manager", "agent", "viewer"] as const) {
+  it("mas não cobra quem não administra", () => {
+    for (const role of ["agent", "viewer"] as const) {
       expect(exigeCadastroDeMfa({ ...BASE, role, empresaExige: true }), role).toBe(false);
     }
   });

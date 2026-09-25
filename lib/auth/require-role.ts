@@ -29,7 +29,7 @@ export type RoleCheck =
   | { ok: true; user: AuthUser; org: ActiveOrg }
   | { ok: false; response: NextResponse<ApiError> };
 
-interface RequireRoleOpts {
+export interface RequireRoleOpts {
   /** Correlaciona a resposta e o audit com o X-Request-Id da rota. */
   requestId?: string;
   /** resource_type gravado no audit `authz.denied` (ex.: "api_tokens"). */
@@ -46,7 +46,8 @@ interface RequireRoleOpts {
 }
 
 /**
- * Gate de rota: `const authz = await requireRole("manager", { requestId });`
+ * Gate de acesso geral: `const authz = await requireRole("manager", { requestId });`
+ * Exceções não lineares usam `requirePermission()`.
  * `if (!authz.ok) return authz.response;`
  */
 export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promise<RoleCheck> {

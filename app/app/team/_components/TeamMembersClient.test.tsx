@@ -3,7 +3,7 @@
  *
  * Cobre: seleção dispara PATCH /api/v1/team/[user_id]; estado otimista
  * (role muda na UI antes da resposta) com rollback + toast em erro;
- * seletor ausente para não-admin (canManage=false).
+ * confirmação antes do PATCH e seletor ausente sem a capacidade (canManage=false).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -87,7 +87,7 @@ beforeEach(() => {
 });
 
 describe("TeamMembersClient — seletor de papel (G2-02)", () => {
-  it("não-admin não vê seletor de papel (só badge)", async () => {
+  it("quem não tem team.manage não vê seletor de papel (só badge)", async () => {
     const rows = members();
     rows[1]!.interface_settings = { preset: "completa", destinos: ["/app/tasks"] };
     vi.mocked(apiClient.get).mockResolvedValue({ data: rows });
@@ -98,7 +98,7 @@ describe("TeamMembersClient — seletor de papel (G2-02)", () => {
     expect(screen.getByText("Personalizada")).toBeInTheDocument();
   });
 
-  it("admin seleciona novo papel → PATCH /api/v1/team/[user_id] com estado otimista", async () => {
+  it("gerente confirma o novo papel antes do PATCH auditável", async () => {
     let resolvePatch!: (v: unknown) => void;
     vi.mocked(apiClient.patch).mockImplementation(
       () => new Promise((resolve) => (resolvePatch = resolve)),
@@ -112,7 +112,12 @@ describe("TeamMembersClient — seletor de papel (G2-02)", () => {
     await user.click(trigger);
     await user.click(await screen.findByRole("option", { name: "manager" }));
 
-    // Otimista: UI já mostra o novo papel ANTES da resposta do PATCH.
+    expect(trigger).toHaveTextContent("agent");
+    expect(apiClient.patch).not.toHaveBeenCalled();
+    expect(screen.getByText(/A alteração ficará registrada na auditoria/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Confirmar alteração" }));
+
+    // Depois da confirmação, o estado otimista aparece antes da resposta.
     await waitFor(() => expect(trigger).toHaveTextContent("manager"));
     expect(apiClient.patch).toHaveBeenCalledWith(`/api/v1/team/${AGENT_ID}`, {
       role: "manager",
@@ -139,6 +144,7 @@ describe("TeamMembersClient — seletor de papel (G2-02)", () => {
     const trigger = await screen.findByRole("combobox", { name: /Papel de Agente/i });
     await user.click(trigger);
     await user.click(await screen.findByRole("option", { name: "viewer" }));
+    await user.click(screen.getByRole("button", { name: "Confirmar alteração" }));
 
     // Rollback: volta ao papel original após o erro.
     await waitFor(() => expect(trigger).toHaveTextContent("agent"));
