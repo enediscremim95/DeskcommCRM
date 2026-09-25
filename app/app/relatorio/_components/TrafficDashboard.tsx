@@ -34,10 +34,7 @@ import { ColumnPresetMenu } from "./ColumnPresetMenu";
 import { buildTrafficFunnelStages, ConversionFunnel, type FunnelStage } from "./ConversionFunnel";
 import { CostSignal, CostThresholdControl, type CostThreshold } from "./CostThresholds";
 import { PriorityMetricSelector } from "./PriorityMetricSelector";
-import {
-  CreativePerformance,
-  TrafficTimeline,
-} from "./RichReportSections";
+import { CreativePerformance, TrafficTimeline } from "./RichReportSections";
 
 interface Metrics {
   budget: number | null;
@@ -1101,6 +1098,9 @@ export function TrafficDashboard() {
     Record<AdPlatform, CampaignMetricColumn[]>
   >({ meta_ads: [], google_ads: [] });
   const [activeMetric, setActiveMetric] = useState<PriorityMetricColumn | "conversions">("leads");
+  const [visiblePriorityMetrics, setVisiblePriorityMetrics] = useState<
+    PriorityMetricColumn[] | null
+  >(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1115,6 +1115,9 @@ export function TrafficDashboard() {
           throw new Error(body.error?.message ?? t("Não foi possível carregar o relatório."));
         if (active) {
           setReport(body.data);
+          setVisiblePriorityMetrics(
+            body.data.priority_metrics ?? defaultPriorityMetrics(body.data.model),
+          );
           setActiveMetric(
             body.data.priority_metrics?.[0] ??
               defaultPriorityMetrics(body.data.model)[0] ??
@@ -1517,7 +1520,8 @@ export function TrafficDashboard() {
                     betterWhen: "down" as const,
                   },
                 ];
-        const priorityMetrics = report.priority_metrics;
+        const priorityMetrics =
+          visiblePriorityMetrics ?? report.priority_metrics ?? defaultPriorityMetrics(report.model);
         const configuredHeroMetrics = (priorityMetrics ?? []).map((metric) => {
           const meta = PRIORITY_METRIC_META[metric];
           const value = priorityMetricValue(metric, group.summary, richCrm.closed_won) ?? 0;
@@ -1615,13 +1619,13 @@ export function TrafficDashboard() {
                     report.priority_metrics ?? defaultPriorityMetrics(report.model)
                   ).join("|")}`}
                   model={report.model}
+                  organizationKey={report.organization_key}
+                  viewerKey={report.viewer_key}
                   initial={report.priority_metrics ?? defaultPriorityMetrics(report.model)}
                   canManage={report.can_manage_defaults}
                   onSaved={(priorityMetrics) => {
                     setActiveMetric(priorityMetrics[0] ?? "spend");
-                    setReport((current) =>
-                      current ? { ...current, priority_metrics: priorityMetrics } : current,
-                    );
+                    setVisiblePriorityMetrics(priorityMetrics);
                   }}
                 />
               </div>
@@ -1673,7 +1677,6 @@ export function TrafficDashboard() {
             />
 
             <TrafficTimeline daily={group.daily} currency={group.currency} idioma={idioma} />
-
 
             {meta && (
               <details

@@ -91,6 +91,7 @@ export function ColumnPresetMenu({
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [creating, setCreating] = useState(false);
+  const [isPersonal, setIsPersonal] = useState(false);
   const initializedFor = useRef<string | null>(null);
   const { identity, presetStorageKey, columnsStorageKey } = columnPresetStorageKeys(
     organizationKey,
@@ -104,29 +105,31 @@ export function ColumnPresetMenu({
     initializedFor.current = identity;
     setPresets(initialPresets);
     const storedPresetId = localStorage.getItem(presetStorageKey);
+    const organizationDefault =
+      initialPresets.find((preset) => preset.id === defaultPresetId) ?? initialPresets[0] ?? null;
     const selected =
-      initialPresets.find((preset) => preset.id === storedPresetId) ??
-      initialPresets.find((preset) => preset.id === defaultPresetId) ??
-      initialPresets[0] ??
-      null;
-    let nextColumns = selected?.columns ?? defaultColumns;
-    if (!selected) {
-      try {
-        const stored = JSON.parse(localStorage.getItem(columnsStorageKey) ?? "null") as unknown;
-        if (Array.isArray(stored)) {
-          const allowed = new Set<string>(availableColumns);
-          const valid = stored.filter(
-            (column): column is CampaignMetricColumn =>
-              typeof column === "string" && allowed.has(column),
-          );
-          if (valid.length > 0) nextColumns = valid;
+      initialPresets.find((preset) => preset.id === storedPresetId) ?? organizationDefault;
+    let nextColumns = organizationDefault?.columns ?? defaultColumns;
+    let hasPersonalChoice = false;
+    try {
+      const stored = JSON.parse(localStorage.getItem(columnsStorageKey) ?? "null") as unknown;
+      if (Array.isArray(stored)) {
+        const allowed = new Set<string>(availableColumns);
+        const valid = stored.filter(
+          (column): column is CampaignMetricColumn =>
+            typeof column === "string" && allowed.has(column),
+        );
+        if (valid.length > 0 && new Set(valid).size === valid.length) {
+          nextColumns = valid;
+          hasPersonalChoice = true;
         }
-      } catch {
-        // Preferência local inválida volta ao padrão da organização.
       }
+    } catch {
+      // Preferência local inválida volta ao padrão da organização.
     }
-    setActivePresetId(selected?.id ?? null);
+    setActivePresetId((hasPersonalChoice ? selected : organizationDefault)?.id ?? null);
     setColumns(nextColumns);
+    setIsPersonal(hasPersonalChoice);
     onColumnsChange(nextColumns);
   }, [
     columnsStorageKey,
@@ -141,18 +144,20 @@ export function ColumnPresetMenu({
 
   const activePreset = presets.find((preset) => preset.id === activePresetId) ?? null;
 
-  function chooseColumns(next: CampaignMetricColumn[]) {
+  function chooseColumns(next: CampaignMetricColumn[], presetId = activePresetId) {
     setColumns(next);
+    setIsPersonal(true);
     onColumnsChange(next);
     localStorage.setItem(columnsStorageKey, JSON.stringify(next));
+    if (presetId) localStorage.setItem(presetStorageKey, presetId);
+    else localStorage.removeItem(presetStorageKey);
   }
 
   function choosePreset(id: string) {
     const selected = presets.find((preset) => preset.id === id);
     if (!selected) return;
     setActivePresetId(selected.id);
-    chooseColumns(selected.columns);
-    localStorage.setItem(presetStorageKey, selected.id);
+    chooseColumns(selected.columns, selected.id);
     setMessage(null);
     setRenaming(false);
     setCreating(false);
@@ -161,6 +166,21 @@ export function ColumnPresetMenu({
   function handleDragEnd(result: DropResult) {
     if (!result.destination) return;
     chooseColumns(reorderColumns(columns, result.source.index, result.destination.index));
+  }
+
+  function restoreOrganizationDefault() {
+    const organizationDefault =
+      presets.find((preset) => preset.is_default) ??
+      presets.find((preset) => preset.id === defaultPresetId) ??
+      null;
+    const nextColumns = organizationDefault?.columns ?? defaultColumns;
+    localStorage.removeItem(columnsStorageKey);
+    localStorage.removeItem(presetStorageKey);
+    setActivePresetId(organizationDefault?.id ?? null);
+    setColumns(nextColumns);
+    setIsPersonal(false);
+    setMessage(t("Padrão da organização restaurado."));
+    onColumnsChange(nextColumns);
   }
 
   async function requestPreset(url: string, method: "POST" | "PATCH" | "DELETE", body?: unknown) {
@@ -289,9 +309,12 @@ export function ColumnPresetMenu({
       setPresets(remaining);
       const next = remaining.find((preset) => preset.is_default) ?? remaining[0] ?? null;
       setActivePresetId(next?.id ?? null);
-      chooseColumns(next?.columns ?? defaultColumns);
-      if (next) localStorage.setItem(presetStorageKey, next.id);
-      else localStorage.removeItem(presetStorageKey);
+      const nextColumns = next?.columns ?? defaultColumns;
+      setColumns(nextColumns);
+      onColumnsChange(nextColumns);
+      localStorage.removeItem(columnsStorageKey);
+      localStorage.removeItem(presetStorageKey);
+      setIsPersonal(false);
       setMessage(t("Predefinição excluída."));
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : String(cause));
@@ -326,7 +349,13 @@ export function ColumnPresetMenu({
           </label>
         ) : (
           <p className="mt-2 text-xs text-muted-foreground">
-            {t("Nenhuma predefinição foi liberada. O padrão anterior continua em uso.")}
+            {t("Nenhuma predefinição foi liberada. Escolha as colunas abaixo.")}
+          </p>
+        )}
+
+        {isPersonal && (
+          <p className="mt-3 rounded-lg bg-primary/10 px-3 py-2 text-xs text-foreground">
+            {t("Esta é a sua visualização pessoal.")}
           </p>
         )}
 
@@ -372,86 +401,104 @@ export function ColumnPresetMenu({
           </div>
         )}
 
+        <p className="mt-4 text-xs font-medium text-muted-foreground">
+          {t("Colunas selecionadas")}
+        </p>
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <Droppable droppableId={`traffic-column-preset-${platform}`}>
+            {(provided) => (
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className="mt-2 max-h-[42dvh] space-y-2 overflow-y-auto pr-1"
+              >
+                {columns.map((column, index) => (
+                  <Draggable key={column} draggableId={column} index={index}>
+                    {(dragProvided) => (
+                      <div
+                        ref={dragProvided.innerRef}
+                        {...dragProvided.draggableProps}
+                        className="flex min-h-11 items-center gap-2 rounded-lg border bg-background px-2 py-2 text-sm"
+                      >
+                        <button
+                          type="button"
+                          aria-label={`${t("Arrastar")}: ${columnLabel(column, idioma)}`}
+                          className="cursor-grab rounded-md p-2 text-muted-foreground active:cursor-grabbing"
+                          {...dragProvided.dragHandleProps}
+                        >
+                          <GripVertical className="size-4" />
+                        </button>
+                        <span className="flex-1">{columnLabel(column, idioma)}</span>
+                        <button
+                          type="button"
+                          aria-label={`${t("Remover")}: ${columnLabel(column, idioma)}`}
+                          className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                          disabled={columns.length === 1}
+                          onClick={() => chooseColumns(columns.filter((item) => item !== column))}
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
+
+        <p className="mt-4 text-xs font-medium text-muted-foreground">
+          {t("Métricas disponíveis")}
+        </p>
+        <Input
+          className="mt-2 h-11 text-sm lg:h-8 lg:text-xs"
+          aria-label={t("Buscar métrica")}
+          placeholder={t("Buscar métrica")}
+          value={buscaMetrica}
+          onChange={(event) => setBuscaMetrica(event.target.value)}
+        />
+        <div className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border p-1">
+          {availableColumns
+            .filter((column) =>
+              semAcento(columnLabel(column, idioma)).includes(semAcento(buscaMetrica.trim())),
+            )
+            .map((column) => (
+              <label
+                key={column}
+                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-muted"
+              >
+                <input
+                  type="checkbox"
+                  className="size-4 accent-primary"
+                  checked={columns.includes(column)}
+                  disabled={columns.length === 1 && columns.includes(column)}
+                  onChange={(event) =>
+                    chooseColumns(
+                      event.target.checked
+                        ? [...columns, column]
+                        : columns.filter((item) => item !== column),
+                    )
+                  }
+                />
+                <span>{columnLabel(column, idioma)}</span>
+              </label>
+            ))}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm font-medium disabled:opacity-50"
+            disabled={busy || !isPersonal}
+            onClick={restoreOrganizationDefault}
+          >
+            {t("Voltar ao padrão")}
+          </button>
+        </div>
+
         {canManage && (
           <>
-            <p className="mt-4 text-xs font-medium text-muted-foreground">
-              {t("Colunas selecionadas")}
-            </p>
-            <DragDropContext onDragEnd={handleDragEnd}>
-              <Droppable droppableId="traffic-column-preset">
-                {(provided) => (
-                  <div
-                    ref={provided.innerRef}
-                    {...provided.droppableProps}
-                    className="mt-2 space-y-2"
-                  >
-                    {columns.map((column, index) => (
-                      <Draggable key={column} draggableId={column} index={index}>
-                        {(dragProvided) => (
-                          <div
-                            ref={dragProvided.innerRef}
-                            {...dragProvided.draggableProps}
-                            className="flex items-center gap-2 rounded-lg border bg-background px-2 py-2 text-sm"
-                          >
-                            <button
-                              type="button"
-                              aria-label={`${t("Arrastar")}: ${columnLabel(column, idioma)}`}
-                              className="cursor-grab rounded-md p-1 text-muted-foreground active:cursor-grabbing"
-                              {...dragProvided.dragHandleProps}
-                            >
-                              <GripVertical className="size-4" />
-                            </button>
-                            <span className="flex-1">{columnLabel(column, idioma)}</span>
-                            <button
-                              type="button"
-                              aria-label={`${t("Remover")}: ${columnLabel(column, idioma)}`}
-                              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-                              disabled={columns.length === 1}
-                              onClick={() =>
-                                chooseColumns(columns.filter((item) => item !== column))
-                              }
-                            >
-                              <X className="size-4" />
-                            </button>
-                          </div>
-                        )}
-                      </Draggable>
-                    ))}
-                    {provided.placeholder}
-                  </div>
-                )}
-              </Droppable>
-            </DragDropContext>
-
-            <p className="mt-4 text-xs font-medium text-muted-foreground">
-              {t("Adicionar métrica")}
-            </p>
-            <Input
-              className="mt-2 h-8 text-xs"
-              aria-label={t("Buscar métrica")}
-              placeholder={t("Buscar métrica")}
-              value={buscaMetrica}
-              onChange={(event) => setBuscaMetrica(event.target.value)}
-            />
-            <div className="mt-2 flex max-h-28 flex-wrap gap-2 overflow-y-auto">
-              {availableColumns
-                .filter(
-                  (column) =>
-                    !columns.includes(column) &&
-                    semAcento(columnLabel(column, idioma)).includes(semAcento(buscaMetrica.trim())),
-                )
-                .map((column) => (
-                  <button
-                    key={column}
-                    type="button"
-                    className="rounded-full border px-2.5 py-1 text-xs hover:border-primary/50 hover:bg-primary/10"
-                    onClick={() => chooseColumns([...columns, column])}
-                  >
-                    + {columnLabel(column, idioma)}
-                  </button>
-                ))}
-            </div>
-
             {creating && (
               <div className="mt-4 flex gap-2">
                 <Input
@@ -512,11 +559,6 @@ export function ColumnPresetMenu({
               </button>
             </div>
           </>
-        )}
-        {!canManage && presets.length > 0 && (
-          <p className="mt-3 text-xs text-muted-foreground">
-            {t("Escolha uma predefinição liberada para esta organização.")}
-          </p>
         )}
         {message && <p className="mt-3 text-xs text-muted-foreground">{message}</p>}
       </div>

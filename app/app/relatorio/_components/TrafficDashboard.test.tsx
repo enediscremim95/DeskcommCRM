@@ -161,7 +161,7 @@ describe("colunas da tabela de campanhas", () => {
     await user.click(screen.getByText("Colunas (2)"));
     expect(screen.getByText("Captação")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Renomear predefinição" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "+ Impressões" }));
+    await user.click(screen.getByRole("checkbox", { name: "Impressões" }));
     expect(
       JSON.parse(
         localStorage.getItem("traffic-campaign-columns:org-1:user-1:leads:meta_ads") ?? "[]",
@@ -222,8 +222,9 @@ describe("colunas da tabela de campanhas", () => {
     await screen.findByText("Meta A");
 
     const menus = screen.getAllByText("Colunas (1)");
+    const metaMenu = menus[0]!.parentElement!;
     await user.click(menus[0]!);
-    await user.click(screen.getByRole("button", { name: "+ Alcance" }));
+    await user.click(within(metaMenu).getByRole("checkbox", { name: "Alcance" }));
 
     const metaSection = screen.getByRole("heading", { name: "Meta Ads" }).closest("details")!;
     const googleSection = screen.getByRole("heading", { name: "Google Ads" }).closest("details")!;
@@ -279,8 +280,8 @@ describe("colunas da tabela de campanhas", () => {
     expect(await screen.findByText("Campanha A")).toBeInTheDocument();
     await user.click(screen.getByText("Colunas (2)"));
     await user.type(screen.getByRole("textbox", { name: "Buscar métrica" }), "VISUALIZA");
-    expect(screen.getByRole("button", { name: "+ Visualizações da página" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "+ Impressões" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Visualizações da página" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Impressões" })).not.toBeInTheDocument();
   });
 
   it("recarrega o funil quando o período muda", async () => {
@@ -865,7 +866,10 @@ describe("colunas da tabela de campanhas", () => {
     expect(screen.getAllByText("pessoas únicas que viram").length).toBeGreaterThan(0);
     expect(screen.getByText("custo por 1.000 exibições")).toBeInTheDocument();
     expect(screen.getByText("Meta + Google")).toBeInTheDocument();
-    const cpl = screen.getByText("Custo por lead").closest("button") as HTMLButtonElement;
+    const cpl = screen
+      .getAllByText("Custo por lead")
+      .map((element) => element.closest("button"))
+      .find((element): element is HTMLButtonElement => element instanceof HTMLButtonElement)!;
     expect(cpl.textContent).toContain("↓ 37,5%");
     expect(cpl.querySelector(".text-success-fg")).not.toBeNull();
     const spend = screen.getByRole("button", { name: /^Investimento/ });
