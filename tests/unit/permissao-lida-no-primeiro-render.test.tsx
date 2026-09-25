@@ -51,12 +51,17 @@ afterEach(() => {
   vi.resetModules();
 });
 
-async function markupSemEfeitos(): Promise<string> {
+async function markupSemEfeitos(locale = "pt-BR"): Promise<string> {
   vi.resetModules();
   const { NotificationPrefsClient } = await import(
     "@/app/app/settings/notifications/_client"
   );
-  return renderToStaticMarkup(<NotificationPrefsClient />);
+  const { IdiomaProvider } = await import("@/lib/i18n/IdiomaProvider");
+  return renderToStaticMarkup(
+    <IdiomaProvider locale={locale}>
+      <NotificationPrefsClient />
+    </IdiomaProvider>,
+  );
 }
 
 /**
@@ -77,7 +82,28 @@ function pushDesabilitado(markup: string): boolean[] {
   );
 }
 
+function emailLigado(markup: string, ariaLabel: string): boolean {
+  const tag = markup.match(new RegExp(`<button[^>]*aria-label="${ariaLabel}"[^>]*>`))?.[0];
+  expect(tag, `não achei o interruptor ${ariaLabel}`).toBeDefined();
+  return tag!.includes('data-state="checked"');
+}
+
 describe("a permissão do navegador é lida no primeiro render", () => {
+  it("explica que novo lead começa desligado e a urgência continua ligada", async () => {
+    comPermissaoDoNavegador("granted");
+    const portugues = await markupSemEfeitos();
+    const espanhol = await markupSemEfeitos("es");
+
+    expect(portugues).toContain(
+      "O aviso de novo lead começa desligado e pode ser ligado aqui, enquanto a ação urgente continua ligada por padrão.",
+    );
+    expect(espanhol).toContain(
+      "El aviso de nuevo lead comienza desactivado y puede activarse aquí, mientras que la acción urgente sigue activada de forma predeterminada.",
+    );
+    expect(emailLigado(portugues, "Novo lead via email")).toBe(false);
+    expect(emailLigado(portugues, "Ação urgente via email")).toBe(true);
+  });
+
   it("o instrumento está vivo — controle positivo antes de qualquer conclusão", async () => {
     comPermissaoDoNavegador("denied");
     const markup = await markupSemEfeitos();

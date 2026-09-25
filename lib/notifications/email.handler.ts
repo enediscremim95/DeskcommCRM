@@ -12,6 +12,7 @@ import { env } from "@/lib/env";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { DEFAULT_EMAIL_NOTIFICATION_PREFERENCES } from "@/lib/notifications/email-preferences";
 
 const CONSUMER_KEY = "notification.email.lead-alert.v2";
 const NEW_LEAD_MAX_AGE_MS = 30 * 60 * 1000;
@@ -113,7 +114,9 @@ async function enabledRecipients(
     const pref = byUser.get(userId);
     // O dono da instalação acompanha somente as organizações que marcou.
     if (!pref && platformAdmins.has(userId)) return false;
-    return kind === "new_lead" ? pref?.new_lead !== false : pref?.urgent_lead !== false;
+    return kind === "new_lead"
+      ? (pref?.new_lead ?? DEFAULT_EMAIL_NOTIFICATION_PREFERENCES.new_lead)
+      : (pref?.urgent_lead ?? DEFAULT_EMAIL_NOTIFICATION_PREFERENCES.urgent_lead);
   });
 }
 

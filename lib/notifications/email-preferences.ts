@@ -6,7 +6,7 @@ export interface EmailNotificationPreferences {
 }
 
 export const DEFAULT_EMAIL_NOTIFICATION_PREFERENCES: EmailNotificationPreferences = {
-  new_lead: true,
+  new_lead: false,
   urgent_lead: true,
 };
 
@@ -36,7 +36,7 @@ export async function readEmailNotificationPreferences(
   }
   const row = data as unknown as Partial<EmailNotificationPreferences>;
   return {
-    new_lead: row.new_lead !== false,
-    urgent_lead: row.urgent_lead !== false,
+    new_lead: row.new_lead ?? DEFAULT_EMAIL_NOTIFICATION_PREFERENCES.new_lead,
+    urgent_lead: row.urgent_lead ?? DEFAULT_EMAIL_NOTIFICATION_PREFERENCES.urgent_lead,
   };
 }

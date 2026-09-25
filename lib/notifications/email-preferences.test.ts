@@ -19,10 +19,23 @@ function dbCom(responses: Record<string, Array<{ data: unknown; error: null }>>)
 }
 
 describe("readEmailNotificationPreferences", () => {
-  it("mantém padrão ligado para membro comum sem preferência gravada", async () => {
+  it("desliga novo lead e mantém urgência ligada sem preferência gravada", async () => {
     const db = dbCom({
       notification_email_preferences: [{ data: null, error: null }],
       platform_admins: [{ data: null, error: null }],
+    });
+
+    await expect(readEmailNotificationPreferences(db, "org-1", "user-1")).resolves.toEqual({
+      new_lead: false,
+      urgent_lead: true,
+    });
+  });
+
+  it("preserva o opt-in explícito de novo lead", async () => {
+    const db = dbCom({
+      notification_email_preferences: [
+        { data: { new_lead: true, urgent_lead: true }, error: null },
+      ],
     });
 
     await expect(readEmailNotificationPreferences(db, "org-1", "user-1")).resolves.toEqual({
