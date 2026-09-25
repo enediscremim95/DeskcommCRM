@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Atendimento em um fluxo",
+    "subtitle": "Canvas único para revisar, publicar, descartar e restaurar a configuração que o motor executa",
+    "output": "atendimento-em-fluxo.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "entrada", "label": "Configuração" },
+    { "id": "canvas", "label": "Canvas" },
+    { "id": "versoes", "label": "Versões" },
+    { "id": "runtime", "label": "Motor existente" },
+    { "id": "operacao", "label": "Operação humana" }
+  ],
+  "mainPath": ["modelo", "canvas", "draft", "publish", "runtime", "casos"],
+  "nodes": [
+    { "id": "modelo", "lane": "entrada", "col": 0, "type": "service", "label": "Modelo por nicho ou MCP", "sublabel": "travas ligadas e proposta sempre em rascunho" },
+    { "id": "canvas", "lane": "canvas", "col": 1, "type": "frontend", "label": "/app/ai/atendimento", "sublabel": "agente, conhecimento, skills, handoff, follow-up e limites no mesmo fluxo" },
+    { "id": "draft", "lane": "versoes", "col": 2, "type": "table", "label": "ai_agent_versions", "sublabel": "fonte versionada; resumo MCP destaca o que mudou" },
+    { "id": "publish", "lane": "versoes", "col": 3, "type": "service", "label": "Publicar ou restaurar", "sublabel": "ato humano auditado; descartar não alcança produção" },
+    { "id": "runtime", "lane": "runtime", "col": 4, "type": "worker", "label": "lib/agent-engine", "sublabel": "janela, ritmo, opt-out, concorrência, follow-up e guardrails existentes" },
+    { "id": "casos", "lane": "operacao", "col": 5, "type": "frontend", "label": "Casos e Alertas", "sublabel": "efeitos e falhas visíveis para a equipe agir" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "modelo", "to": "canvas", "label": "abre proposta revisável" },
+    { "id": "e2", "from": "canvas", "to": "draft", "label": "salva sem ativar" },
+    { "id": "e3", "from": "draft", "to": "publish", "label": "pessoa decide" },
+    { "id": "e4", "from": "publish", "to": "runtime", "label": "versão publicada entra em vigor" },
+    { "id": "e5", "from": "runtime", "to": "casos", "label": "handoff e avisos chegam à operação" },
+    { "id": "e6", "from": "casos", "to": "canvas", "label": "erro observado volta para ajuste" }
+  ]
+}

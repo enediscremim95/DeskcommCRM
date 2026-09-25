@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { ReactNode } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import type { FollowupFlowDetailRow } from "@/hooks/followup/useFollowupFlow";
@@ -24,10 +25,19 @@ interface Props {
   initialData: FollowupFlowDetailRow;
 }
 
-export function FlowBuilder({ flowId, initialData }: Props) {
+/** Casca compartilhada pelos canvases de follow-up e de atendimento. */
+export function FlowBuilderShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-[600px] flex-1 flex-col" data-testid="flow-builder-shell">
-      <FlowCanvas flowId={flowId} initialData={initialData} />
+      {children}
     </div>
+  );
+}
+
+export function FlowBuilder({ flowId, initialData }: Props) {
+  return (
+    <FlowBuilderShell>
+      <FlowCanvas flowId={flowId} initialData={initialData} />
+    </FlowBuilderShell>
   );
 }

@@ -298,12 +298,12 @@ export const NAV_CATALOG = [
   // ---- Agente de IA — montar, ensinar, acompanhar ----
   {
     href: "/app/ai/atendimento",
-    label: "Montar atendimento",
-    description: "Quatro perguntas, conversa de teste e ativação segura no número.",
+    label: "Atendimento",
+    description: "O fluxo inteiro do atendimento, com agente, conhecimento, ações, retomada e travas visíveis.",
     icon: "Robot",
     group: "ia",
     section: "Montar o agente",
-    minRole: "admin",
+    minRole: "manager",
     sidebar: true,
   },
   {
@@ -314,7 +314,7 @@ export const NAV_CATALOG = [
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
-    sidebar: true,
+    sidebar: false,
   },
   {
     href: "/app/ai/knowledge/sources",
@@ -324,7 +324,7 @@ export const NAV_CATALOG = [
     group: "ia",
     section: "Ensinar o agente",
     minRole: "manager",
-    sidebar: true,
+    sidebar: false,
   },
   {
     href: "/app/ai/skills",
@@ -334,7 +334,7 @@ export const NAV_CATALOG = [
     group: "ia",
     section: "Ensinar o agente",
     minRole: "manager",
-    sidebar: true,
+    sidebar: false,
   },
   {
     href: "/app/ai/routers",
@@ -344,7 +344,7 @@ export const NAV_CATALOG = [
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
-    sidebar: true,
+    sidebar: false,
   },
   {
     href: "/app/ai/followups",
@@ -354,7 +354,7 @@ export const NAV_CATALOG = [
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
-    sidebar: true,
+    sidebar: false,
   },
   {
     href: "/app/ai/cases",

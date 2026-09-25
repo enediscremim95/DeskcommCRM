@@ -83,7 +83,10 @@ describe("sidebarGroups", () => {
 
   it("só inclui destino marcado como sidebar", () => {
     const hrefs = sidebarGroups(true, null).flatMap((g) => g.items.map((i) => i.href));
-    expect(hrefs).toContain("/app/ai/knowledge/sources");
+    expect(hrefs).toContain("/app/ai/atendimento");
+    // Conhecimento saiu do menu junto com as outras telas de ajuste fino: o
+    // fluxo do atendimento é a porta delas agora. O n8n continua fora.
+    expect(hrefs).not.toContain("/app/ai/knowledge/sources");
     expect(hrefs).not.toContain("/app/ai/workflows");
   });
 
@@ -126,15 +129,15 @@ describe("sidebarGroups", () => {
     expect(ids).toContain("atendimento");
   });
 
-  it("a ordem dentro do grupo de IA acompanha a montagem e a operação", () => {
+  it("o grupo de IA fica com o fluxo e a operação do dia", () => {
+    // Eram oito portas, e quem chegava precisava entender a arquitetura do
+    // produto antes de atender um cliente (medido: zero agentes criados em 24
+    // organizações). Agora o atendimento é UM fluxo no canvas, e Casos e
+    // Alertas ficam porque são operação do dia, não configuração. As telas de
+    // ajuste fino continuam existindo, alcançáveis pelo fluxo e pela busca.
     const ia = sidebarGroups(true, null).find((g) => g.group.id === "ia");
     expect(ia?.items.map((i) => i.href)).toEqual([
       "/app/ai/atendimento",
-      "/app/ai/agents",
-      "/app/ai/knowledge/sources",
-      "/app/ai/skills",
-      "/app/ai/routers",
-      "/app/ai/followups",
       "/app/ai/cases",
       "/app/ai/inbox",
     ]);
