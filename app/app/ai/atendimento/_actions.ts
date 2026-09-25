@@ -10,6 +10,7 @@ import { buildModel, chaveDePlataforma } from "@/lib/ai/runtime/agent";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import type { TravaId } from "@/lib/ai/atendimento/flow";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { saveAgentDraftAction } from "../agents/[id]/_actions";
 
 const TRAVAS_AUDITAVEIS = new Set<TravaId>([
@@ -18,6 +19,50 @@ const TRAVAS_AUDITAVEIS = new Set<TravaId>([
   "uma_conversa",
   "teto_diario",
 ]);
+
+const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function auditDisabledGuardrailsAction(
+  agentId: string,
+  versionId: string,
+  disabledNow: TravaId[],
+) {
+  if (!UUID_RX.test(agentId) || !UUID_RX.test(versionId)) {
+    return { ok: false as const, error: "invalid_request" };
+  }
+  const authUser = await loadAuthUser();
+  if (!authUser) return { ok: false as const, error: "unauthenticated" };
+  const activeOrg = await resolveActiveOrg(authUser);
+  if (!activeOrg || ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
+    return { ok: false as const, error: "forbidden_role" };
+  }
+
+  const guardrails = [...new Set(disabledNow)].filter((id) => TRAVAS_AUDITAVEIS.has(id));
+  if (guardrails.length === 0) return { ok: true as const, data: { version_id: versionId } };
+
+  const admin = createAdminClient();
+  const { data: version, error } = await admin
+    .from("ai_agent_versions")
+    .select("id")
+    .eq("id", versionId)
+    .eq("agent_id", agentId)
+    .eq("organization_id", activeOrg.orgId)
+    .maybeSingle();
+  if (error) return { ok: false as const, error: "internal_error", message: error.message };
+  if (!version) return { ok: false as const, error: "version_not_found" };
+
+  await audit({
+    action: "ai_agent.guardrails_disabled",
+    actorUserId: authUser.id,
+    organizationId: activeOrg.orgId,
+    resourceType: "ai_agent_version",
+    resourceId: versionId,
+    requestId: randomUUID(),
+    metadata: { agent_id: agentId, guardrails },
+  });
+  revalidatePath("/app/ai/atendimento");
+  return { ok: true as const, data: { version_id: versionId } };
+}
 
 /**
  * Salva pela mesma ação do editor fino e acrescenta a trilha explícita quando
@@ -31,27 +76,12 @@ export async function saveAtendimentoDraftAction(
 ) {
   const result = await saveAgentDraftAction(agentId, payload, cadastro);
   if (!result.ok || disabledNow.length === 0) return result;
-
-  const authUser = await loadAuthUser();
-  if (!authUser) return { ok: false as const, error: "unauthenticated" };
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg || ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
-    return { ok: false as const, error: "forbidden_role" };
-  }
-  const guardrails = [...new Set(disabledNow)].filter((id) => TRAVAS_AUDITAVEIS.has(id));
-  if (guardrails.length > 0) {
-    await audit({
-      action: "ai_agent.guardrails_disabled",
-      actorUserId: authUser.id,
-      organizationId: activeOrg.orgId,
-      resourceType: "ai_agent_version",
-      resourceId: result.data!.version_id,
-      requestId: randomUUID(),
-      metadata: { agent_id: agentId, guardrails },
-    });
-  }
-  revalidatePath("/app/ai/atendimento");
-  return result;
+  const audited = await auditDisabledGuardrailsAction(
+    agentId,
+    result.data!.version_id,
+    disabledNow,
+  );
+  return audited.ok ? result : audited;
 }
 
 /**
