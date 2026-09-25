@@ -6,6 +6,7 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fail } from "@/lib/api/wrappers";
 import type { AuthUser } from "@/lib/auth/types";
+import type * as SupportModule from "@/lib/impersonate/support";
 
 /**
  * Task 5 — DELETE /api/v1/ai/skills/[name]: remove SÓ o skill_pointers da org
@@ -110,7 +111,7 @@ describe("DELETE /api/v1/ai/skills/[name]", () => {
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  ...await importOriginal<typeof SupportModule>(),
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));
