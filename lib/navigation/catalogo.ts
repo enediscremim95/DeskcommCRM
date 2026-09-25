@@ -487,8 +487,8 @@ export const NAV_CATALOG = [
   },
   {
     href: "/app/webhooks",
-    label: "Webhooks",
-    description: "Avise outros sistemas quando algo acontecer aqui dentro.",
+    label: "Integre seu site",
+    description: "Conecte páginas e identifique a origem dos leads.",
     icon: "WebhooksLogo",
     group: "canais",
     minRole: "manager",

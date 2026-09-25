@@ -126,30 +126,32 @@ test.describe("webhooks & automações — fluxo completo", () => {
     let pipelineId: string | undefined;
 
     try {
-      // --- Step 1: login como manager; sidebar mostra "Webhooks" ---
+      // --- Step 1: login como manager; sidebar mostra "Integre seu site" ---
       await login(page, creds.users.manager!.email);
-      await expect(page.getByRole("link", { name: "Webhooks" })).toBeVisible();
-      await page.getByRole("link", { name: "Webhooks" }).click();
+      await expect(page.getByRole("link", { name: "Integre seu site" })).toBeVisible();
+      await page.getByRole("link", { name: "Integre seu site" }).click();
       await page.waitForURL(/\/app\/webhooks/);
 
-      // --- Step 2: aba "Receber dados" — criar fonte ---
+      // --- Step 2: assistente de página cria a fonte com destino completo ---
       await expect(page.getByRole("tab", { name: "Receber dados" })).toHaveAttribute(
         "data-state",
         "active",
       );
-      await page.getByRole("button", { name: /Nova fonte|Criar primeira fonte/ }).click();
+      await page.getByRole("button", { name: /Conectar página|Conectar primeira página/ }).click();
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.locator("#src-name").fill(SOURCE_NAME);
+      await page.getByRole("button", { name: "Continuar" }).click();
 
       const dialog = page.getByRole("dialog");
       await selectFirstOption(page, dialog.getByRole("combobox").nth(0));
       await selectFirstOption(page, dialog.getByRole("combobox").nth(1));
+      await selectFirstOption(page, dialog.getByRole("combobox").nth(2));
 
       const [createRes] = await Promise.all([
         page.waitForResponse(
           (r) => r.url().includes("/api/v1/webhook-sources") && r.request().method() === "POST",
         ),
-        page.getByRole("button", { name: "Criar fonte" }).click(),
+        page.getByRole("button", { name: "Criar fonte e gerar script" }).click(),
       ]);
       expect(createRes.ok()).toBeTruthy();
       const createBody = (await createRes.json()) as {
@@ -169,6 +171,7 @@ test.describe("webhooks & automações — fluxo completo", () => {
       await expect(snippetField).toBeVisible();
       const snippet = await snippetField.inputValue();
       expect(snippet).toContain(sourceUrl);
+      expect(snippet).toContain(SOURCE_NAME);
 
       // Página estática, em outra origem, cola o snippet e lê o retorno real.
       // O segundo listener representa o fluxo que a LP já tinha e que precisa
@@ -207,7 +210,7 @@ test.describe("webhooks & automações — fluxo completo", () => {
         await lp.close();
       }
 
-      await sheet.getByRole("button", { name: "Enviar lead de teste" }).click();
+      await sheet.getByRole("button", { name: "Testar agora" }).click();
       await expectToast(page, "Funcionou! Um lead de teste entrou no seu funil.");
       await page.keyboard.press("Escape");
 
@@ -390,12 +393,12 @@ test.describe("webhooks & automações — fluxo completo", () => {
       );
       await expect(leadCard).toHaveAttribute("title", new RegExp(`Tags:.*${TAG}`));
 
-      // --- Step 9: AGENT não vê "Webhooks" e é redirecionado ---
+      // --- Step 9: AGENT não vê "Integre seu site" e é redirecionado ---
       const agentContext = await browser.newContext();
       const agentPage = await agentContext.newPage();
       try {
         await login(agentPage, creds.users.agent!.email);
-        await expect(agentPage.getByRole("link", { name: "Webhooks" })).toHaveCount(0);
+        await expect(agentPage.getByRole("link", { name: "Integre seu site" })).toHaveCount(0);
         await agentPage.goto(`${APP_URL}/app/webhooks`);
         await agentPage.waitForURL(/\/app\/inbox/);
         expect(agentPage.url()).toMatch(/\/app\/inbox/);

@@ -75,7 +75,10 @@ export function mapInboundPayload(
     const str =
       typeof value === "string" ? value : typeof value === "number" || typeof value === "boolean" ? String(value) : null;
     if (str === null) continue; // objetos/arrays aninhados: descartados no v1
-    if (key.toLowerCase().startsWith("utm_")) source_metadata[key.toLowerCase()] = str;
+    const chave = key.toLowerCase();
+    if (chave.startsWith("utm_") || chave === "pagina" || chave === "origem") {
+      source_metadata[chave] = str;
+    }
     else custom_fields[key] = str;
   }
 

@@ -18,6 +18,7 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { LOTE_PADRAO, podarArquivoDeWebhooks } from "@/lib/channels/retencao-do-arquivo";
 import { podarHistoricoDeCaptacao } from "@/lib/webhooks/retencao-da-captacao";
+import { vigiarFontesSemLead } from "@/lib/webhooks/vigia-fontes";
 import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -71,5 +72,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     lote,
   });
 
-  return ok({ ...resultado, captacao }, { requestId });
+  const saudeDasFontes = await vigiarFontesSemLead(admin);
+
+  return ok({ ...resultado, captacao, saude_das_fontes: saudeDasFontes }, { requestId });
 }

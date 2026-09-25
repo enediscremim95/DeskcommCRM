@@ -15,6 +15,7 @@ import { SeloDeAutoria } from "@/components/operacao/SeloDeAutoria";
 import { useWebhookSources, type WebhookSourceRow } from "@/hooks/webhooks/useWebhookSources";
 import { CreateSourceDialog } from "./CreateSourceDialog";
 import { SourceDetail } from "./SourceDetail";
+import { UtmGuideCard } from "./UtmGuideCard";
 import { useT } from "@/hooks/i18n/useT";
 
 function lastReceivedLabel(iso: string | null, t: (texto: string) => string, locale: Locale): string {
@@ -42,20 +43,21 @@ export function SourcesTab() {
 
   if (sources.length === 0) {
     return (
-      <div className="flex justify-center pt-10">
-        <Card className="max-w-md">
+      <div className="space-y-4 pt-4">
+        <UtmGuideCard />
+        <Card className="mx-auto max-w-md">
           <CardHeader className="items-center text-center">
             <PlugsConnected className="mb-2 h-10 w-10 text-accent" />
-            <CardTitle>{t("Conecte sua landing page em 2 minutos")}</CardTitle>
+            <CardTitle>{t("Conecte uma página em 2 minutos")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-center">
             <ol className="space-y-2 text-left text-sm text-muted-foreground">
-              <li>{t("1. Crie uma fonte e diga em qual funil o contato entra.")}</li>
-              <li>{t("2. Copie o endereço ou o formulário pronto.")}</li>
-              <li>{t("3. Cole no seu site — cada envio vira um lead aqui dentro.")}</li>
+              <li>{t("1. Dê um nome para a página e escolha quem responde.")}</li>
+              <li>{t("2. Escolha o funil e a etapa de entrada.")}</li>
+              <li>{t("3. Copie o script pronto e teste a entrada.")}</li>
             </ol>
             <Button onClick={() => setCreateOpen(true)}>
-              <Plus /> {t("Criar primeira fonte")}
+              <Plus /> {t("Conectar primeira página")}
             </Button>
           </CardContent>
         </Card>
@@ -73,9 +75,13 @@ export function SourcesTab() {
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex sm:justify-end">
+      <UtmGuideCard />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-muted-foreground">
+          {t("Use uma fonte para cada página. Assim cada lead mantém sua origem.")}
+        </p>
         <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
-          <Plus /> {t("Nova fonte")}
+          <Plus /> {t("Conectar página")}
         </Button>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

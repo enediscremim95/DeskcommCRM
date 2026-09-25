@@ -71,6 +71,7 @@ export type InboxKind =
   // não distingue "tocou e ninguém pegou" de "o operador recusou", e para quem
   // lê a Central os dois pedem a mesma coisa: alguém precisa ligar de volta.
   | 'voice_call_missed'
+  | 'webhook_source_silent'
   | 'other';
 
 export interface InboxItemRow {

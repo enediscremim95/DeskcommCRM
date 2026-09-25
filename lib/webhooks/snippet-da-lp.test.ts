@@ -7,6 +7,7 @@ import { gerarSnippetDaLandingPage } from "@/lib/webhooks/snippet-da-lp";
 describe("gerarSnippetDaLandingPage", () => {
   const snippet = gerarSnippetDaLandingPage(
     "https://crm.example.com/api/v1/webhooks/in/token-publico",
+    "Dia dos Professores",
   );
 
   it("aponta para a fonte e exige marca explícita no formulário", () => {
@@ -14,6 +15,7 @@ describe("gerarSnippetDaLandingPage", () => {
       'const endpoint = "https://crm.example.com/api/v1/webhooks/in/token-publico"',
     );
     expect(snippet).toContain('form[data-crm-lead]');
+    expect(snippet).toContain('const pagina = "Dia dos Professores"');
   });
 
   it("leva UTMs, confirma lead_id e mantém external_id nos retries", () => {
@@ -32,7 +34,10 @@ describe("gerarSnippetDaLandingPage", () => {
   });
 
   it("não permite fechar a tag script a partir da URL", () => {
-    const hostil = gerarSnippetDaLandingPage("https://example.com/</script><script>alert(1)</script>");
+    const hostil = gerarSnippetDaLandingPage(
+      "https://example.com/</script><script>alert(1)</script>",
+      "Página </script><script>alert(2)</script>",
+    );
     expect(hostil).not.toContain("https://example.com/</script>");
     expect(hostil).toContain("<\\/script>");
   });
@@ -80,6 +85,7 @@ describe("gerarSnippetDaLandingPage", () => {
       telefone: "11999990000",
       utm_source: "instagram",
       utm_campaign: "lancamento",
+      pagina: "Dia dos Professores",
     });
     expect(payload.external_id).toBeTruthy();
   });
