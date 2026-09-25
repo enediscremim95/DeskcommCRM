@@ -78,8 +78,10 @@ export interface LiveEnrollmentRef {
  *  não estende `AdminClient` do engine; só o que este consumidor precisa. */
 export interface ReactivityAdminClient {
   loadConversationContactId(orgId: string, conversationId: string): Promise<string | null>;
+  loadMessageSentVia?(orgId: string, messageId: string): Promise<string | null>;
   loadContactBlocked(orgId: string, contactId: string): Promise<boolean>;
   loadLiveEnrollmentsForContact(orgId: string, contactId: string): Promise<LiveEnrollmentRef[]>;
+  cancelPendingScheduledFollowups(orgId: string, contactId: string): Promise<number>;
   insertEnrollmentEvent(event: {
     organization_id: string;
     enrollment_id: string;
@@ -190,6 +192,7 @@ async function reactToInbound(
   if (!contactId) return { matched: false, reacted: 0 };
 
   const isBlocked = await db.loadContactBlocked(row.organization_id, contactId);
+  await db.cancelPendingScheduledFollowups(row.organization_id, contactId);
   const live = await db.loadLiveEnrollmentsForContact(row.organization_id, contactId);
 
   if (isBlocked) {
@@ -227,6 +230,40 @@ async function reactToInbound(
     if (await acordarPorInbound(db, clock, row, e)) reacted++;
   }
   return { matched: true, reacted };
+}
+
+async function reactToHumanReply(
+  db: ReactivityAdminClient,
+  clock: () => Date,
+  row: EventRow,
+): Promise<ReactivitySummary> {
+  const actorType = strOrNull(row.metadata.actor_type);
+  if (actorType !== null && actorType !== 'user') return { matched: false, reacted: 0 };
+  if (actorType === null) {
+    const messageId = row.entity_kind === 'message' ? row.entity_id : null;
+    if (!messageId || !db.loadMessageSentVia) return { matched: false, reacted: 0 };
+    const sentVia = await db.loadMessageSentVia(row.organization_id, messageId);
+    if (sentVia !== 'user' && sentVia !== 'external_device') {
+      return { matched: false, reacted: 0 };
+    }
+  }
+  const conversationId = strOrNull(row.payload.conversation_id);
+  if (!conversationId) return { matched: false, reacted: 0 };
+  const contactId = await db.loadConversationContactId(row.organization_id, conversationId);
+  if (!contactId) return { matched: false, reacted: 0 };
+  const scheduled = await db.cancelPendingScheduledFollowups(row.organization_id, contactId);
+  const live = await db.loadLiveEnrollmentsForContact(row.organization_id, contactId);
+  const cancelled = await cancelAll(
+    db,
+    row.organization_id,
+    row.id,
+    live,
+    'handoff',
+    'human_replied',
+    'reactivity_human_replied',
+    clock,
+  );
+  return { matched: true, reacted: scheduled + cancelled };
 }
 
 async function acordarPorInbound(
@@ -354,6 +391,8 @@ export async function applyReactivityEvent(
   switch (row.event_type) {
     case "message.received":
       return reactToInbound(db, clock, row);
+    case "message.sent":
+      return reactToHumanReply(db, clock, row);
     case "ai.handoff_triggered":
       return reactToHandoffOpen(db, clock, row);
     case "ai.handoff_resolved":
@@ -381,6 +420,16 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
         .maybeSingle();
       if (error) throw new Error(error.message);
       return data?.contact_id ?? null;
+    },
+    async loadMessageSentVia(orgId, messageId) {
+      const { data, error } = await admin
+        .from('messages')
+        .select('sent_via')
+        .eq('id', messageId)
+        .eq('organization_id', orgId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return data?.sent_via ?? null;
     },
     async loadContactBlocked(orgId, contactId) {
       const { data, error } = await admin
@@ -424,6 +473,17 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
           trigger_config: p?.trigger_config ?? null,
         };
       });
+    },
+    async cancelPendingScheduledFollowups(orgId, contactId) {
+      const { data, error } = await admin
+        .from('cron_jobs')
+        .update({ enabled: false, updated_at: new Date().toISOString() })
+        .eq('organization_id', orgId)
+        .eq('contact_id', contactId)
+        .eq('enabled', true)
+        .select('id');
+      if (error) throw new Error(error.message);
+      return data?.length ?? 0;
     },
     async insertEnrollmentEvent(event) {
       const { error } = await admin.from("followup_enrollment_events").insert(event);

@@ -658,7 +658,7 @@ export async function revertToVersionAction(
 
 export async function createMcpAgentAction(
   payload: unknown,
-): Promise<ActionResult<{ agent_id: string }>> {
+): Promise<ActionResult<{ agent_id: string; version_id: string }>> {
   const guard = await ensureAdmin();
   if (!guard.ok) return guard;
   const { authUser, activeOrg } = guard;
@@ -694,7 +694,7 @@ export async function createMcpAgentAction(
   }
 
   const v = parsed.data.version;
-  const { error: versionErr } = await admin.from("ai_agent_versions").insert({
+  const { data: versionRow, error: versionErr } = await admin.from("ai_agent_versions").insert({
     organization_id: activeOrg.orgId,
     agent_id: agentRow.id,
     version_number: 1,
@@ -725,16 +725,16 @@ export async function createMcpAgentAction(
     knowledge_source_ids: v.knowledge_source_ids,
     status: "draft",
     created_by: authUser.id,
-  });
+  }).select("id").single();
 
-  if (versionErr) {
+  if (versionErr || !versionRow) {
     // Compensação — archiva o agent recém criado para evitar lixo.
     await admin
       .from("ai_agents")
       .update({ archived_at: new Date().toISOString() })
       .eq("id", agentRow.id)
       .eq("organization_id", activeOrg.orgId);
-    return { ok: false, error: "internal_error", message: versionErr.message };
+    return { ok: false, error: "internal_error", message: versionErr?.message };
   }
 
   void audit({
@@ -748,5 +748,38 @@ export async function createMcpAgentAction(
   });
 
   revalidatePath("/app/ai/agents");
-  return { ok: true, data: { agent_id: agentRow.id } };
+  return { ok: true, data: { agent_id: agentRow.id, version_id: versionRow.id } };
+}
+
+export async function configureChannelConcurrencyAction(
+  channelSessionId: string,
+  maxConcurrent: number,
+): Promise<ActionResult<{ max_concurrent: number }>> {
+  if (!UUID_RX.test(channelSessionId) || !Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 20) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const guard = await ensureAdmin();
+  if (!guard.ok) return guard;
+  const { authUser, activeOrg } = guard;
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('channel_sessions')
+    .update({ max_concurrent_ai_conversations: maxConcurrent } as never)
+    .eq('id', channelSessionId)
+    .eq('organization_id', activeOrg.orgId)
+    .is('archived_at', null)
+    .select('id')
+    .maybeSingle();
+  if (error) return { ok: false, error: 'internal_error', message: error.message };
+  if (!data) return { ok: false, error: 'not_found' };
+  await audit({
+    action: 'channel_session.ai_concurrency_changed',
+    actorUserId: authUser.id,
+    organizationId: activeOrg.orgId,
+    resourceType: 'channel_session',
+    resourceId: channelSessionId,
+    requestId: randomUUID(),
+    metadata: { max_concurrent: maxConcurrent },
+  });
+  return { ok: true, data: { max_concurrent: maxConcurrent } };
 }

@@ -64,6 +64,15 @@ describe("msAteAJanelaAbrir", () => {
     expect(msAteAJanelaAbrir(COMERCIAL, terca("21:55"))).toBe((10 * 60 + 5) * 60_000);
   });
 
+  it("bug 3, a cliente da madrugada fica agendada exatamente para a abertura", () => {
+    const recebida = terca("21:55");
+    const espera = msAteAJanelaAbrir(COMERCIAL, recebida);
+    expect(espera).not.toBeNull();
+    expect(new Date(recebida.getTime() + espera!).toISOString()).toBe(
+      "2026-08-19T11:00:00.000Z",
+    );
+  });
+
   it("antes da abertura espera só até as 08:00 do mesmo dia", () => {
     expect(msAteAJanelaAbrir(COMERCIAL, terca("06:30"))).toBe(90 * 60_000);
   });

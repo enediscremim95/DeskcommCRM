@@ -27,6 +27,7 @@ import { crmSendWhatsappMessage } from "./messages";
 import {
   crmAssignConversation,
   crmManageTags,
+  crmApplyChannelLabel,
   crmGetQueueStatus,
 } from "./governance";
 import {
@@ -139,6 +140,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmSendWhatsappMessage,
   crmAssignConversation,
   crmManageTags,
+  crmApplyChannelLabel,
   // write — organizar a operação (W4)
   crmCreateStage,
   crmUpdateStage,

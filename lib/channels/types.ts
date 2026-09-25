@@ -272,6 +272,13 @@ export interface ChannelAdapter {
     recipient: string;
   }): Promise<void>;
 
+  /** Adiciona uma etiqueta existente sem remover as demais. Opcional por canal. */
+  addChatLabel?(input: ChannelTenantScope & {
+    sessionRef: string;
+    recipient: string;
+    labelName: string;
+  }): Promise<'applied' | 'label_not_found'>;
+
   /**
    * A conexão está de pé AGORA? Pergunta feita ao transporte, não ao banco.
    *

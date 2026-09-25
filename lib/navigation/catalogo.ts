@@ -297,6 +297,16 @@ export const NAV_CATALOG = [
 
   // ---- Agente de IA — montar, ensinar, acompanhar ----
   {
+    href: "/app/ai/atendimento",
+    label: "Montar atendimento",
+    description: "Quatro perguntas, conversa de teste e ativação segura no número.",
+    icon: "Robot",
+    group: "ia",
+    section: "Montar o agente",
+    minRole: "admin",
+    sidebar: true,
+  },
+  {
     href: "/app/ai/workflows",
     // Renomeado de "Agentes" por decisão do dono (17/09/2026): o agente que
     // atende mora no N8N, fora deste sistema.
@@ -306,7 +316,7 @@ export const NAV_CATALOG = [
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
-    sidebar: true,
+    sidebar: false,
     integration: "n8n",
   },
   {

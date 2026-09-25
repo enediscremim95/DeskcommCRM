@@ -46,6 +46,16 @@ export const TOOLS_GOVERNANCA = declararTools([
     pacotes: ["organizar", "atender"],
   },
   {
+    name: "crm_apply_channel_label",
+    category: "write",
+    rotulo: "Etiquetar a conversa no canal",
+    explicacao:
+      "Aplica uma etiqueta que já existe no aplicativo de mensagens, sem remover as etiquetas atuais.",
+    oQueToca: "Organização da conversa",
+    risco: "atencao",
+    pacotes: ["organizar", "atender"],
+  },
+  {
     name: "crm_request_human_handoff",
     category: "handoff",
     rotulo: "Chamar um atendente humano",

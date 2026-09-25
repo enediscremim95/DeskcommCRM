@@ -46,6 +46,8 @@ export class WahaChannelAdapter implements ChannelAdapter {
     try {
       const outcome = await sendTurnMessage(this.db, this.crmCfg, input);
       switch (outcome.kind) {
+        case 'deferred':
+          return { kind: 'deferred', retryAfterMs: outcome.retryAfterMs };
         case 'sent':
           return { kind: 'sent', idempotencyKey: outcome.idempotencyKey, messageId: outcome.crmMessageId };
         case 'already_sent':
