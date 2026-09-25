@@ -165,7 +165,12 @@ export function useColunasAjustaveis<Column extends string>({
           definirLargura(coluna, larguraAtual + (event.key === "ArrowRight" ? 8 : -8));
         }}
       >
-        <span className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-primary group-focus-visible:bg-primary" />
+        {/* A divisória fica VISÍVEL o tempo todo, não só sob o mouse. Enquanto ela
+            só aparecia no hover de uma faixa de 3px, o recurso existia e ninguém
+            achava: o dono do produto pediu duas vezes o que já estava publicado,
+            porque nada na tela contava que dava para arrastar. Ao passar o mouse
+            ela engorda e ganha a cor de ação, para confirmar o que fazer ali. */}
+        <span className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-border/70 transition-all group-hover:w-0.5 group-hover:bg-primary group-focus-visible:w-0.5 group-focus-visible:bg-primary" />
       </button>
     );
   };
