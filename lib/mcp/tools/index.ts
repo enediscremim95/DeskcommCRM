@@ -22,6 +22,7 @@ import {
   crmMoveLeadStage,
 } from "./leads";
 import { crmListPipelines } from "./pipelines";
+import { crmComoFunciona } from "./contexto";
 import { crmSendWhatsappMessage } from "./messages";
 import {
   crmAssignConversation,
@@ -89,6 +90,7 @@ import {
 // unknown>` e cada handler valida no Zod do registerTool.
 export const allTools: ReadonlyArray<McpToolDefinition> = [
   // read
+  crmComoFunciona,
   crmListEventTypes,
   crmFindFreeSlots,
   crmListAppointments,

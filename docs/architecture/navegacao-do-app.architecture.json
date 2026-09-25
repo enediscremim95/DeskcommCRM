@@ -63,6 +63,14 @@
       "sublabel": "Encontra destinos visíveis por nome e descrição"
     },
     {
+      "id": "mcp-page",
+      "lane": "projection",
+      "col": 3,
+      "type": "frontend",
+      "label": "Conector MCP",
+      "sublabel": "Endereço da instalação, comando, tokens e contexto apresentado à IA"
+    },
+    {
       "id": "route-state",
       "lane": "feedback",
       "col": 4,
@@ -82,6 +90,8 @@
     { "id": "e8", "from": "hubs", "to": "route-state", "label": "navega" },
     { "id": "e9", "from": "search", "to": "route-state", "label": "navega" },
     { "id": "e10", "from": "route-state", "to": "sidebar", "label": "marca ativo" },
-    { "id": "e11", "from": "route-state", "to": "dock", "label": "marca ativo" }
+    { "id": "e11", "from": "route-state", "to": "dock", "label": "marca ativo" },
+    { "id": "e12", "from": "permissions", "to": "mcp-page", "label": "admin em Canais" },
+    { "id": "e13", "from": "mcp-page", "to": "route-state", "label": "abre o conector" }
   ]
 }

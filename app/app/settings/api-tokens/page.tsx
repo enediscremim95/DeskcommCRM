@@ -4,6 +4,8 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { ApiTokensClient } from "./_components/ApiTokensClient";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { env } from "@/lib/env";
+import { urlDoConectorMcp } from "@/lib/mcp/conexao";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +27,7 @@ export default async function ApiTokensPage() {
           {traduzir("na criação.", idioma)}
         </p>
       </header>
-      <ApiTokensClient />
+      <ApiTokensClient connectorUrl={urlDoConectorMcp(env.NEXT_PUBLIC_APP_URL)} />
     </div>
   );
 }

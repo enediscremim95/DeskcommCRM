@@ -20,6 +20,8 @@ export interface McpContext {
   actor: Actor;
   apiTokenId: string;
   requestId: string;
+  /** Texto que o servidor apresentou ao cliente no início desta conexão. */
+  apresentacao?: string;
   /** Service-role admin client. Tools devem filtrar `organization_id` em toda query. */
   supabase: SupabaseClient;
 }
