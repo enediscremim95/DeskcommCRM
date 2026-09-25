@@ -22,7 +22,10 @@ function dbCom(responses: Record<string, Array<{ data: unknown; error: null }>>)
 }
 
 describe("readEmailNotificationPreferences", () => {
-  it("mantém padrão ligado para membro comum sem preferência gravada", async () => {
+  it("sem preferência gravada, lead novo nasce desligado e urgente ligado", async () => {
+    // Mudou de propósito em 25/09/2026: com lead novo ligado por padrão, uma
+    // operação com 28 leads e três pessoas gerou 84 e-mails num plano de 100
+    // por dia, o mesmo do convite e da recuperação de senha.
     const db = dbCom({
       notification_email_preferences: [{ data: null, error: null }],
       platform_admins: [{ data: null, error: null }],
@@ -30,7 +33,7 @@ describe("readEmailNotificationPreferences", () => {
 
     await expect(readEmailNotificationPreferences(db, "org-1", "user-1")).resolves.toEqual({
       email_enabled: true,
-      new_lead: true,
+      new_lead: false,
       urgent_lead: true,
     });
   });
