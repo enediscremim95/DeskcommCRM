@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -692,6 +692,23 @@ describe("colunas da tabela de campanhas", () => {
     spend,
     adsets: [],
   });
+  const creativeResponse = (priorityMetrics: string[] = ["leads", "spend"]) => {
+    const response = baseResponse([{
+      ...metrics,
+      name: "Campanha de criativos",
+      platform: "meta_ads",
+      campaign_status: "ACTIVE",
+      adsets: [{
+        ...metrics,
+        name: "Conjunto principal",
+        ads: [
+          { ...metrics, name: "Criativo campeão", spend: 80, conversions: 8, thumbnail_url: null },
+          { ...metrics, name: "Criativo secundário", spend: 20, conversions: 2, thumbnail_url: null },
+        ],
+      }],
+    }]);
+    return { data: { ...response.data, priority_metrics: priorityMetrics } };
+  };
   const headerNames = (table: HTMLTableElement) =>
     Array.from(table.tHead?.rows[0]?.cells ?? []).map((cell) =>
       (cell.textContent ?? "").replace(/[▼▲]/g, "").trim(),
@@ -916,5 +933,178 @@ describe("colunas da tabela de campanhas", () => {
     expect(row.cells[3]?.textContent).toBe("5%");
     expect(row.cells[4]?.textContent).toMatch(/^R\$\s50,00$/);
     expect(screen.getByText("Pausada")).toBeInTheDocument();
+  });
+
+  it("redimensiona sem ordenar e restaura a largura persistida pela organização", async () => {
+    const campanhas = [
+      campaignWithStatus("Maior investimento", "ACTIVE", 80),
+      campaignWithStatus("Menor investimento", "ACTIVE", 20),
+    ];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(baseResponse(campanhas, ["spend", "leads"])),
+    );
+
+    const firstMount = render(<TrafficDashboard />);
+    const firstTable = (await screen.findByText("Maior investimento")).closest(
+      "table",
+    ) as HTMLTableElement;
+    const spendHeader = within(firstTable).getByRole("columnheader", { name: /Valor gasto/ });
+    vi.spyOn(spendHeader, "getBoundingClientRect").mockReturnValue({
+      width: 160, height: 40, top: 0, right: 160, bottom: 40,
+      left: 0, x: 0, y: 0, toJSON: () => ({}),
+    });
+    const separator = within(spendHeader).getByRole("separator", { name: /Valor gasto/ });
+
+    fireEvent.pointerDown(separator, {
+      pointerType: "mouse", button: 0, clientX: 100, pointerId: 7,
+    });
+    fireEvent.pointerMove(separator, { pointerType: "mouse", clientX: 180, pointerId: 7 });
+    fireEvent.pointerUp(separator, { pointerType: "mouse", clientX: 180, pointerId: 7 });
+
+    expect(spendHeader).toHaveStyle({ width: "240px" });
+    expect(spendHeader).toHaveAttribute("aria-sort", "descending");
+    expect(firstTable.tBodies[0]?.rows[0]).toHaveTextContent("Maior investimento");
+    expect(JSON.parse(
+      localStorage.getItem("traffic-report-column-widths:org-1:meta_ads") ?? "{}",
+    )).toEqual({ spend: 240 });
+
+    firstMount.unmount();
+    render(<TrafficDashboard />);
+    const secondTable = (await screen.findByText("Maior investimento")).closest(
+      "table",
+    ) as HTMLTableElement;
+    const restoredHeader = within(secondTable).getByRole("columnheader", { name: /Valor gasto/ });
+    await waitFor(() => expect(restoredHeader).toHaveStyle({ width: "240px" }));
+  });
+
+  it("duplo clique restaura somente a coluna escolhida", async () => {
+    localStorage.setItem(
+      "traffic-report-column-widths:org-1:meta_ads",
+      JSON.stringify({ spend: 260, leads: 180 }),
+    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(baseResponse([
+        campaignWithStatus("Campanha ajustável", "ACTIVE", 50),
+      ], ["spend", "leads"])),
+    );
+
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Campanha ajustável")).closest(
+      "table",
+    ) as HTMLTableElement;
+    const spendHeader = within(table).getByRole("columnheader", { name: /Valor gasto/ });
+    await waitFor(() => expect(spendHeader).toHaveStyle({ width: "260px" }));
+
+    fireEvent.doubleClick(within(spendHeader).getByRole("separator", { name: /Valor gasto/ }));
+
+    expect(spendHeader.style.width).toBe("");
+    expect(JSON.parse(
+      localStorage.getItem("traffic-report-column-widths:org-1:meta_ads") ?? "{}",
+    )).toEqual({ leads: 180 });
+  });
+
+  it("distingue na tabela a métrica prioritária escolhida", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      const response = baseResponse(
+        [campaignWithStatus("Campanha em destaque", "ACTIVE", 50)],
+        ["spend", "leads"],
+      );
+      return Response.json({ data: { ...response.data, priority_metrics: ["leads", "spend"] } });
+    });
+
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Campanha em destaque")).closest(
+      "table",
+    ) as HTMLTableElement;
+    const leadHeader = within(table).getByRole("columnheader", { name: /Leads/ });
+    const leadColumn = columnIndex(table, "Leads");
+
+    expect(leadHeader).toHaveAttribute("data-priority", "true");
+    expect(leadHeader).toHaveClass("bg-primary/[0.10]");
+    expect(table.tBodies[0]?.rows[0]?.cells[leadColumn]).toHaveAttribute("data-priority", "true");
+    expect(table.tBodies[0]?.rows[0]?.cells[leadColumn]).toHaveClass("text-base", "font-semibold");
+    expect(table.tFoot?.rows[0]?.cells[leadColumn]).toHaveAttribute("data-priority", "true");
+  });
+
+  it("redimensiona Anúncios Meta sem mudar a ordenação e restaura por organização e tabela", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(creativeResponse()));
+
+    const firstMount = render(<TrafficDashboard />);
+    const section = (await screen.findByText("Anúncios Meta")).closest("section") as HTMLElement;
+    const table = section.querySelector("table") as HTMLTableElement;
+    const spendHeader = within(table).getByRole("columnheader", { name: /Investimento/ });
+    vi.spyOn(spendHeader, "getBoundingClientRect").mockReturnValue({
+      width: 160, height: 40, top: 0, right: 160, bottom: 40,
+      left: 0, x: 0, y: 0, toJSON: () => ({}),
+    });
+    const separator = within(spendHeader).getByRole("separator", { name: /Investimento/ });
+
+    expect(fireEvent.pointerDown(separator, {
+      pointerType: "mouse", button: 0, clientX: 100, pointerId: 11,
+    })).toBe(false);
+    fireEvent.pointerMove(separator, { pointerType: "mouse", clientX: 180, pointerId: 11 });
+    fireEvent.pointerUp(separator, { pointerType: "mouse", clientX: 180, pointerId: 11 });
+
+    expect(spendHeader).toHaveStyle({ width: "240px" });
+    expect(within(section).getByRole("combobox")).toHaveValue("conversions");
+    expect(table.tBodies[0]?.rows[0]).toHaveTextContent("Criativo campeão");
+    expect(JSON.parse(
+      localStorage.getItem("traffic-report-column-widths:org-1:meta-ads-creatives") ?? "{}",
+    )).toEqual({ spend: 240 });
+    expect(localStorage.getItem("traffic-report-column-widths:org-1:meta_ads")).toBeNull();
+
+    firstMount.unmount();
+    render(<TrafficDashboard />);
+    const restoredSection = (await screen.findByText("Anúncios Meta")).closest("section") as HTMLElement;
+    const restoredTable = restoredSection.querySelector("table") as HTMLTableElement;
+    const restoredHeader = within(restoredTable).getByRole("columnheader", { name: /Investimento/ });
+    await waitFor(() => expect(restoredHeader).toHaveStyle({ width: "240px" }));
+  });
+
+  it("ajusta Anúncios Meta pelo teclado e restaura somente a coluna escolhida", async () => {
+    localStorage.setItem(
+      "traffic-report-column-widths:org-1:meta-ads-creatives",
+      JSON.stringify({ spend: 260, impressions: 180 }),
+    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(creativeResponse()));
+
+    render(<TrafficDashboard />);
+    const section = (await screen.findByText("Anúncios Meta")).closest("section") as HTMLElement;
+    const table = section.querySelector("table") as HTMLTableElement;
+    const impressionsHeader = within(table).getByRole("columnheader", { name: /Impressões/ });
+    await waitFor(() => expect(impressionsHeader).toHaveStyle({ width: "180px" }));
+    const impressionsHandle = within(impressionsHeader).getByRole("separator", { name: /Impressões/ });
+
+    fireEvent.keyDown(impressionsHandle, { key: "ArrowRight" });
+    expect(impressionsHeader).toHaveStyle({ width: "188px" });
+    fireEvent.keyDown(impressionsHandle, { key: "Home" });
+    expect(impressionsHeader.style.width).toBe("");
+    expect(JSON.parse(
+      localStorage.getItem("traffic-report-column-widths:org-1:meta-ads-creatives") ?? "{}",
+    )).toEqual({ spend: 260 });
+
+    const spendHeader = within(table).getByRole("columnheader", { name: /Investimento/ });
+    fireEvent.doubleClick(within(spendHeader).getByRole("separator", { name: /Investimento/ }));
+    expect(localStorage.getItem("traffic-report-column-widths:org-1:meta-ads-creatives")).toBeNull();
+  });
+
+  it("mantém a ênfase da métrica prioritária em Anúncios Meta ao trocar a ordenação", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(creativeResponse()));
+    const user = userEvent.setup();
+
+    render(<TrafficDashboard />);
+    const section = (await screen.findByText("Anúncios Meta")).closest("section") as HTMLElement;
+    const table = section.querySelector("table") as HTMLTableElement;
+    const leadsHeader = within(table).getByRole("columnheader", { name: /^Leads/ }) as HTMLTableCellElement;
+    const leadsIndex = Array.from(table.tHead?.rows[0]?.cells ?? []).indexOf(leadsHeader);
+
+    expect(leadsHeader).toHaveAttribute("data-priority", "true");
+    expect(leadsHeader).toHaveClass("bg-primary/[0.10]");
+    expect(table.tBodies[0]?.rows[0]?.cells[leadsIndex]).toHaveAttribute("data-priority", "true");
+    await user.selectOptions(within(section).getByRole("combobox"), "spend");
+    expect(leadsHeader).toHaveAttribute("data-priority", "true");
+    expect(within(table).getByRole("columnheader", { name: /Investimento/ })).not.toHaveAttribute(
+      "data-priority",
+    );
   });
 });

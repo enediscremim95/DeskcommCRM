@@ -7833,6 +7833,8 @@ export const DICIONARIO: Traducoes = {
   Campanha: { es: "Campaña" },
   "Filtrar campanhas por status": { es: "Filtrar campañas por estado" },
   "Ordenar por": { es: "Ordenar por" },
+  "Ajustar largura da coluna": { es: "Ajustar ancho de la columna" },
+  "Clique duas vezes para restaurar": { es: "Haz doble clic para restaurar" },
   Ativas: { es: "Activas" },
   Pausadas: { es: "Pausadas" },
   Encerrada: { es: "Cerrada" },

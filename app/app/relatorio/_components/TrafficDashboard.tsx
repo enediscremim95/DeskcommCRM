@@ -18,6 +18,7 @@ import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import {
+  CAMPAIGN_METRIC_COLUMNS,
   campaignMetricColumnsForPlatform,
   type AdPlatform,
   type CampaignMetricColumn,
@@ -35,6 +36,7 @@ import { buildTrafficFunnelStages, ConversionFunnel, type FunnelStage } from "./
 import { CostSignal, CostThresholdControl, type CostThreshold } from "./CostThresholds";
 import { PriorityMetricSelector } from "./PriorityMetricSelector";
 import { CreativePerformance, TrafficTimeline } from "./RichReportSections";
+import { useColunasAjustaveis, type ConfiguracaoColunaAjustavel } from "./colunas-ajustaveis";
 
 interface Metrics {
   budget: number | null;
@@ -470,6 +472,18 @@ function metricValue(
 type CampaignStatusFilter = "all" | "active" | "paused";
 type CampaignSortKey = "name" | CampaignMetricColumn;
 type SortDirection = "ascending" | "descending";
+type ResizableColumnKey = "name" | "status" | CampaignMetricColumn;
+
+const CAMPAIGN_RESIZABLE_COLUMNS = Object.fromEntries(
+  (["name", "status", ...CAMPAIGN_METRIC_COLUMNS] as ResizableColumnKey[]).map((column) => [
+    column,
+    column === "name"
+      ? { larguraMinima: 180, larguraPadrao: 280 }
+      : column === "status"
+        ? { larguraMinima: 112, larguraPadrao: 132 }
+        : { larguraMinima: 104, larguraPadrao: 144 },
+  ]),
+) as Record<ResizableColumnKey, ConfiguracaoColunaAjustavel>;
 
 const CAMPAIGN_STATUS: Record<
   string,
@@ -817,9 +831,11 @@ function CampaignTable({
   currency,
   total,
   platform,
+  organizationKey,
   labels,
   columns,
   idioma,
+  priorityMetric,
   threshold,
   columnMenu,
 }: {
@@ -827,8 +843,10 @@ function CampaignTable({
   currency: string;
   total: Metrics;
   platform: "meta_ads" | "google_ads";
+  organizationKey: string;
   columns: CampaignMetricColumn[];
   idioma: string;
+  priorityMetric: PriorityMetricColumn | "conversions";
   threshold?: CostThreshold;
   columnMenu: ReactNode;
   labels: {
@@ -840,6 +858,7 @@ function CampaignTable({
   const t = useT();
   const isMeta = platform === "meta_ads";
   const storageKey = `traffic-campaign-status-filter:${platform}`;
+  const widthsStorageKey = `traffic-report-column-widths:${organizationKey}:${platform}`;
   const [statusFilter, setStatusFilter] = useState<CampaignStatusFilter>("all");
   const [sortKey, setSortKey] = useState<CampaignSortKey>("spend");
   const [sortDirection, setSortDirection] = useState<SortDirection>("descending");
@@ -862,6 +881,12 @@ function CampaignTable({
     }
     return undefined;
   }, [storageKey]);
+
+  const { alcaDaColuna: resizeHandle, estiloDaColuna: columnStyle } = useColunasAjustaveis({
+    storageKey: widthsStorageKey,
+    colunas: CAMPAIGN_RESIZABLE_COLUMNS,
+    traduzir: t,
+  });
 
   const visibleCampaigns = useMemo(
     () =>
@@ -906,10 +931,11 @@ function CampaignTable({
   // Um único estilo para todo cabeçalho. O <button> de ordenar repete as classes
   // de texto para não depender do que o navegador reseta em botões.
   const headerText = "text-xs font-semibold tracking-[0.08em] uppercase";
-  const headerCell = `${headerText} px-4 py-3 whitespace-nowrap`;
+  const headerCell = `${headerText} relative px-4 py-3 whitespace-nowrap`;
 
   const sortableHeader = (key: CampaignSortKey, label: string, align: "left" | "right") => {
     const active = sortKey === key;
+    const priority = key !== "name" && key === priorityMetric;
     // A seta ocupa o mesmo espaço sempre (invisível quando inativa) e fica do lado
     // de dentro da coluna: à direita do nome e à esquerda dos números, para o
     // texto não sair do alinhamento quando a ordenação troca de coluna.
@@ -925,30 +951,42 @@ function CampaignTable({
       <th
         key={key}
         scope="col"
-        className={`${headerCell} ${align === "right" ? "text-right" : "text-left"} ${active ? "text-foreground" : "text-muted-foreground"}`}
+        className={`${headerCell} ${align === "right" ? "text-right" : "text-left"} ${priority ? "bg-primary/[0.10] text-foreground" : active ? "text-foreground" : "text-muted-foreground"}`}
+        style={columnStyle(key)}
+        data-priority={priority || undefined}
         aria-sort={active ? sortDirection : "none"}
       >
         <button
           type="button"
-          className={`${headerText} inline-flex w-full items-center gap-1 rounded-sm text-inherit hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${align === "right" ? "justify-end" : "justify-start"}`}
+          className={`${headerText} inline-flex w-full min-w-0 items-center gap-1 overflow-hidden rounded-sm text-inherit hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${align === "right" ? "justify-end" : "justify-start"}`}
           onClick={() => changeSort(key)}
           aria-label={`${t("Ordenar por")} ${label}`}
+          title={label}
         >
           {align === "right" && arrow}
-          <span>{label}</span>
+          <span className="min-w-0 truncate">{label}</span>
           {align === "left" && arrow}
         </button>
+        {resizeHandle(key, label)}
       </th>
     );
   };
 
-  const metricCell = (metrics: Metrics, column: CampaignMetricColumn, className = "") => (
-    <td key={column} className={`px-4 py-3 text-right whitespace-nowrap tabular-nums ${className}`}>
-      <CostSignal value={costColumnValue(metrics, column)} threshold={threshold}>
-        {metricValue(metrics, column, currency, platform)}
-      </CostSignal>
-    </td>
-  );
+  const metricCell = (metrics: Metrics, column: CampaignMetricColumn, className = "") => {
+    const priority = column === priorityMetric;
+    return (
+      <td
+        key={column}
+        className={`overflow-hidden px-4 py-3 text-right whitespace-nowrap tabular-nums ${priority ? "bg-primary/[0.06] text-base font-semibold" : ""} ${className}`}
+        style={columnStyle(column)}
+        data-priority={priority || undefined}
+      >
+        <CostSignal value={costColumnValue(metrics, column)} threshold={threshold}>
+          {metricValue(metrics, column, currency, platform)}
+        </CostSignal>
+      </td>
+    );
+  };
 
   return (
     <div className="rounded-xl border bg-card">
@@ -988,8 +1026,13 @@ function CampaignTable({
             <tr>
               {sortableHeader("name", labels.campaign, "left")}
               {showStatus && (
-                <th scope="col" className={`${headerCell} text-left text-muted-foreground`}>
-                  {t("Status")}
+                <th
+                  scope="col"
+                  className={`${headerCell} text-left text-muted-foreground`}
+                  style={columnStyle("status")}
+                >
+                  <span className="block truncate">{t("Status")}</span>
+                  {resizeHandle("status", t("Status"))}
                 </th>
               )}
               {columns.map((column) =>
@@ -1006,7 +1049,10 @@ function CampaignTable({
               return (
                 <Fragment key={key}>
                   <tr className="hover:bg-muted/35">
-                    <td className="max-w-md px-4 py-3 font-medium">
+                    <td
+                      className="max-w-md overflow-hidden px-4 py-3 font-medium"
+                      style={columnStyle("name")}
+                    >
                       {isMeta ? (
                         <button
                           type="button"
@@ -1040,7 +1086,7 @@ function CampaignTable({
                       )}
                     </td>
                     {showStatus && (
-                      <td className="px-4 py-3">
+                      <td className="overflow-hidden px-4 py-3" style={columnStyle("status")}>
                         <Badge
                           variant={status.variant}
                           className="px-2 py-0 text-[11px] leading-5 whitespace-nowrap"
@@ -1072,8 +1118,10 @@ function CampaignTable({
           </tbody>
           <tfoot>
             <tr className="border-t bg-muted/45 font-semibold">
-              <td className="px-4 py-3">{labels.total}</td>
-              {showStatus && <td className="px-4 py-3" />}
+              <td className="overflow-hidden px-4 py-3" style={columnStyle("name")}>
+                {labels.total}
+              </td>
+              {showStatus && <td className="px-4 py-3" style={columnStyle("status")} />}
               {columns.map((column) => metricCell(visibleTotal, column))}
             </tr>
           </tfoot>
@@ -1825,9 +1873,11 @@ export function TrafficDashboard() {
                     currency={group.currency}
                     total={meta}
                     platform="meta_ads"
+                    organizationKey={report.organization_key}
                     labels={campaignLabels}
                     columns={metaColumns}
                     idioma={idioma}
+                    priorityMetric={activeMetric}
                     threshold={metaThreshold}
                     columnMenu={
                       <ColumnPresetMenu
@@ -1924,9 +1974,11 @@ export function TrafficDashboard() {
                     currency={group.currency}
                     total={google}
                     platform="google_ads"
+                    organizationKey={report.organization_key}
                     labels={campaignLabels}
                     columns={googleColumns}
                     idioma={idioma}
+                    priorityMetric={activeMetric}
                     threshold={googleThreshold}
                     columnMenu={
                       <ColumnPresetMenu
@@ -1971,6 +2023,8 @@ export function TrafficDashboard() {
               model={report.model}
               threshold={metaThreshold}
               idioma={idioma}
+              organizationKey={report.organization_key}
+              priorityMetric={activeMetric}
             />
           </section>
         );
