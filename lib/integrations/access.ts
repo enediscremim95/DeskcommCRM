@@ -1,10 +1,11 @@
 import "server-only";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import type { createAdminClient } from "@/lib/supabase/admin";
 import {
-  CLOSED_INTEGRATION_ACCESS,
-  INTEGRATION_SLUGS,
+  DEFAULT_INTEGRATION_ACCESS,
+  integrationAccessFromRows,
   type IntegrationAccessMap,
+  type IntegrationPermissionRow,
   type IntegrationSlug,
 } from "./types";
 
@@ -14,27 +15,14 @@ export async function integrationAccessForOrganization(
   admin: AdminClient,
   organizationId: string,
 ): Promise<IntegrationAccessMap> {
-  const access = structuredClone(CLOSED_INTEGRATION_ACCESS);
+  const access = structuredClone(DEFAULT_INTEGRATION_ACCESS);
   const { data, error } = await admin
     .from("organization_integration_permissions" as never)
     .select("integration,client_visible,client_can_reconnect")
     .eq("organization_id", organizationId);
 
   if (error || !data) return access;
-  for (const row of data as unknown as Array<{
-    integration: string;
-    client_visible: boolean;
-    client_can_reconnect: boolean;
-  }>) {
-    if (!INTEGRATION_SLUGS.includes(row.integration as IntegrationSlug)) continue;
-    const integration = row.integration as IntegrationSlug;
-    access[integration] = {
-      client_visible: row.client_visible === true,
-      client_can_reconnect:
-        integration === "whatsapp" && row.client_visible === true && row.client_can_reconnect === true,
-    };
-  }
-  return access;
+  return integrationAccessFromRows(data as unknown as IntegrationPermissionRow[]);
 }
 
 export async function clientCanViewIntegration(
