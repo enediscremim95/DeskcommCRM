@@ -107,7 +107,7 @@ describe("handleLeadEmailEvent", () => {
     expect(admin.rpc).toHaveBeenCalledWith("fn_queue_lead_email_batch", {
       p_event_id: "event-1",
       p_recipient_user_id: "owner-1",
-      p_window_seconds: 30,
+      p_window_seconds: 90,
     });
     expect(sendEmail).not.toHaveBeenCalled();
   });
@@ -193,7 +193,7 @@ describe("handleLeadEmailEvent", () => {
     expect(admin.rpc).toHaveBeenCalledWith("fn_queue_lead_email_batch", {
       p_event_id: "event-1",
       p_recipient_user_id: "admin-2",
-      p_window_seconds: 30,
+      p_window_seconds: 90,
     });
     expect(sendEmail).not.toHaveBeenCalled();
   });
@@ -251,6 +251,16 @@ describe("handleLeadEmailEvent", () => {
           { data: null, error: null },
         ],
         notification_email_batch_items: [{ data: items, error: null }],
+        crm_leads: [
+          {
+            data: items.map((item) => ({
+              id: item.lead_id,
+              pipeline_id: "pipeline-1",
+              owner_user_id: "owner-1",
+            })),
+            error: null,
+          },
+        ],
         organizations: [
           {
             data: { display_name: "Bendito Ponto", legal_name: "Bendito Ponto Ltda" },
@@ -271,10 +281,17 @@ describe("handleLeadEmailEvent", () => {
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "owner@example.com",
-        subject: "21 leads novos na Bendito Ponto | Marca do cliente",
+        subject:
+          "21 leads novos aguardando atendimento na Bendito Ponto | Marca do cliente",
         idempotencyKey: "lead-email-batch:batch-1:owner-1",
       }),
     );
+    const sent = sendEmail.mock.calls[0]?.[0];
+    expect(sent.html).toContain(
+      "https://crm.example/app/pipelines/pipeline-1?status=open&amp;owner=owner-1",
+    );
+    expect(sent.text).not.toContain("Lead 1");
+    expect(sent.html).not.toContain("/app/leads/");
 
     const alreadySent = adminCom(
       {

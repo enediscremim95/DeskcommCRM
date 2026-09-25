@@ -24,7 +24,10 @@ describe("buildLeadAlertEmail", () => {
       leadTitle: "Jatobá Eliana",
     });
 
-    expect(result.subject).toBe("Novo lead na Bendito Ponto: Jatobá Eliana | Marca <Segura>");
+    expect(result.subject).toBe(
+      "Novo lead aguardando atendimento na Bendito Ponto | Marca <Segura>",
+    );
+    expect(result.subject).not.toContain("Jatobá Eliana");
     expect(result.text).toContain("https://crm.example/app/leads/lead-1?a=1&b=2");
     expect(result.html).toContain("Marca &lt;Segura&gt;");
     expect(result.html).toContain("a=1&amp;b=2");
@@ -55,21 +58,29 @@ describe("buildLeadAlertEmail", () => {
     expect(radar.subject).toContain("Ação urgente na Bendito Ponto: Jatobá Eliana");
   });
 
-  it("resume a rajada com organização e contagem, escapando os títulos", () => {
+  it("resume a rajada sem expor título ou id individual de lead", () => {
     const result = buildLeadBatchEmail({
       marca,
       organizationName: "Bendito & Ponto",
-      items: [
-        { title: "Lead <Um>", href: "https://crm.example/app/leads/1?a=1&b=2" },
-        { title: "Lead Dois", href: "https://crm.example/app/leads/2" },
+      total: 2,
+      links: [
+        {
+          count: 2,
+          href: "https://crm.example/app/pipelines/funil-1?status=open&owner=user-1",
+        },
       ],
     });
 
-    expect(result.subject).toBe("2 leads novos na Bendito & Ponto | Marca <Segura>");
-    expect(result.html).toContain("2 leads novos na Bendito &amp; Ponto");
-    expect(result.html).toContain("Lead &lt;Um&gt;");
-    expect(result.html).toContain("a=1&amp;b=2");
-    expect(result.text).toContain("Lead Dois: https://crm.example/app/leads/2");
+    expect(result.subject).toBe(
+      "2 leads novos aguardando atendimento na Bendito & Ponto | Marca <Segura>",
+    );
+    expect(result.html).toContain(
+      "2 leads novos aguardando atendimento na Bendito &amp; Ponto",
+    );
+    expect(result.html).toContain("Abrir lista filtrada");
+    expect(result.html).toContain("status=open&amp;owner=user-1");
+    expect(result.html).not.toContain("Lead &lt;Um&gt;");
+    expect(result.text).not.toContain("/app/leads/");
   });
 
   it("resume urgências com etapa, motivo, tempo e botão para o funil", () => {

@@ -480,7 +480,7 @@ num job que já leva meia hora.
 | J12.5 | VAPID ausente NÃO desabilita o Push | com `granted` e sem chaves, nasce habilitado | PASS (unit) |
 | J12.4 | Com VAPID, anuncia a aba fechada | e para de mandar gerar o par que já existe | PASS (unit) |
 | J12.6 | E-mail fica fora da rotina | só existem controles para lead novo e ação urgente; Nova mensagem diz «Não enviado» | NÃO EXECUTADO (e2e) |
-| J12.7 | Rajada de leads não inunda a caixa | janela curta agrupa por organização e destinatário; lead isolado mantém assunto individual; reprocessamento não duplica item nem entrega | PASS (unit); invariante DB preparado, mas NÃO EXECUTADO sem Docker/Postgres; entrega real no provedor NÃO EXECUTADA |
+| J12.7 | Rajada de leads não inunda a caixa | janela fixa de 90 segundos agrupa por organização e destinatário; nenhum título ou dado do lead sai no e-mail; links abrem listas filtradas; reprocessamento não duplica item nem entrega | PASS (unit); invariante DB preparado, mas NÃO EXECUTADO sem Docker/Postgres; entrega real no provedor NÃO EXECUTADA |
 
 O canal de e-mail usa o mesmo outbox do produto, mas tem um consumidor separado.
 O evento nasce na captação do lead ou numa urgência já calculada pelo Radar e

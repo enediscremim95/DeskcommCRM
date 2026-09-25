@@ -2,7 +2,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { marcaDaSaida } from "@/lib/branding/saida";
 import {
-  buildLeadAlertEmail,
   buildLeadBatchEmail,
   buildUrgentLeadBatchEmail,
   type LeadAlertKind,
@@ -15,7 +14,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const CONSUMER_KEY = "notification.email.lead-alert.v2";
 const NEW_LEAD_MAX_AGE_MS = 30 * 60 * 1000;
-export const LEAD_EMAIL_BATCH_WINDOW_SECONDS = 30;
+export const LEAD_EMAIL_BATCH_WINDOW_SECONDS = 90;
 const LEAD_EMAIL_PROCESSING_LEASE_MS = 5 * 60 * 1000;
 
 interface PreferenceRow {
@@ -41,6 +40,64 @@ interface BatchItemRow {
   urgency_reason: string | null;
   stage_name: string | null;
   action_required_at: string | null;
+}
+
+interface LeadLocationRow {
+  id: string;
+  pipeline_id: string;
+  owner_user_id: string | null;
+}
+
+async function newLeadBatchLinks(
+  admin: SupabaseClient,
+  organizationId: string,
+  recipientUserId: string,
+  items: BatchItemRow[],
+): Promise<Array<{ count: number; href: string }>> {
+  const leadIds = [...new Set(items.map((item) => item.lead_id))];
+  const { data, error } = await admin
+    .from("crm_leads")
+    .select("id,pipeline_id,owner_user_id")
+    .eq("organization_id", organizationId)
+    .in("id", leadIds);
+  if (error) throw error;
+
+  const groups = new Map<
+    string,
+    { pipelineId: string; owner: string | null; count: number }
+  >();
+
+  for (const lead of (data ?? []) as LeadLocationRow[]) {
+    const owner =
+      lead.owner_user_id === recipientUserId
+        ? recipientUserId
+        : lead.owner_user_id === null
+          ? "unassigned"
+          : null;
+    const key = `${lead.pipeline_id}:${owner ?? "any"}`;
+    const current = groups.get(key);
+    if (current) {
+      current.count += 1;
+    } else {
+      groups.set(key, {
+        pipelineId: lead.pipeline_id,
+        owner,
+        count: 1,
+      });
+    }
+  }
+
+  if (groups.size === 0) {
+    const fallback = new URL("/app/kanban", env.NEXT_PUBLIC_APP_URL);
+    return [{ count: items.length, href: fallback.toString() }];
+  }
+
+  return [...groups.values()].map((group) => {
+    const url = new URL(`/app/pipelines/${group.pipelineId}`, env.NEXT_PUBLIC_APP_URL);
+    url.searchParams.set("status", "open");
+    if (group.owner) url.searchParams.set("owner", group.owner);
+    return { count: group.count, href: url.toString() };
+  });
 }
 
 function kindFor(row: EventRow): LeadAlertKind | null {
@@ -307,22 +364,17 @@ async function handleBatchFlush(row: EventRow, admin: SupabaseClient): Promise<H
           funnelHref: new URL("/app/kanban", env.NEXT_PUBLIC_APP_URL).toString(),
           deferredCount: batch.deferred_count,
         })
-      : (() => {
-          const emailItems = items.map((item) => ({
-            title: item.lead_title,
-            href: new URL(`/app/leads/${item.lead_id}`, env.NEXT_PUBLIC_APP_URL).toString(),
-          }));
-          const firstItem = emailItems[0]!;
-          return emailItems.length === 1
-            ? buildLeadAlertEmail({
-                kind: "new_lead",
-                href: firstItem.href,
-                marca,
-                organizationName: orgName,
-                leadTitle: firstItem.title,
-              })
-            : buildLeadBatchEmail({ items: emailItems, marca, organizationName: orgName });
-        })();
+      : buildLeadBatchEmail({
+          total: items.length,
+          links: await newLeadBatchLinks(
+            admin,
+            row.organization_id,
+            batch.recipient_user_id,
+            items,
+          ),
+          marca,
+          organizationName: orgName,
+        });
   const result = await sendEmail({
     to: email,
     subject: message.subject,
