@@ -10137,6 +10137,9 @@ alter table public.agent_inbox_items
     -- mesma razão de midia_nao_lida/conhecimento_nao_indexado. Entra NESTA
     -- lista, não em bloco novo (#159, bloco único por constraint).
     'voice_call_missed',
+    -- (migration 0262) Uma fonte que já recebia e fica 48 horas sem lead
+    -- deixa de falhar em silêncio e aparece na Central.
+    'webhook_source_silent',
     'other'
   ));
 
@@ -25880,6 +25883,17 @@ comment on table public.notification_email_batches is
  'Outbox de resumos de leads novos e urgentes, agrupada por organização e destinatário.';
 comment on column public.notification_email_batches.deferred_count is
  'Quantidade de situações urgentes adiadas pelo teto diário para o resumo seguinte.';
+
+-- ---- integrar site: responsável e alerta de silêncio (migration 0262) ----
+alter table public.webhook_sources
+  add column if not exists default_owner_user_id uuid references auth.users(id) on delete set null;
+
+comment on column public.webhook_sources.default_owner_user_id is
+  'Responsável humano padrão dos leads desta fonte. O código valida membership ativa na mesma organização antes de gravar.';
+
+create unique index if not exists uniq_agent_inbox_webhook_source_silent_open
+  on public.agent_inbox_items (organization_id, kind, ref_id)
+  where kind = 'webhook_source_silent' and status = 'open';
 
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.

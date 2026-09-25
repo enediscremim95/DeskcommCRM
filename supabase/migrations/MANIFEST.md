@@ -317,3 +317,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260922143000` | `0256_qualificacao_humana_lead` | Adiciona qualificação humana opcional de 1 a 5 ao lead, independente do score calculado pela IA. |
 | `20260922170000` | `0258_colunas_relatorio_por_plataforma` | Separa predefinições e padrões da tabela de campanhas entre Meta Ads e Google Ads; duplica escolhas legadas de forma idempotente e remove do Google métricas exclusivas de mensagens do Meta. |
 | `20260924120000` | `0259_resumo_urgencia_email` | Estende o outbox de leads para resumos urgentes por pessoa, com janela longa configurável por organização, teto diário, adiamento do excedente, deduplicação de lead e motivo por 24 horas e supressão sem retry após cota do provedor. |
+| `20260925035407` | `0262_integrar_site_utm_e_alerta` | Guarda o responsável padrão da fonte e amplia a Central com aviso idempotente quando uma entrada ativa fica 48 horas sem lead. |

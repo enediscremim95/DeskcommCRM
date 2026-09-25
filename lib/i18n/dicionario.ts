@@ -3364,6 +3364,81 @@ export const DICIONARIO: Traducoes = {
   "Aparência clara": { es: "Apariencia clara" },
   "Aparência escura": { es: "Apariencia oscura" },
   // ─── Webhooks ───
+  "Integre seu site": { es: "Integra tu sitio" },
+  "Conecte cada página ao funil certo, identifique a origem dos leads e teste antes de publicar.": {
+    es: "Conecta cada página al embudo correcto, identifica el origen de los leads y prueba antes de publicar.",
+  },
+  "Conectar uma página": { es: "Conectar una página" },
+  "Crie uma entrada própria para cada página. Usar uma fonte única em várias páginas apaga a origem dos leads.": {
+    es: "Crea una entrada propia para cada página. Usar una única fuente en varias páginas borra el origen de los leads.",
+  },
+  "Passo 1 de 2: qual página?": { es: "Paso 1 de 2: ¿qué página?" },
+  "Passo 2 de 2: para onde o lead vai?": { es: "Paso 2 de 2: ¿adónde va el lead?" },
+  "Nome da página ou oferta": { es: "Nombre de la página u oferta" },
+  "Dia dos Professores": { es: "Día de los Profesores" },
+  "Esse nome já vai dentro do script para identificar a página em cada lead.": {
+    es: "Este nombre ya va dentro del script para identificar la página en cada lead.",
+  },
+  "Etapa de entrada": { es: "Etapa de entrada" },
+  "Quem responde": { es: "Quién responde" },
+  "Escolha uma pessoa": { es: "Elige una persona" },
+  "Pessoa sem nome": { es: "Persona sin nombre" },
+  "Escolha quem vai responder os leads desta página.": {
+    es: "Elige quién va a responder los leads de esta página.",
+  },
+  "Essa pessoa não pode receber leads desta empresa. Escolha alguém ativo da equipe.": {
+    es: "Esta persona no puede recibir leads de esta empresa. Elige a alguien activo del equipo.",
+  },
+  "Criar fonte e gerar script": { es: "Crear fuente y generar script" },
+  "Testar agora": { es: "Probar ahora" },
+  "Teste concluído.": { es: "Prueba terminada." },
+  "Destino do teste": { es: "Destino de la prueba" },
+  "funil selecionado": { es: "embudo seleccionado" },
+  "etapa selecionada": { es: "etapa seleccionada" },
+  "a pessoa escolhida": { es: "la persona elegida" },
+  "Abrir o lead de teste": { es: "Abrir el lead de prueba" },
+  "Origens dos últimos 30 dias": { es: "Orígenes de los últimos 30 días" },
+  "Sem marcação UTM": { es: "Sin marcación UTM" },
+  "sem marcação": { es: "sin marcación" },
+  "Padrão de UTM para seus anúncios": { es: "Patrón UTM para tus anuncios" },
+  "Acrescente este padrão ao fim do endereço da página. Troque somente os exemplos pelos nomes reais da campanha e do anúncio.": {
+    es: "Añade este patrón al final de la dirección de la página. Cambia solo los ejemplos por los nombres reales de la campaña y del anuncio.",
+  },
+  "Padrão de UTM copiado.": { es: "Patrón UTM copiado." },
+  "Não foi possível copiar. Selecione o padrão e copie manualmente.": {
+    es: "No se pudo copiar. Selecciona el patrón y cópialo manualmente.",
+  },
+  "Copiar padrão de UTM": { es: "Copiar patrón UTM" },
+  "canal, como meta": { es: "canal, como meta" },
+  "tipo de mídia, como cpc": { es: "tipo de medio, como cpc" },
+  "nome da campanha": { es: "nombre de la campaña" },
+  "anúncio ou criativo": { es: "anuncio o creativo" },
+  "público, palavra ou grupo": { es: "público, palabra o grupo" },
+  "Use letras minúsculas, sem acentos e sem espaços. Separe palavras com hífen.": {
+    es: "Usa letras minúsculas, sin acentos ni espacios. Separa las palabras con guion.",
+  },
+  "Conecte uma página em 2 minutos": { es: "Conecta una página en 2 minutos" },
+  "1. Dê um nome para a página e escolha quem responde.": {
+    es: "1. Dale un nombre a la página y elige quién responde.",
+  },
+  "2. Escolha o funil e a etapa de entrada.": {
+    es: "2. Elige el embudo y la etapa de entrada.",
+  },
+  "3. Copie o script pronto e teste a entrada.": {
+    es: "3. Copia el script listo y prueba la entrada.",
+  },
+  "Conectar primeira página": { es: "Conectar primera página" },
+  "Use uma fonte para cada página. Assim cada lead mantém sua origem.": {
+    es: "Usa una fuente para cada página. Así cada lead conserva su origen.",
+  },
+  "Conectar página": { es: "Conectar página" },
+  "Uma página está há 48 horas sem enviar leads": {
+    es: "Una página lleva 48 horas sin enviar leads",
+  },
+  "Abrir fonte": { es: "Abrir fuente" },
+  "Abra a fonte, teste a entrada e confira o formulário publicado.": {
+    es: "Abre la fuente, prueba la entrada y revisa el formulario publicado.",
+  },
   "Receba contatos de fora (landing pages, formulários) e crie automações que agem sozinhas.": {
     es: "Recibe contactos de afuera (landing pages, formularios) y crea automatizaciones que actúan solas.",
   },

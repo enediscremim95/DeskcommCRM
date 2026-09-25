@@ -36,10 +36,15 @@ import { cn } from "@/lib/utils";
 import { gerarSnippetDaLandingPage } from "@/lib/webhooks/snippet-da-lp";
 import {
   useDeleteWebhookSource,
+  usePipelineStages,
+  usePipelines,
   useUpdateWebhookSource,
   useWebhookSourceEvents,
+  useWebhookSourceSummary,
+  type WebhookSourceSummaryItem,
   type WebhookSourceRow,
 } from "@/hooks/webhooks/useWebhookSources";
+import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useT } from "@/hooks/i18n/useT";
 
 interface Props {
@@ -59,17 +64,26 @@ function publicUrl(pathToken: string): string {
   return `${base}/api/v1/webhooks/in/${pathToken}`;
 }
 
-function formSnippet(url: string, t: (texto: string) => string): string {
+function escapeAttribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+}
+
+function formSnippet(url: string, pagina: string, t: (texto: string) => string): string {
   return `<form action="${url}" method="POST" data-crm-lead>
   <input name="nome" placeholder="${t("Seu nome")}" required />
   <input name="telefone" placeholder="${t("Seu WhatsApp")}" required />
   <input name="email" type="email" placeholder="${t("Seu e-mail")}" />
+  <input name="pagina" type="hidden" value="${escapeAttribute(pagina)}" />
   <button type="submit">${t("Quero receber contato")}</button>
 </form>`;
 }
 
-function curlSnippet(url: string): string {
-  return `curl -X POST ${url} \\\n  -H 'Content-Type: application/json' \\\n  -d '{"nome":"...","telefone":"..."}'`;
+function curlSnippet(url: string, pagina: string): string {
+  const corpo = JSON.stringify({ nome: "...", telefone: "...", pagina }).replaceAll(
+    "'",
+    "'\\''",
+  );
+  return `curl -X POST ${url} \\\n  -H 'Content-Type: application/json' \\\n  -d '${corpo}'`;
 }
 
 async function copy(text: string, label: string, t: (texto: string) => string): Promise<void> {
@@ -82,6 +96,37 @@ function relativeReceivedAt(iso: string, locale: Locale): string {
   return formatDistanceToNowStrict(new Date(iso), { addSuffix: true, locale: locale });
 }
 
+function LinhasDoResumo({
+  titulo,
+  itens,
+  t,
+}: {
+  titulo: string;
+  itens: WebhookSourceSummaryItem[];
+  t: (texto: string) => string;
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-muted-foreground">{titulo}</p>
+      {itens.length === 0 ? (
+        <p className="text-sm text-muted-foreground">0</p>
+      ) : (
+        <ul className="space-y-1">
+          {itens.slice(0, 5).map((item) => (
+            <li
+              key={item.valor === null ? "sem-marcacao" : `valor:${item.valor}`}
+              className="flex justify-between gap-3 text-sm"
+            >
+              <span className="truncate">{item.valor ?? t("sem marcação")}</span>
+              <span className="font-medium tabular-nums">{item.total}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function SourceDetail({ source, open, onOpenChange }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -90,16 +135,26 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
   const { data: eventsRes, refetch: refetchEvents } = useWebhookSourceEvents(
     open ? source.id : null,
   );
+  const { data: summaryRes, refetch: refetchSummary } = useWebhookSourceSummary(
+    open ? source.id : null,
+  );
+  const { data: pipelinesRes } = usePipelines();
+  const { data: stagesRes } = usePipelineStages(source.default_pipeline_id);
+  const { data: members = [] } = useAssignableMembers(open);
   const [testing, setTesting] = React.useState(false);
-  const [testOk, setTestOk] = React.useState(false);
+  const [testLeadId, setTestLeadId] = React.useState<string | null>(null);
 
   const url = publicUrl(source.path_token);
-  const snippetDaLandingPage = gerarSnippetDaLandingPage(url);
+  const snippetDaLandingPage = gerarSnippetDaLandingPage(url, source.name);
   const events = eventsRes?.data ?? [];
+  const summary = summaryRes?.data;
+  const pipeline = pipelinesRes?.data.find((item) => item.id === source.default_pipeline_id);
+  const stage = stagesRes?.data?.stages.find((item) => item.id === source.default_stage_id);
+  const owner = members.find((item) => item.user_id === source.default_owner_user_id);
 
   const sendTestLead = async () => {
     setTesting(true);
-    setTestOk(false);
+    setTestLeadId(null);
     try {
       // URL relativa de propósito: o teste bate no host que está servindo a
       // página, mesmo que NEXT_PUBLIC_APP_URL (usada na URL exibida p/ forms
@@ -107,7 +162,13 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
       const res = await fetch(`/api/v1/webhooks/in/${source.path_token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome: "Lead de Teste", telefone: "11999990000", utm_source: "teste" }),
+        body: JSON.stringify({
+          nome: "Lead de Teste",
+          telefone: "11999990000",
+          pagina: source.name,
+          utm_source: "teste",
+          utm_campaign: "teste-da-integracao",
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -119,9 +180,11 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
         );
         return;
       }
+      const body = (await res.json()) as { data?: { lead_id?: string } };
       toast.success(t("Funcionou! Um lead de teste entrou no seu funil."));
-      setTestOk(true);
+      setTestLeadId(body.data?.lead_id ?? null);
       void refetchEvents();
+      void refetchSummary();
     } catch {
       toast.error(t("Não conseguimos falar com o endereço. Confira sua internet e tente de novo."));
     } finally {
@@ -191,11 +254,18 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
             <p className="text-sm font-medium text-text">
               {t("Formulário pronto para colar no seu site")}
             </p>
-            <Textarea readOnly rows={6} value={formSnippet(url, t)} className="font-mono text-xs" />
+            <Textarea
+              readOnly
+              rows={6}
+              value={formSnippet(url, source.name, t)}
+              className="font-mono text-xs"
+            />
             <Button
               type="button"
               variant="secondary"
-              onClick={() => copy(formSnippet(url, t), t("Formulário copiado."), t)}
+              onClick={() =>
+                copy(formSnippet(url, source.name, t), t("Formulário copiado."), t)
+              }
             >
               <Copy /> {t("Copiar formulário")}
             </Button>
@@ -233,21 +303,46 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
               {t("Para desenvolvedores")}
             </summary>
             <pre className="mt-3 overflow-x-auto rounded-sm bg-muted p-3 text-xs">
-              <code>{curlSnippet(url)}</code>
+              <code>{curlSnippet(url, source.name)}</code>
             </pre>
           </details>
 
           <section className="space-y-3">
             <Button type="button" onClick={sendTestLead} disabled={testing}>
-              {testing ? t("Enviando…") : t("Enviar lead de teste")}
+              {testing ? t("Enviando…") : t("Testar agora")}
             </Button>
-            {testOk ? (
-              <p className="text-sm">
-                <Link href="/app/kanban" className="text-accent underline underline-offset-4">
-                  {t("Ver no Kanban")}
+            {testLeadId ? (
+              <div className="rounded-sm border border-success/40 bg-success/10 p-3 text-sm">
+                <p className="font-medium text-text">{t("Teste concluído.")}</p>
+                <p className="text-muted-foreground">
+                  {t("Destino do teste")}: {pipeline?.name ?? t("funil selecionado")} /{" "}
+                  {stage?.name ?? t("etapa selecionada")}. {t("Responsável")}:{" "}
+                  {owner?.full_name ?? t("a pessoa escolhida")}.
+                </p>
+                <Link
+                  href={`/app/pipelines/${source.default_pipeline_id}?lead=${testLeadId}`}
+                  className="mt-1 inline-block text-accent underline underline-offset-4"
+                >
+                  {t("Abrir o lead de teste")}
                 </Link>
-              </p>
+              </div>
             ) : null}
+          </section>
+
+          <section className="space-y-3 rounded-sm border border-border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-text">{t("Origens dos últimos 30 dias")}</p>
+              <span className="text-sm font-semibold tabular-nums">{summary?.total ?? 0}</span>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <LinhasDoResumo titulo={t("Origem")} itens={summary?.por_utm_source ?? []} t={t} />
+              <LinhasDoResumo titulo={t("Campanha")} itens={summary?.por_utm_campaign ?? []} t={t} />
+              <LinhasDoResumo titulo={t("Página")} itens={summary?.por_pagina ?? []} t={t} />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t("Sem marcação UTM")}:{" "}
+              <strong className="text-text">{summary?.sem_marcacao ?? 0}</strong>
+            </p>
           </section>
 
           <section className="space-y-2">

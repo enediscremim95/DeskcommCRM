@@ -60,6 +60,27 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   // secret plaintext do input vira secret_encrypted (migration 0041); a coluna
   // em claro não existe mais. `secret: null` remove o segredo da fonte.
   const { secret: patchedSecret, ...restPatch } = parsed.data;
+  if (restPatch.default_owner_user_id) {
+    const { data: responsavel, error: responsavelErro } = await supabase
+      .from("user_organizations")
+      .select("user_id")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("user_id", restPatch.default_owner_user_id)
+      .is("revoked_at", null)
+      .in("role", ["agent", "manager", "admin"])
+      .maybeSingle();
+    if (responsavelErro) {
+      return fail("internal_error", responsavelErro.message, 500, { requestId });
+    }
+    if (!responsavel) {
+      return fail(
+        "unprocessable_entity",
+        t("Essa pessoa não pode receber leads desta empresa. Escolha alguém ativo da equipe."),
+        422,
+        { requestId },
+      );
+    }
+  }
   // A autoria vai junto de TODA escrita, pelo mesmo helper que o agente usa: a
   // tela precisa distinguir o que ela mesma mudou do que o assistente mudou, e
   // duas contas de "quem mexeu" divergiriam no primeiro ajuste (migration 0101).

@@ -45,6 +45,7 @@ export interface FonteVisivel {
   path_token: string;
   default_pipeline_id: string;
   default_stage_id: string;
+  default_owner_user_id: string | null;
   redirect_to: string | null;
   field_map: Record<string, unknown>;
   last_received_at: string | null;
@@ -64,7 +65,7 @@ export interface FonteVisivel {
  */
 const COLUNAS =
   "id, organization_id, name, is_active, kind, path_token, default_pipeline_id, default_stage_id, " +
-  "redirect_to, field_map, last_received_at, secret_encrypted, created_at, updated_at, " +
+  "default_owner_user_id, redirect_to, field_map, last_received_at, secret_encrypted, created_at, updated_at, " +
   "last_change_actor_kind, last_change_at";
 
 function semSegredo(linha: Record<string, unknown>): FonteVisivel {
@@ -173,10 +174,33 @@ async function destinoValido(
   }
 }
 
+async function responsavelValido(deps: DepsDaOperacao, userId: string | null | undefined): Promise<void> {
+  if (!userId) return;
+  const { data, error } = await deps.supabase
+    .from("user_organizations")
+    .select("user_id")
+    .eq("organization_id", deps.organizationId)
+    .eq("user_id", userId)
+    .is("revoked_at", null)
+    .in("role", ["agent", "manager", "admin"])
+    .maybeSingle();
+  if (error) throw new ApiError(500, "internal_error", undefined, deps.requestId, error.message);
+  if (!data) {
+    throw new ApiError(
+      422,
+      "unprocessable_entity",
+      undefined,
+      deps.requestId,
+      "Essa pessoa não pode receber leads desta empresa. Escolha alguém ativo da equipe.",
+    );
+  }
+}
+
 export interface NovaEntradaAutomatica {
   name: string;
   default_pipeline_id: string;
   default_stage_id: string;
+  default_owner_user_id?: string | null;
   redirect_to?: string | null;
   field_map?: Record<string, string[]>;
   /** Já CIFRADO pelo chamador. A operação nunca vê plaintext de segredo. */
@@ -188,6 +212,7 @@ export async function criarEntradaAutomatica(
   input: NovaEntradaAutomatica,
 ): Promise<FonteVisivel> {
   await destinoValido(deps, input.default_pipeline_id, input.default_stage_id);
+  await responsavelValido(deps, input.default_owner_user_id);
 
   // `path_token` é a identidade PÚBLICA da URL de captação — mesmo papel que o
   // token de caminho que os adapters de canal já usam —, não um segredo forte.
@@ -208,6 +233,7 @@ export async function criarEntradaAutomatica(
       secret_encrypted: input.secret_encrypted ?? null,
       default_pipeline_id: input.default_pipeline_id,
       default_stage_id: input.default_stage_id,
+      default_owner_user_id: input.default_owner_user_id ?? null,
       field_map: input.field_map ?? {},
       redirect_to: input.redirect_to ?? null,
       ...autoriaDaMudanca(deps.actor),

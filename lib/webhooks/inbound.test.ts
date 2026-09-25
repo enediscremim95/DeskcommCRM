@@ -23,11 +23,20 @@ describe("mapInboundPayload", () => {
     const m = mapInboundPayload({ nome: "Ana", telefone: "11998765432", email: "a@b.com" });
     expect(m).toMatchObject({ name: "Ana", phone: "+5511998765432", email: "a@b.com" });
   });
-  it("whatsapp como alias de phone; extras viram custom_fields; utm_* vira source_metadata", () => {
-    const m = mapInboundPayload({ name: "Bo", whatsapp: "+5511998765432", empresa: "ACME", utm_source: "instagram" });
+  it("whatsapp como alias de phone; extras viram custom_fields; UTMs e página viram source_metadata", () => {
+    const m = mapInboundPayload({
+      name: "Bo",
+      whatsapp: "+5511998765432",
+      empresa: "ACME",
+      utm_source: "instagram",
+      pagina: "Dia dos Professores",
+    });
     expect(m.phone).toBe("+5511998765432");
     expect(m.custom_fields).toEqual({ empresa: "ACME" });
-    expect(m.source_metadata).toEqual({ utm_source: "instagram" });
+    expect(m.source_metadata).toEqual({
+      utm_source: "instagram",
+      pagina: "Dia dos Professores",
+    });
   });
   it("field_map custom tem precedência sobre defaults", () => {
     const m = mapInboundPayload({ contato: "Zé" }, { name: ["contato"] });

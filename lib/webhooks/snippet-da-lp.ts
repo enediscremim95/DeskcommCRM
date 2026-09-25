@@ -5,13 +5,15 @@
  * a captação. Depois, reenvia o submit original para preservar WhatsApp,
  * redirecionamento ou qualquer handler que a página já possua.
  */
-export function gerarSnippetDaLandingPage(url: string): string {
+export function gerarSnippetDaLandingPage(url: string, pagina: string): string {
   const endpoint = JSON.stringify(url).replaceAll("</", "<\\/");
+  const nomeDaPagina = JSON.stringify(pagina).replaceAll("</", "<\\/");
 
   return `<!-- Adicione data-crm-lead ao formulário da landing page e cole este script depois dele. -->
 <script>
 (() => {
   const endpoint = ${endpoint};
+  const pagina = ${nomeDaPagina};
   const emFluxoOriginal = new WeakSet();
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const novoId = () =>
@@ -68,6 +70,7 @@ export function gerarSnippetDaLandingPage(url: string): string {
     for (const [key, value] of new URLSearchParams(location.search).entries()) {
       if (key.toLowerCase().startsWith("utm_") && payload[key] == null) payload[key] = value;
     }
+    if (payload.pagina == null) payload.pagina = pagina;
 
     let externalId = form.querySelector('input[name="external_id"]');
     const externalIdInformado =

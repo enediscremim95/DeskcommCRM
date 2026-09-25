@@ -14,6 +14,7 @@ export interface WebhookSourceRow {
   last_received_at: string | null;
   default_pipeline_id: string;
   default_stage_id: string;
+  default_owner_user_id: string | null;
   redirect_to: string | null;
   field_map: Record<string, unknown>;
   has_secret: boolean;
@@ -36,7 +37,21 @@ export interface CreateWebhookSourceInput {
   name: string;
   default_pipeline_id: string;
   default_stage_id: string;
+  default_owner_user_id: string;
   redirect_to?: string | null;
+}
+
+export interface WebhookSourceSummaryItem {
+  valor: string | null;
+  total: number;
+}
+
+export interface WebhookSourceSummary {
+  total: number;
+  sem_marcacao: number;
+  por_utm_source: WebhookSourceSummaryItem[];
+  por_utm_campaign: WebhookSourceSummaryItem[];
+  por_pagina: WebhookSourceSummaryItem[];
 }
 
 const SOURCES_KEY = ["webhook-sources"];
@@ -93,6 +108,18 @@ export function useWebhookSourceEvents(sourceId: string | null) {
       ),
     enabled: !!sourceId,
     refetchInterval: 5_000,
+  });
+}
+
+export function useWebhookSourceSummary(sourceId: string | null) {
+  return useQuery({
+    queryKey: ["webhook-source-summary", sourceId],
+    queryFn: async () =>
+      apiClient.get<{ data: WebhookSourceSummary }>(
+        `/api/v1/webhook-sources/${sourceId}/summary`,
+      ),
+    enabled: !!sourceId,
+    staleTime: 30_000,
   });
 }
 
