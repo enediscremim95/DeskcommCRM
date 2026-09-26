@@ -19,6 +19,7 @@ import { buildFunnelReadings, type TrafficRichCrmInsights } from "@/lib/windsor/
 import type { PriorityMetricColumn } from "@/lib/windsor/priority-metrics";
 import { CostSignal, type CostThreshold } from "./CostThresholds";
 import { useColunasAjustaveis, type ConfiguracaoColunaAjustavel } from "./colunas-ajustaveis";
+import { BlocoRecolhivel } from "./RelatorioRecolhivel";
 
 type Platform = "meta_ads" | "google_ads";
 type Model = "leads" | "messages" | "ecommerce";
@@ -217,10 +218,14 @@ export function TrafficTimeline({
   daily,
   currency,
   idioma,
+  organizationKey,
+  viewerKey,
 }: {
   daily: RichCurrencyGroup["daily"];
   currency: string;
   idioma: string;
+  organizationKey: string;
+  viewerKey: string;
 }) {
   const t = useT();
   const days = daily.length;
@@ -231,24 +236,33 @@ export function TrafficTimeline({
     days > 120 && selectedGranularity === "daily" ? "monthly" : selectedGranularity;
   const data = useMemo(() => aggregateTimeline(daily, granularity), [daily, granularity]);
   return (
-    <details open className="group overflow-hidden rounded-2xl border bg-card shadow-sm">
-      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 border-b px-4 py-4 sm:px-5">
-        <h3 className="text-lg font-semibold">{t("Investimento e resultado no tempo")}</h3>
-        <div className="flex gap-1" onClick={(event) => event.preventDefault()}>
-          {(["daily", "weekly", "monthly"] as const).map((value) => (
-            <Button
-              key={value}
-              type="button"
-              size="sm"
-              variant={granularity === value ? "secondary" : "ghost"}
-              disabled={value === "daily" && days > 120}
-              onClick={() => setSelectedGranularity(value)}
-            >
-              {value === "daily" ? t("Diário") : value === "weekly" ? t("Semanal") : t("Mensal")}
-            </Button>
-          ))}
-        </div>
-      </summary>
+    <BlocoRecolhivel
+      organizationKey={organizationKey}
+      viewerKey={viewerKey}
+      sectionKey={`timeline-${currency}`}
+      idioma={idioma}
+      label={t("Investimento e resultado no tempo")}
+      header={
+        <span className="text-lg font-semibold">{t("Investimento e resultado no tempo")}</span>
+      }
+      className="overflow-hidden rounded-2xl border bg-card shadow-sm"
+      headerClassName="px-4 py-4 sm:px-5"
+      contentClassName="border-t"
+    >
+      <div className="flex flex-wrap justify-end gap-1 px-3 pt-3 sm:px-5">
+        {(["daily", "weekly", "monthly"] as const).map((value) => (
+          <Button
+            key={value}
+            type="button"
+            size="sm"
+            variant={granularity === value ? "secondary" : "ghost"}
+            disabled={value === "daily" && days > 120}
+            onClick={() => setSelectedGranularity(value)}
+          >
+            {value === "daily" ? t("Diário") : value === "weekly" ? t("Semanal") : t("Mensal")}
+          </Button>
+        ))}
+      </div>
       <div className="h-72 p-3 sm:h-80 sm:p-5">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data}>
@@ -303,7 +317,7 @@ export function TrafficTimeline({
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-    </details>
+    </BlocoRecolhivel>
   );
 }
 
@@ -455,17 +469,18 @@ export function CreativePerformance({
   const [showAll, setShowAll] = useState(false);
   const [sort, setSort] = useState<"conversions" | "spend" | "cost">("conversions");
   const defaultColumnOrder = useMemo(
-    () => [
-      "creative",
-      "spend",
-      "impressions",
-      "clicks",
-      "ctr",
-      "conversions",
-      "cost_per_conversion",
-      "conversion_rate",
-      ...(model === "ecommerce" ? (["revenue", "roas"] as const) : []),
-    ] as CreativeResizableColumnKey[],
+    () =>
+      [
+        "creative",
+        "spend",
+        "impressions",
+        "clicks",
+        "ctr",
+        "conversions",
+        "cost_per_conversion",
+        "conversion_rate",
+        ...(model === "ecommerce" ? (["revenue", "roas"] as const) : []),
+      ] as CreativeResizableColumnKey[],
     [model],
   );
   const {
@@ -549,9 +564,20 @@ export function CreativePerformance({
   const cellClass = (column: CreativeResizableColumnKey, align = "text-right") =>
     `overflow-hidden px-3 py-2 whitespace-nowrap ${align} ${column === priorityColumn ? "bg-primary/[0.06] text-base font-semibold" : ""}`;
   return (
-    <section className="rounded-2xl border bg-card p-4 sm:p-5">
-      <h3 className="text-lg font-semibold">{t("Criativos que mais trazem resultado")}</h3>
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
+    <BlocoRecolhivel
+      organizationKey={organizationKey}
+      viewerKey={viewerKey}
+      sectionKey={`ads-${group.currency}`}
+      idioma={idioma}
+      label={local(idioma, "Tabela de anúncios", "Tabla de anuncios")}
+      header={
+        <span className="text-lg font-semibold">{t("Criativos que mais trazem resultado")}</span>
+      }
+      className="rounded-2xl border bg-card"
+      headerClassName="p-4 sm:p-5"
+      contentClassName="border-t p-4 sm:p-5"
+    >
+      <div className="grid gap-3 md:grid-cols-3">
         {[
           [
             model === "ecommerce" ? t("Mais vendas") : t("Mais leads"),
@@ -589,7 +615,13 @@ export function CreativePerformance({
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">{t("Anúncios Meta")}</span>
         <div className="flex items-center gap-2">
-          <Button type="button" size="sm" variant="ghost" disabled={!columnOrderChanged} onClick={resetColumnOrder}>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={!columnOrderChanged}
+            onClick={resetColumnOrder}
+          >
             {t("Voltar à ordem padrão")}
           </Button>
           <select
@@ -607,19 +639,31 @@ export function CreativePerformance({
         <table className="w-full min-w-max text-sm">
           <thead className="border-y bg-muted/35">
             <tr>
-              {columnOrder.map((column) => header(
-                column,
-                column === "creative" ? t("Criativo")
-                  : column === "spend" ? t("Investimento")
-                    : column === "impressions" ? t("Impressões")
-                      : column === "clicks" ? t("Cliques")
-                        : column === "ctr" ? "CTR"
-                          : column === "conversions" ? conversionLabel
-                            : column === "cost_per_conversion" ? compactCostLabel
-                              : column === "conversion_rate" ? rateLabel
-                                : column === "revenue" ? t("Receita") : "ROAS",
-                column === "creative" ? "left" : "right",
-              ))}
+              {columnOrder.map((column) =>
+                header(
+                  column,
+                  column === "creative"
+                    ? t("Criativo")
+                    : column === "spend"
+                      ? t("Investimento")
+                      : column === "impressions"
+                        ? t("Impressões")
+                        : column === "clicks"
+                          ? t("Cliques")
+                          : column === "ctr"
+                            ? "CTR"
+                            : column === "conversions"
+                              ? conversionLabel
+                              : column === "cost_per_conversion"
+                                ? compactCostLabel
+                                : column === "conversion_rate"
+                                  ? rateLabel
+                                  : column === "revenue"
+                                    ? t("Receita")
+                                    : "ROAS",
+                  column === "creative" ? "left" : "right",
+                ),
+              )}
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -628,52 +672,84 @@ export function CreativePerformance({
                 {columnOrder.map((column) => {
                   const common = {
                     key: column,
-                    className: cellClass(column, column === "creative" ? "text-left" : "text-right"),
+                    className: cellClass(
+                      column,
+                      column === "creative" ? "text-left" : "text-right",
+                    ),
                     style: estiloDaColuna(column),
                     "data-priority": priorityColumn === column || undefined,
                   };
-                  if (column === "creative") return (
-                    <td {...common}>
-                      <div className="flex min-w-0 items-center gap-2">
-                        {row.thumbnail_url ? (
-                          <span className="size-10 shrink-0 rounded-md bg-cover bg-center"
-                            style={{ backgroundImage: `url(${row.thumbnail_url})` }} />
-                        ) : (
-                          <span className="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-xs font-bold">
-                            {row.name.slice(0, 2).toUpperCase()}
+                  if (column === "creative")
+                    return (
+                      <td {...common}>
+                        <div className="flex min-w-0 items-center gap-2">
+                          {row.thumbnail_url ? (
+                            <span
+                              className="size-10 shrink-0 rounded-md bg-cover bg-center"
+                              style={{ backgroundImage: `url(${row.thumbnail_url})` }}
+                            />
+                          ) : (
+                            <span className="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-xs font-bold">
+                              {row.name.slice(0, 2).toUpperCase()}
+                            </span>
+                          )}
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium" title={row.name}>
+                              {row.name}
+                            </span>
+                            <span
+                              className="block truncate text-xs text-muted-foreground"
+                              title={`${row.campaign} › ${row.adset}`}
+                            >
+                              {row.campaign} › {row.adset}
+                            </span>
                           </span>
-                        )}
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium" title={row.name}>{row.name}</span>
-                          <span className="block truncate text-xs text-muted-foreground"
-                            title={`${row.campaign} › ${row.adset}`}>{row.campaign} › {row.adset}</span>
+                        </div>
+                      </td>
+                    );
+                  if (column === "conversions")
+                    return (
+                      <td {...common}>
+                        <span className="relative ml-auto block min-w-16 overflow-hidden rounded-md bg-muted/60 py-0.5">
+                          <span
+                            aria-hidden="true"
+                            className="absolute inset-y-0 left-0 bg-primary/20"
+                            style={{ width: `${(row.conversions / maxConversions) * 100}%` }}
+                          />
+                          <span className="relative px-2 font-semibold">
+                            {number(row.conversions, idioma)}
+                          </span>
                         </span>
-                      </div>
-                    </td>
-                  );
-                  if (column === "conversions") return (
-                    <td {...common}>
-                      <span className="relative ml-auto block min-w-16 overflow-hidden rounded-md bg-muted/60 py-0.5">
-                        <span aria-hidden="true" className="absolute inset-y-0 left-0 bg-primary/20"
-                          style={{ width: `${(row.conversions / maxConversions) * 100}%` }} />
-                        <span className="relative px-2 font-semibold">{number(row.conversions, idioma)}</span>
-                      </span>
-                    </td>
-                  );
-                  if (column === "cost_per_conversion") return (
-                    <td {...common}>
-                      <CostSignal value={row.cost_per_conversion} threshold={threshold}>
-                        {row.cost_per_conversion == null ? "" : money(row.cost_per_conversion, group.currency, idioma)}
-                      </CostSignal>
-                    </td>
-                  );
-                  const value = column === "spend" ? money(row.spend, group.currency, idioma)
-                    : column === "impressions" ? number(row.impressions, idioma)
-                      : column === "clicks" ? number(row.clicks, idioma)
-                        : column === "ctr" ? percent(row.ctr, idioma)
-                          : column === "conversion_rate" ? (row.clicks > 0 ? percent((row.conversions / row.clicks) * 100, idioma) : "")
-                            : column === "revenue" ? money(row.revenue, group.currency, idioma)
-                              : row.roas == null ? "" : `${number(row.roas, idioma)}x`;
+                      </td>
+                    );
+                  if (column === "cost_per_conversion")
+                    return (
+                      <td {...common}>
+                        <CostSignal value={row.cost_per_conversion} threshold={threshold}>
+                          {row.cost_per_conversion == null
+                            ? ""
+                            : money(row.cost_per_conversion, group.currency, idioma)}
+                        </CostSignal>
+                      </td>
+                    );
+                  const value =
+                    column === "spend"
+                      ? money(row.spend, group.currency, idioma)
+                      : column === "impressions"
+                        ? number(row.impressions, idioma)
+                        : column === "clicks"
+                          ? number(row.clicks, idioma)
+                          : column === "ctr"
+                            ? percent(row.ctr, idioma)
+                            : column === "conversion_rate"
+                              ? row.clicks > 0
+                                ? percent((row.conversions / row.clicks) * 100, idioma)
+                                : ""
+                              : column === "revenue"
+                                ? money(row.revenue, group.currency, idioma)
+                                : row.roas == null
+                                  ? ""
+                                  : `${number(row.roas, idioma)}x`;
                   return <td {...common}>{value}</td>;
                 })}
               </tr>
@@ -692,7 +768,7 @@ export function CreativePerformance({
           {showAll ? t("Ver menos") : t("Ver todos")}
         </Button>
       )}
-    </section>
+    </BlocoRecolhivel>
   );
 }
 
