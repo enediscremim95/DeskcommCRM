@@ -159,7 +159,12 @@ async function login(page: Page, f: Fixture) {
   await page.getByLabel(/e-?mail/i).fill(f.email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL((url) => url.pathname === "/app/inbox", { timeout: 60_000 });
+  await page.waitForURL(
+    (url) =>
+      !url.pathname.startsWith("/login") &&
+      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
+    { timeout: 60_000 },
+  );
 }
 async function capture(page: Page, target: Locator, info: TestInfo, name: string) {
   await target.scrollIntoViewIfNeeded();

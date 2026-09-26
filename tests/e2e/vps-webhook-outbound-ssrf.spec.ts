@@ -105,7 +105,9 @@ test.describe("J6.8 — anti-SSRF do outbound call_webhook (real, ponta a ponta)
       await login(page, creds.users.manager!.email);
       await page.getByRole("link", { name: "Webhooks" }).click();
       await page.waitForURL(/\/app\/webhooks/);
-      await page.getByRole("button", { name: /Nova fonte|Criar primeira fonte/ }).click();
+      await page
+        .getByRole("button", { name: /Conectar primeira página|Conectar página/ })
+        .click();
       await page.locator("#src-name").fill(SOURCE_NAME);
       const dialog = page.getByRole("dialog");
       await selectFirstOption(page, dialog.getByRole("combobox").nth(0));

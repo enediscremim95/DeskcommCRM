@@ -79,7 +79,11 @@ async function login(page: Page, email: string): Promise<void> {
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL((url) => url.pathname === "/app/inbox");
+  await page.waitForURL(
+    (url) =>
+      !url.pathname.startsWith("/login") &&
+      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
+  );
 }
 
 async function drenar(request: APIRequestContext, page: Page): Promise<void> {
@@ -123,7 +127,9 @@ test.describe("a automação conta o que aconteceu de verdade", () => {
       await page.goto(`${APP_URL}/app/webhooks`);
 
       // ── A fonte ──────────────────────────────────────────────────────────
-      await page.getByRole("button", { name: /Nova fonte|Criar primeira fonte/ }).click();
+      await page
+        .getByRole("button", { name: /Conectar primeira página|Conectar página/ })
+        .click();
       await page.locator("#src-name").fill(SOURCE_NAME);
       const dialog = page.getByRole("dialog");
       for (const i of [0, 1]) {

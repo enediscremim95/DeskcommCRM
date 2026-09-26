@@ -45,7 +45,11 @@ async function login(page: Page, email: string): Promise<void> {
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL((url) => url.pathname === "/app/inbox");
+  await page.waitForURL(
+    (url) =>
+      !url.pathname.startsWith("/login") &&
+      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
+  );
 }
 
 /** O estado marcado vem do atributo que o próprio componente escreve. */

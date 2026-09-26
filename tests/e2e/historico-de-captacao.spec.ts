@@ -58,7 +58,11 @@ async function login(page: Page, email: string): Promise<void> {
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL((url) => url.pathname === "/app/inbox");
+  await page.waitForURL(
+    (url) =>
+      !url.pathname.startsWith("/login") &&
+      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
+  );
 }
 
 test.describe("histórico de leads captados", () => {
@@ -76,7 +80,9 @@ test.describe("histórico de leads captados", () => {
       await page.goto(`${APP_URL}/app/webhooks`);
 
       // ── Uma fonte de captação, criada pela tela ──────────────────────────
-      await page.getByRole("button", { name: /Nova fonte|Criar primeira fonte/ }).click();
+      await page
+        .getByRole("button", { name: /Conectar primeira página|Conectar página/ })
+        .click();
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.locator("#src-name").fill(SOURCE_NAME);
       const dialog = page.getByRole("dialog");

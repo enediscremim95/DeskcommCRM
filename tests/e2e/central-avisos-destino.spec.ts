@@ -21,7 +21,12 @@ async function login(page: Page, role: string) {
   await page.getByLabel(/e-?mail/i).fill(user.email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL((url) => url.pathname === "/app/inbox", { timeout: 60_000 });
+  await page.waitForURL(
+    (url) =>
+      !url.pathname.startsWith("/login") &&
+      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
+    { timeout: 60_000 },
+  );
 }
 const row = (page: Page, title: string) => page.getByTestId("inbox-item").filter({ hasText: title });
 async function central(page: Page) {

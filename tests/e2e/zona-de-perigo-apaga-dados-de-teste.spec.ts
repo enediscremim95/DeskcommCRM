@@ -108,7 +108,12 @@ async function entrar(page: Page, email: string, senha: string) {
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(senha);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL((url) => url.pathname === "/app/inbox", { timeout: 30_000 });
+  await page.waitForURL(
+    (url) =>
+      !url.pathname.startsWith("/login") &&
+      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
+    { timeout: 30_000 },
+  );
 }
 
 async function trocarPara(page: Page, orgId: string) {
