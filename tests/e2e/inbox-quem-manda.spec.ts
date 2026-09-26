@@ -51,7 +51,7 @@ async function login(page: Page, email: string, senha: string): Promise<void> {
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(senha);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/, { timeout: 60_000 });
+  await page.waitForURL((url) => url.pathname === "/app/inbox", { timeout: 60_000 });
 }
 
 async function captura(page: Page, nome: string): Promise<void> {

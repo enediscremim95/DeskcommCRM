@@ -144,7 +144,7 @@ async function login(page: Page, email: string) {
   await page.getByLabel(/e-?mail/i).fill(email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/, { timeout: 60000 });
+  await page.waitForURL((url) => url.pathname === "/app/inbox", { timeout: 60000 });
 }
 async function detail(page: Page, id: string, title: string) {
   await page.goto(`/app/agenda?compromisso=${id}`);

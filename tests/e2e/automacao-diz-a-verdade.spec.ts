@@ -79,7 +79,7 @@ async function login(page: Page, email: string): Promise<void> {
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/);
+  await page.waitForURL((url) => url.pathname === "/app/inbox");
 }
 
 async function drenar(request: APIRequestContext, page: Page): Promise<void> {

@@ -85,10 +85,10 @@ async function tentarMfa(page: Page, secret: string, tentativas: number): Promis
     await digito.click();
     await page.keyboard.type(codigo, { delay: 40 });
     try {
-      // O helper pede /app/inbox explicitamente. Esperar qualquer /app/*
-      // aceitava a parada intermediária /app e deixava o redirect de entrada
-      // disputar com a primeira navegação do spec.
-      await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/, { timeout: 10_000 });
+      // O helper pede /app/inbox explicitamente. O predicado olha o pathname:
+      // um regex também casaria com /login/mfa?next=/app/inbox e liberaria o
+      // teste antes de a sessão chegar a AAL2.
+      await page.waitForURL((url) => url.pathname === "/app/inbox", { timeout: 10_000 });
       return true;
     } catch {
       await page.waitForTimeout(msUntilNextTotpWindow() + 300);
