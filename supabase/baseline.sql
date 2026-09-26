@@ -26341,6 +26341,20 @@ alter table public.notification_email_preferences
 comment on column public.notification_email_preferences.new_lead is
   'Opt-in pessoal para e-mail de lead novo; desligado por padrão para preservar a cota transacional.';
 
+-- ---- plataforma enxerga a credencial que pode apagar (migration 0271) ----
+-- O DELETE com RETURNING também precisa que a linha passe pela policy de SELECT.
+-- O grant por coluna da 0150 continua escondendo o segredo cifrado.
+drop policy if exists tenant_isolation_ai_provider_credentials_select
+  on public.ai_provider_credentials;
+create policy tenant_isolation_ai_provider_credentials_select
+  on public.ai_provider_credentials for select to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+    or public.fn_is_platform_admin()
+  );
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

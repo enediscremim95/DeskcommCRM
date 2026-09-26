@@ -460,6 +460,7 @@ describe("colunas da tabela de campanhas", () => {
     const user = userEvent.setup();
     render(<TrafficDashboard />);
     const downloadButton = await screen.findByRole("button", { name: "Baixar relatório" });
+    await waitFor(() => expect(downloadButton).toBeEnabled());
     const appendChild = document.body.appendChild.bind(document.body);
     let downloadLink: HTMLAnchorElement | null = null;
     const click = vi.fn();
