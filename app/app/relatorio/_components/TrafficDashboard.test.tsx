@@ -1837,4 +1837,37 @@ describe("colunas da tabela de campanhas", () => {
       "data-priority",
     );
   });
+
+  it("esconde controles de edição no modo apresentação e os devolve ao sair", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [campaignWithStatus("Campanha em apresentação", "ACTIVE", 50)],
+          ["spend", "leads"],
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+
+    const campaign = await screen.findByText("Campanha em apresentação");
+    const table = campaign.closest("table") as HTMLTableElement;
+    expect(screen.getByText("Colunas (2)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Escolher etapas" })).toBeInTheDocument();
+    expect(within(table).getAllByRole("checkbox").length).toBeGreaterThan(0);
+    expect(within(table).getAllByRole("separator").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "Modo apresentação" }));
+
+    expect(screen.getByRole("button", { name: "Sair do modo apresentação" })).toBeInTheDocument();
+    expect(screen.queryByText("Colunas (2)")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Escolher etapas" })).not.toBeInTheDocument();
+    expect(within(table).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(table).queryByRole("separator")).not.toBeInTheDocument();
+    expect(screen.getByText("Campanha em apresentação")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Sair do modo apresentação" }));
+    expect(screen.getByText("Colunas (2)")).toBeInTheDocument();
+    expect(within(table).getAllByRole("checkbox").length).toBeGreaterThan(0);
+  });
 });

@@ -19,7 +19,7 @@ import { buildFunnelReadings, type TrafficRichCrmInsights } from "@/lib/windsor/
 import type { PriorityMetricColumn } from "@/lib/windsor/priority-metrics";
 import { CostSignal, type CostThreshold } from "./CostThresholds";
 import { useColunasAjustaveis, type ConfiguracaoColunaAjustavel } from "./colunas-ajustaveis";
-import { BlocoRecolhivel } from "./RelatorioRecolhivel";
+import { BlocoRecolhivel, ControleEdicaoRelatorio } from "./RelatorioRecolhivel";
 
 type Platform = "meta_ads" | "google_ads";
 type Model = "leads" | "messages" | "ecommerce";
@@ -615,15 +615,17 @@ export function CreativePerformance({
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">{t("Anúncios Meta")}</span>
         <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={!columnOrderChanged}
-            onClick={resetColumnOrder}
-          >
-            {t("Voltar à ordem padrão")}
-          </Button>
+          <ControleEdicaoRelatorio>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={!columnOrderChanged}
+              onClick={resetColumnOrder}
+            >
+              {t("Voltar à ordem padrão")}
+            </Button>
+          </ControleEdicaoRelatorio>
           <select
             className="rounded-md border bg-background px-2 py-1 text-sm"
             value={sort}

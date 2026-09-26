@@ -1,7 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface UseRelatorioRecolhivelOptions {
@@ -9,6 +20,121 @@ interface UseRelatorioRecolhivelOptions {
   viewerKey: string;
   sectionKey: string;
   defaultOpen?: boolean;
+}
+
+interface SecaoRegistrada {
+  open: boolean;
+  definirOpen: (open: boolean) => void;
+}
+
+interface RelatorioRecolhivelContextValue {
+  registrar: (instanceKey: string, definirOpen: (open: boolean) => void) => () => void;
+  atualizar: (instanceKey: string, open: boolean) => void;
+  quantidade: number;
+  todasRecolhidas: boolean;
+  definirTodas: (open: boolean) => void;
+}
+
+const RelatorioRecolhivelContext = createContext<RelatorioRecolhivelContextValue | null>(null);
+const ModoApresentacaoContext = createContext(false);
+
+export function ProvedorRelatorioRecolhivel({ children }: { children: ReactNode }) {
+  const [secoes, setSecoes] = useState<Map<string, SecaoRegistrada>>(() => new Map());
+
+  const registrar = useCallback(
+    (instanceKey: string, definirOpen: (open: boolean) => void) => {
+      setSecoes((atuais) => {
+        const proximas = new Map(atuais);
+        proximas.set(instanceKey, { open: true, definirOpen });
+        return proximas;
+      });
+      return () => {
+        setSecoes((atuais) => {
+          if (!atuais.has(instanceKey)) return atuais;
+          const proximas = new Map(atuais);
+          proximas.delete(instanceKey);
+          return proximas;
+        });
+      };
+    },
+    [],
+  );
+
+  const atualizar = useCallback((instanceKey: string, open: boolean) => {
+    setSecoes((atuais) => {
+      const secao = atuais.get(instanceKey);
+      if (!secao || secao.open === open) return atuais;
+      const proximas = new Map(atuais);
+      proximas.set(instanceKey, { ...secao, open });
+      return proximas;
+    });
+  }, []);
+
+  const definirTodas = useCallback((open: boolean) => {
+    for (const secao of secoes.values()) secao.definirOpen(open);
+  }, [secoes]);
+
+  const value = useMemo<RelatorioRecolhivelContextValue>(() => {
+    const registradas = [...secoes.values()];
+    return {
+      registrar,
+      atualizar,
+      quantidade: registradas.length,
+      todasRecolhidas: registradas.length > 0 && registradas.every((secao) => !secao.open),
+      definirTodas,
+    };
+  }, [atualizar, definirTodas, registrar, secoes]);
+
+  return (
+    <RelatorioRecolhivelContext.Provider value={value}>
+      {children}
+    </RelatorioRecolhivelContext.Provider>
+  );
+}
+
+export function ProvedorModoApresentacao({
+  ativo,
+  children,
+}: {
+  ativo: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <ModoApresentacaoContext.Provider value={ativo}>{children}</ModoApresentacaoContext.Provider>
+  );
+}
+
+export function useModoApresentacao(): boolean {
+  return useContext(ModoApresentacaoContext);
+}
+
+export function ControleEdicaoRelatorio({ children }: { children: ReactNode }) {
+  return useModoApresentacao() ? null : <>{children}</>;
+}
+
+export function ControleTodasAsSecoes({
+  recolherLabel,
+  expandirLabel,
+}: {
+  recolherLabel: string;
+  expandirLabel: string;
+}) {
+  const contexto = useContext(RelatorioRecolhivelContext);
+  if (!contexto || contexto.quantidade === 0) return null;
+
+  const expandir = contexto.todasRecolhidas;
+  const label = expandir ? expandirLabel : recolherLabel;
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={() => contexto.definirTodas(expandir)}
+      aria-label={label}
+    >
+      {label}
+    </Button>
+  );
 }
 
 export function reportSectionStorageKey({
@@ -25,6 +151,10 @@ export function useRelatorioRecolhivel({
   sectionKey,
   defaultOpen = true,
 }: UseRelatorioRecolhivelOptions) {
+  const contexto = useContext(RelatorioRecolhivelContext);
+  const registrar = contexto?.registrar;
+  const atualizar = contexto?.atualizar;
+  const instanceKey = useId();
   const storageKey = reportSectionStorageKey({ organizationKey, viewerKey, sectionKey });
   const [open, setOpen] = useState(defaultOpen);
   const restoreVersion = useRef(0);
@@ -43,19 +173,27 @@ export function useRelatorioRecolhivel({
     return () => window.clearTimeout(timeout);
   }, [defaultOpen, storageKey]);
 
-  const toggle = useCallback(() => {
+  const definirOpen = useCallback((next: boolean) => {
     restoreVersion.current += 1;
-    setOpen((current) => {
-      const next = !current;
-      try {
-        if (next === defaultOpen) window.localStorage.removeItem(storageKey);
-        else window.localStorage.setItem(storageKey, next ? "open" : "closed");
-      } catch {
-        // A preferência é conforto, não requisito para o relatório funcionar.
-      }
-      return next;
-    });
+    setOpen(next);
+    try {
+      if (next === defaultOpen) window.localStorage.removeItem(storageKey);
+      else window.localStorage.setItem(storageKey, next ? "open" : "closed");
+    } catch {
+      // A preferência é conforto, não requisito para o relatório funcionar.
+    }
   }, [defaultOpen, storageKey]);
+
+  const toggle = useCallback(() => definirOpen(!open), [definirOpen, open]);
+
+  useEffect(
+    () => registrar?.(instanceKey, definirOpen),
+    [definirOpen, instanceKey, registrar],
+  );
+
+  useEffect(() => {
+    atualizar?.(instanceKey, open);
+  }, [atualizar, instanceKey, open]);
 
   return { open, toggle, storageKey };
 }

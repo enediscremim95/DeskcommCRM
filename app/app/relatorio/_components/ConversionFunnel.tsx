@@ -5,7 +5,11 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-import { SetaRecolhivel, useRelatorioRecolhivel } from "./RelatorioRecolhivel";
+import {
+  ControleEdicaoRelatorio,
+  SetaRecolhivel,
+  useRelatorioRecolhivel,
+} from "./RelatorioRecolhivel";
 
 interface FunnelStage {
   key: string;
@@ -361,7 +365,8 @@ export function ConversionFunnel({
           </span>
         </button>
         {stageGroups && (
-          <Popover>
+          <ControleEdicaoRelatorio>
+            <Popover>
             <PopoverTrigger asChild>
               <Button type="button" size="sm" variant="outline" className="relative shrink-0">
                 {chooseStagesLabel}
@@ -419,7 +424,8 @@ export function ConversionFunnel({
                 {restoreDefaultLabel}
               </Button>
             </PopoverContent>
-          </Popover>
+            </Popover>
+          </ControleEdicaoRelatorio>
         )}
       </div>
 

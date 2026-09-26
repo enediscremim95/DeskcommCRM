@@ -11,6 +11,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
+import { useModoApresentacao } from "./RelatorioRecolhivel";
+
 export interface ConfiguracaoColunaAjustavel {
   larguraMinima: number;
   larguraPadrao: number;
@@ -54,6 +56,7 @@ export function useColunasAjustaveis<Column extends string>({
   larguraMaxima = 1200,
   ordem,
 }: ColunasAjustaveisOptions<Column>) {
+  const modoApresentacao = useModoApresentacao();
   const [larguras, setLarguras] = useState<Partial<Record<Column, number>>>({});
   const largurasRef = useRef<Partial<Record<Column, number>>>({});
   const redimensionamento = useRef<{
@@ -225,7 +228,7 @@ export function useColunasAjustaveis<Column extends string>({
     coluna: Column,
   ): HTMLAttributes<HTMLTableCellElement> & { "data-drop-position"?: PosicaoDaQueda } => {
     const fixa = colunaFixa === coluna;
-    const ativo = Boolean(ordemStorageKey && podeReordenar && !fixa);
+    const ativo = Boolean(ordemStorageKey && podeReordenar && !fixa && !modoApresentacao);
     return {
       draggable: ativo,
       onPointerDown: (event) => {
@@ -288,6 +291,7 @@ export function useColunasAjustaveis<Column extends string>({
   };
 
   const alcaDaColuna = (coluna: Column, rotulo: string) => {
+    if (modoApresentacao) return null;
     const configuracao = colunas[coluna];
     const descricao = `${traduzir("Ajustar largura da coluna")} ${rotulo}. ${traduzir("Clique duas vezes para restaurar")}`;
     return (

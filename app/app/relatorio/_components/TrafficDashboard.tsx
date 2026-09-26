@@ -42,7 +42,14 @@ import { CostSignal, CostThresholdControl, type CostThreshold } from "./CostThre
 import { PriorityMetricSelector } from "./PriorityMetricSelector";
 import { CreativePerformance, TrafficTimeline } from "./RichReportSections";
 import { useColunasAjustaveis, type ConfiguracaoColunaAjustavel } from "./colunas-ajustaveis";
-import { BlocoRecolhivel } from "./RelatorioRecolhivel";
+import {
+  BlocoRecolhivel,
+  ControleEdicaoRelatorio,
+  ControleTodasAsSecoes,
+  ProvedorModoApresentacao,
+  ProvedorRelatorioRecolhivel,
+  useModoApresentacao,
+} from "./RelatorioRecolhivel";
 
 interface Metrics {
   budget: number | null;
@@ -785,6 +792,7 @@ function CampaignTable({
   };
 }) {
   const t = useT();
+  const modoApresentacao = useModoApresentacao();
   const isMeta = platform === "meta_ads";
   const campaignTableTitle = isMeta
     ? localText(idioma, "Campanhas Meta", "Campañas de Meta")
@@ -1135,7 +1143,7 @@ function CampaignTable({
           {/* Os botões da seleção moram aqui, ao lado da pesquisa: são as ações
               de "o que eu quero ver na tabela", e é onde a mão já está. A faixa
               da seleção abaixo fica só com os números das campanhas marcadas. */}
-          {selectedCampaigns.length > 0 && (
+          {!modoApresentacao && selectedCampaigns.length > 0 && (
             <>
               <Button
                 type="button"
@@ -1152,20 +1160,22 @@ function CampaignTable({
             </>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={!columnOrderChanged}
-            onClick={resetColumnOrder}
-          >
-            {t("Voltar à ordem padrão")}
-          </Button>
-          {columnMenu}
-        </div>
+        {!modoApresentacao && (
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={!columnOrderChanged}
+              onClick={resetColumnOrder}
+            >
+              {t("Voltar à ordem padrão")}
+            </Button>
+            {columnMenu}
+          </div>
+        )}
       </div>
-      {selectedCampaigns.length > 0 && (
+      {!modoApresentacao && selectedCampaigns.length > 0 && (
         <div
           role="status"
           aria-live="polite"
@@ -1209,17 +1219,19 @@ function CampaignTable({
                       aria-sort={sortKey === "name" ? sortDirection : "none"}
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
-                          <input
-                            ref={selectAllRef}
-                            type="checkbox"
-                            className="size-5 cursor-pointer accent-primary"
-                            checked={allVisibleSelected}
-                            disabled={selectableCampaigns.length === 0}
-                            aria-label={t("Selecionar campanhas visíveis")}
-                            onChange={toggleAllVisible}
-                          />
-                        </label>
+                        {!modoApresentacao && (
+                          <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
+                            <input
+                              ref={selectAllRef}
+                              type="checkbox"
+                              className="size-5 cursor-pointer accent-primary"
+                              checked={allVisibleSelected}
+                              disabled={selectableCampaigns.length === 0}
+                              aria-label={t("Selecionar campanhas visíveis")}
+                              onChange={toggleAllVisible}
+                            />
+                          </label>
+                        )}
                         <button
                           type="button"
                           className={`${headerText} inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-sm text-inherit hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden`}
@@ -1284,16 +1296,18 @@ function CampaignTable({
                             style={columnStyle("name")}
                           >
                             <div className="flex items-start gap-3">
-                              <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
-                                <input
-                                  type="checkbox"
-                                  className="size-5 cursor-pointer accent-primary"
-                                  checked={selectedKeys.has(key)}
-                                  aria-label={`${t("Selecionar campanha")} ${campaign.name}`}
-                                  onClick={(event) => event.stopPropagation()}
-                                  onChange={() => toggleCampaign(key)}
-                                />
-                              </label>
+                              {!modoApresentacao && (
+                                <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
+                                  <input
+                                    type="checkbox"
+                                    className="size-5 cursor-pointer accent-primary"
+                                    checked={selectedKeys.has(key)}
+                                    aria-label={`${t("Selecionar campanha")} ${campaign.name}`}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onChange={() => toggleCampaign(key)}
+                                  />
+                                </label>
+                              )}
                               {hasAdsets ? (
                                 <button
                                   type="button"
@@ -1500,6 +1514,7 @@ export function TrafficDashboard() {
   const t = useT();
   const idioma = useIdioma();
   const activeOrg = useActiveOrg();
+  const [modoApresentacao, setModoApresentacao] = useState(false);
   const [preset, setPreset] = useState("30");
   const [window, setWindow] = useState(() => range(30));
   const [report, setReport] = useState<ReportResponse["data"] | null>(null);
@@ -1619,7 +1634,12 @@ export function TrafficDashboard() {
   }
 
   return (
-    <div className="flex flex-col gap-5 p-4 sm:p-6">
+    <ProvedorRelatorioRecolhivel>
+      <ProvedorModoApresentacao ativo={modoApresentacao}>
+        <div
+          className="flex flex-col gap-5 p-4 sm:p-6"
+          data-report-presentation={modoApresentacao ? "true" : "false"}
+        >
       <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           {activeOrg?.name ? (
@@ -1643,6 +1663,21 @@ export function TrafficDashboard() {
         {/* Fixa no lugar que o dono escolheu arrastando (21/09/2026): alinhada ao
             título e um pouco afastada da borda direita. O arrasto saiu. */}
         <div className="flex flex-wrap items-end gap-2 rounded-2xl border bg-card p-3 shadow-sm lg:mr-20">
+          <Button
+            type="button"
+            size="sm"
+            variant={modoApresentacao ? "default" : "outline"}
+            aria-pressed={modoApresentacao}
+            onClick={() => setModoApresentacao((atual) => !atual)}
+          >
+            {modoApresentacao ? t("Sair do modo apresentação") : t("Modo apresentação")}
+          </Button>
+          {report && (
+            <ControleTodasAsSecoes
+              recolherLabel={t("Recolher tudo")}
+              expandirLabel={t("Expandir tudo")}
+            />
+          )}
           <div className="space-y-1">
             <Label htmlFor="traffic-period">{t("Período")}</Label>
             <Select value={preset} onValueChange={changePreset}>
@@ -1693,20 +1728,22 @@ export function TrafficDashboard() {
       </header>
 
       {report && (
-        <CostThresholdControl
-          key={(report.cost_thresholds ?? [])
-            .map((row) => `${row.platform}:${row.good_until}:${row.acceptable_until}`)
-            .join("|")}
-          initial={report.cost_thresholds ?? []}
-          canManage={report.can_manage_defaults}
-          model={report.model}
-          currency={report.currencies[0]?.currency}
-          onSaved={(costThresholds) =>
-            setReport((current) =>
-              current ? { ...current, cost_thresholds: costThresholds } : current,
-            )
-          }
-        />
+        <ControleEdicaoRelatorio>
+          <CostThresholdControl
+            key={(report.cost_thresholds ?? [])
+              .map((row) => `${row.platform}:${row.good_until}:${row.acceptable_until}`)
+              .join("|")}
+            initial={report.cost_thresholds ?? []}
+            canManage={report.can_manage_defaults}
+            model={report.model}
+            currency={report.currencies[0]?.currency}
+            onSaved={(costThresholds) =>
+              setReport((current) =>
+                current ? { ...current, cost_thresholds: costThresholds } : current,
+              )
+            }
+          />
+        </ControleEdicaoRelatorio>
       )}
 
       {report?.sync.status === "failed" && (
@@ -2052,20 +2089,22 @@ export function TrafficDashboard() {
                       : localText(idioma, "O que move o resultado", "Lo que mueve el resultado")}
                   </h2>
                 </div>
-                <PriorityMetricSelector
-                  key={`${report.organization_key}:${(
-                    report.priority_metrics ?? defaultPriorityMetrics(report.model)
-                  ).join("|")}`}
-                  model={report.model}
-                  organizationKey={report.organization_key}
-                  viewerKey={report.viewer_key}
-                  initial={report.priority_metrics ?? defaultPriorityMetrics(report.model)}
-                  canManage={report.can_manage_defaults}
-                  onSaved={(priorityMetrics) => {
-                    setActiveMetric(priorityMetrics[0] ?? "spend");
-                    setVisiblePriorityMetrics(priorityMetrics);
-                  }}
-                />
+                <ControleEdicaoRelatorio>
+                  <PriorityMetricSelector
+                    key={`${report.organization_key}:${(
+                      report.priority_metrics ?? defaultPriorityMetrics(report.model)
+                    ).join("|")}`}
+                    model={report.model}
+                    organizationKey={report.organization_key}
+                    viewerKey={report.viewer_key}
+                    initial={report.priority_metrics ?? defaultPriorityMetrics(report.model)}
+                    canManage={report.can_manage_defaults}
+                    onSaved={(priorityMetrics) => {
+                      setActiveMetric(priorityMetrics[0] ?? "spend");
+                      setVisiblePriorityMetrics(priorityMetrics);
+                    }}
+                  />
+                </ControleEdicaoRelatorio>
               </div>
               <div
                 className={`relative grid gap-3 sm:grid-cols-2 ${
@@ -2476,6 +2515,8 @@ export function TrafficDashboard() {
           </section>
         );
       })}
-    </div>
+        </div>
+      </ProvedorModoApresentacao>
+    </ProvedorRelatorioRecolhivel>
   );
 }

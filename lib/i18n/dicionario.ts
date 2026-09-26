@@ -1990,6 +1990,10 @@ export const DICIONARIO: Traducoes = {
     {
       es: "La cuenta de inteligencia artificial es tuya: la contratas directo con Anthropic, OpenAI o Google y pegas la clave aquí. Se guarda cifrada y nunca vuelve a aparecer en la pantalla después de guardada — ni siquiera para ti.",
     },
+  "Ainda não tem uma chave de IA? A OpenRouter oferece uma única chave para dezenas de modelos. Depois de cadastrá-la aqui, os modelos aparecem automaticamente.": {
+    es: "¿Aún no tienes una clave de IA? OpenRouter ofrece una sola clave para decenas de modelos. Después de registrarla aquí, los modelos aparecen automáticamente.",
+  },
+  "Criar chave na OpenRouter": { es: "Crear clave en OpenRouter" },
   "Nenhuma chave cadastrada ainda": { es: "Todavía no hay ninguna clave registrada" },
   "Seus agentes só conseguem pensar depois que você cola aqui uma chave da Anthropic, da OpenAI ou do Google. A cobrança vai direto para a sua conta no provedor, e a chave fica guardada criptografada.":
     {
@@ -8922,6 +8926,10 @@ export const DICIONARIO: Traducoes = {
   "Abrir mídia": { es: "Abrir medio" },
   "Ainda não há dados para este período.": { es: "Todavía no hay datos para este período." },
   "Baixar relatório": { es: "Descargar informe" },
+  "Modo apresentação": { es: "Modo presentación" },
+  "Sair do modo apresentação": { es: "Salir del modo presentación" },
+  "Recolher tudo": { es: "Contraer todo" },
+  "Expandir tudo": { es: "Expandir todo" },
   "Campanhas": { es: "Campañas" },
   "Carregando relatório…": { es: "Cargando informe…" },
   "Cliques no link": { es: "Clics en el enlace" },
