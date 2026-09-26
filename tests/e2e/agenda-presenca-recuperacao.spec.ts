@@ -1075,8 +1075,13 @@ test("API do Radar recorta demandas pela RLS real e a tela não exibe o bloco le
       response.url().endsWith("/api/v1/admin/impersonate/end") &&
       response.request().method() === "POST",
   );
+  // `/app/kanban` escolhe o funil padrão com um segundo redirect de documento.
+  // O acompanhamento só acabou para fins de navegação depois do destino final.
+  const voltouParaAOrigem = page.waitForURL((url) => url.pathname.startsWith("/app/pipelines/"));
   await page.getByRole("button", { name: "Sair do acompanhamento" }).click();
   expect((await encerrouSuporte).status()).toBe(200);
+  await voltouParaAOrigem;
+  await page.waitForLoadState("load");
   await expect(page.getByRole("button", { name: "Sair do acompanhamento" })).toHaveCount(0);
   await page.goto(`/admin/tenants/${f.org}`);
   await page.getByRole("button", { name: /Acompanhar/ }).click();

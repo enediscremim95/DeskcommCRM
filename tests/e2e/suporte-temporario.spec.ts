@@ -16,12 +16,18 @@ async function start(page:Page,org:string,readonly=false){
  await page.goto(`/admin/tenants/${org}`);
  await page.getByRole("button",{name:/Acompanhar/}).click();
  if(readonly)await page.getByLabel("Somente leitura",{exact:true}).check();
+ const readonlyPickerResponses=readonly ? [
+  page.waitForResponse(r=>r.url().endsWith("/api/v1/team/assignable")&&r.request().method()==="GET"),
+  page.waitForResponse(r=>r.url().endsWith("/api/v1/ai/agents/assignable")&&r.request().method()==="GET"),
+ ] : [];
  const response=page.waitForResponse(r=>r.url().endsWith(`/api/v1/admin/tenants/${org}/impersonate`)&&r.request().method()==="POST");
+ const navigation=page.waitForURL(url=>url.pathname.startsWith("/app/pipelines/"));
  await page.getByRole("button",{name:"Confirmar e entrar"}).click();
- expect((await response).status()).toBe(200);await page.waitForLoadState("networkidle");
+ expect((await response).status()).toBe(200);await navigation;await page.waitForLoadState("load");
+ if(readonly){const pickerResponses=await Promise.all(readonlyPickerResponses);expect(pickerResponses.map(r=>r.status())).toEqual([200,200]);}
  await expect(page.getByRole("button",{name:"Sair do acompanhamento"})).toBeVisible();
 }
-async function end(page:Page){const response=page.waitForResponse(r=>r.url().endsWith("/api/v1/admin/impersonate/end")&&r.request().method()==="POST");await page.getByRole("button",{name:"Sair do acompanhamento"}).click();expect((await response).status()).toBe(200);await expect(page.getByRole("button",{name:"Sair do acompanhamento"})).toHaveCount(0);}
+async function end(page:Page){const response=page.waitForResponse(r=>r.url().endsWith("/api/v1/admin/impersonate/end")&&r.request().method()==="POST");const navigation=page.waitForURL(url=>url.pathname.startsWith("/app/pipelines/"));await page.getByRole("button",{name:"Sair do acompanhamento"}).click();expect((await response).status()).toBe(200);await navigation;await page.waitForLoadState("load");await expect(page.getByRole("button",{name:"Sair do acompanhamento"})).toHaveCount(0);}
 
 test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/expiração/revogação são reais",async({page,browser})=>{
  test.setTimeout(240000);
@@ -116,14 +122,21 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
   await insert("user_organizations",{organization_id:orgs[0],user_id:actor,role:"admin",accepted_at:new Date().toISOString()});
   const pa=await db.from("platform_admins").insert({user_id:actor,granted_by:actor,scope:"full",mfa_required:false,reason:"E2E local support"});if(pa.error)throw pa.error;
   await login(page,email);await acknowledgeKnownAction(page,"/login");
-  const sameTab=await page.context().newPage();await sameTab.goto(`/app/inbox?conversation=${convs[0]}`);
+  const sameTab=await page.context().newPage();
+  const markReadA=sameTab.waitForResponse(response=>response.url().endsWith(`/api/v1/conversations/${convs[0]}/mark-read`)
+   && response.request().method()==="POST");
+  await sameTab.goto(`/app/inbox?conversation=${convs[0]}`);
+  expect((await markReadA).status()).toBe(200);
   await expect(sameTab.getByTestId("tenant-switcher")).toContainText(`Suporte A ${suffix}`);
   second=await browser.newContext();observeRequests(second);const other=await second.newPage();observeAuth(other);await login(other,email);await acknowledgeKnownAction(other,"/login");
   await start(page,orgs[1]!);
   await expect(sameTab.getByTestId("tenant-switcher")).toContainText(`Suporte B ${suffix}`);
   await expect(sameTab.locator("[data-conversation-id]").getByText(`Contato B ${suffix}`,{exact:true})).toBeVisible();
   await expect(sameTab.locator("[data-conversation-id]").getByText(`Contato A ${suffix}`,{exact:true})).toHaveCount(0);
-  await page.goto("/onboarding");await page.goto(`/app/inbox?conversation=${convs[1]}`);
+  const markReadB=page.waitForResponse(response=>response.url().endsWith(`/api/v1/conversations/${convs[1]}/mark-read`)
+   && response.request().method()==="POST");
+  await page.goto(`/app/inbox?conversation=${convs[1]}`);
+  expect((await markReadB).status()).toBe(200);
   await expect(page.getByRole("alert").filter({hasText:/edição permitida/i})).toContainText(`Suporte B ${suffix}`);
   await expect(page.locator("[data-conversation-id]").getByText(`Contato B ${suffix}`,{exact:true})).toBeVisible();
   await expect(page.locator("[data-conversation-id]").getByText(`Contato A ${suffix}`,{exact:true})).toHaveCount(0);
@@ -182,11 +195,12 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
   page.on("websocket",socket=>socket.on("framereceived",frame=>{
    try {const parsed=JSON.parse(frame.payload.toString());const message=Array.isArray(parsed)?{topic:parsed[2],event:parsed[3],payload:parsed[4]}:parsed;realtimeEvidence.push({topic:message.topic,event:message.event,status:message.payload?.status});if(message.topic?.startsWith(`realtime:inbox-${orgs[1]}::`)&&message.event==="postgres_changes")inboxPushed=true;if(message.topic?.startsWith(`realtime:inbox-${orgs[1]}::`)&&message.event==="phx_reply"&&message.payload?.status==="ok")inboxSubscribed=true;}catch{/* frames de controle não JSON */}
   }));
-  const unexpectedDenials:string[]=[];
-  page.on("response",response=>{if(response.status()===403)unexpectedDenials.push(response.url());});
+  const unexpectedDenials:string[]=[];const inboxRequests=new WeakSet<Request>();
+  page.on("request",request=>inboxRequests.add(request));
+  page.on("response",response=>{if(response.status()===403&&inboxRequests.has(response.request()))unexpectedDenials.push(response.url());});
   await start(page,orgs[1]!,true);
   await expect(sameTab.getByTestId("tenant-switcher")).toContainText(`Suporte B ${suffix}`);
-  await page.goto("/onboarding");await page.goto(`/app/inbox?conversation=${convs[1]}`);
+  await page.goto(`/app/inbox?conversation=${convs[1]}`);
   const writes:string[]=[];page.on("request",request=>{if(request.method()!=="GET"&&/mark-read|availability|messages/.test(request.url()))writes.push(request.url());});
   await page.locator(`[data-conversation-id="${convs[1]}"]`).click();
   await expect(page.getByRole("alert").filter({hasText:/somente leitura/i})).toBeVisible();
@@ -235,8 +249,12 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
      blockedBeforeSend.add(request);pendingMutations.delete(request);await route.abort("aborted");
     }else await route.continue();
    })));
-   await expect.poll(()=>pendingMutations.size,{timeout:20000,
-    message:"Mutações enviadas devem concluir antes de fechar contextos ou apagar fixtures"}).toBe(0);
+   try {
+    await expect.poll(()=>pendingMutations.size,{timeout:20000,
+     message:"Mutações enviadas devem concluir antes de fechar contextos ou apagar fixtures"}).toBe(0);
+   } catch {
+    throw new Error(`Mutações ainda em voo no cleanup: ${JSON.stringify(pendingMutationDescriptions())}`);
+   }
    const closing = await Promise.allSettled([
     ...page.context().pages().map(ownedPage => ownedPage.close()),
     ...(second ? [second.close()] : []),

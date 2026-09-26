@@ -157,7 +157,7 @@ test.describe("Inbox: as abas perguntam quem manda", () => {
     await loginComoAdmin(page, lerCreds());
     await page.goto(`/app/inbox?conversation=${conversaEsperando}`);
 
-    const lista = page.getByRole("main").or(page.locator("body"));
+    const lista = page.locator("[data-conversation-id]");
     await expect(lista.getByText(ESPERANDO).first()).toBeVisible({ timeout: 30_000 });
 
     const temAutomatico = await orgTemAutomaticoNoAr(orgId);
@@ -168,16 +168,16 @@ test.describe("Inbox: as abas perguntam quem manda", () => {
     // nunca casaria. Mesmo idioma da spec irmã `inbox-quem-manda.spec.ts`.
     await page.getByRole("tab", { name: /Fila/i }).first().click();
     // A escalada está na Fila nos DOIS casos — é o que não depende do fato.
-    await expect(page.getByText(ESPERANDO).first()).toBeVisible({ timeout: 15_000 });
+    await expect(lista.getByText(ESPERANDO).first()).toBeVisible({ timeout: 15_000 });
     if (temAutomatico) {
       await expect(
-        page.getByText(ROBO),
+        lista.getByText(ROBO),
         "a Fila listou uma conversa que o automático está conduzindo — o defeito voltou",
       ).toHaveCount(0);
     } else {
       // Sem robô no ar, `automatico` TAMBÉM é "esperando gente", e listá-lo é o
       // certo. Asserir o contrário aqui reprovaria o comportamento correto.
-      await expect(page.getByText(ROBO).first()).toBeVisible({ timeout: 15_000 });
+      await expect(lista.getByText(ROBO).first()).toBeVisible({ timeout: 15_000 });
     }
 
     // ── AUTOMÁTICO: a outra direção, e ela é a que impede um 'conserto' que
@@ -186,9 +186,9 @@ test.describe("Inbox: as abas perguntam quem manda", () => {
     // exatamente `comando=automatico` nos dois casos, então a separação aqui vale
     // sempre — e é ela que impede um "conserto" que simplesmente esvazie a Fila.
     await page.getByRole("tab", { name: /Autom/i }).first().click();
-    await expect(page.getByText(ROBO).first()).toBeVisible({ timeout: 15_000 });
+    await expect(lista.getByText(ROBO).first()).toBeVisible({ timeout: 15_000 });
     await expect(
-      page.getByText(ESPERANDO),
+      lista.getByText(ESPERANDO),
       "a aba do automático listou uma conversa escalada para humano",
     ).toHaveCount(0);
   });

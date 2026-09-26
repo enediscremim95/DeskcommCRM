@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "@playwright/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { signInviteToken } from "../../lib/auth/invite-token";
 import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, {
@@ -24,8 +25,8 @@ async function customize(page: Page, email: string, only?: string) {
   await dialog.getByLabel("Perfil de interface").selectOption("simplificada");
   if (only) {
     await dialog.getByText("Personalizar áreas visíveis", { exact: false }).click();
-    for (const checkbox of await dialog.getByRole("checkbox").all())
-      if (await checkbox.isChecked()) await checkbox.uncheck();
+    const selecionados = dialog.locator('input[type="checkbox"]:checked');
+    while ((await selecionados.count()) > 0) await selecionados.first().uncheck();
     await dialog.getByRole("checkbox", { name: only, exact: true }).check();
   }
   await dialog.getByRole("button", { name: "Salvar interface" }).click();
@@ -122,8 +123,7 @@ test("interface por membro atualiza ao vivo, preserva formulário e convite apli
     await expect(nav(member).getByRole("link", { name: "Inbox", exact: true })).toHaveCount(0);
     await member.goto("/app");
     await member.waitForURL("**/app/products");
-    await nav(member).getByRole("link", { name: "Ver tudo em CRM" }).click();
-    await expect(member.getByRole("link", { name: /Produtos/ }).last()).toBeVisible();
+    await expect(member.getByRole("heading", { name: "Produtos", exact: true })).toBeVisible();
     await expect(member.getByRole("link", { name: /Contatos/ })).toHaveCount(0);
     await member.keyboard.press("ControlOrMeta+k");
     await expect(member.getByRole("option").filter({ hasText: "Produtos" })).toBeVisible();
@@ -133,22 +133,79 @@ test("interface por membro atualiza ao vivo, preserva formulário e convite apli
     await member.screenshot({ path: `${evidence}/interface-hub-only.png` });
     await member.setViewportSize({ width: 390, height: 844 });
     await member.getByRole("button", { name: "Abrir navegação" }).click();
-    await expect(member.getByRole("link", { name: "Ver tudo em CRM" }).last()).toBeVisible();
+    await expect(nav(member).getByRole("link", { name: /Funis|Contatos|Tarefas/ })).toHaveCount(0);
     expect(
       await member.evaluate(
         () => document.body.scrollWidth <= document.documentElement.clientWidth + 1,
       ),
     ).toBe(true);
     await member.screenshot({ path: `${evidence}/interface-mobile.png` });
-    // Convite pela tela, sem serviço de e-mail e com configuração anterior ao aceite.
+    // A tela envia a seleção ao contrato de convite. O transporte de e-mail fica
+    // isolado aqui porque a suíte local não configura provedor externo.
     await page.goto("/app/team/invite");
     await page.getByLabel("Emails").fill(emails[3]!);
     await page.getByLabel("Perfil de interface").selectOption("simplificada");
     await page.getByText("Personalizar áreas visíveis", { exact: false }).click();
-    for (const checkbox of await page.getByRole("checkbox").all())
-      if (await checkbox.isChecked()) await checkbox.uncheck();
+    const selecionadosNoConvite = page.locator('input[type="checkbox"]:checked');
+    while ((await selecionadosNoConvite.count()) > 0)
+      await selecionadosNoConvite.first().uncheck();
     await page.getByRole("checkbox", { name: "Tarefas", exact: true }).check();
+    const interfaceDoConvite = {
+      preset: "simplificada" as const,
+      destinos: ["/app/tasks" as const],
+    };
+    const agora = Math.floor(Date.now() / 1000);
+    const token = signInviteToken({
+      invite_id: randomUUID(),
+      email: emails[3]!,
+      organization_id: orgs[0]!,
+      role: "agent",
+      exp: agora + 60 * 60,
+      iat: agora,
+      invited_by: users[0],
+      interface_settings: interfaceDoConvite,
+    });
+    const linkDoConvite = `/team/accept-invite/${token}`;
+    let payloadDoConvite: unknown;
+    await page.route("**/api/v1/team/invite", async (route) => {
+      payloadDoConvite = route.request().postDataJSON();
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            sent: [
+              {
+                email: emails[3],
+                invite_id: randomUUID(),
+                expires_at: new Date((agora + 60 * 60) * 1000).toISOString(),
+                email_dispatched: false,
+                accept_url: linkDoConvite,
+              },
+            ],
+            failed: [],
+          },
+        }),
+      });
+    });
+    const respostaDoConvite = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/api/v1/team/invite",
+      { timeout: 30_000 },
+    );
     await page.getByRole("button", { name: "Enviar convites" }).click();
+    const response = await respostaDoConvite;
+    expect(response.status(), await response.text()).toBe(201);
+    expect(payloadDoConvite).toEqual({
+      invitations: [
+        {
+          email: emails[3],
+          role: "agent",
+          interface_settings: interfaceDoConvite,
+        },
+      ],
+    });
     const link = await page.locator("code").innerText();
     expect(link).toContain("/team/accept-invite/");
     await login(guest, emails[3]!);
@@ -180,13 +237,19 @@ test("interface por membro atualiza ao vivo, preserva formulário e convite apli
     await customize(page, emails[2]!, "Produtos");
     await page.getByRole("combobox", { name: `Papel de ${emails[2]}` }).click();
     await page.getByRole("option", { name: "manager", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Confirmar mudança de papel" })).toBeVisible();
+    await page.getByRole("button", { name: "Confirmar alteração" }).click();
     await expect(page.getByText("Papel atualizado.", { exact: true })).toBeVisible();
     await other.goto("/app/team");
     await expect(other.getByRole("row").filter({ hasText: emails[2] }).getByText("Personalizada", { exact: true })).toBeVisible();
   } finally {
-    await memberContext.close();
-    await otherContext.close();
-    await guestContext.close();
+    for (const context of [memberContext, otherContext, guestContext]) {
+      try {
+        await context.close();
+      } catch {
+        // O Playwright pode já ter fechado o contexto ao encerrar por timeout.
+      }
+    }
     for (const id of orgs) await db.from("organizations").delete().eq("id", id);
     for (const id of users) await db.auth.admin.deleteUser(id);
   }

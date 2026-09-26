@@ -62,6 +62,12 @@ export const PERMISSION_ROLES = {
   // derruba o agente para todos os clientes da organização, por isso o gerente
   // pode criar e revalidar credenciais, mas não apagá-las.
   "ai.credentials.delete": ["admin"],
+  // Esvaziar a operação não é uma configuração comum: apaga definitivamente
+  // mensagens, conversas, leads, contatos, compromissos e pedidos.
+  "organization.data.reset": ["admin"],
+  // Criar ou revogar um bearer derruba integrações externas sem aviso. O
+  // gerente pode administrar o restante da organização, mas não esta chave.
+  "api.tokens.manage": ["admin"],
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Permission = keyof typeof PERMISSION_MIN_ROLE | keyof typeof PERMISSION_ROLES;

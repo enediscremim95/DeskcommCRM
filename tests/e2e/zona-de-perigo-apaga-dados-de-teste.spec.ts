@@ -116,8 +116,19 @@ async function trocarPara(page: Page, orgId: string) {
   const seletor = page.getByTestId("tenant-switcher");
   await expect(seletor).toBeVisible({ timeout: 20_000 });
   await seletor.click();
-  await page.getByTestId(`tenant-switcher-item-${orgId}`).click();
-  await expect(seletor).toBeEnabled({ timeout: 60_000 });
+  const item = page.getByTestId(`tenant-switcher-item-${orgId}`);
+  const nome = (await item.locator("span").first().innerText()).trim();
+  if ((await seletor.innerText()).trim() === nome) {
+    await page.keyboard.press("Escape");
+    return;
+  }
+  // `/app/kanban` redireciona no servidor para o funil padrão. A troca só
+  // terminou quando esse segundo documento carregou; navegar antes aborta o goto.
+  const navigation = page.waitForURL((url) => url.pathname.startsWith("/app/pipelines/"));
+  await item.click();
+  await navigation;
+  await page.waitForLoadState("load");
+  await expect(page.getByTestId("tenant-switcher")).toContainText(nome);
 }
 
 test.describe.configure({ timeout: 180_000 });
@@ -234,7 +245,7 @@ test("o admin zera os dados da sua organização pela tela — e a vizinha não 
   expect(meta?.counts?.contacts).toBe(antesA.contacts);
 });
 
-test("quem não administra a organização não chega na zona de perigo", async ({ page }) => {
+test("agent não entra na organização; gerente entra sem a zona de perigo", async ({ page }) => {
   const creds = semear();
   const z = creds.zona_de_perigo!;
 
@@ -255,6 +266,6 @@ test("quem não administra a organização não chega na zona de perigo", async 
   await page.goto("/app/settings/profile");
   await trocarPara(page, creds.org_id);
   await page.goto("/app/settings/tenant");
-  await expect(page).toHaveURL(/\/403/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/app\/settings\/tenant$/, { timeout: 20_000 });
   await expect(page.getByTestId("zona-de-perigo")).toHaveCount(0);
 });
