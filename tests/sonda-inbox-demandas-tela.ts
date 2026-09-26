@@ -17,6 +17,7 @@
  * Uso: `npx tsx tests/sonda-inbox-demandas-tela.ts`
  * Requer o app na 3100 apontando para o Supabase LOCAL. Semeia e limpa.
  */
+import type * as PlaywrightTestTypes from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { chromium } from "@playwright/test";
@@ -73,7 +74,7 @@ function semear(): number {
  * mesmo hash, então o que variava era o texto que chegou. Um instrumento que
  * erra às vezes é pior que um que erra sempre: leva a diagnosticar o produto.
  */
-async function entrar(p: import("@playwright/test").Page): Promise<void> {
+async function entrar(p: PlaywrightTestTypes.Page): Promise<void> {
   await p.goto(`${BASE}/login`, { waitUntil: "domcontentloaded" });
   const email = p.locator('input[type="email"]');
   const senha = p.locator('input[type="password"]');

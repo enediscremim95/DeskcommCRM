@@ -17,8 +17,14 @@ const PLATFORM = "c2640000-1111-4000-8000-000000000002";
 const LEAD_MANAGER = "c2640000-6666-4000-8000-000000000001";
 const LEAD_ADMIN = "c2640000-6666-4000-8000-000000000002";
 const LEAD_PLATFORM = "c2640000-6666-4000-8000-000000000003";
+const CRED_MANAGER = "c2640000-7777-4000-8000-000000000001";
+const CRED_ADMIN = "c2640000-7777-4000-8000-000000000002";
+const CRED_PLATFORM = "c2640000-7777-4000-8000-000000000003";
 
-function capability(userId: string, name: "team.manage" | "lead.delete"): boolean {
+function capability(
+  userId: string,
+  name: "team.manage" | "lead.delete" | "ai.credentials.delete",
+): boolean {
   return lastLine(
     sql(`
       select set_config('request.jwt.claims', '{"sub":"${userId}"}', false);
@@ -45,6 +51,12 @@ function seedProbes(): void {
              ('${LEAD_ADMIN}', '${GOV_ORG}', '${GOV_PIPELINE}', '${GOV_STAGE}', 'Preservar admin'),
              ('${LEAD_PLATFORM}', '${GOV_ORG}', '${GOV_PIPELINE}', '${GOV_STAGE}', 'Excluir plataforma')
       on conflict do nothing;
+    insert into public.ai_provider_credentials
+      (id, organization_id, provider, label, api_key_encrypted, api_key_iv, api_key_tag, api_key_last4)
+      values ('${CRED_MANAGER}', '${GOV_ORG}', 'anthropic', 'Excluir gerente', '\\x01'::bytea, '\\x02'::bytea, '\\x03'::bytea, '1001'),
+             ('${CRED_ADMIN}', '${GOV_ORG}', 'openai', 'Excluir admin', '\\x01'::bytea, '\\x02'::bytea, '\\x03'::bytea, '1002'),
+             ('${CRED_PLATFORM}', '${GOV_ORG}', 'google', 'Excluir plataforma', '\\x01'::bytea, '\\x02'::bytea, '\\x03'::bytea, '1003')
+      on conflict do nothing;
   `);
 }
 
@@ -66,16 +78,19 @@ describe("0264: capacidades do gerente", () => {
     expect(vector(GOV_ADMIN)).toBe("1");
   });
 
-  it("somente manager e platform admin recebem as capacidades nomeadas", () => {
+  it("separa as capacidades destrutivas sem desfazer o acesso geral", () => {
     expect(capability(GOV_MANAGER, "team.manage")).toBe(true);
     expect(capability(GOV_MANAGER, "lead.delete")).toBe(true);
-    expect(capability(GOV_ADMIN, "team.manage")).toBe(false);
+    expect(capability(GOV_MANAGER, "ai.credentials.delete")).toBe(false);
+    expect(capability(GOV_ADMIN, "team.manage")).toBe(true);
     expect(capability(GOV_ADMIN, "lead.delete")).toBe(false);
+    expect(capability(GOV_ADMIN, "ai.credentials.delete")).toBe(true);
     expect(capability(PLATFORM, "team.manage")).toBe(true);
     expect(capability(PLATFORM, "lead.delete")).toBe(true);
+    expect(capability(PLATFORM, "ai.credentials.delete")).toBe(true);
   });
 
-  it("RLS deixa o gerente gerir a equipe e barra o admin da organização", () => {
+  it("RLS deixa gerente, admin da organização e plataforma gerir a equipe", () => {
     expect(
       writeCountAs(
         GOV_MANAGER,
@@ -90,7 +105,7 @@ describe("0264: capacidades do gerente", () => {
         `update public.user_organizations set role = 'viewer'
           where organization_id = '${GOV_ORG}' and user_id = '${TARGET}'`,
       ),
-    ).toBe(0);
+    ).toBe(1);
     expect(
       writeCountAs(
         PLATFORM,
@@ -104,5 +119,26 @@ describe("0264: capacidades do gerente", () => {
     expect(writeCountAs(GOV_MANAGER, `delete from public.crm_leads where id = '${LEAD_MANAGER}'`)).toBe(1);
     expect(writeCountAs(GOV_ADMIN, `delete from public.crm_leads where id = '${LEAD_ADMIN}'`)).toBe(0);
     expect(writeCountAs(PLATFORM, `delete from public.crm_leads where id = '${LEAD_PLATFORM}'`)).toBe(1);
+  });
+
+  it("RLS barra gerente de apagar credencial de IA, mas libera admin e plataforma", () => {
+    expect(
+      writeCountAs(
+        GOV_MANAGER,
+        `delete from public.ai_provider_credentials where id = '${CRED_MANAGER}'`,
+      ),
+    ).toBe(0);
+    expect(
+      writeCountAs(
+        GOV_ADMIN,
+        `delete from public.ai_provider_credentials where id = '${CRED_ADMIN}'`,
+      ),
+    ).toBe(1);
+    expect(
+      writeCountAs(
+        PLATFORM,
+        `delete from public.ai_provider_credentials where id = '${CRED_PLATFORM}'`,
+      ),
+    ).toBe(1);
   });
 });

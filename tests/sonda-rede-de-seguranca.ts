@@ -9,6 +9,7 @@
  * do lado do navegador. O canal nunca recebe evento, e o resto da página segue
  * igual — que é exatamente a condição real.
  */
+import type * as PlaywrightTestTypes from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
 import { chromium } from "@playwright/test";
@@ -30,7 +31,7 @@ let leadCriado: string | null = null;
  *  NÃO ENCERRA: o Playwright segura o event loop e o processo pendura para
  *  sempre. Medido — a sabotagem que provou a limpeza travou 7 minutos até o
  *  timeout externo matá-la. */
-let browserAberto: import("@playwright/test").Browser | null = null;
+let browserAberto: PlaywrightTestTypes.Browser | null = null;
 
 async function main(): Promise<void> {
   const browser = await chromium.launch();

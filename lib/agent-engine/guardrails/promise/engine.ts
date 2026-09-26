@@ -1,3 +1,4 @@
+import type * as TableTypes from "./table";
 /**
  * Extração determinística de promessas estruturadas PT-BR + validação contra a
  * tabela versionada da org (F4-01; blueprint 6.5). SEM LLM: a camada semântica
@@ -90,7 +91,7 @@ const brl = (cents: number): string =>
  * (preço abaixo do piso, desconto/parcelas acima do teto). Primeira contradição vence.
  * Sem tabela ou sem campo fiscalizado → passa (conservador: nada solto vira veto).
  */
-export function decidePromise(args: { candidate: string; table: import('./table').PromiseTable }): PromiseDecision {
+export function decidePromise(args: { candidate: string; table: TableTypes.PromiseTable }): PromiseDecision {
   const { table } = args;
   for (const p of extractPromises(args.candidate)) {
     if (p.kind === 'price' && table.minPriceCents !== undefined && p.value < table.minPriceCents) {

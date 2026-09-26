@@ -6,6 +6,7 @@
 // jsdom FormData.set(nodeFile) coage pra string "[object File]" (Symbol de
 // branding não bate entre realms); com o File global do runtime real (Node), o
 // roundtrip preserva os bytes exatos do zip.
+import type * as ImpersonateSupportTypes from "@/lib/impersonate/support";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { zipSync, strToU8 } from "fflate";
@@ -157,7 +158,7 @@ describe("POST /api/v1/ai/skills/import", () => {
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  ...await importOriginal<typeof ImpersonateSupportTypes>(),
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));

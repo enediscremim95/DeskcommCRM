@@ -1,3 +1,4 @@
+import type * as PlaywrightTestTypes from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -71,7 +72,7 @@ function lerCreds(): Creds {
   return c;
 }
 
-async function entrar(page: import("@playwright/test").Page, creds: Creds): Promise<string[]> {
+async function entrar(page: PlaywrightTestTypes.Page, creds: Creds): Promise<string[]> {
   const usuario = creds.users.manager;
   if (!usuario) throw new Error(".e2e-creds.json sem o usuário `manager`");
   await page.goto("/login");
@@ -94,7 +95,7 @@ async function entrar(page: import("@playwright/test").Page, creds: Creds): Prom
 
 /** Marca um compromisso pela tela e devolve o rótulo do horário escolhido. */
 async function marcarUm(
-  page: import("@playwright/test").Page,
+  page: PlaywrightTestTypes.Page,
   tipoNome: string,
   dias: readonly string[],
 ): Promise<string> {

@@ -1,3 +1,4 @@
+import type * as AuditTypes from "@/lib/audit";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -31,7 +32,7 @@ import { sql, lastLine } from "./gov-helpers";
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/audit")>();
+  const actual = await importOriginal<typeof AuditTypes>();
   return {
     ...actual,
     audit: vi.fn((entry: Record<string, unknown>) => {

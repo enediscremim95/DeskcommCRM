@@ -144,3 +144,4 @@ backups/
 .qa-backups/
 *.dump
 .grok/
+System.Collections.Hashtable

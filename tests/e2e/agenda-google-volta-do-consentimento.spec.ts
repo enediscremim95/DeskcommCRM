@@ -24,6 +24,7 @@
  * `state` e do vínculo. Barrado antes, o desfecho seria 401 ou
  * `retorno_nao_verificavel`.
  */
+import type * as PlaywrightTestTypes from "@playwright/test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -45,7 +46,7 @@ function lerCreds(): Creds {
   return JSON.parse(fs.readFileSync(p, "utf8")) as Creds;
 }
 
-async function entrar(page: import("@playwright/test").Page, creds: Creds) {
+async function entrar(page: PlaywrightTestTypes.Page, creds: Creds) {
   // `manager`, como nas specs irmãs: o `admin` do seed tem TOTP, e a tela de 2FA
   // não é o assunto aqui.
   const usuario = creds.users.manager;

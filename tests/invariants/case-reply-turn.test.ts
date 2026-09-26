@@ -1,3 +1,4 @@
+import type * as AgentInboundTurnTypes from "@/lib/agent-engine/agent/inbound-turn";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import pg from "pg";
 import { createClient } from "@supabase/supabase-js";
@@ -16,7 +17,7 @@ import { createClient } from "@supabase/supabase-js";
  */
 
 vi.mock("@/lib/agent-engine/agent/inbound-turn", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/agent-engine/agent/inbound-turn")>();
+  const actual = await importOriginal<typeof AgentInboundTurnTypes>();
   return { ...actual, runAgentTurn: vi.fn() };
 });
 
