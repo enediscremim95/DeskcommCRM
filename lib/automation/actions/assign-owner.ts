@@ -44,8 +44,11 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     return { type: "assign_owner", status: "failed", error: "invalid_owner" };
   }
 
+  // `payload` pode vir ausente: nem todo gatilho carrega conversa (lead criado
+  // pela importação de planilha, por exemplo). Ler direto derrubava a ação com
+  // TypeError em vez de seguir para a busca pelo contato, logo abaixo.
   const conversationIdFromEvent =
-    typeof ctx.event.payload.conversation_id === "string"
+    typeof ctx.event.payload?.conversation_id === "string"
       ? ctx.event.payload.conversation_id
       : null;
   let conversationId = conversationIdFromEvent;
