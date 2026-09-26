@@ -416,7 +416,7 @@ describe("colunas da tabela de campanhas", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("/api/v1/reports/traffic/pdf?")) {
-        return new Response(new Blob(["pdf"], { type: "application/pdf" }), {
+        return new Response(new TextEncoder().encode("pdf"), {
           status: 200,
           headers: {
             "Content-Disposition":
