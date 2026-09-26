@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
-import { PipelinesClient, type PipelineRow } from "./_client";
+import { PipelinesClient, type FollowupRuleOption, type PipelineRow } from "./_client";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { lerRegraDeFollowupAprovavel } from "@/lib/leads/followup-aprovavel";
 
 export const dynamic = "force-dynamic";
 
@@ -32,14 +33,37 @@ export default async function PipelinesSettingsPage() {
     (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
 
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("crm_pipelines")
-    .select("id, name, slug, vocabulary, settings")
-    .eq("organization_id", activeOrg.orgId)
-    .eq("is_archived", false)
-    .order("position");
+  const [{ data }, { data: ruleRows }, { data: stageRows }] = await Promise.all([
+    supabase
+      .from("crm_pipelines")
+      .select("id, name, slug, vocabulary, settings")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("is_archived", false)
+      .order("position"),
+    supabase
+      .from("automation_rules")
+      .select("id, name, trigger_event, is_active, conditions, actions")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("trigger_event", "lead.stage_changed")
+      .eq("is_active", true),
+    supabase
+      .from("crm_stages")
+      .select("id, pipeline_id")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("is_archived", false),
+  ]);
 
   const pipelines = (data ?? []) as PipelineRow[];
+  const pipelineByStage = new Map(
+    (stageRows ?? []).map((stage) => [stage.id, stage.pipeline_id]),
+  );
+  const followupRules: FollowupRuleOption[] = (ruleRows ?? [])
+    .map((row) => lerRegraDeFollowupAprovavel(row))
+    .filter((row): row is NonNullable<typeof row> => row !== null)
+    .flatMap((row) => {
+      const pipelineId = pipelineByStage.get(row.targetStageId);
+      return pipelineId ? [{ ...row, pipelineId }] : [];
+    });
   const idioma = user.idioma;
 
   return (
@@ -56,7 +80,11 @@ export default async function PipelinesSettingsPage() {
           .
         </p>
       </header>
-      <PipelinesClient pipelines={pipelines} podeEditarConfig={podeEditarConfig} />
+      <PipelinesClient
+        pipelines={pipelines}
+        podeEditarConfig={podeEditarConfig}
+        followupRules={followupRules}
+      />
     </div>
   );
 }

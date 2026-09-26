@@ -2,6 +2,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import {
+  deveSugerirNovamente,
+  leUltimaRespostaDoContato,
+  resolveConfiguracaoFollowupAprovavel,
+} from "@/lib/leads/followup-aprovavel";
 
 /**
  * A PROPOSTA DE REATIVAÇÃO: nasce quando o negócio esfria, vence sozinha, e o
@@ -47,6 +52,8 @@ export async function propoeReativacao(
     /** A MESMA janela que definiu o esfriamento — ver o cabeçalho da 0082. */
     coldHours: number;
     now?: Date;
+    /** Worker automático só oferece botão quando a regra fixa está pronta. */
+    requireApprovalConfig?: boolean;
   },
 ): Promise<PropostaCriada | null> {
   const now = input.now ?? new Date();
@@ -64,10 +71,24 @@ export async function propoeReativacao(
   // radar — o que muda é que a saída deles é humana, não automática.
   const { data: alvo } = await admin
     .from("crm_leads")
-    .select("contact_id")
+    .select("contact_id, pipeline_id, stage_id, title")
     .eq("id", input.leadId)
+    .eq("organization_id", input.organizationId)
     .maybeSingle();
-  if (!(alvo as { contact_id: string | null } | null)?.contact_id) return null;
+  const lead = alvo as {
+    contact_id: string | null;
+    pipeline_id: string;
+    stage_id: string;
+    title: string;
+  } | null;
+  if (!lead?.contact_id) return null;
+
+  const config = await resolveConfiguracaoFollowupAprovavel(
+    admin,
+    input.organizationId,
+    lead.pipeline_id,
+  );
+  if (!config && input.requireApprovalConfig) return null;
 
   const { data: viva } = await admin
     .from("crm_lead_reactivations")
@@ -77,12 +98,60 @@ export async function propoeReativacao(
     .maybeSingle();
   if (viva) return null;
 
+  let lastInboundAt: string | null = null;
+  if (config) {
+    lastInboundAt = await leUltimaRespostaDoContato(
+      admin,
+      input.organizationId,
+      lead.contact_id,
+    );
+
+    const { data: ultima } = await admin
+      .from("crm_lead_reactivations")
+      .select("stage_id_at_proposal, last_inbound_at_at_proposal, resuggest_after_at")
+      .eq("lead_id", input.leadId)
+      .neq("status", "pending")
+      .order("proposed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const snapshot = ultima as {
+      stage_id_at_proposal: string | null;
+      last_inbound_at_at_proposal: string | null;
+      resuggest_after_at: string | null;
+    } | null;
+    // Linha anterior à 0273 não tem fotografia nem prazo. Ela não pode virar
+    // supressão eterna; só decisões novas entram na regra.
+    const anterior = snapshot?.stage_id_at_proposal && snapshot.resuggest_after_at
+      ? {
+          stageId: snapshot.stage_id_at_proposal,
+          lastInboundAt: snapshot.last_inbound_at_at_proposal,
+          resuggestAfterAt: snapshot.resuggest_after_at,
+        }
+      : null;
+    if (!deveSugerirNovamente(
+      anterior,
+      { stageId: lead.stage_id, lastInboundAt },
+      now,
+    )) return null;
+  }
+
+  const resuggestAfterAt = config
+    ? new Date(now.getTime() + config.resuggestAfterDays * 24 * 3_600_000)
+    : null;
+
   const { data, error } = await admin
     .from("crm_lead_reactivations")
     .insert({
       lead_id: input.leadId,
       organization_id: input.organizationId,
       expires_at: expiresAt.toISOString(),
+      ...(config ? {
+        automation_rule_id: config.automationRuleId,
+        stage_id_at_proposal: lead.stage_id,
+        last_inbound_at_at_proposal: lastInboundAt,
+        resuggest_after_at: resuggestAfterAt!.toISOString(),
+      } : {}),
     })
     .select("id")
     .maybeSingle();
@@ -90,11 +159,38 @@ export async function propoeReativacao(
   // corrida não é erro — é o outro tick tendo criado a mesma proposta.
   if (error || !data) return null;
 
+  const proposalId = (data as { id: string }).id;
+  if (!config) return { id: proposalId, leadId: input.leadId, expiresAt };
+
+  const { error: inboxError } = await admin.from("agent_inbox_items").insert({
+    organization_id: input.organizationId,
+    kind: "followup_suggestion",
+    severity: "info",
+    title: `Retomar contato com ${lead.title}`,
+    body: `Mensagem fixa: ${config.message}`,
+    ref_kind: "lead",
+    ref_id: input.leadId,
+    metadata: {
+      proposal_id: proposalId,
+      automation_rule_id: config.automationRuleId,
+      target_stage_id: config.targetStageId,
+    },
+  });
+  if (inboxError) {
+    await admin
+      .from("crm_lead_reactivations")
+      .delete()
+      .eq("id", proposalId)
+      .eq("organization_id", input.organizationId)
+      .eq("status", "pending");
+    return null;
+  }
+
   // NÃO emite atividade ao nascer: o esfriamento já emitiu `lead_cooled` no
   // mesmo instante, e duas linhas para um acontecimento só fariam a timeline
   // parecer que o sistema fala sozinho. A proposta aparece no CARD; o que vira
   // linha é a DECISÃO sobre ela — ou a falta dela, no vencimento.
-  return { id: (data as { id: string }).id, leadId: input.leadId, expiresAt };
+  return { id: proposalId, leadId: input.leadId, expiresAt };
 }
 
 export interface ResultadoDoVencimento {
@@ -152,6 +248,16 @@ export async function venceReativacoes(
       .eq("status", "pending"); // não atropela quem decidiu no mesmo instante
     if (upErr) continue;
     r.vencidas += 1;
+
+    await admin
+      .from("agent_inbox_items")
+      .update({ status: "resolved", resolved_at: now.toISOString() })
+      .eq("organization_id", organizationId)
+      .eq("kind", "followup_suggestion")
+      .eq("ref_kind", "lead")
+      .eq("ref_id", p.lead_id)
+      .eq("status", "open")
+      .contains("metadata", { proposal_id: p.id });
 
     const atividade = await emitLeadActivity(admin, {
       organizationId,

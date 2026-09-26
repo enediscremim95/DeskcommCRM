@@ -14,6 +14,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolverDestinosDosAvisos } from "@/lib/ai/inbox-destino";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { instanteDe, partesNoFuso } from "@/lib/agenda/fuso";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const admin = createAdminClient();
   let query = admin
     .from("agent_inbox_items")
-    .select("id, kind, severity, title, body, ref_kind, ref_id, status, created_at")
+    .select("id, kind, severity, title, body, ref_kind, ref_id, status, created_at, metadata")
     .eq("organization_id", org.orgId)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -61,6 +62,25 @@ export async function GET(req: NextRequest): Promise<Response> {
     .eq("organization_id", org.orgId)
     .eq("status", "open");
 
+  const { data: organization } = await admin
+    .from("organizations")
+    .select("timezone")
+    .eq("id", org.orgId)
+    .maybeSingle();
+  const timezone = organization?.timezone ?? "America/Sao_Paulo";
+  const hoje = partesNoFuso(new Date(), timezone);
+  const inicioDoDia = instanteDe({ ano: hoje.ano, mes: hoje.mes, dia: hoje.dia }, timezone);
+  const { count: followupsToday } = await admin
+    .from("crm_lead_reactivations")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", org.orgId)
+    .eq("status", "accepted")
+    .gte("decided_at", inicioDoDia.toISOString());
+
   const items = await resolverDestinosDosAvisos(await createClient(), org.orgId, org.role, data ?? []);
-  return ok({ items, open_count: openCount ?? 0 }, { requestId });
+  return ok({
+    items,
+    open_count: openCount ?? 0,
+    followups_today: followupsToday ?? 0,
+  }, { requestId });
 }

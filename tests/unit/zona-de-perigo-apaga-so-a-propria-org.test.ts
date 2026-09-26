@@ -204,11 +204,11 @@ describe("zona de perigo: quem pode puxar o gatilho", () => {
     });
   }
 
-  it("manager passa porque tem o mesmo piso de acesso geral do admin", async () => {
+  it("manager não executa a ação irreversível reservada ao admin", async () => {
     papel = "manager";
     const r = await apagarDadosOperacionaisDaOrganizacao({ confirmNome: NOME_DA_ORG });
-    expect(r.ok).toBe(true);
-    expect(delecoes).toHaveLength(RAIZES_DO_APAGAMENTO.length);
+    expect(r).toEqual({ ok: false, error: "forbidden_role" });
+    expect(delecoes).toEqual([]);
   });
 
   it("sessão com fator de MFA pendente não apaga nada", async () => {

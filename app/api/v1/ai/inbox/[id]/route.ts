@@ -51,6 +51,20 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
 
   const admin = createAdminClient();
+  const { data: current } = await admin
+    .from("agent_inbox_items")
+    .select("kind")
+    .eq("id", id)
+    .eq("organization_id", org.orgId)
+    .maybeSingle();
+  if (current?.kind === "followup_suggestion") {
+    return fail(
+      "followup_decision_required",
+      t("Use Aprovar ou Não aprovar para decidir esta sugestão."),
+      409,
+      { requestId },
+    );
+  }
   const { data, error } = await admin
     .from("agent_inbox_items")
     .update({ status: parsed.data.status })
