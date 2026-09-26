@@ -86,7 +86,7 @@ async function orgTemAutomaticoNoAr(orgId: string): Promise<boolean> {
   return (data ?? []).some(agenteAtende);
 }
 
-async function semear(orgId: string) {
+async function semear(orgId: string): Promise<string> {
   await limpar(orgId);
   const { error: eSess } = await admin.from("channel_sessions").insert({
     id: SESSAO,
@@ -98,6 +98,7 @@ async function semear(orgId: string) {
   if (eSess) throw new Error(`fixture de canal falhou: ${eSess.message}`);
 
   const agora = new Date().toISOString();
+  let conversaEsperando = "";
   for (const [nome, silencio] of [
     // Escalada: o silêncio é o que a põe esperando uma pessoa — e não o status.
     [ESPERANDO, "infinity"],
@@ -110,21 +111,27 @@ async function semear(orgId: string) {
       .select("id")
       .single();
     if (eCt) throw new Error(`fixture de contato falhou: ${eCt.message}`);
-    const { error: eConv } = await admin.from("conversations").insert({
-      organization_id: orgId,
-      contact_id: (ct as { id: string }).id,
-      channel_session_id: SESSAO,
-      status: "open",
-      assigned_to_user_id: null,
-      bot_silenced_until: silencio,
-      last_inbound_at: agora,
-      last_message_at: agora,
-      // A prévia NÃO repete o nome: `getByText(NOME)` casaria o título E a
-      // prévia, e uma contagem de 2 onde se espera 1 vira ruído no diagnóstico.
-      last_message_preview: "mensagem de teste",
-    });
+    const { data: conversa, error: eConv } = await admin
+      .from("conversations")
+      .insert({
+        organization_id: orgId,
+        contact_id: (ct as { id: string }).id,
+        channel_session_id: SESSAO,
+        status: "open",
+        assigned_to_user_id: null,
+        bot_silenced_until: silencio,
+        last_inbound_at: agora,
+        last_message_at: agora,
+        // A prévia NÃO repete o nome: `getByText(NOME)` casaria o título E a
+        // prévia, e uma contagem de 2 onde se espera 1 vira ruído no diagnóstico.
+        last_message_preview: "mensagem de teste",
+      })
+      .select("id")
+      .single();
     if (eConv) throw new Error(`fixture de conversa falhou: ${eConv.message}`);
+    if (nome === ESPERANDO) conversaEsperando = (conversa as { id: string }).id;
   }
+  return conversaEsperando;
 }
 
 test.describe("Inbox: as abas perguntam quem manda", () => {
@@ -133,10 +140,11 @@ test.describe("Inbox: as abas perguntam quem manda", () => {
   test.describe.configure({ timeout: 180_000 });
 
   let orgId = "";
+  let conversaEsperando = "";
 
   test.beforeEach(async () => {
     orgId = (lerCreds() as unknown as { org_id: string }).org_id;
-    await semear(orgId);
+    conversaEsperando = await semear(orgId);
   });
 
   test.afterEach(async () => {
@@ -147,9 +155,9 @@ test.describe("Inbox: as abas perguntam quem manda", () => {
     page,
   }) => {
     await loginComoAdmin(page, lerCreds());
-    await page.goto("/app/inbox");
+    await page.goto(`/app/inbox?conversation=${conversaEsperando}`);
 
-    const lista = page.getByRole("main").or(page.locator("body"));
+    const lista = page.locator("[data-conversation-id]");
     await expect(lista.getByText(ESPERANDO).first()).toBeVisible({ timeout: 30_000 });
 
     const temAutomatico = await orgTemAutomaticoNoAr(orgId);
@@ -160,16 +168,16 @@ test.describe("Inbox: as abas perguntam quem manda", () => {
     // nunca casaria. Mesmo idioma da spec irmã `inbox-quem-manda.spec.ts`.
     await page.getByRole("tab", { name: /Fila/i }).first().click();
     // A escalada está na Fila nos DOIS casos — é o que não depende do fato.
-    await expect(page.getByText(ESPERANDO).first()).toBeVisible({ timeout: 15_000 });
+    await expect(lista.getByText(ESPERANDO).first()).toBeVisible({ timeout: 15_000 });
     if (temAutomatico) {
       await expect(
-        page.getByText(ROBO),
+        lista.getByText(ROBO),
         "a Fila listou uma conversa que o automático está conduzindo — o defeito voltou",
       ).toHaveCount(0);
     } else {
       // Sem robô no ar, `automatico` TAMBÉM é "esperando gente", e listá-lo é o
       // certo. Asserir o contrário aqui reprovaria o comportamento correto.
-      await expect(page.getByText(ROBO).first()).toBeVisible({ timeout: 15_000 });
+      await expect(lista.getByText(ROBO).first()).toBeVisible({ timeout: 15_000 });
     }
 
     // ── AUTOMÁTICO: a outra direção, e ela é a que impede um 'conserto' que
@@ -178,9 +186,9 @@ test.describe("Inbox: as abas perguntam quem manda", () => {
     // exatamente `comando=automatico` nos dois casos, então a separação aqui vale
     // sempre — e é ela que impede um "conserto" que simplesmente esvazie a Fila.
     await page.getByRole("tab", { name: /Autom/i }).first().click();
-    await expect(page.getByText(ROBO).first()).toBeVisible({ timeout: 15_000 });
+    await expect(lista.getByText(ROBO).first()).toBeVisible({ timeout: 15_000 });
     await expect(
-      page.getByText(ESPERANDO),
+      lista.getByText(ESPERANDO),
       "a aba do automático listou uma conversa escalada para humano",
     ).toHaveCount(0);
   });

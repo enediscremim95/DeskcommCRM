@@ -23,6 +23,7 @@ import * as path from "node:path";
 import { expect, type Page } from "@playwright/test";
 
 import { generateTotp, msUntilNextTotpWindow } from "../utils/totp";
+import { aguardarSessaoCompleta } from "./aguardar-sessao";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 
@@ -85,7 +86,7 @@ async function tentarMfa(page: Page, secret: string, tentativas: number): Promis
     await digito.click();
     await page.keyboard.type(codigo, { delay: 40 });
     try {
-      await page.waitForURL(/\/app\//, { timeout: 10_000 });
+      await aguardarSessaoCompleta(page, "aal2");
       return true;
     } catch {
       await page.waitForTimeout(msUntilNextTotpWindow() + 300);
@@ -103,7 +104,9 @@ export async function loginComoAdmin(page: Page, creds: CredsE2E): Promise<Creds
   let atuais = creds;
 
   for (let volta = 0; volta < 2; volta++) {
-    await page.goto("/login");
+    // Destino determinístico: /app pode redirecionar novamente conforme a
+    // interface e, desde b8124bc3, ainda atravessar /app/kanban até o quadro.
+    await page.goto("/login?next=/app/settings/profile");
     await page.locator("#email").fill(atuais.users.admin!.email);
     await page.locator("#password").fill(atuais.password);
     await page.getByRole("button", { name: /entrar/i }).click();

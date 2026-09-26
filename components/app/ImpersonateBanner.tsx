@@ -36,7 +36,7 @@ export function ImpersonateBanner({ impersonating, ended = false }: {
       const res = await fetch("/api/v1/admin/impersonate/end", { method: "POST" });
       if (!res.ok) throw new Error("Não foi possível encerrar o acompanhamento. Tente novamente.");
       notifySupportTransition();
-      window.location.assign("/app/inbox");
+      window.location.assign("/app/kanban");
     } catch (error) {
       transition.cancel(); setBusy(false);
       toast.error(error instanceof Error ? error.message : "Falha de conexão.");

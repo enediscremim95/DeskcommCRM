@@ -81,7 +81,10 @@ async function idDoFunil(page: Page, nome: string): Promise<string> {
 test.describe("gestão de funis", () => {
   test.beforeEach(async ({ page }) => {
     await login(page, creds.users.manager!.email);
-    await page.goto("/app/kanban");
+    // Desde b8124bc3, /app/kanban abre o funil padrão. A lista de gestão
+    // continua em ?lista=1 por decisão de produto, portanto este spec pede a
+    // lista explicitamente em vez de competir com o redirect do quadro.
+    await page.goto("/app/kanban?lista=1");
     await expect(page.getByRole("heading", { name: "Funis" })).toBeVisible();
   });
 
@@ -110,7 +113,7 @@ test.describe("gestão de funis", () => {
     }
     await page.screenshot({ path: path.join(EVIDENCIA, "funis-02-quadro-novo.png"), fullPage: true });
 
-    await page.goto("/app/kanban");
+    await page.goto("/app/kanban?lista=1");
 
     // ---- renomear ----
     const id = await idDoFunil(page, NOME);
@@ -167,7 +170,8 @@ test("quem não pode gerenciar vê a lista sem os controles de escrita", async (
   // Botão que o servidor recusaria é promessa que não se cumpre: `requireRole`
   // cobra manager nas rotas, então agent não vê "Novo funil" nem "Arquivar".
   await login(page, creds.users.agent!.email);
-  await page.goto("/app/kanban");
+  // A gestão dos funis mora na lista explícita; /app/kanban abre o padrão.
+  await page.goto("/app/kanban?lista=1");
   await expect(page.getByRole("heading", { name: "Funis" })).toBeVisible();
   await expect(page.getByText("Pedidos", { exact: true })).toHaveCount(1);
   await expect(page.getByTestId("novo-funil")).toHaveCount(0);

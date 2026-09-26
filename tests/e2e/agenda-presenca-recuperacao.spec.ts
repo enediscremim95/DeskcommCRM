@@ -1,5 +1,6 @@
 import pg from "pg";
 import { sendTurnMessage } from "../../lib/agent-engine/edge/crm/send-message";
+import { releaseChannelDeliveryLease } from "../../lib/agent-engine/edge/crm/channel-delivery-lease";
 import { completeTurnForEnrollment, createPgAdminClient } from "../../lib/followup/turn-bridge";
 import { claimOfJob } from "../../lib/agent-engine/queue/claim";
 import { completeJob } from "../../lib/agent-engine/queue/queue";
@@ -11,6 +12,7 @@ import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { escolherDiaDesenhado, irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 import { enviarTextoFixoPendente } from "../../lib/followup/enviar-texto-fixo";
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, {
@@ -139,11 +141,11 @@ async function inbound(
 }
 async function login(page: Page, email: string) {
   await page.context().clearCookies();
-  await page.goto("/login");
+  await page.goto("/login?next=/app/settings/profile");
   await page.getByLabel(/e-?mail/i).fill(email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(?:\/|$)/, { timeout: 60000 });
+  await aguardarSessaoCompleta(page, "aal1");
 }
 async function detail(page: Page, id: string, title: string) {
   await page.goto(`/app/agenda?compromisso=${id}`);
@@ -766,6 +768,9 @@ test("receiver reconcilia inline/daemon, barra claim antigo e protege agenda al�
       retryClaim,
     );
     await completeJob(pool, first.job, retryClaim.worker_id, undefined, retryClaim.acquired_at);
+    // Este trecho executa o miolo do worker diretamente. No processo real, o
+    // finally libera a capacidade do canal ao terminar o job.
+    await releaseChannelDeliveryLease(pool, { tenantId: f.org, jobId: first.job });
     expect(hits.filter((url) => url.includes("sendText"))).toHaveLength(1);
     expect(
       (
@@ -809,6 +814,7 @@ test("receiver reconcilia inline/daemon, barra claim antigo e protege agenda al�
         fresh,
       ),
     ).rejects.toThrow("callback unavailable before commit");
+    await releaseChannelDeliveryLease(pool, { tenantId: f.org, jobId: reverse.job });
     // Falha antes do callback deixa ledger aceito; outro executor assume o retry.
     await pool.query(
       "update job_queue set status='pending',locked_by=null,locked_at=null,run_after=now() where id=$1",
@@ -1051,21 +1057,53 @@ test("API do Radar recorta demandas pela RLS real e a tela não exibe o bloco le
   await login(page, home.email);
   await page.goto(`/admin/tenants/${f.org}`);
   await page.getByRole("button", { name: /Acompanhar/ }).click();
+  const iniciouSuporte = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/admin/tenants/${f.org}/impersonate`) &&
+      response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "Confirmar e entrar" }).click();
-  await page.waitForURL("**/app/inbox");
+  expect((await iniciouSuporte).status()).toBe(200);
+  await page.waitForLoadState("networkidle");
+  // O banner vem do layout de servidor e prova que o cookie de suporte já foi lido.
+  await expect(page.getByRole("button", { name: "Sair do acompanhamento" })).toBeVisible();
   await page.goto("/app/radar");
   await expect(page.getByTestId("radar-sem-proximo-passo")).toHaveCount(0);
   expect((await read()).total_sem_proximo_passo).toBe(6);
+  const encerrouSuporte = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/admin/impersonate/end") &&
+      response.request().method() === "POST",
+  );
+  // `/app/kanban` escolhe o funil padrão com um segundo redirect de documento.
+  // O acompanhamento só acabou para fins de navegação depois do destino final.
+  const voltouParaAOrigem = page.waitForURL((url) => url.pathname.startsWith("/app/pipelines/"));
   await page.getByRole("button", { name: "Sair do acompanhamento" }).click();
-  await page.waitForURL("**/app/inbox");
+  expect((await encerrouSuporte).status()).toBe(200);
+  await voltouParaAOrigem;
+  await page.waitForLoadState("load");
+  await expect(page.getByRole("button", { name: "Sair do acompanhamento" })).toHaveCount(0);
   await page.goto(`/admin/tenants/${f.org}`);
   await page.getByRole("button", { name: /Acompanhar/ }).click();
   await page.getByLabel("Somente leitura", { exact: true }).check();
+  const iniciouReadonly = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/admin/tenants/${f.org}/impersonate`) &&
+      response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "Confirmar e entrar" }).click();
-  await page.waitForURL("**/app/inbox");
+  expect((await iniciouReadonly).status()).toBe(200);
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("button", { name: "Sair do acompanhamento" })).toBeVisible();
   expect((await page.request.get("/api/v1/leads/at-risk")).status()).toBe(403);
+  const encerrouReadonly = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/admin/impersonate/end") &&
+      response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "Sair do acompanhamento" }).click();
-  await page.waitForURL("**/app/inbox");
+  expect((await encerrouReadonly).status()).toBe(200);
+  await expect(page.getByRole("button", { name: "Sair do acompanhamento" })).toHaveCount(0);
 });
 
 test("duas sessões: remarcação não reautoriza cancelamento em rascunho", async ({

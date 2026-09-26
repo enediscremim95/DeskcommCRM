@@ -139,7 +139,8 @@ test.describe("rbac role matrix (spec 13 §4)", () => {
     // segue coberto por todas as regras — sem regressão é o critério.
     await expectNoBlockingA11y(page, '[role="tablist"]');
 
-    await page.goto("/app/kanban");
+    // A auditoria desta tela mede a lista, que desde b8124bc3 exige ?lista=1.
+    await page.goto("/app/kanban?lista=1");
     await expect(page.getByRole("heading", { name: "Funis" })).toBeVisible();
     await expectNoBlockingA11y(page);
   });

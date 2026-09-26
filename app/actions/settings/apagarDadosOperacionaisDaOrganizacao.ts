@@ -6,8 +6,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { audit } from "@/lib/audit";
+import { userHasPermission } from "@/lib/auth/permissions";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
 import {
   apagarDadosOperacionaisDaOrg,
   type ContagensApagadas,
@@ -64,7 +64,7 @@ export async function apagarDadosOperacionaisDaOrganizacao(input: {
   if (supportWriteError(authUser.support)) return { ok: false, error: "forbidden_role" };
   const activeOrg = await resolveActiveOrg(authUser);
   if (!activeOrg) return { ok: false, error: "forbidden_tenant" };
-  if (!authUser.is_platform_admin && ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
+  if (!userHasPermission(authUser, activeOrg, "organization.data.reset")) {
     return { ok: false, error: "forbidden_role" };
   }
   if (await mfaEmDivida()) {

@@ -26,6 +26,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const EVIDENCIA = path.join(process.cwd(), ".superpowers/evidence/inbox-quem-manda");
@@ -47,11 +48,11 @@ let contatoId = "";
 const NOME_DO_CONTATO = `Quem Manda ${Date.now()}`;
 
 async function login(page: Page, email: string, senha: string): Promise<void> {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/settings/profile");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(senha);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app/, { timeout: 60_000 });
+  await aguardarSessaoCompleta(page, "aal1");
 }
 
 async function captura(page: Page, nome: string): Promise<void> {
@@ -321,7 +322,7 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     expect((escalada.data as { status: string } | null)?.status).toBe("pending");
 
     await login(page, creds.users.agent!.email, creds.password);
-    await page.goto("/app/inbox?filter=unassigned");
+    await page.goto(`/app/inbox?conversation=${conversaId}&filter=unassigned`);
 
     // A conversa está na lista da Fila, pelo nome do contato.
     const naFila = page.getByText(NOME_DO_CONTATO, { exact: false }).first();
