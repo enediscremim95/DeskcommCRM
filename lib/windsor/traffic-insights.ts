@@ -23,6 +23,14 @@ export interface TrafficStageRow {
   is_lost: boolean;
 }
 
+export interface TrafficKanbanStage {
+  id: string;
+  pipeline_id: string | null;
+  name: string;
+  position: number;
+  count: number;
+}
+
 export interface TrafficLeadSituation {
   leads_entered: number;
   in_service: number;
@@ -69,6 +77,39 @@ function compareCountThenName(
   b: { count: number; name: string },
 ): number {
   return b.count - a.count || a.name.localeCompare(b.name, "pt-BR");
+}
+
+/**
+ * Expõe as colunas reais do Kanban, inclusive as vazias. A rota que chama esta
+ * função já restringe etapas e leads à organização autenticada; aqui só se
+ * cruza cada lead com a sua etapa exata, sem transformar a contagem em avanço acumulado.
+ */
+export function buildTrafficKanbanStages(
+  leads: TrafficLeadRow[],
+  stages: TrafficStageRow[],
+): TrafficKanbanStage[] {
+  const counts = new Map<string, number>();
+  for (const lead of leads) {
+    if (lead.status === "archived") continue;
+    counts.set(lead.stage_id, (counts.get(lead.stage_id) ?? 0) + 1);
+  }
+  return stages
+    .map((stage) => {
+      const parsedPosition = Number(stage.position);
+      return {
+        id: stage.id,
+        pipeline_id: stage.pipeline_id ?? null,
+        name: stage.name,
+        position: Number.isFinite(parsedPosition) ? parsedPosition : Number.MAX_SAFE_INTEGER,
+        count: counts.get(stage.id) ?? 0,
+      };
+    })
+    .sort(
+      (first, second) =>
+        (first.pipeline_id ?? "").localeCompare(second.pipeline_id ?? "") ||
+        first.position - second.position ||
+        first.name.localeCompare(second.name, "pt-BR"),
+    );
 }
 
 export function buildTrafficLeadSituation(

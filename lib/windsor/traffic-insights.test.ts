@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFunnelReadings,
+  buildTrafficKanbanStages,
   buildTrafficLeadSituation,
   buildTrafficRichCrmInsights,
 } from "./traffic-insights";
@@ -62,6 +63,24 @@ describe("situação dos leads no relatório", () => {
       closed_won: 1,
       closed_lost: 0,
     });
+  });
+
+  it("lê todas as etapas reais do Kanban e conta somente os leads na etapa exata", () => {
+    expect(
+      buildTrafficKanbanStages(
+        [
+          { status: "open", stage_id: "service", pipeline_id: "sales", lost_reason: null },
+          { status: "open", stage_id: "service", pipeline_id: "sales", lost_reason: null },
+          { status: "archived", stage_id: "new", pipeline_id: "sales", lost_reason: null },
+        ],
+        stages.map((stage) => ({ ...stage, pipeline_id: "sales" })),
+      ),
+    ).toEqual([
+      { id: "new", pipeline_id: "sales", name: "Novo", position: 10, count: 0 },
+      { id: "service", pipeline_id: "sales", name: "Em atendimento", position: 20, count: 2 },
+      { id: "won", pipeline_id: "sales", name: "Ganho", position: 30, count: 0 },
+      { id: "lost", pipeline_id: "sales", name: "Perdido", position: 40, count: 0 },
+    ]);
   });
 });
 
