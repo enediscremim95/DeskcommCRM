@@ -13,11 +13,11 @@ async function insert(table: string, value: Record<string, unknown>) {
   return data.id as string;
 }
 async function login(page: Page, email: string) {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/inbox");
   await page.getByLabel(/e-?mail/i).fill(email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(\/|$)/, { timeout: 60_000 });
+  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/, { timeout: 60_000 });
 }
 async function conversation(org: string, name: string) {
   const contact = await insert("contacts", { organization_id: org, name, display_name: name });

@@ -17,11 +17,11 @@ async function insert(table: string, value: Record<string, unknown>) {
 }
 async function login(page: Page, role: string) {
   const user = users.find(u => u.role === role)!;
-  await page.goto("/login");
+  await page.goto("/login?next=/app/inbox");
   await page.getByLabel(/e-?mail/i).fill(user.email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(?:\/|$)/, { timeout: 60_000 });
+  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/, { timeout: 60_000 });
 }
 const row = (page: Page, title: string) => page.getByTestId("inbox-item").filter({ hasText: title });
 async function central(page: Page) {
@@ -120,8 +120,9 @@ test("agent abre contexto, volta ainda aberto, resolve e reabre; RLS e menu ocul
   await expect(page.getByText("Cliente Avisos 0", { exact: true }).first()).toBeVisible();
   await page.goBack(); await expect(row(page, "Contato para conferir")).toBeVisible();
   await row(page, "Negócio própria").getByRole("link", { name: "Abrir negócio" }).click();
-  await expect(page).toHaveURL(new RegExp(`/app/pipelines/[^?]+\\?lead=${leads[0]}`));
-  await expect(page.getByRole("dialog").getByText("Negócio Avisos 0", { exact: true }).first()).toBeVisible();
+  // Desde b8124bc3 o negócio abre na página canônica, não no Sheet do quadro.
+  await expect(page).toHaveURL(new RegExp(`/app/leads/${leads[0]}$`));
+  await expect(page.getByRole("heading", { name: "Negócio Avisos 0", exact: true })).toBeVisible();
   await page.goBack(); await expect(row(page, "Negócio própria")).toBeVisible();
   // Mudança de política vem do banco, sem implementar cópia no catálogo.
   const changed = await db.from("organizations").update({ settings: { visibility_mode: "own" } }).eq("id", orgs[0]); if (changed.error) throw changed.error;
@@ -147,18 +148,16 @@ for (const role of ["manager", "admin"]) test(`${role}: destinos conforme papel 
   await expect(page).toHaveURL(/\/app\/ai\/usage/);
   await expect(page.getByRole("heading", { name: /Uso de IA|Uso e custos/i }).first()).toBeVisible();
   await page.goBack(); await expect(row(page, "Conexão para revisar")).toBeVisible();
-  if (role === "manager") {
-    await expect(row(page, "Conexão para revisar").getByRole("link")).toHaveCount(0);
-    await expect(row(page, "Modelo do canal mudou").getByRole("link")).toHaveCount(0);
-  } else {
-    await row(page, "Conexão para revisar").getByRole("link").click();
-    await expect(page).toHaveURL(/\/app\/connections/);
-    await expect(page.getByRole("heading", { name: /Conexões/ }).first()).toBeVisible();
-    await page.goBack();
-    await row(page, "Modelo do canal mudou").getByRole("link").click();
-    await expect(page).toHaveURL(/aba=parceiro&sub=templates/);
-    await expect(page.getByRole("heading", { name: /Conexões/ }).first()).toBeVisible();
-  }
+  // Manager e admin têm o mesmo rank operacional no contrato vigente. O teste
+  // anterior ainda tratava "admin" como hierarquia acima e negava um destino
+  // que o resolvedor e a própria tela de Conexões permitem ao manager.
+  await row(page, "Conexão para revisar").getByRole("link").click();
+  await expect(page).toHaveURL(/\/app\/connections/);
+  await expect(page.getByRole("heading", { name: /Conexões/ }).first()).toBeVisible();
+  await page.goBack();
+  await row(page, "Modelo do canal mudou").getByRole("link").click();
+  await expect(page).toHaveURL(/aba=parceiro&sub=templates/);
+  await expect(page.getByRole("heading", { name: /Conexões/ }).first()).toBeVisible();
 });
 test("viewer continua sem acesso à API Central e bearer não autentica", async ({ page, playwright }) => {
   await login(page, "viewer");

@@ -81,12 +81,11 @@ async function entrar(page: Page, creds: Creds) {
   // é sobre login.
   const usuario = creds.users.manager;
   if (!usuario) throw new Error(".e2e-creds.json sem o usuário `manager`");
-  await page.goto("/login");
+  await page.goto("/login?next=/app/agenda");
   await page.getByLabel(/e-?mail/i).fill(usuario.email);
   await page.getByLabel(/senha/i).fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
-  await page.goto("/app/agenda");
+  await page.waitForURL(/\/app\/agenda(?:\/|\?|$)/, { timeout: 20_000 });
   await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 25_000 });
 }
 
@@ -221,7 +220,9 @@ test.describe("a ocupação do Google na grade da agenda", () => {
     await entrar(page, creds);
 
     const dias = await irParaASemanaSeguinte(page);
-    const alvo = dias[3]!;
+    // A visão Mês usa o mês da âncora, que mantém o dia da semana ao
+    // avançar sete dias. Uma quarta fixa pode cair no mês anterior na virada.
+    const alvo = dias[await page.evaluate(() => new Date().getDay())]!;
     const comeca = await instanteNoDia(page, alvo, 15);
     const termina = await instanteNoDia(page, alvo, 16);
     const conexaoId = await conexaoDoGoogle(creds.org_id, dono.id);

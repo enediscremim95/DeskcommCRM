@@ -69,23 +69,21 @@ const TOOLS_DO_SEED = [
   "crm_get_lead",
   "crm_move_lead_stage",
   "crm_list_leads",
-  // ⚠️ AS CINCO ABAIXO ENTRARAM COM O TETO INDO DE 20 PARA 25, e não são enfeite.
+  // ⚠️ AS TRÊS ABAIXO mantêm o cenário exatamente uma vaga acima do teto.
   //
   // A jornada do teto (issue #162) só existe se o cenário ESTOURAR: eram 3 do
   // seed + 18 de "Atender" = 21 contra teto 20, e a tela recusava dizendo
   // "faltam 1 vaga". Com teto 25 essas mesmas 21 passam, a recusa nunca acontece
   // e o caso vira um clique que sempre dá certo — verde sem medir nada.
   //
-  // Oito reproduzem a MESMA aritmética no teto novo: 8 + 18 = 26 > 25, recusa
-  // por 1 vaga; desligar uma deixa 7 + 18 = 25, que é o teto exato e passa.
+  // O pacote cresceu para 20 capacidades reservadas. Seis fora do pacote fazem
+  // 6 + 20 = 26, e desligar uma deixa 5 + 20 = 25, o teto exato.
   //
   // As escolhidas ficam FORA do pacote "Atender" de propósito — se alguma
   // estivesse dentro, a união seria menor que a soma e a conta acima não valeria.
-  // Quatro são a família de agenda, que é o assunto do defeito que subiu o teto.
+  // Duas são da agenda, assunto do defeito que subiu o teto.
   "crm_find_free_slots",
-  "crm_list_appointments",
   "crm_book_appointment",
-  "crm_reschedule_appointment",
   "crm_list_pipelines",
 ];
 
@@ -95,11 +93,11 @@ const ENVIO = "crm_send_whatsapp_message";
 const LEITURA = "crm_get_conversation_history";
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/inbox");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(\/|$)/);
+  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/);
 }
 
 /**
@@ -213,14 +211,14 @@ test.describe("Configurar o que o agente pode fazer", () => {
 
     // O TETO ENTRA NA JORNADA (issue #162), e entra antes do clique.
     //
-    // "Atender" exige 18 vagas (17 automáticas + a crítica que o pacote
-    // deliberadamente NÃO liga). Com as 8 do seed dá 26, acima do teto.
+    // "Atender" exige hoje 20 vagas, incluindo a reserva das críticas que o
+    // pacote deliberadamente NÃO liga. Com as 6 do seed dá 26, acima do teto.
     //
-    // ⚠️ AS 8 SÃO O QUE MANTÉM ESTE CASO VIVO. Eram 3, e 3 + 18 = 21 estourava o
+    // ⚠️ AS 6 SÃO O QUE MANTÉM ESTE CASO VIVO. Eram 3, e 3 + 18 = 21 estourava o
     // teto de 20. Quando o teto foi para 25 essas mesmas 21 passaram a caber: a
     // recusa nunca aconteceria e o caso viraria um clique que sempre dá certo —
     // verde sem medir nada, que é o pior desfecho para um teste de recusa.
-    // As 5 novas estão FORA de "Atender", senão a união seria menor que a soma.
+    // As 3 extras estão FORA de "Atender", senão a união seria menor que a soma.
     //
     // Antes da correção a tela aceitava o pacote, chegava a 20 exatas e deixava
     // o checkbox da crítica DESABILITADO — prometia uma escolha que o produto

@@ -41,11 +41,11 @@ function loadCreds(): Creds {
 const creds = loadCreds();
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/inbox");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/);
 }
 
 /** O estado marcado vem do atributo que o próprio componente escreve. */
@@ -75,13 +75,12 @@ test.describe("distribuição de atendimento — a tela que liga o rodízio e a 
   }) => {
     await login(page, creds.users.manager!.email);
 
-    // 1. A tela é ALCANÇÁVEL pela navegação — não só pela URL digitada. É o
-    //    defeito da issue: a feature existia e não tinha porta.
+    // 1. Decisão do dono em 19/09/2026: a tela saiu de Configurações e da
+    //    busca, mas a rota continua operável para instalações que a usam.
     await page.goto("/app/settings");
     const porta = page.getByRole("link", { name: /Distribuição de atendimento/i });
-    await expect(porta).toBeVisible();
-    await porta.click();
-    await page.waitForURL(/\/app\/settings\/atendimento/);
+    await expect(porta).toHaveCount(0);
+    await page.goto("/app/settings/atendimento");
 
     await expect(
       page.getByRole("heading", { name: "Distribuição de atendimento" }),

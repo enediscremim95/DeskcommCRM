@@ -79,11 +79,11 @@ const creds = loadCreds();
 const INTERNAL_SECRET = (carregarEnvLocal().INTERNAL_SECRET ?? "").trim();
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/inbox");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/);
 }
 
 interface ApiOk<T> {
@@ -97,7 +97,7 @@ interface Cenario {
   contactName: string;
   enrollmentId: string;
   leadId: string;
-  /** O quadro onde o card do negócio vive — `/app/kanban` é a LISTA de funis. */
+  /** O quadro onde o card vive; a lista é `/app/kanban?lista=1`. */
   pipelineId: string;
 }
 
@@ -272,14 +272,12 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     // --- 7. a intervenção existe FORA do follow-up: no negócio ---
     // É o que o próximo atendente vê no card, e o que impede o agente de
     // reagendar o que uma pessoa acabou de segurar.
-    await page.goto(`/app/pipelines/${cenario.pipelineId}`);
-    const card = page.getByRole("group", { name: `Lead: ${cenario.contactName}` });
-    await expect(card).toBeVisible({ timeout: 30_000 });
-    await card.getByRole("button", { name: cenario.contactName }).click();
-    // O dossiê do negócio é um Sheet — `role=dialog` no Radix.
-    const dossieDoNegocio = page.getByRole("dialog");
-    await expect(dossieDoNegocio).toContainText("Follow-up pausado");
-    await expect(dossieDoNegocio).toContainText("Follow-up retomado");
+    // Desde b8124bc3 o dossiê deixou de ser um Sheet do quadro e passou a ser
+    // a página canônica do lead. Abrir direto elimina o redirecionamento legado.
+    await page.goto(`/app/leads/${cenario.leadId}`);
+    await expect(page.getByTestId("lead-page-workspace")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("lead-context-event").filter({ hasText: "Follow-up pausado" })).toBeVisible();
+    await expect(page.getByTestId("lead-context-event").filter({ hasText: "Follow-up retomado" })).toBeVisible();
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "05-timeline-do-negocio.png"), fullPage: true });
 
     await limpa(page, cenario);

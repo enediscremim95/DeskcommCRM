@@ -75,11 +75,11 @@ function cardDe(locator: Locator): Locator {
 }
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto(`${APP_URL}/login`);
+  await page.goto(`${APP_URL}/login?next=/app/inbox`);
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/);
 }
 
 async function drenar(request: APIRequestContext, page: Page): Promise<void> {

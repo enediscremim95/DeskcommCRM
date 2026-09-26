@@ -85,7 +85,10 @@ async function tentarMfa(page: Page, secret: string, tentativas: number): Promis
     await digito.click();
     await page.keyboard.type(codigo, { delay: 40 });
     try {
-      await page.waitForURL(/\/app\//, { timeout: 10_000 });
+      // O helper pede /app/inbox explicitamente. Esperar qualquer /app/*
+      // aceitava a parada intermediária /app e deixava o redirect de entrada
+      // disputar com a primeira navegação do spec.
+      await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/, { timeout: 10_000 });
       return true;
     } catch {
       await page.waitForTimeout(msUntilNextTotpWindow() + 300);
@@ -103,7 +106,9 @@ export async function loginComoAdmin(page: Page, creds: CredsE2E): Promise<Creds
   let atuais = creds;
 
   for (let volta = 0; volta < 2; volta++) {
-    await page.goto("/login");
+    // Destino determinístico: /app pode redirecionar novamente conforme a
+    // interface e, desde b8124bc3, ainda atravessar /app/kanban até o quadro.
+    await page.goto("/login?next=/app/inbox");
     await page.locator("#email").fill(atuais.users.admin!.email);
     await page.locator("#password").fill(atuais.password);
     await page.getByRole("button", { name: /entrar/i }).click();

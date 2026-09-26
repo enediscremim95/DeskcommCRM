@@ -1,5 +1,6 @@
 import pg from "pg";
 import { sendTurnMessage } from "../../lib/agent-engine/edge/crm/send-message";
+import { releaseChannelDeliveryLease } from "../../lib/agent-engine/edge/crm/channel-delivery-lease";
 import { completeTurnForEnrollment, createPgAdminClient } from "../../lib/followup/turn-bridge";
 import { claimOfJob } from "../../lib/agent-engine/queue/claim";
 import { completeJob } from "../../lib/agent-engine/queue/queue";
@@ -139,11 +140,11 @@ async function inbound(
 }
 async function login(page: Page, email: string) {
   await page.context().clearCookies();
-  await page.goto("/login");
+  await page.goto("/login?next=/app/inbox");
   await page.getByLabel(/e-?mail/i).fill(email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(?:\/|$)/, { timeout: 60000 });
+  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/, { timeout: 60000 });
 }
 async function detail(page: Page, id: string, title: string) {
   await page.goto(`/app/agenda?compromisso=${id}`);
@@ -766,6 +767,9 @@ test("receiver reconcilia inline/daemon, barra claim antigo e protege agenda al√
       retryClaim,
     );
     await completeJob(pool, first.job, retryClaim.worker_id, undefined, retryClaim.acquired_at);
+    // Este trecho executa o miolo do worker diretamente. No processo real, o
+    // finally libera a capacidade do canal ao terminar o job.
+    await releaseChannelDeliveryLease(pool, { tenantId: f.org, jobId: first.job });
     expect(hits.filter((url) => url.includes("sendText"))).toHaveLength(1);
     expect(
       (
@@ -809,6 +813,7 @@ test("receiver reconcilia inline/daemon, barra claim antigo e protege agenda al√
         fresh,
       ),
     ).rejects.toThrow("callback unavailable before commit");
+    await releaseChannelDeliveryLease(pool, { tenantId: f.org, jobId: reverse.job });
     // Falha antes do callback deixa ledger aceito; outro executor assume o retry.
     await pool.query(
       "update job_queue set status='pending',locked_by=null,locked_at=null,run_after=now() where id=$1",

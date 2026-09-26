@@ -104,11 +104,11 @@ async function contarTudo(orgId: string): Promise<Record<string, number>> {
 }
 
 async function entrar(page: Page, email: string, senha: string) {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/inbox");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(senha);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(\/|$)/, { timeout: 30_000 });
+  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/, { timeout: 30_000 });
 }
 
 async function trocarPara(page: Page, orgId: string) {
@@ -242,8 +242,10 @@ test("quem não administra a organização não chega na zona de perigo", async 
   if (!agente) throw new Error("`.e2e-creds.json` sem o usuário `agent`");
   await entrar(page, agente.email, creds.password);
   await page.goto("/app/settings/tenant");
-  await expect(page.getByTestId("zona-de-perigo")).toHaveCount(0);
+  // A negação é um redirect de servidor. Primeiro esperamos o destino final;
+  // medir o DOM durante a transição lia por instantes a tela anterior.
   await expect(page).toHaveURL(/\/403/, { timeout: 20_000 });
+  await expect(page.getByTestId("zona-de-perigo")).toHaveCount(0);
 
   // E o MESMO usuário do primeiro caso — que é admin em A — não alcança a tela
   // na organização onde ele é só `manager`. É o gate de PAPEL, não de pessoa.
@@ -252,6 +254,6 @@ test("quem não administra a organização não chega na zona de perigo", async 
   await page.goto("/app/inbox");
   await trocarPara(page, creds.org_id);
   await page.goto("/app/settings/tenant");
-  await expect(page.getByTestId("zona-de-perigo")).toHaveCount(0);
   await expect(page).toHaveURL(/\/403/, { timeout: 20_000 });
+  await expect(page.getByTestId("zona-de-perigo")).toHaveCount(0);
 });

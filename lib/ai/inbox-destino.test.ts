@@ -48,7 +48,7 @@ describe("destinos da Central", () => {
   it("toda categoria possui política", () => expect(Object.keys(POLITICAS_DE_AVISO).sort()).toEqual(Object.keys(KIND_LABEL).sort()));
   it.each([
     ["handoff", "conversation", `/app/inbox/${ID}`], ["job_dead", "conversation", `/app/inbox/${ID}`],
-    ["handoff", "contact", `/app/contacts/${ID}`], ["other", "lead", `/app/pipelines/${PIPELINE}?lead=${ID}`],
+    ["handoff", "contact", `/app/contacts/${ID}`], ["other", "lead", `/app/leads/${ID}`],
     ["followup_dead", "followup_enrollment", `/app/ai/followups/enrollments/${ID}`],
     ["qr_rescan", "channel_session", "/app/connections"], ["conhecimento_nao_indexado", "ai_knowledge_source", "/app/ai/knowledge/sources"],
   ])("%s/%s abre somente contexto real", async (kind, ref, href) => {

@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page, type TestInfo, type Locator } from "@playwright/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { createApprovedReplyHandler } from "../../lib/agent-engine/agent/approved-reply";
+import { releaseChannelDeliveryLease } from "../../lib/agent-engine/edge/crm/channel-delivery-lease";
 import { seedPlatformPlaybook } from "../../lib/agent-engine/agent/playbook-seed";
 
 const credentials = credenciaisSupabaseDeTeste();
@@ -154,11 +155,11 @@ async function inbound(
   if (r.error) throw r.error;
 }
 async function login(page: Page, f: Fixture) {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/inbox");
   await page.getByLabel(/e-?mail/i).fill(f.email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(?:\/|$)/, { timeout: 60_000 });
+  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/, { timeout: 60_000 });
 }
 async function capture(page: Page, target: Locator, info: TestInfo, name: string) {
   await target.scrollIntoViewIfNeeded();
@@ -224,11 +225,16 @@ async function deliver(f: Fixture, draft: string, pool: pg.Pool) {
   );
   expect(rows).toHaveLength(1);
   // Only acquisition is fixture-controlled; the canonical consumer, ledger and HTTP execute.
-  await createApprovedReplyHandler({
-    crmCfg: { supabase: db },
-    log: { info() {}, warn() {}, error() {} },
-    sleep: async () => {},
-  })(rows[0], pool);
+  try {
+    await createApprovedReplyHandler({
+      crmCfg: { supabase: db },
+      log: { info() {}, warn() {}, error() {} },
+      sleep: async () => {},
+    })(rows[0], pool);
+  } finally {
+    // A chamada direta substitui o worker, inclusive seu finally de liberação.
+    await releaseChannelDeliveryLease(pool, { tenantId: f.org, jobId: rows[0].id });
+  }
   expect(
     (
       await pool.query("select status from ai_reply_drafts where organization_id=$1 and id=$2", [

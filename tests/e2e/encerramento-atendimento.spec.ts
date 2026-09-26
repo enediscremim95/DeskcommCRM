@@ -132,12 +132,11 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
       headline: "Preferência de horário",
       body: "Prefere conversar pela manhã.",
     });
-    await page.goto("/login");
+    await page.goto(`/login?next=${encodeURIComponent(`/app/inbox/${conversation}`)}`);
     await page.getByLabel(/e-?mail/i).fill(email);
     await page.getByLabel(/senha/i).fill(password);
     await page.getByRole("button", { name: /entrar/i }).click();
-    await page.waitForURL(/\/app(?:\/|$)/);
-    await page.goto(`/app/inbox/${conversation}`);
+    await page.waitForURL(new RegExp(`/app/inbox/${conversation}$`));
     const panel = page.getByTestId("inbox-demandas");
     await expect(panel.getByText("Demanda vigente neste canal")).toBeVisible();
     await expect(page.getByTestId("inbox-memoria")).toContainText("Preferência de horário");

@@ -54,11 +54,11 @@ const LEAD_NAME = `Beatriz Captada ${ts}`;
 const IP_DE_TESTE = "203.0.113.42";
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto(`${APP_URL}/login`);
+  await page.goto(`${APP_URL}/login?next=/app/inbox`);
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/);
 }
 
 test.describe("histórico de leads captados", () => {

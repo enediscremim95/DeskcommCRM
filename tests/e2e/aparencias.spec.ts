@@ -67,8 +67,10 @@ test("aparência acompanha navegação, reload, menus e celular", async ({ page 
   }
   await page.getByRole("button", { name: "Abrir navegação", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
-  await page.getByRole("dialog").getByRole("link", { name: "Inbox", exact: true }).click();
-  await expect(page).toHaveURL(/\/app\/inbox/);
+  // Inbox saiu do menu por decisão do dono em 17/09/2026. A gaveta continua
+  // sendo provada por um destino que permanece no catálogo lateral.
+  await page.getByRole("dialog").getByRole("link", { name: "Radar", exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/radar/);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

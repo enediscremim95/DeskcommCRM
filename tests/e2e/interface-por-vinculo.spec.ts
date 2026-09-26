@@ -10,11 +10,11 @@ const db = createClient(credentials.url, credentials.serviceRole, {
 const password = `Local-${randomUUID()}!`;
 const evidence = ".superpowers/evidence/comunidade-360";
 async function login(page: Page, email: string) {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/inbox");
   await page.getByLabel(/e-?mail/i).fill(email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//, { timeout: 60_000 });
+  await page.waitForURL(/\/app\/inbox(?:\/|\?|$)/, { timeout: 60_000 });
 }
 const nav = (page: Page) => page.getByRole("navigation", { name: "Navegação principal" });
 async function customize(page: Page, email: string, only?: string) {
