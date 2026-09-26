@@ -1,3 +1,4 @@
+import type * as PlaywrightTestTypes from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -96,7 +97,7 @@ function lerCreds(): Creds {
 }
 
 /** Compromissos desenhados na grade — o `aria-label` traz "HH:mm às HH:mm". */
-function cartoesDaGrade(page: import("@playwright/test").Page) {
+function cartoesDaGrade(page: PlaywrightTestTypes.Page) {
   return page.getByTestId("grade-da-agenda").getByRole("button", { name: /\d{2}:\d{2} às \d{2}:\d{2}/ });
 }
 

@@ -5,6 +5,7 @@
  * negócio, e uma timeline congelada não parece congelada — parece um negócio
  * sem novidade. O usuário não tem como distinguir.
  */
+import type * as PlaywrightTestTypes from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
 import { chromium } from "@playwright/test";
@@ -26,7 +27,7 @@ let leadCriado: string | null = null;
  *  NÃO ENCERRA: o Playwright segura o event loop e o processo pendura para
  *  sempre. Medido — a sabotagem que provou a limpeza travou 7 minutos até o
  *  timeout externo matá-la. */
-let browserAberto: import("@playwright/test").Browser | null = null;
+let browserAberto: PlaywrightTestTypes.Browser | null = null;
 
 async function main(): Promise<void> {
   const MATAR = process.env.ENTREGA !== "viva";

@@ -1,3 +1,7 @@
+import type * as AgentInboundTurnTypes from "@/lib/agent-engine/agent/inbound-turn";
+import type * as QueueQueueTypes from "@/lib/agent-engine/queue/queue";
+import type * as ObsLoggerTypes from "@/lib/agent-engine/obs/logger";
+import type * as CrmMcpClientTypes from "@/lib/agent-engine/edge/crm/mcp-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 
@@ -38,10 +42,10 @@ const CONV = "dddddddd-0000-4000-8000-000000000004";
 const MSG = "dddddddd-0000-4000-8000-000000000005";
 
 type EngineModules = {
-  createInboundTurnHandler: typeof import("@/lib/agent-engine/agent/inbound-turn")["createInboundTurnHandler"];
-  queue: typeof import("@/lib/agent-engine/queue/queue");
-  createLogger: typeof import("@/lib/agent-engine/obs/logger")["createLogger"];
-  crmEdgeConfigFromEnv: typeof import("@/lib/agent-engine/edge/crm/mcp-client")["crmEdgeConfigFromEnv"];
+  createInboundTurnHandler: typeof AgentInboundTurnTypes["createInboundTurnHandler"];
+  queue: typeof QueueQueueTypes;
+  createLogger: typeof ObsLoggerTypes["createLogger"];
+  crmEdgeConfigFromEnv: typeof CrmMcpClientTypes["crmEdgeConfigFromEnv"];
 };
 let m: EngineModules;
 

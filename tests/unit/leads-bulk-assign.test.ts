@@ -11,6 +11,7 @@
  *  - desatribuir (owner_user_id null) é válido e pula a validação de membership;
  *  - limite: acima do teto (MAX_BULK=50) → 422, sem UPDATE.
  */
+import type * as ImpersonateSupportTypes from "@/lib/impersonate/support";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
@@ -249,7 +250,7 @@ describe("POST /api/v1/leads/bulk — limite (MAX_BULK=50)", () => {
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  ...await importOriginal<typeof ImpersonateSupportTypes>(),
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));

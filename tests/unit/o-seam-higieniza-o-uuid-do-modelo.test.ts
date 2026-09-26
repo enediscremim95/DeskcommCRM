@@ -1,3 +1,4 @@
+import type * as AgendaConsultaTypes from "@/lib/agenda/consulta";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -37,7 +38,7 @@ const BOM = "fb8061a5-27c0-4b13-9728-833b8f06828a";
 // jornada. Espiá-la aqui é o que torna a asserção sobre o caminho, e não sobre
 // a função de higiene.
 vi.mock("@/lib/agenda/consulta", async (original) => {
-  const real = await original<typeof import("@/lib/agenda/consulta")>();
+  const real = await original<typeof AgendaConsultaTypes>();
   return { ...real, horariosLivresDaOrg: vi.fn() };
 });
 // O audit escreve no Supabase e não é o objeto desta medição.

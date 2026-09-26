@@ -11,6 +11,7 @@
  * sobre um cliente Supabase stub. Mockar `mfaEmDivida` aqui seria testar o
  * mock — é justamente essa função que precisa ser exercitada.
  */
+import type * as AuthServerTypes from "@/lib/auth/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireRole } from "@/lib/auth/require-role";
@@ -19,7 +20,7 @@ import type { AuthUser, Role } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/auth/server", async (importOriginal) => {
-  const real = await importOriginal<typeof import("@/lib/auth/server")>();
+  const real = await importOriginal<typeof AuthServerTypes>();
   return { ...real, loadAuthUser: vi.fn(), resolveActiveOrg: vi.fn() };
 });
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));

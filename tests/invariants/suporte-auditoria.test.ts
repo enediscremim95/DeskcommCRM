@@ -1,3 +1,4 @@
+import type * as EnvTypes from "@/lib/env";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
@@ -7,7 +8,7 @@ import { pgComoSupabase } from "../pg-como-supabase";
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => database }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: () => { throw new Error("Callback sem cookie JWT"); } }));
 vi.mock("@/lib/env", async (original) => {
-  const originalModule = await original<typeof import("@/lib/env")>();
+  const originalModule = await original<typeof EnvTypes>();
   return { ...originalModule, env: { ...originalModule.env, SUPABASE_SERVICE_ROLE_KEY: "local-test-admin" } };
 });
 const pool = new pg.Pool({connectionString:`postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,max:2});

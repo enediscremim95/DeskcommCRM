@@ -21,6 +21,7 @@
  * devolve NULL. É por isso que a segunda garantia é comportamental, e não um
  * teste de texto: quem trocar a expressão vê a consulta explodir.
  */
+import type * as AgentFollowupTurnTypes from "@/lib/agent-engine/agent/followup-turn";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import type * as InboundTurnModule from "@/lib/agent-engine/agent/inbound-turn";
@@ -120,7 +121,7 @@ const ctx = { workerId: "w1" };
  * folga sobre o custo medido sem esconder travamento: quem trava continua
  * reprovando.
  */
-let criarHandler: typeof import("@/lib/agent-engine/agent/followup-turn").createFollowupTurnHandler;
+let criarHandler: typeof AgentFollowupTurnTypes.createFollowupTurnHandler;
 
 beforeAll(async () => {
   ({ createFollowupTurnHandler: criarHandler } = await import(

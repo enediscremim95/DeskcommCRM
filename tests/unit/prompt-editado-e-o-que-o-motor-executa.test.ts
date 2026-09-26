@@ -36,6 +36,7 @@
  * trocaria uma mentira por uma parede. Por isso a TELA passa a mandar quem tem
  * versão publicada para o editor de versões, que grava onde o motor lê.
  */
+import type * as ImpersonateSupportTypes from "@/lib/impersonate/support";
 import ts from "typescript";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -256,7 +257,7 @@ describe("a TELA usa o editor de versões e limita recuperação ao legado não 
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  ...await importOriginal<typeof ImpersonateSupportTypes>(),
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));

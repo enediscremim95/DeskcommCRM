@@ -3,7 +3,10 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { Card } from "@/components/ui/card";
 import { vapidPronto } from "@/lib/notifications/vapid";
 import { isEmailConfigured } from "@/lib/email/resend";
-import { readEmailNotificationPreferences } from "@/lib/notifications/email-preferences";
+import {
+  DEFAULT_EMAIL_NOTIFICATION_PREFERENCES,
+  readEmailNotificationPreferences,
+} from "@/lib/notifications/email-preferences";
 import { readEmailNotificationPolicy } from "@/lib/notifications/email-policy";
 import { roleAtLeast } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
@@ -55,7 +58,7 @@ export default async function NotificationsPage() {
   const activeOrg = await resolveActiveOrg(user);
   const emailPrefs = activeOrg
     ? await readEmailNotificationPreferences(await createClient(), activeOrg.orgId, user.id)
-    : { email_enabled: true, new_lead: true, urgent_lead: true };
+    : DEFAULT_EMAIL_NOTIFICATION_PREFERENCES;
   const emailPolicy = activeOrg
     ? await readEmailNotificationPolicy(await createClient(), activeOrg.orgId)
     : { urgent_batch_window_minutes: 60, urgent_daily_limit: 6 };

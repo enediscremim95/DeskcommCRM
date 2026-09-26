@@ -1,3 +1,4 @@
+import type * as AgendaConsultaTypes from "@/lib/agenda/consulta";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -43,7 +44,7 @@ import type { HandlerCtx } from "@/lib/api/handlers/types";
  * futuro deixaria de medir o futuro sem ninguém tocar em nada.
  */
 vi.mock("@/lib/agenda/consulta", async (original) => {
-  const real = await original<typeof import("@/lib/agenda/consulta")>();
+  const real = await original<typeof AgendaConsultaTypes>();
   return { ...real, horariosLivresDaOrg: vi.fn() };
 });
 

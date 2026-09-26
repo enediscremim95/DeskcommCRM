@@ -7,6 +7,7 @@
  * contato de outra org → 404, 23505 → 409, resolução do nó trigger da
  * version pinada.
  */
+import type * as ImpersonateSupportTypes from "@/lib/impersonate/support";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { NextRequest } from "next/server";
@@ -395,7 +396,7 @@ describe("GET /api/v1/ai/followups/enrollments", () => {
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  ...await importOriginal<typeof ImpersonateSupportTypes>(),
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));
