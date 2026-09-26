@@ -109,14 +109,16 @@ test.describe("J6.8 — anti-SSRF do outbound call_webhook (real, ponta a ponta)
         .getByRole("button", { name: /Conectar primeira página|Conectar página/ })
         .click();
       await page.locator("#src-name").fill(SOURCE_NAME);
+      await page.getByRole("button", { name: "Continuar" }).click();
       const dialog = page.getByRole("dialog");
       await selectFirstOption(page, dialog.getByRole("combobox").nth(0));
       await selectFirstOption(page, dialog.getByRole("combobox").nth(1));
+      await selectFirstOption(page, dialog.getByRole("combobox").nth(2));
       const [createRes] = await Promise.all([
         page.waitForResponse(
           (r) => r.url().includes("/api/v1/webhook-sources") && r.request().method() === "POST",
         ),
-        page.getByRole("button", { name: "Criar fonte" }).click(),
+        page.getByRole("button", { name: "Criar fonte e gerar script" }).click(),
       ]);
       const created = (await createRes.json()) as { data: { id: string; path_token: string } };
       sourceId = created.data.id;

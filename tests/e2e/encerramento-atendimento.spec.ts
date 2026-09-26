@@ -170,7 +170,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     await expect(page.getByTestId("inbox-memoria")).toContainText("Histórico encerrado");
     await inbound("Voltei para novo atendimento");
     await expect(panel.getByText("Demanda vigente neste canal")).toBeVisible();
-    await page.goto("/app/inbox?filter=unassigned");
+    await page.goto(`/app/inbox?conversation=${conversation}&filter=unassigned`);
     await page.getByText("Voltei para novo atendimento", { exact: true }).first().click();
     await expect(
       page.getByTestId("inbox-demandas").getByText("Demanda vigente neste canal"),

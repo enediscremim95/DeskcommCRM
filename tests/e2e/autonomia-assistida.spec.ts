@@ -8,6 +8,7 @@ import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { createApprovedReplyHandler } from "../../lib/agent-engine/agent/approved-reply";
 import { releaseChannelDeliveryLease } from "../../lib/agent-engine/edge/crm/channel-delivery-lease";
 import { seedPlatformPlaybook } from "../../lib/agent-engine/agent/playbook-seed";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, {
@@ -155,16 +156,11 @@ async function inbound(
   if (r.error) throw r.error;
 }
 async function login(page: Page, f: Fixture) {
-  await page.goto("/login?next=/app/inbox");
+  await page.goto("/login?next=/app/settings/profile");
   await page.getByLabel(/e-?mail/i).fill(f.email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(
-    (url) =>
-      !url.pathname.startsWith("/login") &&
-      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
-    { timeout: 60_000 },
-  );
+  await aguardarSessaoCompleta(page, "aal1");
 }
 async function capture(page: Page, target: Locator, info: TestInfo, name: string) {
   await target.scrollIntoViewIfNeeded();

@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, { auth: { persistSession: false } });
 const password = `Local-${randomUUID()}!`;
@@ -17,16 +18,11 @@ async function insert(table: string, value: Record<string, unknown>) {
 }
 async function login(page: Page, role: string) {
   const user = users.find(u => u.role === role)!;
-  await page.goto("/login?next=/app/inbox");
+  await page.goto("/login?next=/app/settings/profile");
   await page.getByLabel(/e-?mail/i).fill(user.email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(
-    (url) =>
-      !url.pathname.startsWith("/login") &&
-      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
-    { timeout: 60_000 },
-  );
+  await aguardarSessaoCompleta(page, "aal1");
 }
 const row = (page: Page, title: string) => page.getByTestId("inbox-item").filter({ hasText: title });
 async function central(page: Page) {

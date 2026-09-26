@@ -24,6 +24,7 @@ import * as path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const ARTIFACTS_DIR = path.join(process.cwd(), "evidence", "followup-dossie");
@@ -79,15 +80,11 @@ const creds = loadCreds();
 const INTERNAL_SECRET = (carregarEnvLocal().INTERNAL_SECRET ?? "").trim();
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login?next=/app/inbox");
+  await page.goto("/login?next=/app/settings/profile");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(
-    (url) =>
-      !url.pathname.startsWith("/login") &&
-      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
-  );
+  await aguardarSessaoCompleta(page, "aal1");
 }
 
 interface ApiOk<T> {

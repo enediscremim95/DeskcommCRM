@@ -33,6 +33,7 @@ import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "@playwright/test";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const RAIZ = path.resolve(__dirname, "../..");
 const CREDS_PATH = path.join(RAIZ, ".e2e-creds.json");
@@ -104,16 +105,11 @@ async function contarTudo(orgId: string): Promise<Record<string, number>> {
 }
 
 async function entrar(page: Page, email: string, senha: string) {
-  await page.goto("/login?next=/app/inbox");
+  await page.goto("/login?next=/app/settings/profile");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(senha);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(
-    (url) =>
-      !url.pathname.startsWith("/login") &&
-      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
-    { timeout: 30_000 },
-  );
+  await aguardarSessaoCompleta(page, "aal1");
 }
 
 async function trocarPara(page: Page, orgId: string) {
@@ -141,7 +137,7 @@ test("o admin zera os dados da sua organização pela tela — e a vizinha não 
   }
 
   await entrar(page, z.usuario_email, creds.password);
-  await page.goto("/app/inbox");
+  await page.goto("/app/settings/profile");
   await trocarPara(page, z.org_a_id);
 
   // ── O dado ESTÁ na tela antes ───────────────────────────────────────────
@@ -195,11 +191,11 @@ test("o admin zera os dados da sua organização pela tela — e a vizinha não 
 
   // ── A prova pela TELA: a vizinha continua inteira ───────────────────────
   //
-  // A volta ao Inbox NÃO é enfeite: trocar de organização estando no quadro de
+  // A volta a uma rota neutra NÃO é enfeite: trocar de organização no quadro de
   // um funil da organização ANTIGA deixa o seletor desabilitado para sempre —
   // o id do funil não existe na organização de destino. Medido: `toBeEnabled`
   // estourou 60 s com o botão preso em `disabled`.
-  await page.goto("/app/inbox");
+  await page.goto("/app/settings/profile");
   await trocarPara(page, z.org_b_id);
   await page.goto("/app/contacts");
   await expect(
@@ -256,7 +252,7 @@ test("quem não administra a organização não chega na zona de perigo", async 
   // na organização onde ele é só `manager`. É o gate de PAPEL, não de pessoa.
   await page.context().clearCookies();
   await entrar(page, z.usuario_email, creds.password);
-  await page.goto("/app/inbox");
+  await page.goto("/app/settings/profile");
   await trocarPara(page, creds.org_id);
   await page.goto("/app/settings/tenant");
   await expect(page).toHaveURL(/\/403/, { timeout: 20_000 });

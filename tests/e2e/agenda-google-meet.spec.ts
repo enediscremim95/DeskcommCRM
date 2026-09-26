@@ -9,6 +9,7 @@ import { reconcileAppointment } from "../../lib/agenda/google/sync-executor";
 import { createMeetDeliveryHandler } from "../../lib/agent-engine/agent/meet-delivery";
 import { releaseChannelDeliveryLease } from "../../lib/agent-engine/edge/crm/channel-delivery-lease";
 import { escolherDiaDesenhado, irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, {
@@ -164,16 +165,11 @@ async function row(f: Fixture, id: string) {
   return r.data;
 }
 async function login(page: Page, f: Fixture) {
-  await page.goto("/login?next=/app/inbox");
+  await page.goto("/login?next=/app/settings/profile");
   await page.getByLabel(/e-?mail/i).fill(f.email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(
-    (url) =>
-      !url.pathname.startsWith("/login") &&
-      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
-    { timeout: 60_000 },
-  );
+  await aguardarSessaoCompleta(page, "aal1");
 }
 async function book(page: Page, f: Fixture) {
   await inbound(f, "Quero marcar minha reunião");

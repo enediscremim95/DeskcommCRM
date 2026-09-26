@@ -28,6 +28,7 @@ import { execFileSync } from "node:child_process";
 
 import { test, expect, type Page, type Locator, type APIRequestContext } from "@playwright/test";
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const APP_URL = `http://localhost:${process.env.E2E_PORT ?? "3001"}`;
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
@@ -75,15 +76,11 @@ function cardDe(locator: Locator): Locator {
 }
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto(`${APP_URL}/login?next=/app/inbox`);
+  await page.goto(`${APP_URL}/login?next=/app/settings/profile`);
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(
-    (url) =>
-      !url.pathname.startsWith("/login") &&
-      (url.pathname === "/app" || url.pathname.startsWith("/app/")),
-  );
+  await aguardarSessaoCompleta(page, "aal1");
 }
 
 async function drenar(request: APIRequestContext, page: Page): Promise<void> {
@@ -131,8 +128,9 @@ test.describe("a automação conta o que aconteceu de verdade", () => {
         .getByRole("button", { name: /Conectar primeira página|Conectar página/ })
         .click();
       await page.locator("#src-name").fill(SOURCE_NAME);
+      await page.getByRole("button", { name: "Continuar" }).click();
       const dialog = page.getByRole("dialog");
-      for (const i of [0, 1]) {
+      for (const i of [0, 1, 2]) {
         await dialog.getByRole("combobox").nth(i).click();
         await page.getByRole("option").first().click();
       }
@@ -140,7 +138,7 @@ test.describe("a automação conta o que aconteceu de verdade", () => {
         page.waitForResponse(
           (r) => r.url().includes("/api/v1/webhook-sources") && r.request().method() === "POST",
         ),
-        page.getByRole("button", { name: "Criar fonte" }).click(),
+        page.getByRole("button", { name: "Criar fonte e gerar script" }).click(),
       ]);
       const fonte = (await criacao.json()) as { data: { id: string; path_token: string } };
       sourceId = fonte.data.id;
