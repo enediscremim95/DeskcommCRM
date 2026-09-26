@@ -1,141 +1,62 @@
 /**
- * Resend wrapper. Usado por: convites de team, LGPD (export + alarme de SLA).
+ * Fachada de e-mail transacional.
  *
- * ── O remetente é do OPERADOR; o nome de exibição é da MARCA ─────────────────
- *
- * `RESEND_FROM_EMAIL` é um endereço de um domínio que precisa estar VERIFICADO
- * na conta Resend de quem instalou — é do operador, e nenhuma resolução de
- * marca muda isso. O que a marca resolve é o NOME de exibição (`fromName`),
- * que é o que o destinatário lê na caixa de entrada. É aqui que o white-label
- * do remetente acontece, e é só aqui.
- *
- * ── Por que vazio significa NÃO CONFIGURADO ─────────────────────────────────
- *
- * O fallback antigo era `"Deskcomm <noreply@deskcomm.app>"`. Num clone isso é
- * PIOR que nada: o domínio não está verificado na conta Resend do revendedor,
- * então TODO envio falha lá na Resend e volta como `send_failed` com mensagem
- * opaca — o operador vai caçar rede, contêiner e chave, quando o problema é uma
- * variável em branco. Tratar como não-configurado joga o fluxo no caminho que
- * JÁ existe e JÁ é bom: `EmailNotConfigured` → `pending_review` no worker de
- * LGPD (`workers/lgpd-export-worker.ts:254-289`). No convite de time, a rota
- * recusa antes de criar uma conta cuja senha ninguém receberia.
- *
- * As duas chaves saíram do `process.env` cru e entraram no Zod (`lib/env.ts`).
- * Fora dele elas ficavam fora do `.env.example` e fora do `install.sh`, e o
- * `.env` é escrito com truncamento: chave posta à mão sumia no update seguinte.
+ * O caminho e a interface pública permanecem estáveis para os chamadores
+ * existentes. A seleção do transporte fica contida aqui e Resend continua
+ * sendo o padrão para não quebrar instalações já publicadas.
  */
-import { Resend } from "resend";
-
+import { resendAdapter } from "@/lib/email/adapters/resend";
+import { sesAdapter } from "@/lib/email/adapters/ses";
+import type { EmailAdapter, SendArgs, SendResult } from "@/lib/email/types";
 import { env } from "@/lib/env";
+import { logger } from "@/lib/logger";
 
-interface SendArgs {
-  to: string | string[];
-  subject: string;
-  html: string;
-  text?: string;
-  replyTo?: string;
-  tags?: { name: string; value: string }[];
-  /**
-   * Nome de exibição do remetente — a marca resolvida (`marcaDaSaida().nome`).
-   * Ausente usa o endereço puro: quem não passa marca não ganha a nossa.
-   */
-  fromName?: string;
-  /** Chave estável para retry sem e-mail duplicado no provedor. */
-  idempotencyKey?: string;
+function provider(): { name: "resend" | "ses"; adapter: EmailAdapter } {
+  return env.EMAIL_PROVIDER === "ses"
+    ? { name: "ses", adapter: sesAdapter }
+    : { name: "resend", adapter: resendAdapter };
 }
 
-interface SendResult {
-  ok: boolean;
-  id?: string;
-  error?: "not_configured" | "send_failed" | "rate_limited" | "dominio_nao_verificado";
-  details?: string;
-}
-
-let _client: Resend | null = null;
-
-function getClient(): Resend | null {
-  if (_client) return _client;
-  const key = env.RESEND_API_KEY;
-  if (!key || key.length < 10) return null;
-  _client = new Resend(key);
-  return _client;
+function enderecoDoProvider(): string {
+  return env.EMAIL_PROVIDER === "ses" ? env.SES_FROM_EMAIL : env.RESEND_FROM_EMAIL;
 }
 
 /**
- * `null` = não há remetente utilizável. Nunca inventa um domínio nosso.
- *
- * O nome de exibição é sanitizado: `<`, `>`, `"` e quebra de linha dentro do
- * cabeçalho `From:` são injeção de cabeçalho SMTP, e a marca vem de um campo
- * que o operador digita numa tela.
+ * `null` = não há remetente utilizável. Nunca inventa um domínio do produto.
+ * O nome é sanitizado porque vem da marca configurável da instalação.
  */
 export function fromAddress(fromName?: string): string | null {
-  const endereco = env.RESEND_FROM_EMAIL.trim();
+  const endereco = enderecoDoProvider().trim();
   if (endereco.length === 0) return null;
   const nome = (fromName ?? "").replace(/[<>"\r\n]/g, "").trim();
   return nome.length > 0 ? `${nome} <${endereco}>` : endereco;
 }
 
-/**
- * A Resend recusa domínio não verificado com uma mensagem própria, e o ramo
- * genérico `send_failed` a apagava. Classificar aqui é o que faz a diferença
- * entre "reinicie o container" e "verifique seu domínio na Resend" — a lição
- * já paga neste projeto: erro que não nomeia a causa vira caça ao fantasma.
- */
-function classificar(nome: string, mensagem: string): NonNullable<SendResult["error"]> {
-  if (/rate|quota|too many|429/i.test(`${nome} ${mensagem}`)) return "rate_limited";
-  if (/not verified|domain is not verified|não verificad/i.test(mensagem)) {
-    return "dominio_nao_verificado";
-  }
-  return "send_failed";
+function detalhesSeguros(details?: string): string | undefined {
+  return details?.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]").slice(0, 500);
 }
 
 export async function sendEmail(args: SendArgs): Promise<SendResult> {
-  const client = getClient();
+  const selected = provider();
   const from = fromAddress(args.fromName);
+  const result: SendResult =
+    from && selected.adapter.isConfigured()
+      ? await selected.adapter.send(args, from)
+      : { ok: false as const, error: "not_configured" as const };
 
-  if (!client || !from) {
-    // Conteúdo de e-mail pode incluir credenciais; nunca imprimir payload, nem em dev.
-    return { ok: false, error: "not_configured" };
+  if (!result.ok) {
+    // Nunca registra destinatário, assunto ou corpo: e-mail pode conter credenciais.
+    logger.error("Falha no envio de e-mail", {
+      provider: selected.name,
+      motivo: result.error,
+      detalhes: detalhesSeguros(result.details),
+    });
   }
 
-  try {
-    const { data, error } = await client.emails.send(
-      {
-        from,
-        to: args.to,
-        subject: args.subject,
-        html: args.html,
-        text: args.text,
-        replyTo: args.replyTo,
-        tags: args.tags,
-      },
-      args.idempotencyKey ? { idempotencyKey: args.idempotencyKey } : undefined,
-    );
-
-    if (error) {
-      return {
-        ok: false,
-        error: classificar(String(error.name || ""), error.message ?? ""),
-        details: error.message,
-      };
-    }
-    return { ok: true, id: data?.id };
-  } catch (err) {
-    const name = err instanceof Error ? err.name : "";
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      ok: false,
-      error: classificar(name, message),
-      details: message,
-    };
-  }
+  return result;
 }
 
-/**
- * Chave E remetente. Só a chave não basta: com `RESEND_FROM_EMAIL` vazio todo
- * envio devolve `not_configured`, e uma tela que dissesse "e-mail configurado"
- * mandaria o operador esperar uma mensagem que nunca sai.
- */
 export function isEmailConfigured(): boolean {
-  return getClient() !== null && fromAddress() !== null;
+  const selected = provider();
+  return selected.adapter.isConfigured() && fromAddress() !== null;
 }

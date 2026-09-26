@@ -254,7 +254,7 @@ const schema = z.object({
   SENTRY_DSN: z.string().optional().default(""),
 
   /**
-   * Resend — o transporte de TODO e-mail transacional (convite, LGPD, alarme).
+   * Transporte de TODO e-mail transacional (convite, LGPD, alarme).
    *
    * Estavam lidas de `process.env` CRU dentro de `lib/email/resend.ts`, fora do
    * Zod e fora do `.env.example` (medido: `grep -n RESEND lib/env.ts` → nada;
@@ -264,10 +264,16 @@ const schema = z.object({
    * (`} > .env`), a chave posta à mão era DESCARTADA na instalação seguinte,
    * num script que o README vende como idempotente.
    *
-   * `RESEND_FROM_EMAIL` vazio NÃO cai num domínio nosso: ver `fromAddress()`.
+   * `EMAIL_PROVIDER` ausente mantém Resend. Remetente vazio em qualquer
+   * provedor NÃO cai num domínio nosso: ver `fromAddress()`.
    */
+  EMAIL_PROVIDER: z.enum(["resend", "ses"]).optional().default("resend"),
   RESEND_API_KEY: z.string().optional().default(""),
   RESEND_FROM_EMAIL: z.string().optional().default(""),
+  AWS_SES_REGION: z.string().optional().default(""),
+  AWS_SES_ACCESS_KEY_ID: z.string().optional().default(""),
+  AWS_SES_SECRET_ACCESS_KEY: z.string().optional().default(""),
+  SES_FROM_EMAIL: z.string().optional().default(""),
 
   /**
    * E-mail de suporte que a instalação mostra ao CLIENTE FINAL (tela de conta

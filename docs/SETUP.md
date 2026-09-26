@@ -324,7 +324,9 @@ SENTRY_DSN=https://abc123@o456.ingest.sentry.io/789
 
 ---
 
-## 7. Resend — email transacional
+## 7. Resend ou Amazon SES — email transacional
+
+Para usar Amazon SES no lugar do Resend, defina `EMAIL_PROVIDER=ses` e preencha `AWS_SES_REGION`, `AWS_SES_ACCESS_KEY_ID`, `AWS_SES_SECRET_ACCESS_KEY` e `SES_FROM_EMAIL` conforme a `.env.example`.
 
 **O que é:** Serviço de envio de email. Usado pra magic links, reset de senha, exports LGPD, notificações. **Free tier:** 3k emails/mês, 100/dia. Suficiente pra dev e MVP.
 
