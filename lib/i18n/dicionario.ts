@@ -606,7 +606,6 @@ export const DICIONARIO: Traducoes = {
   "cadências (desligadas)": { es: "secuencias (apagadas)" },
   Aplicar: { es: "Aplicar" },
   "Aplicar modelo": { es: "Aplicar modelo" },
-  "Aplicando…": { es: "Aplicando…" },
   "As colunas do funil atual serão substituídas pelas do modelo. Só funciona em funil vazio: se já tiver negócio dentro, nada é alterado.":
     {
       es: "Las columnas del embudo actual se reemplazan por las del modelo. Solo funciona con el embudo vacío: si ya tiene negocios dentro, nada cambia.",
@@ -3528,6 +3527,64 @@ export const DICIONARIO: Traducoes = {
   "Receber dados": { es: "Recibir datos" },
   "Leads recebidos": { es: "Leads recibidos" },
   Automações: { es: "Automatizaciones" },
+  "Fluxo modelo de atendimento": { es: "Flujo modelo de atención" },
+  "Cria modelos pausados de primeira abordagem, avanço do lead, entrega a uma pessoa e follow-up por etapa.": {
+    es: "Crea modelos pausados de primer contacto, avance del lead, entrega a una persona y seguimiento por etapa.",
+  },
+  "Aplicando…": { es: "Aplicando…" },
+  "Aplicar modelos pausados": { es: "Aplicar modelos pausados" },
+  "São modelos editáveis. As mensagens são exemplos e nenhuma regra é ligada sem sua revisão.": {
+    es: "Son modelos editables. Los mensajes son ejemplos y ninguna regla se activa sin tu revisión.",
+  },
+  "Este é um modelo pausado. Revise a mensagem, a condição, a etapa, o número e o responsável antes de ligar.": {
+    es: "Este es un modelo pausado. Revisa el mensaje, la condición, la etapa, el número y el responsable antes de activarlo.",
+  },
+  "Modelos criados e pausados. Revise cada regra antes de ligar.": {
+    es: "Modelos creados y pausados. Revisa cada regla antes de activarla.",
+  },
+  "O modelo já estava aplicado. Suas edições foram preservadas.": {
+    es: "El modelo ya estaba aplicado. Tus ediciones se conservaron.",
+  },
+  "Nenhuma regra foi duplicada.": { es: "No se duplicó ninguna regla." },
+  "a etapa configurada": { es: "la etapa configurada" },
+  "o lead entrar na etapa": { es: "el lead entre en la etapa" },
+  "chegar uma mensagem que contém": { es: "llegue un mensaje que contiene" },
+  "mande a mensagem": { es: "envía el mensaje" },
+  "peça para a IA escrever e enviar a mensagem": { es: "pide a la IA que escriba y envíe el mensaje" },
+  "mova o lead para": { es: "mueve el lead a" },
+  "atribua o responsável e pare o atendimento automático": {
+    es: "asigna al responsable y detén la atención automática",
+  },
+  "adicione a tag configurada": { es: "agrega la etiqueta configurada" },
+  "inicie o fluxo de follow-up configurado": { es: "inicia el flujo de seguimiento configurado" },
+  "execute a ação configurada": { es: "ejecuta la acción configurada" },
+  "Esta regra não envia mensagem sozinha.": { es: "Esta regla no envía mensajes por sí sola." },
+  "número configurado": { es: "número configurado" },
+  "RESPEITANDO a janela de horário, o consentimento e o limite diário": {
+    es: "RESPETANDO el horario, el consentimiento y el límite diario",
+  },
+  "do número": { es: "del número" },
+  "Você revisou este modelo?": { es: "¿Revisaste este modelo?" },
+  "Confirme que revisou a mensagem, a condição, a etapa, o número e o responsável. Ao ligar, a regra pode agir sozinha.": {
+    es: "Confirma que revisaste el mensaje, la condición, la etapa, el número y el responsable. Al activarla, la regla puede actuar sola.",
+  },
+  "Voltar e revisar": { es: "Volver y revisar" },
+  "Revisei e quero ligar": { es: "Revisé y quiero activar" },
+  "Conecte um número de WhatsApp antes de aplicar o modelo.": {
+    es: "Conecta un número de WhatsApp antes de aplicar el modelo.",
+  },
+  "Crie um funil com pelo menos uma etapa antes de aplicar o modelo.": {
+    es: "Crea un embudo con al menos una etapa antes de aplicar el modelo.",
+  },
+  "O funil precisa ter uma etapa aberta antes de aplicar o modelo.": {
+    es: "El embudo debe tener una etapa abierta antes de aplicar el modelo.",
+  },
+  "Adicione uma pessoa que possa atender leads antes de aplicar o modelo.": {
+    es: "Agrega una persona que pueda atender oportunidades antes de aplicar el modelo.",
+  },
+  "Crie ou renomeie uma etapa de follow-up antes de aplicar o modelo.": {
+    es: "Crea o cambia el nombre de una etapa de seguimiento antes de aplicar el modelo.",
+  },
   Atividade: { es: "Actividad" },
   Funil: { es: "Embudo" },
   "Escolha o funil": { es: "Elige el embudo" },

@@ -67,23 +67,23 @@
       "col": 1,
       "type": "api",
       "label": "rotas REST de configuração",
-      "sublabel": "webhook-sources · automation-rules · pipelines/[id]/stages"
+      "sublabel": "webhook-sources · automation-rules · modelo-atendimento · pipelines/[id]/stages"
     },
     {
       "id": "mcp",
       "lane": "borda",
       "col": 2,
       "type": "api",
-      "label": "lib/mcp/tools/operacao.ts",
-      "sublabel": "15 capacidades — fachada fina, zero SQL próprio"
+      "label": "lib/mcp/tools/operacao.ts + automation.ts",
+      "sublabel": "automação tem família própria: explica · lista · cria · edita · aplica modelo · liga/desliga"
     },
     {
       "id": "catalogo",
       "lane": "borda",
       "col": 3,
       "type": "service",
-      "label": "catalogo/operacao.ts",
-      "sublabel": "pacote 'organizar' · 5 critico · 6 escritas apenasHumano"
+      "label": "catalogo/operacao.ts + automacao.ts",
+      "sublabel": "pacote 'organizar' · risco visível · escopos mcp:read/mcp:write"
     },
     {
       "id": "agente",
@@ -257,7 +257,7 @@
       "id": "e6",
       "from": "rest",
       "to": "operacao",
-      "label": "POST /webhook-sources → criarEntradaAutomatica"
+      "label": "POST de fonte/modelo → lib/operacao"
     },
     {
       "id": "e7",
@@ -426,16 +426,16 @@
       "body": "O BUG-01 (runtime nativo mandando o id do RUN) foi corrigido em bddeeb6, mas a irmã dele não: lib/mcp/auth.ts deriveActor() ainda devolve o id do run — ou o do token — no caminho do cliente MCP externo. Actor.id só é chave estável de agente em dois dos três caminhos, e uma FK para ai_agents(id) recusaria a escrita com 23503 no terceiro. A coluna guarda a ESPÉCIE do ator; o identificador cru continua no audit log."
     },
     {
-      "title": "NÃO-LIGAÇÃO DELIBERADA: o agente não escreve regra automática",
-      "body": "Ele liga e desliga o que um humano escreveu; criar, editar ação e apagar ficam de fora. Deixá-lo escrever a ação seria deixá-lo escolher para qual endereço externo a empresa manda dados — e aí o gate humano do risco 'critico' viraria decoração. Mesma razão para não criar resposta pronta (o texto sai em nome da marca) e não mexer em papel de ninguém."
+      "title": "Regra escrita pela IA nasce pausada",
+      "body": "O MCP pode explicar, listar, criar e editar regras porque o dono precisa montar o fluxo por conversa. Criar e aplicar o modelo nunca ligam nada: mensagens ficam marcadas como exemplo e uma ativação separada, com risco crítico, é necessária. A tela mostra a regra como QUANDO/ENTÃO e nomeia janela, limite, consentimento e número antes de o humano ligar."
     },
     {
       "title": "NÃO-LIGAÇÃO DELIBERADA: não há escritor do vocabulário canônico de marcadores",
       "body": "organizations.settings.canonical_conversation_tags tem rota de leitura e NENHUMA tela para ver ou mudar. Um escritor novo ali criaria configuração alterável só por quem lê o banco — invariante 6 da doutrina ('toda configuração tem superfície'). O que o agente ganhou foi crm_list_tags, que resolve o defeito real: ele inventar 'cliente-vip' quando já existe 'vip'."
     },
     {
-      "title": "NÃO-LIGAÇÃO DELIBERADA: no pacote organizar, o agente lê tudo e muda nada",
-      "body": "As seis escritas são apenasHumano, e isso é PARIDADE, não timidez. A régua do épico é o papel que a rota HTTP equivalente exige: onde a rota pedia agent e a tool pedia manager havia divergência, corrigida em bddeeb6 (BUG-02); aqui as três rotas espelhadas — pipelines/[id]/stages, webhook-sources e automation-rules — exigem manager, todas. Nem um atendente humano configura a operação pela tela, então baixar para agent daria à IA um poder que o produto não dá a uma pessoa com o mesmo papel. O que o agente ganhou de fato são as dez leituras."
+      "title": "Escrita respeita o mesmo papel da tela",
+      "body": "Criar, editar e aplicar modelo exigem ai_operator e mcp:write, sempre deixam as regras pausadas e não causam envio. Ligar ou desligar exige manager, confirmação humana e mcp:write. Leitura e explicação usam mcp:read. O organization_id vem sempre do contexto autenticado, referências de funil, etapa, canal, agente, fluxo e responsável são conferidas na mesma organização, e a ativação continua separada da montagem."
     }
   ]
 }

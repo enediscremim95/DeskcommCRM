@@ -256,6 +256,7 @@ export const AUDIT_ACTIONS = [
   "automation.rule_updated",
   "automation.rule_deleted",
   "automation.rule_executed",
+  "automation.model_applied",
   "automation.run_resent",
   "ai.skill_imported",
   "ai.skill_installed",

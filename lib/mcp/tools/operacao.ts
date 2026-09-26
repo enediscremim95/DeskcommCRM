@@ -16,11 +16,9 @@
  * está dentro de cada função de `lib/operacao/` e é a única coisa que separa os
  * tenants aqui.
  *
- * ⚠️ O QUE ESTE ARQUIVO DELIBERADAMENTE **NÃO** DÁ AO AGENTE: criar/editar/apagar
- * regra automática (ele liga e desliga o que um humano escreveu, nunca escolhe
- * para onde a empresa manda dados), mudar papel de ninguém, apagar entrada
- * automática, e criar resposta pronta. Ver o cabeçalho de cada módulo de
- * `lib/operacao/` para o porquê de cada uma.
+ * Regras automáticas agora têm família própria em `automation.ts`. Este arquivo
+ * continua sem permitir mudar papel, apagar entrada automática ou criar
+ * resposta pronta.
  */
 import { z } from "zod";
 
@@ -46,11 +44,6 @@ import {
   listarModelosDeMensagem,
   preencherModeloDeMensagem,
 } from "@/lib/operacao/modelos-de-mensagem";
-import {
-  definirRegraAtiva,
-  execucoesDasRegras,
-  listarRegrasAutomaticas,
-} from "@/lib/operacao/regras-automaticas";
 import type { McpContext, McpToolDefinition } from "../types";
 
 /** O contexto MCP traduzido para o que as operações pedem. */
@@ -362,77 +355,6 @@ export const crmSetWebhookSourceActive: McpToolDefinition<typeof setSourceActive
   requiresScope: "mcp:write",
   handler: async (input, ctx) => {
     return definirEntradaAtiva(deps(ctx), { id: input.source_id, ativa: input.is_active });
-  },
-};
-
-// ---------------------------------------------------------------------------
-// regras automáticas (automation_rules)
-// ---------------------------------------------------------------------------
-
-const listRulesShape = {
-  only_active: z.boolean().default(false),
-};
-
-export const crmListAutomationRules: McpToolDefinition<typeof listRulesShape> = {
-  name: "crm_list_automation_rules",
-  description:
-    "Lista as regras automáticas da org: nome, se está ligada, qual evento a dispara, os TIPOS de ação que ela executa, " +
-    "quantas condições tem, quando rodou pela última vez e quantas vezes. A configuração das ações (URL de destino, " +
-    "segredo, texto) não é devolvida.",
-  inputSchema: listRulesShape,
-  category: "read",
-  requiresRole: "agent",
-  requiresScope: "mcp:read",
-  handler: async (input, ctx) => {
-    return { regras: await listarRegrasAutomaticas(deps(ctx), { apenasAtivas: input.only_active }) };
-  },
-};
-
-const listRunsShape = {
-  rule_id: z.string().uuid().optional(),
-  only_failures: z.boolean().default(false),
-  limit: z.number().int().min(1).max(100).default(20),
-};
-
-export const crmListAutomationRuns: McpToolDefinition<typeof listRunsShape> = {
-  name: "crm_list_automation_runs",
-  description:
-    "Histórico do que as regras automáticas dispararam (mais recentes primeiro): qual regra, status " +
-    "(success|partial|failed), quando, e o detalhe SÓ das ações que falharam. Use only_failures=true para responder " +
-    "'o que parou de funcionar?'. Sem rule_id, traz a org inteira.",
-  inputSchema: listRunsShape,
-  category: "read",
-  requiresRole: "agent",
-  requiresScope: "mcp:read",
-  handler: async (input, ctx) => {
-    return {
-      execucoes: await execucoesDasRegras(deps(ctx), {
-        ruleId: input.rule_id,
-        limite: input.limit,
-        apenasFalhas: input.only_failures,
-      }),
-    };
-  },
-};
-
-const setRuleActiveShape = {
-  rule_id: z.string().uuid(),
-  is_active: z.boolean(),
-};
-
-export const crmSetAutomationRuleActive: McpToolDefinition<typeof setRuleActiveShape> = {
-  name: "crm_set_automation_rule_active",
-  description:
-    "Liga ou desliga uma regra automática. LIGAR faz a regra rodar sozinha em TODO evento que casar, indefinidamente, " +
-    "sem ninguém assistindo — e as ações podem enviar mensagem ao cliente ou mandar dados para fora da empresa. " +
-    "Confira as ações com crm_list_automation_rules antes, e confirme com um humano. " +
-    "Criar, editar e apagar regra não é possível por aqui, de propósito.",
-  inputSchema: setRuleActiveShape,
-  category: "write",
-  requiresRole: "manager",
-  requiresScope: "mcp:write",
-  handler: async (input, ctx) => {
-    return definirRegraAtiva(deps(ctx), { id: input.rule_id, ativa: input.is_active });
   },
 };
 

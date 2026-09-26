@@ -53,7 +53,7 @@ export const TOOLS_GOVERNANCA = declararTools([
       "Aplica uma etiqueta que já existe no aplicativo de mensagens, sem remover as etiquetas atuais.",
     oQueToca: "Organização da conversa",
     risco: "atencao",
-    pacotes: ["organizar", "atender"],
+    pacotes: ["atender"],
   },
   {
     name: "crm_request_human_handoff",
