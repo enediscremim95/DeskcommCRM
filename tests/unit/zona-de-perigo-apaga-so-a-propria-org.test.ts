@@ -204,11 +204,18 @@ describe("zona de perigo: quem pode puxar o gatilho", () => {
     });
   }
 
-  it("manager não executa a ação irreversível reservada ao admin", async () => {
+  // Este teste afirmava o contrário até 26/09/2026: o manager passava, porque a
+  // 0264 igualou manager e admin no acesso geral e este gate era "pelo menos
+  // admin". O dono decidiu que zerar a organização é das duas ações que NÃO
+  // acompanham esse empate — apagar contato, negócio e conversa de todo mundo
+  // não tem volta. Virou capacidade nomeada, como lead.delete e
+  // ai.credentials.delete. Ver tests/invariants/capacidades-gerente.test.ts.
+  it("manager não zera a organização, mesmo tendo o mesmo piso de acesso do admin", async () => {
     papel = "manager";
     const r = await apagarDadosOperacionaisDaOrganizacao({ confirmNome: NOME_DA_ORG });
     expect(r).toEqual({ ok: false, error: "forbidden_role" });
     expect(delecoes).toEqual([]);
+    expect(auditadas).toEqual([]);
   });
 
   it("sessão com fator de MFA pendente não apaga nada", async () => {
