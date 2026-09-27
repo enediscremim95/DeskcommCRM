@@ -26,19 +26,25 @@ interface DecidirArgs {
  * "esquentasse" o negócio, o radar mentiria — o cliente continua sem responder
  * até a mensagem sair e ele reagir.
  */
-export function useDecidirReativacao(pipelineId: string) {
+export interface ResultadoDaDecisaoDeReativacao {
+  status: "accepted" | "dismissed";
+  delivery_status: "queued_window" | "processing" | null;
+  scheduled_for: string | null;
+}
+
+export function useDecidirReativacao(pipelineId?: string) {
   const qc = useQueryClient();
   const queryKey = ["board", pipelineId] as const;
 
   return useMutation({
     mutationFn: async ({ leadId, decision, proposalId }: DecidirArgs) => {
-      return apiClient.post<{ data: { status: string; envio_agendado: boolean } }>(
+      return apiClient.post<{ data: ResultadoDaDecisaoDeReativacao }>(
         `/api/v1/leads/${leadId}/reactivation`,
         { decision, proposal_id: proposalId },
       );
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey });
+      if (pipelineId) void qc.invalidateQueries({ queryKey });
       // ⚠️ AS DUAS QUERIES, e a segunda foi esquecida na primeira versão: o
       // board vem de `["board", pipelineId]` e a lista de propostas vem de
       // `["reactivations"]`. Invalidar só a primeira refazia os LEADS e mantinha
@@ -49,14 +55,16 @@ export function useDecidirReativacao(pipelineId: string) {
       // É a mesma família de defeito da entrega inteira, agora no cache: um lado
       // mudou e o outro não acompanhou, sem ninguém reclamar.
       void qc.invalidateQueries({ queryKey: ["reactivations"] });
+      void qc.invalidateQueries({ queryKey: ["agent-inbox"] });
     },
     onError: (e) => {
       // O 409 desta rota é INFORMAÇÃO, não falha: a proposta venceu ou já foi
       // decidida entre o render e o clique. A mensagem do servidor explica qual
       // dos dois, e o refetch atualiza o card para o estado real.
       showApiError(e);
-      void qc.invalidateQueries({ queryKey });
+      if (pipelineId) void qc.invalidateQueries({ queryKey });
       void qc.invalidateQueries({ queryKey: ["reactivations"] });
+      void qc.invalidateQueries({ queryKey: ["agent-inbox"] });
     },
   });
 }

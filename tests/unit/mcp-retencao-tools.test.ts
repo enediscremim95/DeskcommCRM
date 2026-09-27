@@ -91,6 +91,10 @@ function fakeSupabase(resolve: Resolver, cap: Capturas) {
         c.filtros[col] = val;
         return chain;
       },
+      neq: (col: string, val: unknown) => {
+        c.filtros[`${col}_neq`] = val;
+        return chain;
+      },
       in: (col: string, val: unknown) => { c.filtros[col] = val; return chain; },
       is: () => chain,
       gt: () => chain,
