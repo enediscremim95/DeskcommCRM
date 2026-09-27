@@ -35,6 +35,6 @@ export const TOOLS_COMERCIO = declararTools([
       "Mostra quem pediu para exportar ou apagar os próprios dados e qual o prazo, para o assistente parar de insistir com quem pediu para sair.",
     oQueToca: "Privacidade e dados do cliente",
     risco: "seguro",
-    pacotes: ["organizar", "atender"],
+    pacotes: ["atender"],
   },
 ]);

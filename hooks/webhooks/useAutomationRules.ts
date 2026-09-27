@@ -63,6 +63,26 @@ export function useDeleteAutomationRule() {
   });
 }
 
+export interface ApplyAutomationModelResult {
+  regras: AutomationRuleRow[];
+  criadas: number;
+  preservadas: number;
+  mensagem: string;
+}
+
+export function useApplyAutomationModel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () =>
+      apiClient.post<{ data: ApplyAutomationModelResult }>(
+        "/api/v1/automation-rules/modelo-atendimento",
+        undefined,
+      ),
+    onError: showApiError,
+    onSuccess: () => qc.invalidateQueries({ queryKey: RULES_KEY }),
+  });
+}
+
 export interface AutomationRuleRunActionResult {
   type: string;
   status: "success" | "failed" | "skipped" | "postponed";
