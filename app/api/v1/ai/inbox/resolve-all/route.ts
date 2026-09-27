@@ -63,6 +63,9 @@ export async function POST(): Promise<Response> {
     .update({ status: "resolved" })
     .eq("organization_id", org.orgId)
     .eq("status", "open")
+    // Sugestão de follow-up exige uma decisão real. Fechá-la em lote deixaria
+    // a proposta pendente e ela voltaria, ou sumiria sem registrar a recusa.
+    .neq("kind", "followup_suggestion")
     .select("id");
   if (error) {
     return fail("internal_error", t("Falha ao resolver os avisos."), 500, { requestId });

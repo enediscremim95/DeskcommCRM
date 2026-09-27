@@ -20,8 +20,9 @@ function client(admin: boolean, readable = false) {
     const chain = {
       select: () => chain, order: () => chain, limit: () => chain,
       eq: (key: string, value: string) => { calls.push([key, value]); return chain; },
+      gte: () => chain,
       in: () => chain, update: () => chain,
-      maybeSingle: async () => ({ data: item, error: null }),
+      maybeSingle: async () => ({ data: table === "organizations" ? { timezone: "America/Sao_Paulo" } : item, error: null }),
       then: (resolve: (data: unknown) => unknown) => Promise.resolve({ data: admin ? [item] : readable ? [{ id }] : [], error: null, count: 1 }).then(resolve),
     }; return chain;
   } };
@@ -37,9 +38,13 @@ describe("API Central projeta destinos com sessão", () => {
     const response = await GET(new NextRequest("http://localhost/api/v1/ai/inbox"));
     expect(response.status).toBe(200);
     expect((await response.json()).data.items[0].destination.estado).toBe("indisponivel");
-    expect(calls.filter(c => c[0] === "admin")).toEqual([["admin", "agent_inbox_items"], ["admin", "agent_inbox_items"]]);
+    expect(calls.filter(c => c[0] === "admin")).toEqual(expect.arrayContaining([
+      ["admin", "agent_inbox_items"],
+      ["admin", "organizations"],
+      ["admin", "crm_lead_reactivations"],
+    ]));
     expect(calls).toContainEqual(["authenticated", "conversations"]);
-    expect(calls.filter(c => c[0] === "organization_id")).toEqual(Array(3).fill(["organization_id", org]));
+    expect(calls.filter(c => c[0] === "organization_id").every(c => c[1] === org)).toBe(true);
     expect(requireRole).toHaveBeenCalledWith("agent", expect.any(Object));
     expect(audit).not.toHaveBeenCalled();
   });

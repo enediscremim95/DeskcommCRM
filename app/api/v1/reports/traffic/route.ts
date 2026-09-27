@@ -29,6 +29,7 @@ import { serializeTrafficColumnPresets } from "@/lib/windsor/column-presets";
 import { buildTrafficDelivery } from "@/lib/windsor/delivery";
 import { clientCanViewIntegration } from "@/lib/integrations/access";
 import {
+  buildTrafficKanbanStages,
   buildTrafficRichCrmInsights,
   type TrafficLeadRow,
   type TrafficStageRow,
@@ -269,7 +270,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     admin
       .from("crm_stages" as never)
       .select("id,name,position,pipeline_id,is_won,is_lost")
-      .eq("organization_id", organizationId),
+      .eq("organization_id", organizationId)
+      .eq("is_archived", false),
     fetchLeadSituationRows(new Date(fromCreatedAt), exclusiveTo),
     fetchLeadSituationRows(previousFrom, previousExclusiveTo),
     admin
@@ -438,6 +440,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         ...crm,
         previous: previousCrm,
       },
+      kanban_stages: buildTrafficKanbanStages(currentLeadRowsResult.data ?? [], stages),
       delivery: buildTrafficDelivery((facts ?? []) as unknown as StoredFact[], deliveryFacts),
       currencies: currentCurrencies.map((group) => ({
         ...group,

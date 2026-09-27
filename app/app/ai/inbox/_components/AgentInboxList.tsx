@@ -19,6 +19,8 @@ import { kindLabel, SEVERITY_LABEL, type AgentInboxSeverity } from "@/lib/ai/age
 import { Bell, Check } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 import { ApiError } from "@/lib/api/types";
+import { useDecidirReativacao } from "@/hooks/kanban/useReativacao";
+import { toast } from "sonner";
 
 const SEVERITY_VARIANT: Record<AgentInboxSeverity, "info" | "warning" | "error"> = {
   info: "info",
@@ -46,6 +48,11 @@ export function AgentInboxList({ canResolve }: { canResolve: boolean }) {
             <TabsTrigger value="resolved">{t("Resolvidos")}</TabsTrigger>
           </TabsList>
         </Tabs>
+        {data ? (
+          <Badge variant="info">
+            {data.followups_today ?? 0} {t("follow-ups aprovados hoje")}
+          </Badge>
+        ) : null}
         {canResolve && tab === "open" && data && data.items.length > 0 ? (
           <Button
             size="sm"
@@ -122,6 +129,16 @@ function InboxRow({
     addSuffix: true,
     locale: localeDaData,
   });
+  const proposalId = typeof item.metadata?.proposal_id === "string"
+    ? item.metadata.proposal_id
+    : null;
+  const isFollowupKind = item.kind === "followup_suggestion";
+  const isFollowupSuggestion =
+    isFollowupKind &&
+    item.status === "open" &&
+    typeof item.ref_id === "string" &&
+    proposalId !== null;
+
   return (
     <li className="group flex flex-wrap items-start gap-3 px-4 py-2.5" data-testid="inbox-item">
       <Badge variant={SEVERITY_VARIANT[item.severity]} className="mt-0.5 shrink-0">
@@ -150,7 +167,9 @@ function InboxRow({
           </Button>
         ) : null}
       </div>
-      {canResolve ? (
+      {canResolve && isFollowupSuggestion ? (
+        <FollowupDecisionButtons leadId={item.ref_id!} proposalId={proposalId!} />
+      ) : canResolve && !isFollowupKind ? (
         item.status === "resolved" ? (
           <Button className="opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100" size="sm" variant="ghost" disabled={pending} onClick={() => onToggle("open")}>
             {t("Reabrir")}
@@ -163,5 +182,48 @@ function InboxRow({
         )
       ) : null}
     </li>
+  );
+}
+
+function FollowupDecisionButtons({ leadId, proposalId }: { leadId: string; proposalId: string }) {
+  const t = useT();
+  const decidir = useDecidirReativacao();
+
+  const decide = (decision: "accept" | "dismiss") => {
+    decidir.mutate(
+      { leadId, proposalId, decision },
+      {
+        onSuccess: (response) => {
+          const result = response.data;
+          if (decision === "dismiss") {
+            toast.success(t("Sugestão removida. Ela só volta com fato novo ou após o prazo configurado."));
+          } else if (result.delivery_status === "queued_window" && result.scheduled_for) {
+            const whenOpen = new Intl.DateTimeFormat(undefined, {
+              dateStyle: "short",
+              timeStyle: "short",
+            }).format(new Date(result.scheduled_for));
+            toast.success(`${t("Aprovado. A mensagem sairá quando a janela de envio abrir:")} ${whenOpen}.`);
+          } else {
+            toast.success(t("Aprovado. A mensagem fixa foi encaminhada ao motor de envio."));
+          }
+        },
+      },
+    );
+  };
+
+  return (
+    <div className="flex shrink-0 flex-wrap gap-2">
+      <Button size="sm" disabled={decidir.isPending} onClick={() => decide("accept")}>
+        {t("Aprovar")}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={decidir.isPending}
+        onClick={() => decide("dismiss")}
+      >
+        {t("Não aprovar")}
+      </Button>
+    </div>
   );
 }

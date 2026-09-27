@@ -15,12 +15,14 @@ export interface AgentInboxItem {
   ref_id: string | null;
   status: "open" | "ack" | "resolved";
   created_at: string;
+  metadata?: Record<string, unknown> | null;
   destination: DestinoDoAviso;
 }
 
 export interface AgentInboxData {
   items: AgentInboxItem[];
   open_count: number;
+  followups_today?: number;
 }
 
 /** Central de avisos do runtime (F1). Polling 60s — avisos nascem no worker. */
