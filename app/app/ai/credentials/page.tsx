@@ -57,6 +57,22 @@ export default async function CredentialsPage() {
             idioma,
           )}
         </p>
+        <div className="mt-3 max-w-3xl rounded-lg border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
+          <p>
+            {traduzir(
+              "Ainda não tem uma chave de IA? A OpenRouter oferece uma única chave para dezenas de modelos. Depois de cadastrá-la aqui, os modelos aparecem automaticamente.",
+              idioma,
+            )}{" "}
+            <a
+              href="https://openrouter.ai/keys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-foreground underline underline-offset-2"
+            >
+              {traduzir("Criar chave na OpenRouter", idioma)}
+            </a>
+          </p>
+        </div>
       </header>
       <CredentialsList
         initialData={credentials}
