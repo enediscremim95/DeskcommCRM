@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { resumoDaRegra, resumoDasTravas } from "./RulesTab";
 import type { AutomationRuleRow } from "@/hooks/webhooks/useAutomationRules";
+import { canalDeTeste } from "@/lib/channels/fixture-de-teste";
 
 const t = (texto: string) => texto;
 const REGRA: AutomationRuleRow = {
@@ -39,21 +40,7 @@ describe("leitura simples das automações", () => {
   it("mostra janela, consentimento, limite e o número que será protegido", () => {
     const frase = resumoDasTravas(
       REGRA,
-      [
-        {
-          id: "canal-1",
-          display_name: "Comercial Curitiba",
-          phone_number: "+5541999999999",
-          waha_session_name: "comercial",
-          status: "WORKING",
-          status_reason: null,
-          last_health_check_at: null,
-          last_status_change_at: null,
-          daily_message_limit: 120,
-          is_warmup_complete: true,
-          created_at: "2026-01-01",
-        },
-      ],
+      [canalDeTeste({ daily_message_limit: 120 })],
       t,
     );
     expect(frase).toBe(
