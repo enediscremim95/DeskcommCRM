@@ -367,63 +367,63 @@ export function ConversionFunnel({
         {stageGroups && (
           <ControleEdicaoRelatorio>
             <Popover>
-            <PopoverTrigger asChild>
-              <Button type="button" size="sm" variant="outline" className="relative shrink-0">
-                {chooseStagesLabel}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="end"
-              className="max-h-[min(32rem,75vh)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto"
-            >
-              <p className="font-semibold">{text("Etapas do funil", "Etapas del embudo")}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{selectorDescription}</p>
-              <div className="mt-4 space-y-4">
-                {groups
-                  .filter((group) => group.stages.length > 0)
-                  .map((group) => (
-                    <fieldset key={group.key}>
-                      <legend className="mb-2 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                        {group.label}
-                      </legend>
-                      <div className="space-y-1">
-                        {group.stages.map((stage) => {
-                          const checked = selectedKeys.includes(stage.key);
-                          return (
-                            <label
-                              key={stage.key}
-                              className="flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-                            >
-                              <span className="min-w-0 truncate">{stage.label}</span>
-                              <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                                {formatNumber(stage.value)}
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  disabled={checked && selectedKeys.length === 1}
-                                  onChange={() => toggleStage(stage.key)}
-                                  className="size-4 accent-primary"
-                                  aria-label={stage.label}
-                                />
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </fieldset>
-                  ))}
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="mt-3 w-full"
-                disabled={selectedKeys.join("|") === defaultSignature}
-                onClick={() => saveSelection(defaultKeys)}
+              <PopoverTrigger asChild>
+                <Button type="button" size="sm" variant="outline" className="relative shrink-0">
+                  {chooseStagesLabel}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                className="max-h-[min(32rem,75vh)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto"
               >
-                {restoreDefaultLabel}
-              </Button>
-            </PopoverContent>
+                <p className="font-semibold">{text("Etapas do funil", "Etapas del embudo")}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{selectorDescription}</p>
+                <div className="mt-4 space-y-4">
+                  {groups
+                    .filter((group) => group.stages.length > 0)
+                    .map((group) => (
+                      <fieldset key={group.key}>
+                        <legend className="mb-2 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                          {group.label}
+                        </legend>
+                        <div className="space-y-1">
+                          {group.stages.map((stage) => {
+                            const checked = selectedKeys.includes(stage.key);
+                            return (
+                              <label
+                                key={stage.key}
+                                className="flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                              >
+                                <span className="min-w-0 truncate">{stage.label}</span>
+                                <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                                  {formatNumber(stage.value)}
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={checked && selectedKeys.length === 1}
+                                    onChange={() => toggleStage(stage.key)}
+                                    className="size-4 accent-primary"
+                                    aria-label={stage.label}
+                                  />
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </fieldset>
+                    ))}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="mt-3 w-full"
+                  disabled={selectedKeys.join("|") === defaultSignature}
+                  onClick={() => saveSelection(defaultKeys)}
+                >
+                  {restoreDefaultLabel}
+                </Button>
+              </PopoverContent>
             </Popover>
           </ControleEdicaoRelatorio>
         )}

@@ -41,24 +41,21 @@ const ModoApresentacaoContext = createContext(false);
 export function ProvedorRelatorioRecolhivel({ children }: { children: ReactNode }) {
   const [secoes, setSecoes] = useState<Map<string, SecaoRegistrada>>(() => new Map());
 
-  const registrar = useCallback(
-    (instanceKey: string, definirOpen: (open: boolean) => void) => {
+  const registrar = useCallback((instanceKey: string, definirOpen: (open: boolean) => void) => {
+    setSecoes((atuais) => {
+      const proximas = new Map(atuais);
+      proximas.set(instanceKey, { open: true, definirOpen });
+      return proximas;
+    });
+    return () => {
       setSecoes((atuais) => {
+        if (!atuais.has(instanceKey)) return atuais;
         const proximas = new Map(atuais);
-        proximas.set(instanceKey, { open: true, definirOpen });
+        proximas.delete(instanceKey);
         return proximas;
       });
-      return () => {
-        setSecoes((atuais) => {
-          if (!atuais.has(instanceKey)) return atuais;
-          const proximas = new Map(atuais);
-          proximas.delete(instanceKey);
-          return proximas;
-        });
-      };
-    },
-    [],
-  );
+    };
+  }, []);
 
   const atualizar = useCallback((instanceKey: string, open: boolean) => {
     setSecoes((atuais) => {
@@ -70,9 +67,12 @@ export function ProvedorRelatorioRecolhivel({ children }: { children: ReactNode 
     });
   }, []);
 
-  const definirTodas = useCallback((open: boolean) => {
-    for (const secao of secoes.values()) secao.definirOpen(open);
-  }, [secoes]);
+  const definirTodas = useCallback(
+    (open: boolean) => {
+      for (const secao of secoes.values()) secao.definirOpen(open);
+    },
+    [secoes],
+  );
 
   const value = useMemo<RelatorioRecolhivelContextValue>(() => {
     const registradas = [...secoes.values()];
@@ -173,23 +173,35 @@ export function useRelatorioRecolhivel({
     return () => window.clearTimeout(timeout);
   }, [defaultOpen, storageKey]);
 
-  const definirOpen = useCallback((next: boolean) => {
+  const definirOpen = useCallback(
+    (next: boolean) => {
+      restoreVersion.current += 1;
+      setOpen(next);
+      try {
+        if (next === defaultOpen) window.localStorage.removeItem(storageKey);
+        else window.localStorage.setItem(storageKey, next ? "open" : "closed");
+      } catch {
+        // A preferência é conforto, não requisito para o relatório funcionar.
+      }
+    },
+    [defaultOpen, storageKey],
+  );
+
+  const toggle = useCallback(() => {
     restoreVersion.current += 1;
-    setOpen(next);
-    try {
-      if (next === defaultOpen) window.localStorage.removeItem(storageKey);
-      else window.localStorage.setItem(storageKey, next ? "open" : "closed");
-    } catch {
-      // A preferência é conforto, não requisito para o relatório funcionar.
-    }
+    setOpen((current) => {
+      const next = !current;
+      try {
+        if (next === defaultOpen) window.localStorage.removeItem(storageKey);
+        else window.localStorage.setItem(storageKey, next ? "open" : "closed");
+      } catch {
+        // A preferência é conforto, não requisito para o relatório funcionar.
+      }
+      return next;
+    });
   }, [defaultOpen, storageKey]);
 
-  const toggle = useCallback(() => definirOpen(!open), [definirOpen, open]);
-
-  useEffect(
-    () => registrar?.(instanceKey, definirOpen),
-    [definirOpen, instanceKey, registrar],
-  );
+  useEffect(() => registrar?.(instanceKey, definirOpen), [definirOpen, instanceKey, registrar]);
 
   useEffect(() => {
     atualizar?.(instanceKey, open);

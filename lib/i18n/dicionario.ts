@@ -9347,6 +9347,22 @@ export const DICIONARIO: Traducoes = {
   "Pode montar e revisar o atendimento em rascunho. Nada do que for montado entra no ar sozinho: uma pessoa precisa publicar pela tela de Agentes.": { es: "Puede montar y revisar la atención como borrador. Nada de lo montado se activa solo: una persona debe publicarlo desde la pantalla de Agentes." },
   "Não pode montar o atendimento porque esse escopo exige papel de gerente ou administrador.": { es: "No puede montar la atención porque este alcance exige el rol de gerente o administrador." },
   "Não pode montar o atendimento porque o token não tem o escopo mcp:configure, que nasce desligado.": { es: "No puede montar la atención porque el token no tiene el alcance mcp:configure, que viene desactivado." },
+  "follow-ups aprovados hoje": { es: "follow-ups aprobados hoy" },
+  "Sugestão removida. Ela só volta com fato novo ou após o prazo configurado.": { es: "Sugerencia eliminada. Solo vuelve con un hecho nuevo o después del plazo configurado." },
+  "Aprovado. A mensagem sairá quando a janela de envio abrir:": { es: "Aprobado. El mensaje saldrá cuando se abra la ventana de envío:" },
+  "Aprovado. A mensagem fixa foi encaminhada ao motor de envio.": { es: "Aprobado. El mensaje fijo fue enviado al motor de entrega." },
+  "Não aprovar": { es: "No aprobar" },
+  "Vocabulário, campos e follow-up": { es: "Vocabulario, campos y follow-up" },
+  "Follow-up aprovável": { es: "Follow-up aprobable" },
+  "Escolha uma automação ativa do tipo etapa de destino → mensagem fixa. Aprovar move o negócio para essa etapa; o motor mantém janela, limite, espaçamento, bloqueio e consentimento.": { es: "Elige una automatización activa del tipo etapa de destino → mensaje fijo. Aprobar mueve el negocio a esa etapa; el motor mantiene ventana, límite, espaciado, bloqueo y consentimiento." },
+  "Automação da mensagem fixa": { es: "Automatización del mensaje fijo" },
+  "Sugerir de novo após (dias)": { es: "Volver a sugerir después de (días)" },
+  "Mensagem fixa:": { es: "Mensaje fijo:" },
+  "Crie e ative em Automações uma regra com uma condição de etapa de destino e uma ação de mensagem WhatsApp fixa.": { es: "Crea y activa en Automatizaciones una regla con una condición de etapa de destino y una acción de mensaje fijo de WhatsApp." },
+  "Salvar configurações": { es: "Guardar configuraciones" },
+  "Confira a mensagem fixa e decida se este contato deve ser retomado.": { es: "Revisa el mensaje fijo y decide si se debe retomar este contacto." },
+  "Não foi possível conferir a resposta mais recente do contato.": { es: "No fue posible comprobar la respuesta más reciente del contacto." },
+  "Não foi possível registrar os fatos desta decisão.": { es: "No fue posible registrar los hechos de esta decisión." },
 };
 
 /**

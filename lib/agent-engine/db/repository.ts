@@ -41,6 +41,7 @@ export type InboxKind =
   | 'next_action_ambiguous'
   | 'risk_backlog_seeded'
   | 'reactivation_expired'
+  | 'followup_suggestion'
   | 'capabilities_missing'
   | 'message_send_stuck'
   // (migration 0120) A plataforma do canal decide sozinha: reprova um modelo

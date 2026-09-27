@@ -10141,6 +10141,7 @@ alter table public.agent_inbox_items
     -- (migration 0262) Uma fonte que já recebia e fica 48 horas sem lead
     -- deixa de falhar em silêncio e aparece na Central.
     'webhook_source_silent',
+    'followup_suggestion',
     'other'
   ));
 
@@ -26406,6 +26407,21 @@ comment on column public.user_organizations.role is
   'Papéis canônicos: viewer (1) < agent (2) < manager (4) = admin (4) no acesso geral; operações irreversíveis usam capacidades nomeadas.';
 
 notify pgrst, 'reload schema';
+
+-- ---- follow-up aprovável (migration 0273) ----
+alter table public.crm_lead_reactivations
+  add column if not exists automation_rule_id uuid references public.automation_rules(id) on delete set null,
+  add column if not exists stage_id_at_proposal uuid references public.crm_stages(id) on delete set null,
+  add column if not exists last_inbound_at_at_proposal timestamptz,
+  add column if not exists resuggest_after_at timestamptz;
+
+create index if not exists idx_crm_lead_reactivations_ultima_decisao
+  on public.crm_lead_reactivations (lead_id, proposed_at desc)
+  where status <> 'pending';
+
+create unique index if not exists uniq_agent_inbox_followup_suggestion_open
+  on public.agent_inbox_items (organization_id, kind, ref_id)
+  where kind = 'followup_suggestion' and status = 'open';
 
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.

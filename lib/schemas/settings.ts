@@ -171,6 +171,15 @@ export const pipelineConfigPatchSchema = z.object({
     .optional(),
   fields: z.array(customFieldSchema).max(50).optional(),
   lost_reasons: z.array(z.string().min(1).max(80)).max(50).optional(),
+  followup_approval: z
+    .object({
+      automation_rule_id: z.string().uuid(),
+      // Tem de ser bem maior que a janela normal de esfriamento. Dois dias é
+      // o piso técnico; o dono escolhe o prazo operacional na tela.
+      resuggest_after_days: z.coerce.number().int().min(2).max(365),
+    })
+    .nullable()
+    .optional(),
 });
 export type PipelineConfigPatch = z.infer<typeof pipelineConfigPatchSchema>;
 
