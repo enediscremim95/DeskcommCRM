@@ -98,7 +98,14 @@ function arquivosDeTela(dir: string): string[] {
     const completo = path.join(dir, entrada);
     if (statSync(completo).isDirectory()) {
       achados.push(...arquivosDeTela(completo));
-    } else if (/\.tsx?$/.test(entrada)) {
+    } else if (/\.tsx?$/.test(entrada) && !/\.test\.tsx?$/.test(entrada)) {
+      // Arquivo de teste NÃO é tela, e é exatamente onde dado falso deve morar:
+      // um teste que monta um canal de mentira está fazendo o trabalho dele.
+      // Sem esta exclusão o gate reprovava `RulesTab.test.ts` por importar um
+      // construtor de teste — e o remédio que ele sugere ("caia no estado
+      // vazio") não faz sentido nenhum para um teste. O que o gate protege
+      // continua protegido: a TELA que o cliente abre segue varrida, com a
+      // cadeia de imports inteira.
       achados.push(completo);
     }
   }
