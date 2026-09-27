@@ -1,3 +1,12 @@
+"use client";
+
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+import { SetaRecolhivel, useRelatorioRecolhivel } from "./RelatorioRecolhivel";
+
 interface FunnelStage {
   key: string;
   label: string;
@@ -13,6 +22,12 @@ interface FunnelStage {
   asTarget?: string;
   /** Unidade do custo, já no idioma ("por lead"). Sem isso o custo fica só o valor. */
   costLabel?: string;
+}
+
+interface FunnelStageGroup {
+  key: string;
+  label: string;
+  stages: FunnelStage[];
 }
 
 interface TrafficFunnelMetrics {
@@ -47,6 +62,18 @@ const formatCompact = (value: number, idioma: string) =>
 
 const passageRate = (current: number, previous: number): number | null =>
   previous > 0 ? (current / previous) * 100 : null;
+
+export function recalculateFunnelStages(
+  stages: FunnelStage[],
+  selectedKeys: readonly string[],
+): FunnelStage[] {
+  const selected = new Set(selectedKeys);
+  const visible = stages.filter((stage) => selected.has(stage.key));
+  return visible.map((stage, index) => ({
+    ...stage,
+    rate: index === 0 ? null : passageRate(stage.value, visible[index - 1]!.value),
+  }));
+}
 
 export function buildTrafficFunnelStages(
   metrics: TrafficFunnelMetrics,
@@ -190,6 +217,10 @@ export function ConversionFunnel({
   summary,
   idioma,
   currency,
+  organizationKey,
+  viewerKey,
+  sectionKey = "funnel",
+  stageGroups,
 }: {
   /** Nome acessível da seção; não é mais exibido (pedido do dono, 21/09/2026). */
   title: string;
@@ -198,8 +229,96 @@ export function ConversionFunnel({
   summary: Array<{ label: string; value: string; emphasis?: boolean }>;
   idioma: string;
   currency?: string;
+  organizationKey?: string;
+  viewerKey?: string;
+  sectionKey?: string;
+  stageGroups?: FunnelStageGroup[];
 }) {
-  const maximum = Math.max(...stages.map((stage) => stage.value), 1);
+  const text = (pt: string, es: string) => (idioma === "es" ? es : pt);
+  const groups = useMemo(
+    () =>
+      stageGroups ?? [
+        {
+          key: "default",
+          label: idioma === "es" ? "Etapas del embudo" : "Etapas do funil",
+          stages,
+        },
+      ],
+    [stageGroups, stages, idioma],
+  );
+  const availableStages = useMemo(() => groups.flatMap((group) => group.stages), [groups]);
+  const availableSignature = availableStages.map((stage) => stage.key).join("|");
+  const defaultKeys = useMemo(() => stages.map((stage) => stage.key), [stages]);
+  const defaultSignature = defaultKeys.join("|");
+  const selectionStorageKey =
+    organizationKey && viewerKey
+      ? `traffic-report-funnel-stages:${organizationKey}:${viewerKey}:${sectionKey}`
+      : null;
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(defaultKeys);
+  const restoreVersion = useRef(0);
+  const { open, toggle } = useRelatorioRecolhivel({
+    organizationKey: organizationKey ?? "default",
+    viewerKey: viewerKey ?? "default",
+    sectionKey,
+  });
+  const panelId = `traffic-funnel-${useId().replace(/:/g, "")}`;
+
+  useEffect(() => {
+    const version = ++restoreVersion.current;
+    const timeout = window.setTimeout(() => {
+      const available = new Set(availableSignature.split("|").filter(Boolean));
+      let next = defaultSignature.split("|").filter(Boolean);
+      if (selectionStorageKey) {
+        try {
+          const raw = window.localStorage.getItem(selectionStorageKey);
+          const parsed: unknown = raw ? JSON.parse(raw) : null;
+          if (Array.isArray(parsed)) {
+            const valid = parsed.filter(
+              (key, index): key is string =>
+                typeof key === "string" && available.has(key) && parsed.indexOf(key) === index,
+            );
+            if (valid.length > 0) next = valid;
+          }
+        } catch {
+          try {
+            window.localStorage.removeItem(selectionStorageKey);
+          } catch {
+            // O funil continua com o padrão quando o navegador bloqueia armazenamento.
+          }
+        }
+      }
+      if (version === restoreVersion.current) setSelectedKeys(next);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [availableSignature, defaultSignature, selectionStorageKey]);
+
+  const saveSelection = (next: string[]) => {
+    restoreVersion.current += 1;
+    setSelectedKeys(next);
+    if (!selectionStorageKey) return;
+    try {
+      if (next.join("|") === defaultSignature) window.localStorage.removeItem(selectionStorageKey);
+      else window.localStorage.setItem(selectionStorageKey, JSON.stringify(next));
+    } catch {
+      // A seleção atual continua funcionando mesmo sem persistência.
+    }
+  };
+  const toggleStage = (key: string) => {
+    if (selectedKeys.includes(key)) {
+      if (selectedKeys.length === 1) return;
+      saveSelection(selectedKeys.filter((selected) => selected !== key));
+      return;
+    }
+    const selected = new Set([...selectedKeys, key]);
+    saveSelection(
+      availableStages.filter((stage) => selected.has(stage.key)).map((stage) => stage.key),
+    );
+  };
+  const visibleStages =
+    selectedKeys.join("|") === defaultSignature
+      ? stages
+      : recalculateFunnelStages(availableStages, selectedKeys);
+  const maximum = Math.max(...visibleStages.map((stage) => stage.value), 1);
   const formatCost = (value: number) =>
     currency
       ? new Intl.NumberFormat(idioma === "es" ? "es-ES" : "pt-BR", {
@@ -209,29 +328,110 @@ export function ConversionFunnel({
         }).format(value)
       : formatNumber(value);
   // A menor passagem só faz sentido quando há mais de uma para comparar.
-  const rated = stages.filter((stage) => stage.rate != null);
+  const rated = visibleStages.filter((stage) => stage.rate != null);
   const weakestKey =
     rated.length >= 2
       ? rated.reduce((weakest, stage) => (stage.rate! < weakest.rate! ? stage : weakest)).key
       : null;
   const weakestLabel = idioma === "es" ? "menor paso del embudo" : "menor passagem do funil";
+  const chooseStagesLabel = text("Escolher etapas", "Elegir etapas");
+  const selectorDescription = text(
+    "Marque o que deve aparecer na apresentação.",
+    "Marca lo que debe aparecer en la presentación.",
+  );
+  const restoreDefaultLabel = text("Restaurar funil padrão", "Restaurar embudo predeterminado");
   return (
     <section
       className="overflow-hidden rounded-3xl border bg-card shadow-[0_24px_80px_-52px_var(--primary)]"
       aria-label={title}
     >
-      <div className="relative overflow-hidden border-b bg-linear-to-r from-primary/[0.15] via-primary/[0.05] to-transparent px-4 py-5 sm:px-6">
+      <div className="relative flex items-center gap-2 overflow-hidden border-b bg-linear-to-r from-primary/[0.15] via-primary/[0.05] to-transparent pr-3">
         <span className="pointer-events-none absolute -top-24 -right-16 size-56 rounded-full bg-primary/15 blur-3xl" />
-        <p className="text-xs font-semibold tracking-[0.16em] text-primary uppercase">
-          {eyebrow ?? title}
-        </p>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={panelId}
+          aria-label={`${open ? text("Recolher", "Contraer") : text("Expandir", "Expandir")} ${eyebrow ?? title}`}
+          onClick={toggle}
+          className="relative flex min-h-14 min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden sm:px-6"
+        >
+          <SetaRecolhivel open={open} />
+          <span className="truncate text-xs font-semibold tracking-[0.16em] text-primary uppercase">
+            {eyebrow ?? title}
+          </span>
+        </button>
+        {stageGroups && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button type="button" size="sm" variant="outline" className="relative shrink-0">
+                {chooseStagesLabel}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="max-h-[min(32rem,75vh)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto"
+            >
+              <p className="font-semibold">{text("Etapas do funil", "Etapas del embudo")}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{selectorDescription}</p>
+              <div className="mt-4 space-y-4">
+                {groups
+                  .filter((group) => group.stages.length > 0)
+                  .map((group) => (
+                    <fieldset key={group.key}>
+                      <legend className="mb-2 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                        {group.label}
+                      </legend>
+                      <div className="space-y-1">
+                        {group.stages.map((stage) => {
+                          const checked = selectedKeys.includes(stage.key);
+                          return (
+                            <label
+                              key={stage.key}
+                              className="flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                            >
+                              <span className="min-w-0 truncate">{stage.label}</span>
+                              <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                                {formatNumber(stage.value)}
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={checked && selectedKeys.length === 1}
+                                  onChange={() => toggleStage(stage.key)}
+                                  className="size-4 accent-primary"
+                                  aria-label={stage.label}
+                                />
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </fieldset>
+                  ))}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="mt-3 w-full"
+                disabled={selectedKeys.join("|") === defaultSignature}
+                onClick={() => saveSelection(defaultKeys)}
+              >
+                {restoreDefaultLabel}
+              </Button>
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
 
-      <div className="grid gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-center">
+      <div
+        id={panelId}
+        hidden={!open}
+        className="grid gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-center"
+      >
         <ol className="mx-auto flex w-full max-w-3xl flex-col items-center" aria-label={title}>
-          {stages.map((stage, index) => {
+          {visibleStages.map((stage, index) => {
             const proportionalWidth = 42 + Math.sqrt(Math.max(stage.value, 0) / maximum) * 58;
-            const previous = index > 0 ? stages[index - 1] : null;
+            const previous = index > 0 ? visibleStages[index - 1] : null;
             const weakest = stage.key === weakestKey;
             return (
               <li key={stage.key} className="contents">
@@ -306,4 +506,4 @@ export function ConversionFunnel({
   );
 }
 
-export type { FunnelStage, TrafficFunnelMetrics };
+export type { FunnelStage, FunnelStageGroup, TrafficFunnelMetrics };

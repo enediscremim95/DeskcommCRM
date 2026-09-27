@@ -32,11 +32,17 @@ import {
   type PriorityMetricColumn,
 } from "@/lib/windsor/priority-metrics";
 import { ColumnPresetMenu } from "./ColumnPresetMenu";
-import { buildTrafficFunnelStages, ConversionFunnel, type FunnelStage } from "./ConversionFunnel";
+import {
+  buildTrafficFunnelStages,
+  ConversionFunnel,
+  type FunnelStage,
+  type FunnelStageGroup,
+} from "./ConversionFunnel";
 import { CostSignal, CostThresholdControl, type CostThreshold } from "./CostThresholds";
 import { PriorityMetricSelector } from "./PriorityMetricSelector";
 import { CreativePerformance, TrafficTimeline } from "./RichReportSections";
 import { useColunasAjustaveis, type ConfiguracaoColunaAjustavel } from "./colunas-ajustaveis";
+import { BlocoRecolhivel } from "./RelatorioRecolhivel";
 
 interface Metrics {
   budget: number | null;
@@ -124,6 +130,13 @@ interface ReportResponse {
     can_manage_defaults: boolean;
     priority_metrics?: PriorityMetricColumn[];
     cost_thresholds?: CostThreshold[];
+    kanban_stages?: Array<{
+      id: string;
+      pipeline_id: string | null;
+      name: string;
+      position: number;
+      count: number;
+    }>;
     sync: { status: string; last_succeeded_at: string | null; error: string | null };
     crm: Partial<TrafficRichCrmInsights> &
       Pick<TrafficRichCrmInsights, "leads_entered" | "in_service" | "closed_won"> & {
@@ -773,6 +786,9 @@ function CampaignTable({
 }) {
   const t = useT();
   const isMeta = platform === "meta_ads";
+  const campaignTableTitle = isMeta
+    ? localText(idioma, "Campanhas Meta", "Campañas de Meta")
+    : localText(idioma, "Campanhas Google", "Campañas de Google");
   const storageKey = `traffic-campaign-status-filter:${platform}`;
   const widthsStorageKey = `traffic-report-column-widths:${organizationKey}:${platform}`;
   const [statusFilter, setStatusFilter] = useState<CampaignStatusFilter>("all");
@@ -796,10 +812,11 @@ function CampaignTable({
     [columns, showStatus],
   );
   const campaignsWithKeys = useMemo(
-    () => campaigns.map((campaign, index) => ({
-      campaign,
-      key: campaign.id ?? `${campaign.platform}:${campaign.name}:${index}`,
-    })),
+    () =>
+      campaigns.map((campaign, index) => ({
+        campaign,
+        key: campaign.id ?? `${campaign.platform}:${campaign.name}:${index}`,
+      })),
     [campaigns],
   );
 
@@ -835,18 +852,32 @@ function CampaignTable({
   });
 
   const statusFilteredCampaigns = useMemo(
-    () => campaignsWithKeys.filter(({ campaign }) =>
-      activeFilter === "all" || campaignStatus(campaign.campaign_status).category === activeFilter),
+    () =>
+      campaignsWithKeys.filter(
+        ({ campaign }) =>
+          activeFilter === "all" ||
+          campaignStatus(campaign.campaign_status).category === activeFilter,
+      ),
     [activeFilter, campaignsWithKeys],
   );
   const normalizedSearch = useMemo(
-    () => searchQuery.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase(idioma).trim(),
+    () =>
+      searchQuery
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLocaleLowerCase(idioma)
+        .trim(),
     [idioma, searchQuery],
   );
   const searchFilteredCampaigns = useMemo(
-    () => statusFilteredCampaigns.filter(({ campaign }) =>
-      campaign.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase(idioma)
-        .includes(normalizedSearch)),
+    () =>
+      statusFilteredCampaigns.filter(({ campaign }) =>
+        campaign.name
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLocaleLowerCase(idioma)
+          .includes(normalizedSearch),
+      ),
     [idioma, normalizedSearch, statusFilteredCampaigns],
   );
   const selectableCampaigns = useMemo(
@@ -854,9 +885,10 @@ function CampaignTable({
     [onlySelected, searchFilteredCampaigns, selectedKeys],
   );
   const visibleCampaigns = useMemo(
-    () => [...selectableCampaigns]
-      .sort((first, second) =>
-        compareCampaigns(first.campaign, second.campaign, sortKey, sortDirection, idioma)),
+    () =>
+      [...selectableCampaigns].sort((first, second) =>
+        compareCampaigns(first.campaign, second.campaign, sortKey, sortDirection, idioma),
+      ),
     [idioma, selectableCampaigns, sortDirection, sortKey],
   );
   const visibleTotal = useMemo(
@@ -864,13 +896,16 @@ function CampaignTable({
     [visibleCampaigns],
   );
   const selectedCampaigns = useMemo(
-    () => campaignsWithKeys.filter(({ key }) => selectedKeys.has(key)).map(({ campaign }) => campaign),
+    () =>
+      campaignsWithKeys.filter(({ key }) => selectedKeys.has(key)).map(({ campaign }) => campaign),
     [campaignsWithKeys, selectedKeys],
   );
   const selectedTotal = useMemo(() => summarizeCampaigns(selectedCampaigns), [selectedCampaigns]);
-  const selectedVisibleCount = selectableCampaigns.filter(({ key }) => selectedKeys.has(key)).length;
-  const allVisibleSelected = selectableCampaigns.length > 0 &&
-    selectedVisibleCount === selectableCampaigns.length;
+  const selectedVisibleCount = selectableCampaigns.filter(({ key }) =>
+    selectedKeys.has(key),
+  ).length;
+  const allVisibleSelected =
+    selectableCampaigns.length > 0 && selectedVisibleCount === selectableCampaigns.length;
 
   useEffect(() => {
     if (selectAllRef.current) {
@@ -924,8 +959,8 @@ function CampaignTable({
 
   const toggleAllVisible = () => {
     const visibleKeys = new Set(selectableCampaigns.map(({ key }) => key));
-    const selectionWillBeEmpty = allVisibleSelected &&
-      [...selectedKeys].every((key) => visibleKeys.has(key));
+    const selectionWillBeEmpty =
+      allVisibleSelected && [...selectedKeys].every((key) => visibleKeys.has(key));
     setSelectedKeys((current) => {
       const next = new Set(current);
       for (const { key } of selectableCampaigns) {
@@ -1002,9 +1037,7 @@ function CampaignTable({
         data-priority={priority || undefined}
       >
         <span
-          className={
-            trailing ? "flex flex-col items-end gap-1" : "flex items-center justify-end"
-          }
+          className={trailing ? "flex flex-col items-end gap-1" : "flex items-center justify-end"}
         >
           <CostSignal value={costColumnValue(metrics, column)} threshold={threshold}>
             {metricValue(metrics, column, currency, platform)}
@@ -1039,7 +1072,17 @@ function CampaignTable({
   );
 
   return (
-    <div className="rounded-xl border bg-card">
+    <BlocoRecolhivel
+      organizationKey={organizationKey}
+      viewerKey={viewerKey}
+      sectionKey={`campaigns-${platform}`}
+      idioma={idioma}
+      label={localText(idioma, "Tabela de campanhas", "Tabla de campañas")}
+      header={<span className="text-sm font-semibold">{campaignTableTitle}</span>}
+      className="rounded-xl border bg-card"
+      headerClassName="px-3 py-3"
+      contentClassName="border-t"
+    >
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         {showStatus && (
           <div
@@ -1080,9 +1123,9 @@ function CampaignTable({
             placeholder={t("Pesquisar campanha")}
             className="h-9 min-w-40 flex-1"
           />
-          <span aria-live="polite" className="whitespace-nowrap text-xs text-muted-foreground">
-            {number(visibleCampaigns.length)} {t(visibleCampaigns.length === 1
-              ? "campanha encontrada" : "campanhas encontradas")}
+          <span aria-live="polite" className="text-xs whitespace-nowrap text-muted-foreground">
+            {number(visibleCampaigns.length)}{" "}
+            {t(visibleCampaigns.length === 1 ? "campanha encontrada" : "campanhas encontradas")}
           </span>
           {searchQuery.length > 0 && (
             <Button type="button" size="sm" variant="ghost" onClick={() => setSearchQuery("")}>
@@ -1094,8 +1137,13 @@ function CampaignTable({
               da seleção abaixo fica só com os números das campanhas marcadas. */}
           {selectedCampaigns.length > 0 && (
             <>
-              <Button type="button" size="sm" variant={onlySelected ? "secondary" : "outline"}
-                aria-pressed={onlySelected} onClick={() => setOnlySelected((current) => !current)}>
+              <Button
+                type="button"
+                size="sm"
+                variant={onlySelected ? "secondary" : "outline"}
+                aria-pressed={onlySelected}
+                onClick={() => setOnlySelected((current) => !current)}
+              >
                 {onlySelected ? t("Ver todas as campanhas") : t("Ver só as selecionadas")}
               </Button>
               <Button type="button" size="sm" variant="ghost" onClick={clearSelection}>
@@ -1118,18 +1166,30 @@ function CampaignTable({
         </div>
       </div>
       {selectedCampaigns.length > 0 && (
-        <div role="status" aria-live="polite"
-          className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-primary/[0.06] px-3 py-3 text-sm">
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-primary/[0.06] px-3 py-3 text-sm"
+        >
           <span className="font-semibold">
-            {number(selectedCampaigns.length)} {t(selectedCampaigns.length === 1 ? "campanha marcada" : "campanhas marcadas")}
+            {number(selectedCampaigns.length)}{" "}
+            {t(selectedCampaigns.length === 1 ? "campanha marcada" : "campanhas marcadas")}
           </span>
-          <span>{t("Investimento")}: <strong>{money(selectedTotal.spend, currency)}</strong></span>
-          <span>{labels.conversions}: <strong>{number(selectedTotal.conversions)}</strong></span>
           <span>
-            {t("Custo por conversão")}: <strong>{selectedTotal.cost_per_conversion == null
-              ? t("sem dado") : money(selectedTotal.cost_per_conversion, currency)}</strong>
+            {t("Investimento")}: <strong>{money(selectedTotal.spend, currency)}</strong>
           </span>
-          <span className="basis-full text-xs text-muted-foreground lg:basis-auto lg:flex-1">
+          <span>
+            {labels.conversions}: <strong>{number(selectedTotal.conversions)}</strong>
+          </span>
+          <span>
+            {t("Custo por conversão")}:{" "}
+            <strong>
+              {selectedTotal.cost_per_conversion == null
+                ? t("sem dado")
+                : money(selectedTotal.cost_per_conversion, currency)}
+            </strong>
+          </span>
+          <span className="basis-full text-xs text-muted-foreground lg:flex-1 lg:basis-auto">
             {t("Os cards do topo e o funil mostram o período inteiro.")}
           </span>
         </div>
@@ -1141,22 +1201,37 @@ function CampaignTable({
               {columnOrder.map((column) => {
                 if (column === "name") {
                   return (
-                    <th key={column} scope="col" className={`${headerCell} text-left ${sortKey === "name" ? "text-foreground" : "text-muted-foreground"}`}
-                      style={columnStyle("name")} aria-sort={sortKey === "name" ? sortDirection : "none"}>
+                    <th
+                      key={column}
+                      scope="col"
+                      className={`${headerCell} text-left ${sortKey === "name" ? "text-foreground" : "text-muted-foreground"}`}
+                      style={columnStyle("name")}
+                      aria-sort={sortKey === "name" ? sortDirection : "none"}
+                    >
                       <div className="flex min-w-0 items-center gap-3">
                         <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
-                          <input ref={selectAllRef} type="checkbox"
+                          <input
+                            ref={selectAllRef}
+                            type="checkbox"
                             className="size-5 cursor-pointer accent-primary"
-                            checked={allVisibleSelected} disabled={selectableCampaigns.length === 0}
-                            aria-label={t("Selecionar campanhas visíveis")} onChange={toggleAllVisible} />
+                            checked={allVisibleSelected}
+                            disabled={selectableCampaigns.length === 0}
+                            aria-label={t("Selecionar campanhas visíveis")}
+                            onChange={toggleAllVisible}
+                          />
                         </label>
-                        <button type="button"
+                        <button
+                          type="button"
                           className={`${headerText} inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-sm text-inherit hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden`}
-                          onClick={() => changeSort("name")} aria-label={`${t("Ordenar por")} ${labels.campaign}`}
-                          title={labels.campaign}>
+                          onClick={() => changeSort("name")}
+                          aria-label={`${t("Ordenar por")} ${labels.campaign}`}
+                          title={labels.campaign}
+                        >
                           <span className="min-w-0 truncate">{labels.campaign}</span>
-                          <span aria-hidden="true"
-                            className={`w-3 shrink-0 text-center text-[9px] ${sortKey === "name" ? "" : "opacity-0"}`}>
+                          <span
+                            aria-hidden="true"
+                            className={`w-3 shrink-0 text-center text-[9px] ${sortKey === "name" ? "" : "opacity-0"}`}
+                          >
                             {sortDirection === "descending" ? "▼" : "▲"}
                           </span>
                         </button>
@@ -1201,132 +1276,195 @@ function CampaignTable({
                 <Fragment key={key}>
                   <tr className="transition-colors hover:bg-muted/45">
                     {columnOrder.map((column) => {
-                      if (column === "name") return (
-                        <td key={column} className="max-w-md overflow-hidden px-4 py-3 font-medium" style={columnStyle("name")}>
-                          <div className="flex items-start gap-3">
-                            <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
-                              <input type="checkbox" className="size-5 cursor-pointer accent-primary"
-                                checked={selectedKeys.has(key)} aria-label={`${t("Selecionar campanha")} ${campaign.name}`}
-                                onClick={(event) => event.stopPropagation()} onChange={() => toggleCampaign(key)} />
-                            </label>
-                            {hasAdsets ? (
-                              <button
-                                type="button"
-                                aria-expanded={isOpen}
-                                onClick={() => toggleExpanded(key)}
-                                className={`group -my-2 min-w-0 flex-1 cursor-pointer rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${isOpen ? "text-[#1877F2]" : ""}`}
-                              >
-                                <span className="flex min-w-0 items-center gap-2">
-                                  {chevron(isOpen)}
-                                  <span className="min-w-0 flex-1">
-                                    <span className="block truncate">{campaign.name}</span>
-                                    {childCount(campaign.adsets.length, t("conjunto"), t("conjuntos"))}
-                                    {description && (
-                                      <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
-                                        {t(description)}
-                                      </span>
-                                    )}
+                      if (column === "name")
+                        return (
+                          <td
+                            key={column}
+                            className="max-w-md overflow-hidden px-4 py-3 font-medium"
+                            style={columnStyle("name")}
+                          >
+                            <div className="flex items-start gap-3">
+                              <label className="-my-2 -ml-2 flex size-11 shrink-0 cursor-pointer items-center justify-center">
+                                <input
+                                  type="checkbox"
+                                  className="size-5 cursor-pointer accent-primary"
+                                  checked={selectedKeys.has(key)}
+                                  aria-label={`${t("Selecionar campanha")} ${campaign.name}`}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onChange={() => toggleCampaign(key)}
+                                />
+                              </label>
+                              {hasAdsets ? (
+                                <button
+                                  type="button"
+                                  aria-expanded={isOpen}
+                                  onClick={() => toggleExpanded(key)}
+                                  className={`group -my-2 min-w-0 flex-1 cursor-pointer rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${isOpen ? "text-[#1877F2]" : ""}`}
+                                >
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    {chevron(isOpen)}
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate">{campaign.name}</span>
+                                      {childCount(
+                                        campaign.adsets.length,
+                                        t("conjunto"),
+                                        t("conjuntos"),
+                                      )}
+                                      {description && (
+                                        <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
+                                          {t(description)}
+                                        </span>
+                                      )}
+                                    </span>
                                   </span>
+                                </button>
+                              ) : (
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate">{campaign.name}</span>
+                                  {description && (
+                                    <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
+                                      {t(description)}
+                                    </span>
+                                  )}
                                 </span>
-                              </button>
-                            ) : (
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate">{campaign.name}</span>
-                                {description && <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">{t(description)}</span>}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                      );
-                      if (column === "status") return showStatus ? (
-                        <td key={column} className="overflow-hidden px-4 py-3" style={columnStyle("status")}>
-                          <Badge variant={status.variant} className="px-2 py-0 text-[11px] leading-5 whitespace-nowrap">{t(status.label)}</Badge>
-                        </td>
-                      ) : null;
+                              )}
+                            </div>
+                          </td>
+                        );
+                      if (column === "status")
+                        return showStatus ? (
+                          <td
+                            key={column}
+                            className="overflow-hidden px-4 py-3"
+                            style={columnStyle("status")}
+                          >
+                            <Badge
+                              variant={status.variant}
+                              className="px-2 py-0 text-[11px] leading-5 whitespace-nowrap"
+                            >
+                              {t(status.label)}
+                            </Badge>
+                          </td>
+                        ) : null;
                       return metricCell(campaign, column, "text-muted-foreground");
                     })}
                   </tr>
-                  {isOpen && campaign.adsets.map((adset, adsetIndex) => {
-                    const adsetKey = `${key}:adset:${adsetIndex}`;
-                    const hasAds = adset.ads.length > 0;
-                    const adsetOpen = hasAds && expandedAdsets.has(adsetKey);
-                    return (
-                      <Fragment key={adsetKey}>
-                        <tr className="bg-muted/15 transition-colors hover:bg-muted/45">
-                          {columnOrder.map((column) => {
-                            if (column === "name") return (
-                              <td key={column} className="max-w-md overflow-hidden px-4 py-2.5 font-medium" style={columnStyle("name")}>
-                                <div className="flex min-w-0 items-stretch pl-4">
-                                  <span aria-hidden="true" className="mr-2 w-3 shrink-0 border-b border-l border-border" />
-                                  {hasAds ? (
-                                    <button
-                                      type="button"
-                                      aria-expanded={adsetOpen}
-                                      onClick={() => toggleAdset(adsetKey)}
-                                      className={`group -my-1 min-w-0 flex-1 cursor-pointer rounded-md px-2 py-1 text-left transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${adsetOpen ? "text-[#1877F2]" : ""}`}
-                                    >
-                                      <span className="flex min-w-0 items-center gap-2">
-                                        {chevron(adsetOpen)}
-                                        <span className="min-w-0 flex-1">
+                  {isOpen &&
+                    campaign.adsets.map((adset, adsetIndex) => {
+                      const adsetKey = `${key}:adset:${adsetIndex}`;
+                      const hasAds = adset.ads.length > 0;
+                      const adsetOpen = hasAds && expandedAdsets.has(adsetKey);
+                      return (
+                        <Fragment key={adsetKey}>
+                          <tr className="bg-muted/15 transition-colors hover:bg-muted/45">
+                            {columnOrder.map((column) => {
+                              if (column === "name")
+                                return (
+                                  <td
+                                    key={column}
+                                    className="max-w-md overflow-hidden px-4 py-2.5 font-medium"
+                                    style={columnStyle("name")}
+                                  >
+                                    <div className="flex min-w-0 items-stretch pl-4">
+                                      <span
+                                        aria-hidden="true"
+                                        className="mr-2 w-3 shrink-0 border-b border-l border-border"
+                                      />
+                                      {hasAds ? (
+                                        <button
+                                          type="button"
+                                          aria-expanded={adsetOpen}
+                                          onClick={() => toggleAdset(adsetKey)}
+                                          className={`group -my-1 min-w-0 flex-1 cursor-pointer rounded-md px-2 py-1 text-left transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden ${adsetOpen ? "text-[#1877F2]" : ""}`}
+                                        >
+                                          <span className="flex min-w-0 items-center gap-2">
+                                            {chevron(adsetOpen)}
+                                            <span className="min-w-0 flex-1">
+                                              <span className="block truncate">{adset.name}</span>
+                                              {childCount(
+                                                adset.ads.length,
+                                                t("anúncio"),
+                                                t("anúncios"),
+                                              )}
+                                            </span>
+                                          </span>
+                                        </button>
+                                      ) : (
+                                        <span className="min-w-0 flex-1 px-2 py-1">
                                           <span className="block truncate">{adset.name}</span>
-                                          {childCount(adset.ads.length, t("anúncio"), t("anúncios"))}
                                         </span>
-                                      </span>
-                                    </button>
-                                  ) : (
-                                    <span className="min-w-0 flex-1 px-2 py-1">
-                                      <span className="block truncate">{adset.name}</span>
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                            );
-                            if (column === "status") return showStatus ? (
-                              <td key={column} className="overflow-hidden px-4 py-2.5" style={columnStyle("status")} />
-                            ) : null;
-                            return metricCell(adset, column, "text-muted-foreground");
-                          })}
-                        </tr>
-                        {adsetOpen && adset.ads.map((ad, adIndex) => {
-                          const adLink = ad.story_id ? (
-                            <a
-                              href={postUrl(ad.story_id)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-                            >
-                              <span aria-hidden="true">👁</span>
-                              {t("Ver anúncio")}
-                            </a>
-                          ) : undefined;
-                          return (
-                            <tr key={`${adsetKey}:ad:${adIndex}`} className="bg-card transition-colors hover:bg-muted/35">
-                              {columnOrder.map((column) => {
-                                if (column === "name") return (
-                                  <td key={column} className="max-w-md overflow-hidden px-4 py-2.5" style={columnStyle("name")}>
-                                    <div className="flex min-w-0 items-center gap-2 pl-8">
-                                      <span aria-hidden="true" className="h-5 w-3 shrink-0 border-b border-l border-border" />
-                                      <AdThumbnail ad={ad} label={t("Ver anúncio")} />
-                                      <span className="min-w-0 truncate">{ad.name}</span>
-                                      {/* O botão fica colado no nome do anúncio. Antes ia
-                                          para a última coluna de métrica, na ponta direita
-                                          da tabela: o olho tinha que atravessar a tela para
-                                          ligar o botão ao criativo a que ele pertence. */}
-                                      {adLink}
+                                      )}
                                     </div>
                                   </td>
                                 );
-                                if (column === "status") return showStatus ? (
-                                  <td key={column} className="overflow-hidden px-4 py-2.5" style={columnStyle("status")} />
+                              if (column === "status")
+                                return showStatus ? (
+                                  <td
+                                    key={column}
+                                    className="overflow-hidden px-4 py-2.5"
+                                    style={columnStyle("status")}
+                                  />
                                 ) : null;
-                                return metricCell(ad, column, "text-muted-foreground");
-                              })}
-                            </tr>
-                          );
-                        })}
-                      </Fragment>
-                    );
-                  })}
+                              return metricCell(adset, column, "text-muted-foreground");
+                            })}
+                          </tr>
+                          {adsetOpen &&
+                            adset.ads.map((ad, adIndex) => {
+                              const adLink = ad.story_id ? (
+                                <a
+                                  href={postUrl(ad.story_id)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                                >
+                                  <span aria-hidden="true">👁</span>
+                                  {t("Ver anúncio")}
+                                </a>
+                              ) : undefined;
+                              return (
+                                <tr
+                                  key={`${adsetKey}:ad:${adIndex}`}
+                                  className="bg-card transition-colors hover:bg-muted/35"
+                                >
+                                  {columnOrder.map((column) => {
+                                    if (column === "name")
+                                      return (
+                                        <td
+                                          key={column}
+                                          className="max-w-md overflow-hidden px-4 py-2.5"
+                                          style={columnStyle("name")}
+                                        >
+                                          <div className="flex min-w-0 items-center gap-2 pl-8">
+                                            <span
+                                              aria-hidden="true"
+                                              className="h-5 w-3 shrink-0 border-b border-l border-border"
+                                            />
+                                            <AdThumbnail ad={ad} label={t("Ver anúncio")} />
+                                            <span className="min-w-0 truncate">{ad.name}</span>
+                                            {/* O botão fica colado no nome do anúncio. Antes ia
+                                          para a última coluna de métrica, na ponta direita
+                                          da tabela: o olho tinha que atravessar a tela para
+                                          ligar o botão ao criativo a que ele pertence. */}
+                                            {adLink}
+                                          </div>
+                                        </td>
+                                      );
+                                    if (column === "status")
+                                      return showStatus ? (
+                                        <td
+                                          key={column}
+                                          className="overflow-hidden px-4 py-2.5"
+                                          style={columnStyle("status")}
+                                        />
+                                      ) : null;
+                                    return metricCell(ad, column, "text-muted-foreground");
+                                  })}
+                                </tr>
+                              );
+                            })}
+                        </Fragment>
+                      );
+                    })}
                 </Fragment>
               );
             })}
@@ -1334,15 +1472,27 @@ function CampaignTable({
           <tfoot>
             <tr className="border-t bg-muted/45 font-semibold">
               {columnOrder.map((column) => {
-                if (column === "name") return <td key={column} className="overflow-hidden px-4 py-3" style={columnStyle("name")}>{labels.total}</td>;
-                if (column === "status") return showStatus ? <td key={column} className="px-4 py-3" style={columnStyle("status")} /> : null;
+                if (column === "name")
+                  return (
+                    <td
+                      key={column}
+                      className="overflow-hidden px-4 py-3"
+                      style={columnStyle("name")}
+                    >
+                      {labels.total}
+                    </td>
+                  );
+                if (column === "status")
+                  return showStatus ? (
+                    <td key={column} className="px-4 py-3" style={columnStyle("status")} />
+                  ) : null;
                 return metricCell(visibleTotal, column);
               })}
             </tr>
           </tfoot>
         </table>
       </DragScroll>
-    </div>
+    </BlocoRecolhivel>
   );
 }
 
@@ -1623,8 +1773,7 @@ export function TrafficDashboard() {
         };
         const trafficStages = buildTrafficFunnelStages(group.summary, report.model, idioma);
         const lastTrafficValue = trafficStages.at(-1)?.value ?? 0;
-        const funnelStages: FunnelStage[] = [
-          ...trafficStages,
+        const crmFunnelStages: FunnelStage[] = [
           {
             key: "crm-entered",
             label: localText(idioma, "Entraram no CRM", "Ingresaron al CRM"),
@@ -1655,6 +1804,32 @@ export function TrafficDashboard() {
             asSource: localText(idioma, "que fecharam", "que cerraron"),
             asTarget: localText(idioma, "fecharam venda", "cerraron venta"),
             costLabel: localText(idioma, "por venda", "por venta"),
+          },
+        ];
+        const funnelStages: FunnelStage[] = [...trafficStages, ...crmFunnelStages];
+        const kanbanFunnelStages: FunnelStage[] = (report.kanban_stages ?? []).map((stage) => ({
+          key: `kanban:${stage.id}`,
+          label: stage.name,
+          value: stage.count,
+          asSource: localText(idioma, `na etapa ${stage.name}`, `en la etapa ${stage.name}`),
+          asTarget: localText(idioma, `estão em ${stage.name}`, `están en ${stage.name}`),
+          cost: stage.count > 0 ? group.summary.spend / stage.count : null,
+          costLabel: localText(idioma, `por lead em ${stage.name}`, `por lead en ${stage.name}`),
+        }));
+        const funnelStageGroups: FunnelStageGroup[] = [
+          {
+            key: "report",
+            label: localText(
+              idioma,
+              "Métricas do anúncio e do relatório",
+              "Métricas del anuncio y del informe",
+            ),
+            stages: funnelStages,
+          },
+          {
+            key: "kanban",
+            label: localText(idioma, "Etapas do Kanban", "Etapas del Kanban"),
+            stages: kanbanFunnelStages,
           },
         ];
         const costPerClosed =
@@ -1921,8 +2096,12 @@ export function TrafficDashboard() {
                 "Del alcance a la venta cerrada",
               )}
               stages={funnelStages}
+              stageGroups={funnelStageGroups}
               idioma={idioma}
               currency={group.currency}
+              organizationKey={report.organization_key}
+              viewerKey={report.viewer_key}
+              sectionKey={`funnel-${group.currency}`}
               summary={[
                 { label: t("Investimento"), value: money(group.summary.spend, group.currency) },
                 {
@@ -1939,29 +2118,50 @@ export function TrafficDashboard() {
               ]}
             />
 
-            <TrafficTimeline daily={group.daily} currency={group.currency} idioma={idioma} />
+            <TrafficTimeline
+              daily={group.daily}
+              currency={group.currency}
+              idioma={idioma}
+              organizationKey={report.organization_key}
+              viewerKey={report.viewer_key}
+            />
 
             {meta && (
-              <details
-                open
+              <BlocoRecolhivel
+                organizationKey={report.organization_key}
+                viewerKey={report.viewer_key}
+                sectionKey={`meta-${group.currency}`}
+                idioma={idioma}
+                label="Meta Ads"
                 className="group rounded-2xl border border-[#1877F2]/30 bg-card shadow-sm"
-              >
-                <summary className="flex cursor-pointer list-none items-center gap-3 border-b border-[#1877F2]/20 bg-[#1877F2]/[0.06] px-4 py-4 sm:px-5">
-                  <PlatformMark platform="meta_ads" />
-                  <div>
-                    <h3 id={`meta-${group.currency}`} className="text-xl font-semibold">
+                headerClassName="border-[#1877F2]/20 bg-[#1877F2]/[0.06] px-4 py-4 sm:px-5"
+                contentClassName="space-y-5 border-t border-[#1877F2]/20 p-4 sm:p-5"
+                header={
+                  <span className="flex items-center gap-3">
+                    <PlatformMark platform="meta_ads" />
+                    <span
+                      id={`meta-${group.currency}`}
+                      role="heading"
+                      aria-level={3}
+                      className="text-xl font-semibold"
+                    >
                       Meta Ads
-                    </h3>
-                  </div>
-                  <div className="ml-auto text-right">
-                    <p className="text-xs text-muted-foreground">{t("Investimento")}</p>
-                    <p className="font-semibold">{money(meta.spend, group.currency)}</p>
-                  </div>
-                  <span className="text-muted-foreground group-open:rotate-180" aria-hidden="true">
-                    ⌄
+                    </span>
+                    <span className="ml-auto text-right">
+                      <span className="block text-xs text-muted-foreground">
+                        {t("Investimento")}
+                      </span>
+                      <span className="block font-semibold">
+                        {money(meta.spend, group.currency)}
+                      </span>
+                    </span>
                   </span>
-                </summary>
-                <div className="space-y-5 p-4 sm:p-5">
+                }
+              >
+                <div className="space-y-2">
+                  <p className="text-[11px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
+                    {localText(idioma, "Alcance e entrega", "Alcance y entrega")}
+                  </p>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     <Kpi
                       label={t("Alcance")}
@@ -1988,6 +2188,13 @@ export function TrafficDashboard() {
                       value={percent(meta.ctr, t("sem dado"))}
                       hint={t("taxa de clique")}
                     />
+                  </div>
+                </div>
+                <div className="space-y-2 pt-1">
+                  <p className="text-[11px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
+                    {localText(idioma, "Resultado e custo", "Resultado y costo")}
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     <Kpi
                       label={t("Cliques no link")}
                       value={number(meta.link_clicks)}
@@ -2026,213 +2233,235 @@ export function TrafficDashboard() {
                       hint={t("total no período")}
                     />
                   </div>
-                  {meta.video_views > 0 && (
-                    <div className="rounded-xl border bg-muted/20 p-4">
-                      <h4 className="font-semibold">{t("Retenção de vídeo")}</h4>
-                      <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="rounded-lg border bg-card p-3">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                                Hook
-                              </span>
-                              <span className="text-[11px] text-muted-foreground">
-                                {t("3s ÷ impressões")}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-2xl font-semibold tracking-tight text-success-fg">
-                              {percent(videoHook, "0%")}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {t("pararam para assistir")}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border bg-card p-3">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                                Body
-                              </span>
-                              <span className="text-[11px] text-muted-foreground">
-                                {t("75% ÷ impressões")}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-2xl font-semibold tracking-tight text-success-fg">
-                              {percent(videoBody, "0%")}
-                            </p>
-                            <p className="text-xs text-muted-foreground">{t("viram até o fim")}</p>
-                          </div>
-                        </div>
-                        <ul className="space-y-2.5" aria-label={t("Retenção de vídeo")}>
-                          {videoBars.map((bar) => (
-                            <li key={bar.label}>
-                              <div className="mb-1 flex items-center justify-between text-xs">
-                                <span className="text-muted-foreground">{bar.label}</span>
-                                <span className="font-semibold tabular-nums">
-                                  {number(bar.value)}
-                                </span>
-                              </div>
-                              <div className="h-2 overflow-hidden rounded-full bg-muted">
-                                <div
-                                  className={`h-full rounded-full ${bar.tone} transition-[width] motion-reduce:transition-none`}
-                                  style={{ width: `${bar.width}%` }}
-                                />
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  )}
-                  <CampaignTable
-                    key={`${activeOrg?.orgId ?? report.organization_key}:${window.from}:${window.to}:meta_ads`}
-                    campaigns={metaCampaigns}
-                    currency={group.currency}
-                    platform="meta_ads"
+                </div>
+                {meta.video_views > 0 && (
+                  <BlocoRecolhivel
                     organizationKey={report.organization_key}
                     viewerKey={report.viewer_key}
-                    labels={campaignLabels}
-                    columns={metaColumns}
+                    sectionKey={`video-retention-${group.currency}`}
                     idioma={idioma}
-                    priorityMetric={activeMetric}
-                    threshold={metaThreshold}
-                    columnMenu={
-                      <ColumnPresetMenu
-                        organizationKey={report.organization_key}
-                        viewerKey={report.viewer_key}
-                        model={report.model}
-                        platform="meta_ads"
-                        initialPresets={presetsForPlatform(report, "meta_ads")}
-                        defaultPresetId={defaultPresetForPlatform(report, "meta_ads")}
-                        defaultColumns={columnsForPlatform(report, "meta_ads")}
-                        availableColumns={campaignMetricColumnsForPlatform("meta_ads")}
-                        canManage={report.can_manage_defaults}
-                        columnLabel={columnLabel}
-                        onColumnsChange={(columns) =>
-                          setSelectedColumns((current) => ({ ...current, meta_ads: columns }))
-                        }
-                      />
-                    }
-                  />
-                </div>
-              </details>
+                    label={t("Retenção de vídeo")}
+                    header={<span className="font-semibold">{t("Retenção de vídeo")}</span>}
+                    className="rounded-xl border bg-muted/20"
+                    headerClassName="px-4 py-3"
+                    contentClassName="border-t px-4 pb-4"
+                  >
+                    <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-lg border bg-card p-3">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                              Hook
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {t("3s ÷ impressões")}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-2xl font-semibold tracking-tight text-success-fg">
+                            {percent(videoHook, "0%")}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {t("pararam para assistir")}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border bg-card p-3">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                              Body
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {t("75% ÷ impressões")}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-2xl font-semibold tracking-tight text-success-fg">
+                            {percent(videoBody, "0%")}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{t("viram até o fim")}</p>
+                        </div>
+                      </div>
+                      <ul className="space-y-2.5" aria-label={t("Retenção de vídeo")}>
+                        {videoBars.map((bar) => (
+                          <li key={bar.label}>
+                            <div className="mb-1 flex items-center justify-between text-xs">
+                              <span className="text-muted-foreground">{bar.label}</span>
+                              <span className="font-semibold tabular-nums">
+                                {number(bar.value)}
+                              </span>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-full bg-muted">
+                              <div
+                                className={`h-full rounded-full ${bar.tone} transition-[width] motion-reduce:transition-none`}
+                                style={{ width: `${bar.width}%` }}
+                              />
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </BlocoRecolhivel>
+                )}
+                <CampaignTable
+                  key={`${activeOrg?.orgId ?? report.organization_key}:${window.from}:${window.to}:meta_ads`}
+                  campaigns={metaCampaigns}
+                  currency={group.currency}
+                  platform="meta_ads"
+                  organizationKey={report.organization_key}
+                  viewerKey={report.viewer_key}
+                  labels={campaignLabels}
+                  columns={metaColumns}
+                  idioma={idioma}
+                  priorityMetric={activeMetric}
+                  threshold={metaThreshold}
+                  columnMenu={
+                    <ColumnPresetMenu
+                      organizationKey={report.organization_key}
+                      viewerKey={report.viewer_key}
+                      model={report.model}
+                      platform="meta_ads"
+                      initialPresets={presetsForPlatform(report, "meta_ads")}
+                      defaultPresetId={defaultPresetForPlatform(report, "meta_ads")}
+                      defaultColumns={columnsForPlatform(report, "meta_ads")}
+                      availableColumns={campaignMetricColumnsForPlatform("meta_ads")}
+                      canManage={report.can_manage_defaults}
+                      columnLabel={columnLabel}
+                      onColumnsChange={(columns) =>
+                        setSelectedColumns((current) => ({ ...current, meta_ads: columns }))
+                      }
+                    />
+                  }
+                />
+              </BlocoRecolhivel>
             )}
 
             {google && (
-              <details open className="group rounded-2xl border bg-card shadow-sm">
-                <summary className="flex cursor-pointer list-none items-center gap-3 border-b px-4 py-4 sm:px-5">
-                  <PlatformMark platform="google_ads" />
-                  <div>
-                    <h3 id={`google-${group.currency}`} className="text-xl font-semibold">
+              <BlocoRecolhivel
+                organizationKey={report.organization_key}
+                viewerKey={report.viewer_key}
+                sectionKey={`google-${group.currency}`}
+                idioma={idioma}
+                label="Google Ads"
+                header={
+                  <span className="flex items-center gap-3">
+                    <PlatformMark platform="google_ads" />
+                    <span
+                      id={`google-${group.currency}`}
+                      role="heading"
+                      aria-level={3}
+                      className="text-xl font-semibold"
+                    >
                       Google Ads
-                    </h3>
-                  </div>
-                  <div className="ml-auto text-right">
-                    <p className="text-xs text-muted-foreground">{t("Investimento")}</p>
-                    <p className="font-semibold">{money(google.spend, group.currency)}</p>
-                  </div>
-                  <span className="text-muted-foreground group-open:rotate-180" aria-hidden="true">
-                    ⌄
+                    </span>
+                    <span className="ml-auto text-right">
+                      <span className="block text-xs text-muted-foreground">
+                        {t("Investimento")}
+                      </span>
+                      <span className="block font-semibold">
+                        {money(google.spend, group.currency)}
+                      </span>
+                    </span>
                   </span>
-                </summary>
-                <div className="space-y-5 p-4 sm:p-5">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <Kpi
-                      label={t("Impressões")}
-                      value={number(google.impressions)}
-                      hint={t("vezes exibido")}
-                    />
-                    <Kpi
-                      label={t("Cliques no link")}
-                      value={number(google.clicks)}
-                      hint={t("visitas ao site")}
-                    />
-                    <Kpi
-                      label="CTR"
-                      value={percent(google.ctr, t("sem dado"))}
-                      hint={t("taxa de clique")}
-                    />
-                    <Kpi
-                      label="CPC"
-                      value={google.cpc == null ? t("sem dado") : money(google.cpc, group.currency)}
-                      hint={t("custo por clique")}
-                    />
-                    <Kpi
-                      label={t("Investimento")}
-                      value={money(google.spend, group.currency)}
-                      hint={t("total no período")}
-                    />
-                    <Kpi
-                      label={conversionLabel}
-                      value={number(google.conversions)}
-                      hint={
-                        report.model === "ecommerce"
-                          ? t("compras pelos anúncios")
-                          : t("resultados pelos anúncios")
-                      }
-                    />
-                    <Kpi
-                      label="CPA"
-                      value={
-                        google.cost_per_conversion == null
-                          ? t("sem dado")
-                          : money(google.cost_per_conversion, group.currency)
-                      }
-                      hint={t("custo por resultado")}
-                    />
-                    <Kpi
-                      label={t("Taxa de conv. site")}
-                      value={percent(google.conversion_rate, t("sem dado"))}
-                      hint={t("cliques que viraram resultado")}
-                    />
-                  </div>
-                  <CampaignTable
-                    key={`${activeOrg?.orgId ?? report.organization_key}:${window.from}:${window.to}:google_ads`}
-                    campaigns={googleCampaigns}
-                    currency={group.currency}
-                    platform="google_ads"
-                    organizationKey={report.organization_key}
-                    viewerKey={report.viewer_key}
-                    labels={campaignLabels}
-                    columns={googleColumns}
-                    idioma={idioma}
-                    priorityMetric={activeMetric}
-                    threshold={googleThreshold}
-                    columnMenu={
-                      <ColumnPresetMenu
-                        organizationKey={report.organization_key}
-                        viewerKey={report.viewer_key}
-                        model={report.model}
-                        platform="google_ads"
-                        initialPresets={presetsForPlatform(report, "google_ads")}
-                        defaultPresetId={defaultPresetForPlatform(report, "google_ads")}
-                        defaultColumns={columnsForPlatform(report, "google_ads")}
-                        availableColumns={campaignMetricColumnsForPlatform("google_ads")}
-                        canManage={report.can_manage_defaults}
-                        columnLabel={columnLabel}
-                        onColumnsChange={(columns) =>
-                          setSelectedColumns((current) => ({ ...current, google_ads: columns }))
-                        }
-                      />
+                }
+                className="group rounded-2xl border bg-card shadow-sm"
+                headerClassName="px-4 py-4 sm:px-5"
+                contentClassName="space-y-5 border-t p-4 sm:p-5"
+              >
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <Kpi
+                    label={t("Impressões")}
+                    value={number(google.impressions)}
+                    hint={t("vezes exibido")}
+                  />
+                  <Kpi
+                    label={t("Cliques no link")}
+                    value={number(google.clicks)}
+                    hint={t("visitas ao site")}
+                  />
+                  <Kpi
+                    label="CTR"
+                    value={percent(google.ctr, t("sem dado"))}
+                    hint={t("taxa de clique")}
+                  />
+                  <Kpi
+                    label="CPC"
+                    value={google.cpc == null ? t("sem dado") : money(google.cpc, group.currency)}
+                    hint={t("custo por clique")}
+                  />
+                  <Kpi
+                    label={t("Investimento")}
+                    value={money(google.spend, group.currency)}
+                    hint={t("total no período")}
+                  />
+                  <Kpi
+                    label={conversionLabel}
+                    value={number(google.conversions)}
+                    hint={
+                      report.model === "ecommerce"
+                        ? t("compras pelos anúncios")
+                        : t("resultados pelos anúncios")
                     }
                   />
-                  {googleThreshold &&
-                    googleCampaigns.filter((campaign) => {
-                      const cost = costPerResult(campaign);
-                      return cost != null && cost > googleThreshold.acceptable_until;
-                    }).length > 0 && (
-                      <p className="text-sm font-medium text-destructive">
-                        {t("Atenção")}:{" "}
-                        {
-                          googleCampaigns.filter((campaign) => {
-                            const cost = costPerResult(campaign);
-                            return cost != null && cost > googleThreshold.acceptable_until;
-                          }).length
-                        }{" "}
-                        {t("campanhas com custo acima do aceitável")}
-                      </p>
-                    )}
+                  <Kpi
+                    label="CPA"
+                    value={
+                      google.cost_per_conversion == null
+                        ? t("sem dado")
+                        : money(google.cost_per_conversion, group.currency)
+                    }
+                    hint={t("custo por resultado")}
+                  />
+                  <Kpi
+                    label={t("Taxa de conv. site")}
+                    value={percent(google.conversion_rate, t("sem dado"))}
+                    hint={t("cliques que viraram resultado")}
+                  />
                 </div>
-              </details>
+                <CampaignTable
+                  key={`${activeOrg?.orgId ?? report.organization_key}:${window.from}:${window.to}:google_ads`}
+                  campaigns={googleCampaigns}
+                  currency={group.currency}
+                  platform="google_ads"
+                  organizationKey={report.organization_key}
+                  viewerKey={report.viewer_key}
+                  labels={campaignLabels}
+                  columns={googleColumns}
+                  idioma={idioma}
+                  priorityMetric={activeMetric}
+                  threshold={googleThreshold}
+                  columnMenu={
+                    <ColumnPresetMenu
+                      organizationKey={report.organization_key}
+                      viewerKey={report.viewer_key}
+                      model={report.model}
+                      platform="google_ads"
+                      initialPresets={presetsForPlatform(report, "google_ads")}
+                      defaultPresetId={defaultPresetForPlatform(report, "google_ads")}
+                      defaultColumns={columnsForPlatform(report, "google_ads")}
+                      availableColumns={campaignMetricColumnsForPlatform("google_ads")}
+                      canManage={report.can_manage_defaults}
+                      columnLabel={columnLabel}
+                      onColumnsChange={(columns) =>
+                        setSelectedColumns((current) => ({ ...current, google_ads: columns }))
+                      }
+                    />
+                  }
+                />
+                {googleThreshold &&
+                  googleCampaigns.filter((campaign) => {
+                    const cost = costPerResult(campaign);
+                    return cost != null && cost > googleThreshold.acceptable_until;
+                  }).length > 0 && (
+                    <p className="text-sm font-medium text-destructive">
+                      {t("Atenção")}:{" "}
+                      {
+                        googleCampaigns.filter((campaign) => {
+                          const cost = costPerResult(campaign);
+                          return cost != null && cost > googleThreshold.acceptable_until;
+                        }).length
+                      }{" "}
+                      {t("campanhas com custo acima do aceitável")}
+                    </p>
+                  )}
+              </BlocoRecolhivel>
             )}
 
             <CreativePerformance
