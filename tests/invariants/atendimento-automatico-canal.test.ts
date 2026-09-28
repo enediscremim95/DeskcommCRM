@@ -14,15 +14,15 @@ describe("atendimento automático no banco instalado", () => {
     const org = randomUUID();
     const channel = randomUUID();
     await pool.query(
-      "insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$1::text,'Teste','Teste')",
-      [org],
+      "insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$2::text,'Teste','Teste')",
+      [org, org],
     );
     const { rows } = await pool.query<{ automatic_attendance_enabled: boolean }>(
       `insert into channel_sessions
          (id, organization_id, waha_session_name, webhook_secret_encrypted)
-       values ($1, $2, $1::text, '\\x00')
+       values ($1::uuid, $2::uuid, $3::text, '\\x00')
        returning automatic_attendance_enabled`,
-      [channel, org],
+      [channel, org, channel],
     );
     expect(rows[0]?.automatic_attendance_enabled).toBe(false);
   });

@@ -9,7 +9,7 @@ import { ensureConversation } from "@/lib/automation/start-conversation";
 import type { ActionCtx } from "@/lib/automation/types";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import "@/lib/automation/actions/register-all";
-import { GOV_ORG, seedGov, sql, lastLine } from "./gov-helpers";
+import { createTestChannel, GOV_ORG, seedGov, sql, lastLine } from "./gov-helpers";
 
 /**
  * Task 11 (spec webhooks/automação 2026-07-17) — ação send_whatsapp_message +
@@ -326,11 +326,14 @@ const RULE_ID = "44444444-1111-4000-8000-000000000001";
 
 beforeAll(() => {
   seedGov();
+  createTestChannel({
+    id: SESSION_ID,
+    organizationId: GOV_ORG,
+    sessionName: "gov-inv-t11",
+    dailyMessageLimit: 300,
+    ignoreUniqueViolation: true,
+  });
   sql(`
-    do $t11$ begin
-      insert into public.channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted, status, daily_message_limit)
-        values ('${SESSION_ID}', '${GOV_ORG}', 'gov-inv-t11', '\\x00'::bytea, 'WORKING', 300);
-    exception when unique_violation then null; end $t11$;
     insert into public.contacts (id, organization_id, display_name, name, phone_number, is_blocked)
       values ('${CONTACT_ID}', '${GOV_ORG}', 'Gov Invariant Contact T11', 'Ana', '+5511999990001', false)
       on conflict do nothing;

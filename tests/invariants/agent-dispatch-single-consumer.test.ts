@@ -3,6 +3,7 @@ import pg from "pg";
 
 import { drainTick } from "@/lib/agent-engine/edge/crm/drain";
 import { createLogger } from "@/lib/agent-engine/obs/logger";
+import { createTestChannel } from "./gov-helpers";
 
 /**
  * Fase 4A-1 — consumidor ÚNICO de ai_agent.dispatch_requested.
@@ -55,11 +56,11 @@ beforeAll(async () => {
      values ($1, $2, 'Lead Prova', '+5511900000001') on conflict (id) do nothing`,
     [CONTACT, ORG],
   );
-  await pool.query(
-    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
-     values ($1, $2, 'disp-proof-session', 'WORKING', '\\x00'::bytea) on conflict (id) do nothing`,
-    [SESSION, ORG],
-  );
+  createTestChannel({
+    id: SESSION,
+    organizationId: ORG,
+    sessionName: "disp-proof-session",
+  });
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
      values ($1, $2, $3, $4, 'open', false) on conflict (id) do nothing`,

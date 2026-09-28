@@ -3,6 +3,7 @@ import pg from "pg";
 
 import { drainTick } from "@/lib/agent-engine/edge/crm/drain";
 import { createLogger } from "@/lib/agent-engine/obs/logger";
+import { createTestChannel } from "./gov-helpers";
 
 /**
  * O PORTÃO DE CUSTO TEM QUE MEDIR QUEM EXECUTA, NÃO QUEM EXISTE.
@@ -68,11 +69,11 @@ async function montarCenario(nome: string): Promise<Cenario> {
   const session = proximoId();
   const conv = proximoId();
   const msg = proximoId();
-  await pool.query(
-    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
-     values ($1, $2, $3, 'WORKING', '\\x00'::bytea)`,
-    [session, ORG, `cap-${nome}`],
-  );
+  createTestChannel({
+    id: session,
+    organizationId: ORG,
+    sessionName: `cap-${nome}`,
+  });
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
      values ($1, $2, $3, $4, 'open', false)`,
