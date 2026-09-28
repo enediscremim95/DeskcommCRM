@@ -165,7 +165,9 @@ export function ApiTokensClient({
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {tok.expires_at ? new Date(tok.expires_at).toLocaleDateString(tagDoIdioma) : t("Sem expiração")}
+                    {tok.expires_at
+                      ? new Date(tok.expires_at).toLocaleDateString(tagDoIdioma)
+                      : t("Sem expiração")}
                   </TableCell>
                   <TableCell>
                     {canManage && !tok.revoked_at ? (
@@ -193,9 +195,7 @@ export function ApiTokensClient({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("Criar novo token")}</DialogTitle>
-            <DialogDescription>
-              {t("O plaintext será mostrado apenas uma vez.")}
-            </DialogDescription>
+            <DialogDescription>{t("O plaintext será mostrado apenas uma vez.")}</DialogDescription>
           </DialogHeader>
           <form onSubmit={onCreate} className="space-y-4">
             <div className="space-y-2">
@@ -272,7 +272,7 @@ export function ApiTokensClient({
       </Dialog>
 
       <Dialog open={!!created} onOpenChange={(o) => !o && setCreated(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t("Token criado")}</DialogTitle>
             <DialogDescription>
@@ -281,7 +281,7 @@ export function ApiTokensClient({
           </DialogHeader>
           {created ? (
             <div className="space-y-3">
-              <code className="block break-all rounded-md border bg-muted p-3 text-sm">
+              <code className="block rounded-md border bg-muted p-3 text-sm break-all">
                 {created.plaintext}
               </code>
               <Button
@@ -299,25 +299,52 @@ export function ApiTokensClient({
               <p className="text-xs text-muted-foreground">{created._warning}</p>
               {comandosCriados ? (
                 <div className="space-y-3 rounded-md border p-3">
-                  <p className="text-sm font-medium">{t("Comando para conectar pelo MCP")}</p>
-                  <p className="text-xs text-muted-foreground">{t("O comando exibido protege o token. Ao copiar, o token recém-criado será incluído.")}</p>
-                  <code className="block overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs">
-                    {comandosCriados.exibido}
-                  </code>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      void copyToClipboard(comandosCriados.copiado).then((ok) => {
-                        if (ok) toast.success(t("Comando copiado."));
-                        else toast.error(t("Não foi possível copiar. Selecione o comando acima."));
-                      });
-                    }}
-                  >
-                    {t("Copiar comando")}
-                  </Button>
+                  <p className="text-sm font-medium">{t("Formas de conectar pelo MCP")}</p>
                   <p className="text-xs text-muted-foreground">
-                    {t("Não salve o token em arquivo de texto.")} {" "}
+                    {t(
+                      "O texto exibido protege o token. Ao copiar uma opção, o token recém-criado será incluído.",
+                    )}
+                  </p>
+                  <div className="grid min-w-0 gap-3 md:grid-cols-2">
+                    {comandosCriados.map((comando) => (
+                      <div key={comando.id} className="min-w-0 space-y-2 rounded-md border p-3">
+                        <p className="text-sm font-medium">
+                          {comando.id === "generico" ? t("Outro aplicativo ou site") : comando.nome}
+                        </p>
+                        {comando.destino ? (
+                          <p className="text-xs text-muted-foreground">
+                            {t("Arquivo:")}{" "}
+                            <code className="break-all text-foreground">{comando.destino}</code>
+                          </p>
+                        ) : null}
+                        <code className="block max-h-52 min-w-0 overflow-auto rounded-md bg-muted p-3 text-xs break-all whitespace-pre-wrap">
+                          {comando.exibido}
+                        </code>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="w-full sm:w-auto"
+                          onClick={() => {
+                            void copyToClipboard(comando.copiado).then((ok) => {
+                              if (ok) toast.success(t("Configuração copiada."));
+                              else
+                                toast.error(
+                                  t("Não foi possível copiar. Selecione o conteúdo acima."),
+                                );
+                            });
+                          }}
+                        >
+                          {comando.formato === "comando"
+                            ? t("Copiar comando")
+                            : comando.formato === "configuracao"
+                              ? t("Copiar configuração")
+                              : t("Copiar dados")}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t("Não salve o token em arquivo de texto.")}{" "}
                     <Link className="underline" href="/app/mcp">
                       {t("Ver instruções completas do conector")}
                     </Link>

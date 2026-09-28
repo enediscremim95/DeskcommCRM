@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
-import { comandoClaudeMcp, urlDoConectorMcp } from "@/lib/mcp/conexao";
+import { comandosDeConexaoMcp, urlDoConectorMcp } from "@/lib/mcp/conexao";
 import { carregarBaseApresentacaoMcp } from "@/lib/mcp/contexto-apresentacao";
 import { montarApresentacaoMcp, papelDoTokenMcp } from "@/lib/mcp/apresentacao";
 import { env } from "@/lib/env";
@@ -33,7 +33,7 @@ export default async function McpPage() {
   });
   const baseApresentacao = await carregarBaseApresentacaoMcp(activeOrg.orgId, supabase);
   const connectorUrl = urlDoConectorMcp(env.NEXT_PUBLIC_APP_URL);
-  const command = comandoClaudeMcp(connectorUrl);
+  const opcoesDeConexao = comandosDeConexaoMcp(connectorUrl);
   const dateLocale = user.idioma === "es" ? "es-ES" : "pt-BR";
 
   return (
@@ -63,23 +63,70 @@ export default async function McpPage() {
 
       <section className="space-y-4 rounded-lg border p-4 sm:p-5">
         <div className="space-y-1">
-          <h2 className="text-lg font-semibold">{t("Conectar no Claude Code")}</h2>
+          <h2 className="text-lg font-semibold">{t("Conectar sua ferramenta de IA")}</h2>
           <p className="text-sm text-muted-foreground">
-            {t("Cole o comando abaixo no terminal depois de criar seu token.")}
+            {t("Escolha a ferramenta e copie a configuração pronta.")}
           </p>
         </div>
-        <code className="block min-w-0 overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-sm">
-          {command}
-        </code>
-        <McpCopyButton value={command} label={t("Copiar comando")} />
 
-        <div className="space-y-2 border-t pt-4">
-          <h3 className="font-medium">{t("Conectar em outro aplicativo ou site")}</h3>
-          <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-            <li>{t("Abra Configurações e procure Conectores.")}</li>
-            <li>{t("Adicione um conector personalizado usando o endereço acima.")}</li>
-            <li>{t("Informe o mesmo cabeçalho de autorização com o seu token.")}</li>
-          </ol>
+        <div className="grid min-w-0 gap-4 md:grid-cols-2">
+          {opcoesDeConexao.map((opcao) => (
+            <article key={opcao.id} className="min-w-0 space-y-3 rounded-md border p-4">
+              <div className="space-y-1">
+                <h3 className="font-semibold">
+                  {opcao.id === "generico" ? t("Outro aplicativo ou site") : opcao.nome}
+                </h3>
+                {opcao.formato === "comando" ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t("Cole o comando abaixo no terminal depois de criar seu token.")}
+                  </p>
+                ) : opcao.formato === "configuracao" ? (
+                  <p className="text-sm text-muted-foreground">
+                    {opcao.id === "codex-cli"
+                      ? t(
+                          "Abra o arquivo do Codex CLI, cole o trecho abaixo e reinicie a ferramenta.",
+                        )
+                      : t(
+                          "Abra o arquivo do Cursor, cole o conteúdo abaixo e reinicie o aplicativo.",
+                        )}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {t("Use estes dados nos campos de conector personalizado da sua ferramenta.")}
+                  </p>
+                )}
+              </div>
+
+              {opcao.destino ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("Arquivo:")} <code className="break-all text-foreground">{opcao.destino}</code>
+                </p>
+              ) : null}
+
+              <code className="block max-h-64 min-w-0 overflow-auto rounded-md bg-muted p-3 text-xs break-all whitespace-pre-wrap sm:text-sm">
+                {opcao.conteudo}
+              </code>
+              <McpCopyButton
+                value={opcao.conteudo}
+                label={
+                  opcao.formato === "comando"
+                    ? t("Copiar comando")
+                    : opcao.formato === "configuracao"
+                      ? t("Copiar configuração")
+                      : t("Copiar dados")
+                }
+                className="w-full sm:w-auto"
+              />
+
+              {opcao.id === "generico" ? (
+                <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+                  <li>{t("Abra Configurações e procure Conectores.")}</li>
+                  <li>{t("Adicione um conector personalizado usando o endereço acima.")}</li>
+                  <li>{t("Informe o mesmo cabeçalho de autorização com o seu token.")}</li>
+                </ol>
+              ) : null}
+            </article>
+          ))}
         </div>
       </section>
 
@@ -121,13 +168,19 @@ export default async function McpPage() {
                     <Badge variant={inactive ? "destructive" : "default"}>
                       {inactive ? t("Inativo") : t("Ativo")}
                     </Badge>
-                    {scopes.includes("mcp:read") ? <Badge variant="secondary">mcp:read</Badge> : null}
-                    {scopes.includes("mcp:write") ? <Badge variant="secondary">mcp:write</Badge> : null}
+                    {scopes.includes("mcp:read") ? (
+                      <Badge variant="secondary">mcp:read</Badge>
+                    ) : null}
+                    {scopes.includes("mcp:write") ? (
+                      <Badge variant="secondary">mcp:write</Badge>
+                    ) : null}
                   </div>
                   <dl className="grid gap-1 text-sm text-muted-foreground sm:grid-cols-2">
                     <div>
                       <dt className="inline font-medium text-foreground">{t("Criado:")} </dt>
-                      <dd className="inline">{new Date(token.created_at).toLocaleString(dateLocale)}</dd>
+                      <dd className="inline">
+                        {new Date(token.created_at).toLocaleString(dateLocale)}
+                      </dd>
                     </div>
                     <div>
                       <dt className="inline font-medium text-foreground">{t("Último uso:")} </dt>
@@ -139,8 +192,10 @@ export default async function McpPage() {
                     </div>
                   </dl>
                   <details className="rounded-md bg-muted p-3">
-                    <summary className="cursor-pointer font-medium">{t("O que sua IA vai saber")}</summary>
-                    <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-words font-sans text-sm">
+                    <summary className="cursor-pointer font-medium">
+                      {t("O que sua IA vai saber")}
+                    </summary>
+                    <pre className="mt-3 overflow-x-auto font-sans text-sm break-words whitespace-pre-wrap">
                       {presentation}
                     </pre>
                   </details>
@@ -155,7 +210,9 @@ export default async function McpPage() {
         <div className="space-y-2 rounded-lg border p-4 sm:p-5">
           <h2 className="text-lg font-semibold">{t("O que a IA pode fazer")}</h2>
           <p className="text-sm text-muted-foreground">
-            {t("Com mcp:read, consulta dados. Com mcp:write, registra e altera dados, respeitando o papel do token.")}
+            {t(
+              "Com mcp:read, consulta dados. Com mcp:write, registra e altera dados, respeitando o papel do token.",
+            )}
           </p>
           <p className="text-sm text-muted-foreground">
             {t("Sem esses escopos, a ação correspondente é recusada pelo servidor.")}
@@ -173,10 +230,14 @@ export default async function McpPage() {
       <section className="space-y-2 rounded-lg border p-4 sm:p-5">
         <h2 className="text-lg font-semibold">{t("Cuide do token como a chave da sua casa")}</h2>
         <p className="text-sm text-muted-foreground">
-          {t("Não salve o token em arquivo de texto. A configuração do conector guarda esse dado para você.")}
+          {t(
+            "Não salve o token em arquivo de texto. A configuração do conector guarda esse dado para você.",
+          )}
         </p>
         <p className="text-sm text-muted-foreground">
-          {t("Se houver vazamento, revogue o token e gere outro. A revogação corta o acesso imediatamente.")}
+          {t(
+            "Se houver vazamento, revogue o token e gere outro. A revogação corta o acesso imediatamente.",
+          )}
         </p>
       </section>
     </div>

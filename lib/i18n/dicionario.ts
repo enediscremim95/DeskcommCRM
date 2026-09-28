@@ -9256,17 +9256,42 @@ export const DICIONARIO: Traducoes = {
   "Copiar endereço": { es: "Copiar dirección" },
   "Cabeçalho de autorização:": { es: "Encabezado de autorización:" },
   "Conectar no Claude Code": { es: "Conectar en Claude Code" },
+  "Conectar sua ferramenta de IA": { es: "Conectar tu herramienta de IA" },
+  "Escolha a ferramenta e copie a configuração pronta.": {
+    es: "Elige la herramienta y copia la configuración lista.",
+  },
   "Copiar comando": { es: "Copiar comando" },
+  "Copiar configuração": { es: "Copiar configuración" },
+  "Copiar dados": { es: "Copiar datos" },
   "Cole o comando abaixo no terminal depois de criar seu token.": {
     es: "Pega el comando de abajo en la terminal después de crear tu token.",
   },
   "Conectar em outro aplicativo ou site": { es: "Conectar en otra aplicación o sitio" },
+  "Outro aplicativo ou site": { es: "Otra aplicación o sitio" },
+  "Abra o arquivo do Codex CLI, cole o trecho abaixo e reinicie a ferramenta.": {
+    es: "Abre el archivo de Codex CLI, pega el fragmento de abajo y reinicia la herramienta.",
+  },
+  "Abra o arquivo do Cursor, cole o conteúdo abaixo e reinicie o aplicativo.": {
+    es: "Abre el archivo de Cursor, pega el contenido de abajo y reinicia la aplicación.",
+  },
+  "Use estes dados nos campos de conector personalizado da sua ferramenta.": {
+    es: "Usa estos datos en los campos del conector personalizado de tu herramienta.",
+  },
+  "Arquivo:": { es: "Archivo:" },
   "Abra Configurações e procure Conectores.": { es: "Abre Configuración y busca Conectores." },
   "Adicione um conector personalizado usando o endereço acima.": {
     es: "Añade un conector personalizado usando la dirección de arriba.",
   },
   "Informe o mesmo cabeçalho de autorização com o seu token.": {
     es: "Informa el mismo encabezado de autorización con tu token.",
+  },
+  "Formas de conectar pelo MCP": { es: "Formas de conectar por MCP" },
+  "O texto exibido protege o token. Ao copiar uma opção, o token recém-criado será incluído.": {
+    es: "El texto mostrado protege el token. Al copiar una opción, se incluirá el token recién creado.",
+  },
+  "Configuração copiada.": { es: "Configuración copiada." },
+  "Não foi possível copiar. Selecione o conteúdo acima.": {
+    es: "No fue posible copiar. Selecciona el contenido de arriba.",
   },
   "Tokens com acesso MCP": { es: "Tokens con acceso MCP" },
   "O token completo aparece apenas uma vez, logo após a criação.": {
