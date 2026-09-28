@@ -10,6 +10,7 @@ export type ActionType =
   | "send_whatsapp_message"
   | "send_ai_message"
   | "add_tag"
+  | "remove_tag"
   | "assign_owner"
   | "call_webhook"
   | "start_message_flow";
@@ -27,6 +28,7 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   send_whatsapp_message: "Enviar mensagem no WhatsApp",
   send_ai_message: "Mensagem escrita pela IA",
   add_tag: "Adicionar tag",
+  remove_tag: "Remover tag",
   assign_owner: "Atribuir a um atendente",
   call_webhook: "Avisar outro sistema (webhook)",
   start_message_flow: "Iniciar fluxo de mensagem",

@@ -17,10 +17,11 @@ export const AUTOMATION_CATALOG = {
     { id: "contact.tag_added", faz: "Dispara quando uma tag é adicionada ao contato." },
   ],
   actions: [
-    { id: "send_whatsapp_message", faz: "Envia uma mensagem editável pelo número escolhido." },
+    { id: "send_whatsapp_message", faz: "Envia uma mensagem editável pelo número escolhido; aceita {{saudacao}} conforme o horário local do número." },
     { id: "send_ai_message", faz: "Pede a um agente publicado para escrever e enviar a mensagem." },
     { id: "create_or_move_lead", faz: "Cria o lead ou move o lead existente para uma etapa do mesmo funil." },
     { id: "add_tag", faz: "Adiciona uma ou mais tags ao lead ou contato." },
+    { id: "remove_tag", faz: "Remove uma ou mais tags do lead ou contato." },
     { id: "assign_owner", faz: "Atribui o lead e a conversa a uma pessoa ativa da equipe, interrompendo o atendimento automático quando há conversa." },
     { id: "call_webhook", faz: "Avisa outro sistema por uma URL HTTPS validada." },
     { id: "start_message_flow", faz: "Inicia um fluxo de follow-up publicado." },

@@ -199,6 +199,7 @@ export const AUDIT_ACTIONS = [
   "ai_agent.run_failed",
   "channel.connected",
   "channel.ai_access_updated",
+  "channel.automatic_attendance_updated",
   "channel.reconnected",
   "channel.disconnected",
   "channel.managed_configured",

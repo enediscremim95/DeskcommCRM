@@ -170,6 +170,11 @@ function wallClock(instant: Date, timezone: string): Wall {
   };
 }
 
+/** Hora de parede no fuso informado, usando a mesma régua do pacing. */
+export function horaLocalNoFuso(instant: Date, timezone: string): number {
+  return wallClock(instant, timezone).h;
+}
+
 /**
  * Instante UTC cuja hora de parede na tz é (y, mo, d, h):00 — técnica clássica
  * de duas passadas pelo offset (correta inclusive sob DST).

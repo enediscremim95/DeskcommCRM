@@ -26517,3 +26517,34 @@ end $$;
 -- ---- metadata dos avisos da Central (migration 0265) ----
 alter table public.agent_inbox_items
   add column if not exists metadata jsonb;
+
+-- 0274_atendimento_automatico_por_canal
+-- Canais preexistentes podem estar em produção: na primeira aplicação ficam
+-- ligados. Canais novos nascem desligados. A guarda torna o UPDATE idempotente
+-- e preserva desligamentos deliberados em reaplicações do baseline.
+do $$
+begin
+  if not exists (
+    select 1
+      from information_schema.columns
+     where table_schema = 'public'
+       and table_name = 'channel_sessions'
+       and column_name = 'automatic_attendance_enabled'
+  ) then
+    alter table public.channel_sessions
+      add column automatic_attendance_enabled boolean;
+
+    update public.channel_sessions
+       set automatic_attendance_enabled = true;
+
+    alter table public.channel_sessions
+      alter column automatic_attendance_enabled set default false,
+      alter column automatic_attendance_enabled set not null;
+  end if;
+end
+$$;
+
+comment on column public.channel_sessions.automatic_attendance_enabled is
+  'Chave mestra por canal. false mantém a ingestão, conversa, contato e lead, mas impede respostas automáticas. Canais anteriores à migration foram preservados ligados; novos canais nascem desligados.';
+
+notify pgrst, 'reload schema';

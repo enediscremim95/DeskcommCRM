@@ -5,6 +5,7 @@ import type * as InboundTurn from "@/lib/agent-engine/agent/inbound-turn";
 import type * as Providers from "@/lib/agent-engine/edge/llm/providers";
 import type * as Queue from "@/lib/agent-engine/queue/queue";
 import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
+import { createTestChannel } from "./gov-helpers";
 
 /**
  * O turno COMPLETO chamando `send_message` VÁRIAS vezes — defeito medido em
@@ -195,11 +196,11 @@ beforeAll(async () => {
      values ($1,$2,'Lead Insistido','+5511900000888') on conflict (id) do nothing`,
     [CONTACT, ORG],
   );
-  await pool.query(
-    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
-     values ($1,$2,'limite-envios-session','WORKING','\\x00'::bytea) on conflict (id) do nothing`,
-    [SESSION, ORG],
-  );
+  createTestChannel({
+    id: SESSION,
+    organizationId: ORG,
+    sessionName: "limite-envios-session",
+  });
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
      values ($1,$2,$3,$4,'ai_handling',false) on conflict (id) do nothing`,

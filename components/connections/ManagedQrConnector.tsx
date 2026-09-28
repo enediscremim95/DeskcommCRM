@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useT } from "@/hooks/i18n/useT";
+import { ChannelAutomaticAttendance } from "./ChannelAutomaticAttendance";
+import { ChannelAiAccess } from "./ChannelAiAccess";
 
 interface Connector {
   client_can_reconnect?: boolean;
@@ -153,6 +155,8 @@ export function ManagedQrConnector({ fallback }: { fallback: ReactNode }) {
         </Badge>
       </CardHeader>
       <CardContent className="space-y-5">
+        <ChannelAutomaticAttendance channelId={connector.id} />
+        <ChannelAiAccess channelId={connector.id} />
         {!connected && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
             <p className="font-medium text-destructive">{t("WhatsApp desconectado")}</p>

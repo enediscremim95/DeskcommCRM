@@ -42,6 +42,7 @@ import { createOperatorTurnHandler } from "@/lib/agent-engine/agent/operator-tur
 import type { InboundTurnDeps } from "@/lib/agent-engine/agent/inbound-turn";
 import type { JobRow } from "@/lib/agent-engine/queue/queue";
 import type { Logger } from "@/lib/agent-engine/obs/logger";
+import { createTestChannel } from "./gov-helpers";
 
 const container = process.env.TEST_DB_CONTAINER;
 if (!container) {
@@ -167,12 +168,11 @@ beforeAll(async () => {
      on conflict (id) do nothing`,
     [ORG],
   );
-  await pool.query(
-    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
-     values ($1, $2, 'operador-handoff-session', 'WORKING', '\\x00'::bytea)
-     on conflict (id) do nothing`,
-    [SESSION, ORG],
-  );
+  createTestChannel({
+    id: SESSION,
+    organizationId: ORG,
+    sessionName: "operador-handoff-session",
+  });
   await pool.query(
     `insert into contacts (id, organization_id, name, phone_number)
      values ($1, $2, 'Lead do Handoff', '+5511900000912') on conflict (id) do nothing`,
@@ -237,12 +237,11 @@ beforeAll(async () => {
      values ($1, $2, $3, $4, $5, 'Negócio do handoff', 'open') on conflict (id) do nothing`,
     [LEAD, ORG, PIPELINE, STAGE, CONTACT],
   );
-  await pool.query(
-    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
-     values ($1, $2, 'operador-handoff-session-b', 'WORKING', '\\x00'::bytea)
-     on conflict (id) do nothing`,
-    [SESSION_B, ORG],
-  );
+  createTestChannel({
+    id: SESSION_B,
+    organizationId: ORG,
+    sessionName: "operador-handoff-session-b",
+  });
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
      values ($1, $2, $3, $4, 'open', false) on conflict (id) do nothing`,

@@ -5,6 +5,7 @@ import type * as InboundTurn from "@/lib/agent-engine/agent/inbound-turn";
 import type * as Providers from "@/lib/agent-engine/edge/llm/providers";
 import type * as Queue from "@/lib/agent-engine/queue/queue";
 import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
+import { createTestChannel } from "./gov-helpers";
 
 /**
  * O turno COMPLETO enviando template — o que `send-template-wiring.test.ts` declarava
@@ -229,20 +230,18 @@ beforeAll(async () => {
      values ($1,$2,'Lead Template','+5511900000777') on conflict (id) do nothing`,
     [CONTACT, ORG],
   );
-  await pool.query(
-    `insert into channel_sessions (id, organization_id, provider, meta_phone_number_id,
-                                   meta_waba_id, status, webhook_secret_encrypted)
-     values ($1,$2,'meta_cloud','111','222','WORKING','\\x00'::bytea)
-     on conflict (id) do nothing`,
-    [SESSION_META, ORG],
-  );
-  await pool.query(
-    `insert into channel_sessions (id, organization_id, provider, waha_session_name,
-                                   status, webhook_secret_encrypted)
-     values ($1,$2,'waha','tpl-waha','WORKING','\\x00'::bytea)
-     on conflict (id) do nothing`,
-    [SESSION_WAHA, ORG],
-  );
+  createTestChannel({
+    id: SESSION_META,
+    organizationId: ORG,
+    provider: "meta_cloud",
+    metaPhoneNumberId: "111",
+    metaWabaId: "222",
+  });
+  createTestChannel({
+    id: SESSION_WAHA,
+    organizationId: ORG,
+    sessionName: "tpl-waha",
+  });
   for (const [conv, sessao] of [
     [CONV, SESSION_META],
     [CONV_WAHA, SESSION_WAHA],

@@ -26,6 +26,7 @@ import { createCaseReplyTurnHandler } from "@/lib/agent-engine/agent/case-reply-
 import type { JobRow } from "@/lib/agent-engine/queue/queue";
 import type { LeadContext } from "@/lib/agent-engine/edge/crm/get-lead-context";
 import type { Logger } from "@/lib/agent-engine/obs/logger";
+import { createTestChannel } from "./gov-helpers";
 
 const container = process.env.TEST_DB_CONTAINER;
 if (!container) {
@@ -66,11 +67,11 @@ beforeAll(async () => {
      values ($1, $2, 'Contato de Prova', '+5511900000001') on conflict (id) do nothing`,
     [CONTACT, ORG],
   );
-  await pool.query(
-    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
-     values ($1, $2, 'crt-proof-session', 'WORKING', '\\x00'::bytea) on conflict (id) do nothing`,
-    [SESSION, ORG],
-  );
+  createTestChannel({
+    id: SESSION,
+    organizationId: ORG,
+    sessionName: "crt-proof-session",
+  });
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
      values ($1, $2, $3, $4, 'ai_handling', false) on conflict (id) do nothing`,

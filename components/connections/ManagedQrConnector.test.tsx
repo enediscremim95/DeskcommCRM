@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 
 import { ManagedQrConnector } from "./ManagedQrConnector";
 
@@ -23,6 +25,15 @@ function json(data: unknown, status = 200, headers?: HeadersInit) {
   }));
 }
 
+function renderConnector(fallback: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <ManagedQrConnector fallback={fallback} />
+    </QueryClientProvider>,
+  );
+}
+
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -37,7 +48,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("conexão QR gerenciada", () => {
   it("mostra queda e só pede QR depois do clique", async () => {
-    render(<ManagedQrConnector fallback={<p>Conector padrão</p>} />);
+    renderConnector(<p>Conector padrão</p>);
     expect(await screen.findByText("WhatsApp desconectado")).toBeTruthy();
     const fetchMock = vi.mocked(fetch);
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/managed/qr"))).toBe(false);
@@ -50,7 +61,7 @@ describe("conexão QR gerenciada", () => {
 
   it("mantém organizações sem o conector no fluxo atual", async () => {
     vi.stubGlobal("fetch", vi.fn(() => json({ data: null })));
-    render(<ManagedQrConnector fallback={<p>Conector padrão</p>} />);
+    renderConnector(<p>Conector padrão</p>);
     expect(await screen.findByText("Conector padrão")).toBeTruthy();
     await waitFor(() => expect(screen.queryByText("WhatsApp desconectado")).toBeNull());
   });

@@ -46,6 +46,7 @@ import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
+import { lerAtendimentoAutomatico } from "@/lib/channels/atendimento-automatico";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -289,6 +290,20 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
  */
 async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
   if (!entrada.messageId) return;
+
+  const atendimentoLigado = await lerAtendimentoAutomatico(
+    admin,
+    entrada.organizationId,
+    entrada.channelSessionId,
+  );
+  if (!atendimentoLigado) {
+    logger.info("pos-entrada: atendimento automático desligado, despacho suprimido", {
+      organization_id: entrada.organizationId,
+      channel_session_id: entrada.channelSessionId,
+      conversation_id: entrada.conversationId,
+    });
+    return;
+  }
 
   const { error } = await admin.rpc("emit_event" as never, {
     p_event_type: "ai_agent.dispatch_requested",

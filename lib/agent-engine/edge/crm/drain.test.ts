@@ -15,11 +15,28 @@ const event = {
   },
 };
 
+it('atendimento desligado consome evento antigo sem enfileirar resposta', async () => {
+  const calls: string[] = [];
+  const query = vi.fn().mockImplementation((sql: string) => {
+    calls.push(sql);
+    if (sql.includes('returning e.id')) return { rows: [event] };
+    if (sql.includes('automatic_attendance_enabled')) return { rows: [{ enabled: false }] };
+    return { rows: [] };
+  });
+
+  await drainTick({ query } as unknown as pg.Pool, knobs, log);
+
+  expect(calls.some((sql) => sql.includes('automatic_attendance_enabled'))).toBe(true);
+  expect(calls.some((sql) => sql.includes('job_queue'))).toBe(false);
+  expect(calls.some((sql) => sql.includes("status = 'done'"))).toBe(true);
+});
+
 it('org em ai_dispatch_mode=external: evento vira done SEM enfileirar job', async () => {
   const calls: string[] = [];
   const query = vi.fn().mockImplementation((sql: string) => {
     calls.push(sql);
     if (sql.includes('returning e.id')) return { rows: [event] };            // claim
+    if (sql.includes('automatic_attendance_enabled')) return { rows: [{ enabled: true }] };
     if (sql.includes("ai_dispatch_mode")) return { rows: [{ mode: 'external' }] }; // guard
     if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
     return { rows: [] };                                                      // reaper / done
@@ -53,6 +70,7 @@ function poolFalso(
   const query = vi.fn().mockImplementation((sql: string) => {
     calls.push(sql);
     if (sql.includes('returning e.id')) return { rows: [eventoDeAudio(Number(process.env.__ESPERA__ ?? 0))] };
+    if (sql.includes('automatic_attendance_enabled')) return { rows: [{ enabled: true }] };
     if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null }] };
     if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
     if (sql.includes('tem_agente')) return { rows: [capacidade] };
@@ -159,6 +177,7 @@ function poolElegibilidade(
   const query = vi.fn().mockImplementation((sql: string) => {
     calls.push(sql);
     if (sql.includes('returning e.id')) return { rows: [{ ...event, created_at: new Date().toISOString() }] };
+    if (sql.includes('automatic_attendance_enabled')) return { rows: [{ enabled: true }] };
     if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null }] };
     if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
     if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
@@ -310,6 +329,7 @@ it('bug 1, duas mensagens em menos de um segundo produzem um único turno', asyn
   const inserts: string[] = [];
   const query = vi.fn().mockImplementation((sql: string) => {
     if (sql.includes('returning e.id')) return { rows: [primeira, segunda] };
+    if (sql.includes('automatic_attendance_enabled')) return { rows: [{ enabled: true }] };
     if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null }] };
     if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
     if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
