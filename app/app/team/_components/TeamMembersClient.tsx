@@ -60,6 +60,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
 
   const [interfaceMember, setInterfaceMember] = useState<TeamMember | null>(null);
   const [revokeDialog, setRevokeDialog] = useState<TeamMember | null>(null);
+  const [roleDialog, setRoleDialog] = useState<{ member: TeamMember; role: Role } | null>(null);
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>;
@@ -99,9 +100,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                   {canManage && m.user_id !== currentUserId ? (
                     <Select
                       value={m.role}
-                      onValueChange={(v) =>
-                        changeRole.mutate({ userId: m.user_id, role: v as Role })
-                      }
+                      onValueChange={(v) => setRoleDialog({ member: m, role: v as Role })}
                     >
                       <SelectTrigger
                         className="w-[130px]"
@@ -224,13 +223,47 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
           onClose={() => setInterfaceMember(null)}
         />
       )}
+      <Dialog open={!!roleDialog} onOpenChange={(o) => !o && setRoleDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("Confirmar mudança de papel")}</DialogTitle>
+            <DialogDescription>
+              {t("O acesso de")} {roleDialog?.member.email ?? roleDialog?.member.user_id}{" "}
+              {t("mudará de")} {roleDialog?.member.role} {t("para")} {roleDialog?.role}.{" "}
+              {t("A alteração ficará registrada na auditoria.")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRoleDialog(null)}>
+              {t("Cancelar")}
+            </Button>
+            <Button
+              disabled={changeRole.isPending}
+              onClick={async () => {
+                if (!roleDialog) return;
+                try {
+                  await changeRole.mutateAsync({
+                    userId: roleDialog.member.user_id,
+                    role: roleDialog.role,
+                  });
+                  setRoleDialog(null);
+                } catch {
+                  /* showApiError já foi disparado pelo hook */
+                }
+              }}
+            >
+              {t("Confirmar alteração")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={!!revokeDialog} onOpenChange={(o) => !o && setRevokeDialog(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("Revogar acesso")}</DialogTitle>
             <DialogDescription>
               {revokeDialog?.email ?? revokeDialog?.user_id}{" "}
-              {t("perderá acesso ao tenant. Esta ação pode ser desfeita reconvidando o membro.")}
+              {t("perderá acesso à empresa. Você poderá devolver o acesso depois.")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

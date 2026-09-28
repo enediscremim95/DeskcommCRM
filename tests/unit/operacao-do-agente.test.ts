@@ -89,6 +89,41 @@ describe("criar entrada automática de contatos — tenancy sob service-role", (
     expect(db.escritas.filter((e) => e.table === "webhook_sources")).toHaveLength(1);
   });
 
+  it("grava como responsável somente membro ativo da mesma organização", async () => {
+    const db = makeDb({ stages: [etapa({ id: "e1", name: "Novo" })] });
+    (db.tabelas as unknown as Record<string, unknown[]>).user_organizations = [
+      {
+        user_id: USER_ID,
+        organization_id: ORG_ID,
+        role: "manager",
+        revoked_at: null,
+      },
+    ];
+
+    await criarEntradaAutomatica(deps(db), {
+      ...ENTRADA,
+      default_owner_user_id: USER_ID,
+    });
+
+    const escrita = db.escritas.find((item) => item.table === "webhook_sources");
+    expect(escrita?.patch).toMatchObject({ default_owner_user_id: USER_ID });
+  });
+
+  it("recusa responsável que não pertence à organização", async () => {
+    const db = makeDb({ stages: [etapa({ id: "e1", name: "Novo" })] });
+    (db.tabelas as unknown as Record<string, unknown[]>).user_organizations = [];
+
+    const erro = await recusa(() =>
+      criarEntradaAutomatica(deps(db), {
+        ...ENTRADA,
+        default_owner_user_id: USER_ID,
+      }),
+    );
+
+    expect(erro.status).toBe(422);
+    expect(db.escritas).toEqual([]);
+  });
+
   it("⭐ funil de OUTRA organização → recusa e NENHUMA escrita", async () => {
     // O funil EXISTE — só que noutro tenant. A FK do banco não conhece
     // organização: sem o filtro explícito, a entrada nasceria despejando os

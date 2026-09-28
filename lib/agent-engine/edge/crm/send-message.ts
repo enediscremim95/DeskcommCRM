@@ -37,6 +37,9 @@ import type { Queryable } from '../../queue/queue';
 import { cancelJob, rescheduleJob, type JobRow } from '../../queue/queue';
 import { cancelPendingCronsForLead } from '../../cron/scheduler';
 import { CrmTransportError, type CrmEdgeConfig } from './mcp-client';
+import { acquireChannelDeliveryLease } from './channel-delivery-lease';
+
+export type SendTurnOutcome = SendOutcome | { kind: 'deferred'; retryAfterMs: number };
 
 /** Erro de negócio não classificado do handler (ex.: conversa inexistente) — ledger fica 'requested'. */
 export class SendToolError extends Error {
@@ -77,7 +80,7 @@ export async function sendTurnMessage(
   db: Queryable,
   cfg: CrmEdgeConfig,
   input: SendMessageInput,
-): Promise<SendOutcome> {
+): Promise<SendTurnOutcome> {
   if (input.agentOperation) await assertAgentOperationPg(db, input.agentOperation);
   const { rows: sourceJobs } = await db.query<{ kind: string; payload: Record<string, unknown> }>(
     'select payload,kind from job_queue where id=$1 and organization_id=$2 and contact_id=$3',
@@ -127,6 +130,15 @@ export async function sendTurnMessage(
     if (policy.body !== input.body || policy.conversation_id !== input.conversationId)
       throw new StaleServiceBoundaryError();
   }
+  const deliveryLease = await acquireChannelDeliveryLease(db, {
+    tenantId: input.tenantId,
+    conversationId: input.conversationId,
+    jobId: input.jobId,
+  });
+  if (!deliveryLease.acquired) {
+    return { kind: 'deferred', retryAfterMs: deliveryLease.retryAfterMs };
+  }
+
   return sendWithLedger(pgSendLedger(db), input, async (idempotencyKey, messageId) => {
     let message: Message;
     try {
@@ -208,7 +220,7 @@ export type SendDisposition =
  */
 export async function applySendOutcome(
   db: Queryable,
-  outcome: SendOutcome,
+  outcome: SendTurnOutcome,
   job: {
     jobId: string;
     workerId: string;
@@ -219,6 +231,14 @@ export async function applySendOutcome(
   knobs: { queuedRetryDelayMs: number },
 ): Promise<SendDisposition> {
   switch (outcome.kind) {
+    case 'deferred': {
+      const requeued = await rescheduleJob(db, job.jobId, job.workerId, {
+        delayMs: outcome.retryAfterMs,
+        acquiredAt: job.jobClaim?.acquired_at,
+        reason: 'canal ocupado por outra conversa, reagendado sem consumir attempts',
+      });
+      return { action: 'requeued', job: requeued };
+    }
     case 'blocked': {
       const canceled = await cancelJob(
         db,

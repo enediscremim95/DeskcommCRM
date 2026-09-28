@@ -1,11 +1,11 @@
 "use client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ehEcoLocal } from "@/lib/kanban/local-echo";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { apiClient } from "@/lib/api/client";
-import type { BoardData } from "@/lib/kanban/types";
+import type { BoardData, BoardStageChunk } from "@/lib/kanban/types";
 
 /**
  * Fetch board via API route (NOT direct supabase-js).
@@ -16,15 +16,28 @@ import type { BoardData } from "@/lib/kanban/types";
  * uses the server-side cookie reader, identical to every other authed query.
  */
 async function fetchBoard(pipelineId: string): Promise<BoardData> {
-  const res = await apiClient.get<{ data: BoardData }>(
-    `/api/v1/pipelines/${pipelineId}/board`,
-  );
+  const res = await apiClient.get<{ data: BoardData }>(`/api/v1/pipelines/${pipelineId}/board`);
   // apiClient unwraps { data, meta } envelope already in some helpers;
   // ours returns the parsed JSON literally. Handle both shapes safely.
   if (res && typeof res === "object" && "data" in res) {
     return (res as { data: BoardData }).data;
   }
   return res as unknown as BoardData;
+}
+
+async function fetchStagePage(
+  pipelineId: string,
+  stageId: string,
+  cursor: string,
+): Promise<BoardStageChunk> {
+  const query = new URLSearchParams({ stage_id: stageId, cursor });
+  const res = await apiClient.get<{ data: BoardStageChunk }>(
+    `/api/v1/pipelines/${pipelineId}/board?${query.toString()}`,
+  );
+  if (res && typeof res === "object" && "data" in res) {
+    return (res as { data: BoardStageChunk }).data;
+  }
+  return res as unknown as BoardStageChunk;
 }
 
 /**
@@ -49,7 +62,7 @@ function idDoEvento(payload: unknown): string | null {
 
 export function useBoard(pipelineId: string | null) {
   const qc = useQueryClient();
-  const queryKey = ["board", pipelineId] as const;
+  const queryKey = useMemo(() => ["board", pipelineId] as const, [pipelineId]);
 
   /**
    * Cards que acabaram de mudar POR EVENTO REMOTO — o pulso da Wave 3.
@@ -61,12 +74,59 @@ export function useBoard(pipelineId: string | null) {
    */
   const [pulses, setPulses] = useState<Map<string, number>>(new Map());
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const loadingStages = useRef<Set<string>>(new Set());
+  const [loadingStageIds, setLoadingStageIds] = useState<Set<string>>(new Set());
+  const [stageLoadErrors, setStageLoadErrors] = useState<Set<string>>(new Set());
 
   const query = useQuery({
     queryKey,
     queryFn: () => fetchBoard(pipelineId as string),
     enabled: !!pipelineId,
   });
+
+  const loadMoreStage = useCallback(
+    async (stageId: string) => {
+      if (!pipelineId || loadingStages.current.has(stageId)) return;
+      const current = qc.getQueryData<BoardData>(queryKey);
+      const page = current?.stage_pages?.[stageId];
+      if (!page?.has_more || !page.cursor) return;
+
+      loadingStages.current.add(stageId);
+      setLoadingStageIds((ids) => new Set(ids).add(stageId));
+      setStageLoadErrors((ids) => {
+        const next = new Set(ids);
+        next.delete(stageId);
+        return next;
+      });
+
+      try {
+        const chunk = await fetchStagePage(pipelineId, stageId, page.cursor);
+        qc.setQueryData<BoardData>(queryKey, (board) => {
+          if (!board) return board;
+          const byId = new Map(board.leads.map((lead) => [lead.id, lead]));
+          for (const lead of chunk.leads) byId.set(lead.id, lead);
+          return {
+            ...board,
+            leads: [...byId.values()],
+            stage_pages: {
+              ...board.stage_pages,
+              [stageId]: chunk.page,
+            },
+          };
+        });
+      } catch {
+        setStageLoadErrors((ids) => new Set(ids).add(stageId));
+      } finally {
+        loadingStages.current.delete(stageId);
+        setLoadingStageIds((ids) => {
+          const next = new Set(ids);
+          next.delete(stageId);
+          return next;
+        });
+      }
+    },
+    [pipelineId, qc, queryKey],
+  );
 
   const onChange = useCallback(
     (payload: unknown) => {
@@ -164,5 +224,13 @@ export function useBoard(pipelineId: string | null) {
     enabled: !!pipelineId,
   });
 
-  return { ...query, pulses, realtimeStatus, seguranca };
+  return {
+    ...query,
+    pulses,
+    realtimeStatus,
+    seguranca,
+    loadMoreStage,
+    loadingStageIds,
+    stageLoadErrors,
+  };
 }

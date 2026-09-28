@@ -7,7 +7,9 @@ import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { reconcileAppointment } from "../../lib/agenda/google/sync-executor";
 import { createMeetDeliveryHandler } from "../../lib/agent-engine/agent/meet-delivery";
+import { releaseChannelDeliveryLease } from "../../lib/agent-engine/edge/crm/channel-delivery-lease";
 import { escolherDiaDesenhado, irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, {
@@ -163,11 +165,11 @@ async function row(f: Fixture, id: string) {
   return r.data;
 }
 async function login(page: Page, f: Fixture) {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/settings/profile");
   await page.getByLabel(/e-?mail/i).fill(f.email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(?:\/|$)/, { timeout: 60_000 });
+  await aguardarSessaoCompleta(page, "aal1");
 }
 async function book(page: Page, f: Fixture) {
   await inbound(f, "Quero marcar minha reunião");
@@ -377,11 +379,17 @@ async function deliver(f: Fixture, id: string, pool: pg.Pool) {
     [f.org, a.meeting_delivery_job_id],
   );
   expect(rows).toHaveLength(1);
-  await createMeetDeliveryHandler({
-    crmCfg: { supabase: db },
-    log: { info() {}, warn() {}, error() {} },
-    sleep: async () => {},
-  })(rows[0], pool);
+  try {
+    await createMeetDeliveryHandler({
+      crmCfg: { supabase: db },
+      log: { info() {}, warn() {}, error() {} },
+      sleep: async () => {},
+    })(rows[0], pool);
+  } finally {
+    // O spec chama o handler sem o loop do worker. O loop libera esta lease no
+    // finally; sem espelhar isso, a segunda entrega legítima fica "queued".
+    await releaseChannelDeliveryLease(pool, { tenantId: f.org, jobId: rows[0].id });
+  }
   expect((await row(f, id)).meeting_delivery.state).toBe("sent");
   return rows[0].id as string;
 }

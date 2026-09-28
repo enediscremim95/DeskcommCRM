@@ -43,26 +43,61 @@ interface Props {
   canAutoFit?: boolean;
 }
 
+interface AtendimentoProps {
+  mode: "atendimento";
+  title: string;
+  status: string;
+  dirty: boolean;
+  changes?: string[];
+  actions: React.ReactNode;
+}
+
 const HANDOFF_LABEL: Record<FollowupFlowDetailRow["handoff_policy"], string> = {
   pause: "Pausar durante handoff",
   cancel: "Cancelar durante handoff",
   allow: "Permitir durante handoff",
 };
 
-export function PublishBar({
-  flowId,
-  flow,
-  graph,
-  dirty,
-  selection,
-  onDeleteSelection,
-  onSaved,
-  onPublishErrors,
-  onPublishSuccess,
-  onAutoFit,
-  canAutoFit = false,
-}: Props) {
+export function PublishBar(props: Props | AtendimentoProps) {
+  return "mode" in props ? <AtendimentoPublishBar {...props} /> : <FollowupPublishBar {...props} />;
+}
+
+function AtendimentoPublishBar(props: AtendimentoProps) {
   const t = useT();
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="truncate text-sm font-semibold text-text">{props.title}</h1>
+          <Badge variant={props.status === "published" ? "success" : "warning"}>{t(props.status === "published" ? "Publicado" : "Rascunho")}</Badge>
+          {props.dirty && <Badge variant="warning">{t("Alterações não salvas")}</Badge>}
+        </div>
+        {(props.changes?.length ?? 0) > 0 && (
+          <p className="mt-1 max-w-2xl truncate text-xs text-text-muted" data-testid="mcp-change-summary">
+            {t("Mudanças propostas pela IA")}: {props.changes!.join(" · ")}
+          </p>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">{props.actions}</div>
+    </div>
+  );
+}
+
+function FollowupPublishBar(props: Props) {
+  const t = useT();
+  const {
+    flowId,
+    flow,
+    graph,
+    dirty,
+    selection,
+    onDeleteSelection,
+    onSaved,
+    onPublishErrors,
+    onPublishSuccess,
+    onAutoFit,
+    canAutoFit = false,
+  } = props;
   const save = useSaveFollowupFlowDraft(flowId);
   const publish = usePublishFollowupFlow(flowId);
   const disable = useDisableFollowupFlow(flowId);

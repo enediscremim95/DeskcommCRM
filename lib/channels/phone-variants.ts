@@ -83,6 +83,25 @@ export function phoneForDisplay(raw: string | null | undefined): string {
 }
 
 /**
+ * Formata o número observado no canal sem alterar seus dígitos. O cartão de
+ * conexão identifica um aparelho, por isso não pode aplicar a canonização de
+ * contatos que acrescenta o nono dígito.
+ */
+export function phoneForChannelCard(raw: string | null | undefined): string {
+  if (raw == null || !raw.trim()) return "";
+  const digits = digitsOf(raw);
+
+  if (digits.startsWith("55") && digits.length === 12) {
+    return `+55 ${digits.slice(2, 4)} ${digits.slice(4, 8)}-${digits.slice(8)}`;
+  }
+  if (digits.startsWith("55") && digits.length === 13) {
+    return `+55 ${digits.slice(2, 4)} ${digits.slice(4, 9)}-${digits.slice(9)}`;
+  }
+
+  return raw.trim().startsWith("+") ? `+${digits}` : digits;
+}
+
+/**
  * Os dois números são a MESMA pessoa, considerando o nono dígito?
  *
  * Útil para asserção e para decidir merge.

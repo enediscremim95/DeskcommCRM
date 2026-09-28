@@ -113,6 +113,7 @@ import {
   type JobKind,
   type JobRow,
 } from "@/lib/agent-engine/queue/queue";
+import { releaseChannelDeliveryLease } from "@/lib/agent-engine/edge/crm/channel-delivery-lease";
 
 export interface JobHandlerContext {
   workerId: string;
@@ -487,6 +488,18 @@ export async function startWorker(
         // (banco fora do ar, tipicamente). O job só se recupera pelo reaper —
         // vale saber que isto aconteceu.
         Sentry.captureException(failErr);
+      }
+    } finally {
+      try {
+        await releaseChannelDeliveryLease(pool, {
+          tenantId: job.organization_id,
+          jobId: job.id,
+        });
+      } catch (releaseErr) {
+        log.warn("lease de entrega será liberada pelo prazo de segurança", {
+          job_id: job.id,
+          error: errMsg(releaseErr),
+        });
       }
     }
   };

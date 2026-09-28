@@ -38,6 +38,7 @@ interface Props {
   channelSessions: ChannelSessionLite[];
   routerMembership?: { routerId: string; routerName: string } | null;
   readOnly?: boolean;
+  mcpToken?: { name: string; prefix: string } | null;
 }
 
 export function AgentTabs(props: Props) {
@@ -80,6 +81,7 @@ export function AgentTabs(props: Props) {
           materiais={props.materiais}
           routerMembership={props.routerMembership}
           readOnly={props.readOnly}
+          mcpToken={props.mcpToken}
         />
       </TabsContent>
 

@@ -4,8 +4,8 @@ import { NextRequest } from "next/server";
 const h = vi.hoisted(() => ({ provision: vi.fn() }));
 
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
-vi.mock("@/lib/auth/require-role", () => ({
-  requireRole: async () => ({
+vi.mock("@/lib/auth/require-permission", () => ({
+  requirePermission: async () => ({
     ok: true,
     user: { id: "user-admin", email: "admin@example.test", full_name: "Admin", idioma: "pt-BR" },
     org: { orgId: "org-1", name: "Acme", role: "admin" },

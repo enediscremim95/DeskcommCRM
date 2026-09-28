@@ -2,7 +2,6 @@ import { notFound, redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import { PipelinePageClient } from "./_client";
-import { Voltar } from "@/components/navigation/Voltar";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +28,9 @@ export default async function PipelinePage({
   if (!pipeline) notFound();
   return (
     <div className="flex min-h-[640px] flex-col gap-4 p-6">
-      <div className="shrink-0">
-        <Voltar href="/app/settings/tenant/pipelines">Funis</Voltar>
-      </div>
+      {/* Sem "voltar para Funis": o quadro é destino de uso diário, alcançado
+          pelo menu, não uma subtela das configurações. O link levava para a
+          tela de configurar etapas, que não é de onde a pessoa veio. */}
       <div className="min-h-0 flex-1">
         <PipelinePageClient pipelineId={id} initialName={pipeline.name} />
       </div>

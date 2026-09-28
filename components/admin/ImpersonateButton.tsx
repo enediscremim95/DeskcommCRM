@@ -7,7 +7,7 @@
  * will be flagged with `acting_as_platform_admin=true` in the audit log.
  *
  * On success: pushes the user to the redirect_url returned by the API
- * (default `/app/inbox`) so they immediately enter the tenant context.
+ * (default `/app/kanban`) so they immediately enter the tenant context.
  */
 import { useState } from "react";
 import { flushSync } from "react-dom";
@@ -64,7 +64,7 @@ export function ImpersonateButton({
       }
       const redirectUrl =
         (json as { data?: { redirect_url?: string } })?.data?.redirect_url ??
-        "/app/inbox";
+        "/app/kanban";
       setOpen(false);
       // Hard navigation so the new cookie is sent on the next request and the
       // server layout can read it to render the banner.

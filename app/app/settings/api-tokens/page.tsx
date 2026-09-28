@@ -1,18 +1,21 @@
 import { redirect } from "next/navigation";
 
+import { userHasPermission } from "@/lib/auth/permissions";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
 import { ApiTokensClient } from "./_components/ApiTokensClient";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { env } from "@/lib/env";
+import { urlDoConectorMcp } from "@/lib/mcp/conexao";
 
 export const dynamic = "force-dynamic";
 
 export default async function ApiTokensPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
-  if (!activeOrg || ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
+  if (!activeOrg || !userHasPermission(user, activeOrg, "settings.write")) {
     redirect("/403");
   }
+  const canManage = !user.support && userHasPermission(user, activeOrg, "api.tokens.manage");
   const idioma = user.idioma;
 
   return (
@@ -25,7 +28,10 @@ export default async function ApiTokensPage() {
           {traduzir("na criação.", idioma)}
         </p>
       </header>
-      <ApiTokensClient />
+      <ApiTokensClient
+        connectorUrl={urlDoConectorMcp(env.NEXT_PUBLIC_APP_URL)}
+        canManage={canManage}
+      />
     </div>
   );
 }

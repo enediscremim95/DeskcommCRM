@@ -307,6 +307,9 @@ describe("agendar 'para agora' usa o relógio do BANCO — retomada", () => {
           },
         ];
       },
+      async cancelPendingScheduledFollowups() {
+        return 0;
+      },
       async insertEnrollmentEvent() {
         return { inserted: true };
       },

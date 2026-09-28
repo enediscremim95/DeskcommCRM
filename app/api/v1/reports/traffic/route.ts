@@ -29,12 +29,21 @@ import { serializeTrafficColumnPresets } from "@/lib/windsor/column-presets";
 import { buildTrafficDelivery } from "@/lib/windsor/delivery";
 import { clientCanViewIntegration } from "@/lib/integrations/access";
 import {
+  buildTrafficKanbanStages,
   buildTrafficRichCrmInsights,
   type TrafficLeadRow,
   type TrafficStageRow,
 } from "@/lib/windsor/traffic-insights";
 
 export const dynamic = "force-dynamic";
+
+function canManageTrafficDefaults(user: {
+  is_platform_admin: boolean;
+  support?: unknown;
+}): boolean {
+  return user.is_platform_admin && !user.support;
+}
+
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const querySchema = z
   .object({
@@ -261,7 +270,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     admin
       .from("crm_stages" as never)
       .select("id,name,position,pipeline_id,is_won,is_lost")
-      .eq("organization_id", organizationId),
+      .eq("organization_id", organizationId)
+      .eq("is_archived", false),
     fetchLeadSituationRows(new Date(fromCreatedAt), exclusiveTo),
     fetchLeadSituationRows(previousFrom, previousExclusiveTo),
     admin
@@ -402,7 +412,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         google_ads: defaultPresets.google_ads?.id ?? null,
       },
       column_presets: columnPresets,
-      can_manage_defaults: authz.user.is_platform_admin && !authz.user.support,
+      can_manage_defaults: canManageTrafficDefaults(authz.user),
       priority_metrics: validPriorityMetrics(
         typedConfig.priority_metric_columns,
         typedConfig.model,
@@ -430,6 +440,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         ...crm,
         previous: previousCrm,
       },
+      kanban_stages: buildTrafficKanbanStages(currentLeadRowsResult.data ?? [], stages),
       delivery: buildTrafficDelivery((facts ?? []) as unknown as StoredFact[], deliveryFacts),
       currencies: currentCurrencies.map((group) => ({
         ...group,
@@ -446,7 +457,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "reports" });
   if (!authz.ok) return authz.response;
-  if (!authz.user.is_platform_admin || authz.user.support) {
+  if (!canManageTrafficDefaults(authz.user)) {
     return fail("forbidden", "Apenas o admin da plataforma pode alterar o padrão.", 403, {
       requestId,
     });

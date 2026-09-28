@@ -590,6 +590,65 @@ export class WahaClient {
     if (!res.ok) throw new Error(`waha_${res.status}`);
   }
 
+  async listLabels(session: string): Promise<Array<{ id: string; name: string }>> {
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/labels`,
+      { headers: { "X-Api-Key": this.apiKey, Accept: "application/json" } },
+    );
+    if (!res.ok) throw new Error(`waha_labels_${res.status}`);
+    const body = (await res.json()) as unknown;
+    if (!Array.isArray(body)) return [];
+    return body.flatMap((item) => {
+      if (
+        typeof item === "object" &&
+        item !== null &&
+        typeof (item as { id?: unknown }).id === "string" &&
+        typeof (item as { name?: unknown }).name === "string"
+      ) {
+        return [{ id: (item as { id: string }).id, name: (item as { name: string }).name }];
+      }
+      return [];
+    });
+  }
+
+  async getChatLabels(
+    session: string,
+    chatId: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    const path = `/api/${encodeURIComponent(session)}/labels/chats/${encodeURIComponent(chatId)}/`;
+    const res = await this.fetchComTeto(`${this.baseUrl}${path}`, {
+      headers: { "X-Api-Key": this.apiKey, Accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`waha_chat_labels_${res.status}`);
+    const body = (await res.json()) as unknown;
+    if (!Array.isArray(body)) return [];
+    return body.flatMap((item) => {
+      if (
+        typeof item === "object" &&
+        item !== null &&
+        typeof (item as { id?: unknown }).id === "string"
+      ) {
+        return [{
+          id: (item as { id: string }).id,
+          name: typeof (item as { name?: unknown }).name === "string"
+            ? (item as { name: string }).name
+            : "",
+        }];
+      }
+      return [];
+    });
+  }
+
+  async setChatLabels(session: string, chatId: string, labelIds: string[]): Promise<void> {
+    const path = `/api/${encodeURIComponent(session)}/labels/chats/${encodeURIComponent(chatId)}/`;
+    const res = await this.fetchComTeto(`${this.baseUrl}${path}`, {
+      method: "PUT",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ labels: labelIds.map((id) => ({ id })) }),
+    });
+    if (!res.ok) throw new Error(`waha_chat_labels_${res.status}`);
+  }
+
   /**
    * Confere se o número existe no WhatsApp e devolve o chatId canônico.
    * Obrigatório antes de vcard em BR — o nono dígito do CRM nem sempre bate com o wa_id.

@@ -34,6 +34,7 @@ import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/
  */
 import type pg from 'pg';
 import { z } from 'zod';
+import type { embedText } from '@/lib/ai/embed';
 import { auxModelArgs, type AuxModelArgs } from './aux-model-args';
 import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
 
@@ -905,7 +906,7 @@ export interface InboundTurnDeps {
   log: Logger;
   /** testes: registry com provider fake — produção usa o default do seam */
   registry?: ProviderRegistry;
-  embed?: typeof import('@/lib/ai/embed').embedText;
+  embed?: typeof embedText;
   /**
    * Seam de canal (F2-25): fábrica do ChannelAdapter para o pool do job. Default =
    * WAHA-via-CRM (o único adapter da v1). Trocar o adapter (ex.: Cloud API) NÃO
@@ -1852,7 +1853,7 @@ async function executarTurnoDoAgente(
   // system do playbook, no prefixo estável org-wide (disclosure progressivo; cacheável F2-17).
   // O CORPO só carrega no match, no sufixo por-lead (mais abaixo). loadSkills resolve os
   // ponteiros a cada run: trocar/rollback de skill = mover o ponteiro, sem restart.
-  const skills = await loadSkills(pool, tenantId);
+  const skills = await loadSkills(pool, tenantId, agentConfig?.skillNames ?? null);
   const skillIndex = renderSkillIndex(skills);
   // Fase 1 (harness): memória geral da org — prefixo estável, resolvida a cada
   // turno como o playbook (publicar ⇒ próximo turno vale). composeSystemPrompt já
@@ -2793,6 +2794,15 @@ async function executarTurnoDoAgente(
             pendingCitations = [];
           }
           switch (outcome.kind) {
+            case 'deferred':
+              return {
+                ok: false,
+                error: {
+                  code: 'canal_ocupado',
+                  message:
+                    'outra conversa está sendo atendida neste canal; o sistema tentará novamente.',
+                },
+              };
             case 'sent':
             case 'already_sent':
               return { ok: true, status: 'enviada', message_id: outcome.messageId };
@@ -3850,6 +3860,25 @@ async function executarTurnoDoAgente(
           divergence: { suggested: stageSuggestion, confirmed: confirmedStage },
         },
         runLog,
+      );
+    }
+
+    const deferred = outcomes.find((o) => o.kind === 'deferred');
+    if (deferred !== undefined) {
+      await applySendOutcome(
+        pool,
+        deferred,
+        {
+          jobId: liveJob().id,
+          workerId: ctx.workerId,
+          tenantId,
+          leadId,
+          jobClaim: claimOfJob(liveJob()),
+        },
+        { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs },
+      );
+      throw new JobSettledError(
+        'canal ocupado por outro atendimento, turno devolvido à fila sem consumir tentativa',
       );
     }
 

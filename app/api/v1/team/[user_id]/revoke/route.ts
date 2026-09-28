@@ -3,16 +3,16 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * POST /api/v1/team/[user_id]/revoke — revoke a member.
  *
  * Guardrails:
- *  - Caller must be admin of the active org.
+ *  - Caller must have `team.manage`.
  *  - Cannot revoke self.
- *  - Cannot revoke the last admin.
+ *  - Actor and affected role are recorded in the audit log.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -28,7 +28,7 @@ export async function POST(
   const requestId = randomUUID();
   const { user_id: targetUserId } = await ctx.params;
 
-  const authz = await requireRole("admin", { requestId, resource: "team" });
+  const authz = await requirePermission("team.manage", { requestId, resource: "team" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
@@ -48,24 +48,6 @@ export async function POST(
   if (!target) return fail("not_found", t("Membro não encontrado."), 404, { requestId });
   if (target.revoked_at) {
     return ok({ user_id: targetUserId, already_revoked: true }, { requestId });
-  }
-
-  if (target.role === "admin") {
-    const { count, error: countErr } = await supabase
-      .from("user_organizations")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", activeOrg.orgId)
-      .eq("role", "admin")
-      .is("revoked_at", null);
-    if (countErr) return fail("internal_error", countErr.message, 500, { requestId });
-    if ((count ?? 0) <= 1) {
-      return fail(
-        "state_conflict",
-        t("Não é possível revogar o último admin do tenant."),
-        409,
-        { requestId },
-      );
-    }
   }
 
   const nowIso = new Date().toISOString();

@@ -174,6 +174,23 @@ export const wahaAdapter: ChannelAdapter = {
     await client.setPresence(input.sessionRef, input.recipient, "typing");
   },
 
+  async addChatLabel(input: {
+    sessionRef: string;
+    recipient: string;
+    labelName: string;
+  }): Promise<'applied' | 'label_not_found'> {
+    const client = getWahaClient();
+    if (!client) return 'label_not_found';
+    const wanted = input.labelName.trim().toLocaleLowerCase('pt-BR');
+    const labels = await client.listLabels(input.sessionRef);
+    const target = labels.find((label) => label.name.trim().toLocaleLowerCase('pt-BR') === wanted);
+    if (!target) return 'label_not_found';
+    const current = await client.getChatLabels(input.sessionRef, input.recipient);
+    const ids = [...new Set([...current.map((label) => label.id), target.id])];
+    await client.setChatLabels(input.sessionRef, input.recipient, ids);
+    return 'applied';
+  },
+
   /**
    * Pergunta ao transporte se a conexão está de pé.
    *

@@ -1,6 +1,7 @@
 import type { InterfaceSettings } from "@/lib/navigation/interface";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import type { IntegrationAccessMap } from "@/lib/integrations/types";
+import type { SupportContext } from "@/lib/impersonate/support";
 
 /**
  * Papéis dentro do tenant.
@@ -10,7 +11,7 @@ import type { IntegrationAccessMap } from "@/lib/integrations/types";
  * daquela tabela segue com os quatro papéis humanos de propósito: é isso que
  * garante que ninguém ganhe autonomia de máquina por acidente de configuração.
  *
- * Ele senta ENTRE `agent` e `manager` porque descreve exatamente a faixa que
+ * Ele senta ENTRE `agent` e os papéis de gestão porque descreve exatamente a faixa que
  * faltava: capacidades que um atendente humano não tem (configurar a operação,
  * mexer na régua de retorno) mas que o agente precisa para cumprir o invariante
  * 4 da doutrina — nenhuma demanda sem próximo passo. Abrir essas capacidades
@@ -27,12 +28,13 @@ export const ROLE_RANK: Record<Role, number> = {
   agent: 2,
   ai_operator: 3,
   manager: 4,
-  admin: 5,
+  admin: 4,
 };
 
 /**
  * Compara um role (possivelmente vindo solto de uma consulta, não tipado)
- * contra um mínimo. NÃO é gate de rota — isso é `requireRole()`
+ * contra um mínimo de acesso geral. NÃO é gate de capacidade nomeada nem de
+ * rota, isso é `requirePermission()` / `requireRole()`
  * (`lib/auth/require-role.ts`), o único lugar que decide 403 e aplica o gate
  * de MFA. Este helper existe para os usos legítimos que sobram depois de uma
  * rota já ter passado por `requireRole()`: computar um campo informativo no
@@ -62,8 +64,8 @@ export const DESCRICAO_DO_PAPEL: Record<Role, string> = {
   viewer: "Vê os dados, mas não cria nem altera.",
   agent: "Cria e atualiza o trabalho, mas não exclui nada.",
   ai_operator: "Executa as operações liberadas para o assistente publicado.",
-  manager: "Gerencia a operação e pode excluir itens operacionais.",
-  admin: "Administra a empresa, os acessos e pode excluir.",
+  manager: "Tem acesso total, gerencia a equipe e pode excluir leads.",
+  admin: "Tem acesso total às configurações e à operação, mas não gerencia a equipe nem exclui leads.",
 };
 
 /**
@@ -89,7 +91,7 @@ export interface UserOrgMembership {
 }
 
 export interface AuthUser {
-  support?: import("@/lib/impersonate/support").SupportContext | null;
+  support?: SupportContext | null;
   id: string;
   email: string;
   full_name: string | null;

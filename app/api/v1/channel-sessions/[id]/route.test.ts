@@ -216,6 +216,9 @@ function authOk(): void {
 /** Transporte do canal pareado por QR, registrando a ordem junto com o banco. */
 function wahaOk(registro: Registro) {
   const cliente = {
+    stopSession: vi.fn(async () => {
+      registro.eventos.push("waha:stop");
+    }),
     logoutSession: vi.fn(async () => {
       registro.eventos.push("waha:logout");
     }),
@@ -231,6 +234,8 @@ function wahaOk(registro: Registro) {
 const ctx = (id = CANAL) => ({ params: Promise.resolve({ id }) });
 const reqDelete = (id = CANAL) =>
   new NextRequest(`http://localhost/api/v1/channel-sessions/${id}`, { method: "DELETE" });
+const reqPatch = (id = CANAL) =>
+  new NextRequest(`http://localhost/api/v1/channel-sessions/${id}`, { method: "PATCH" });
 const reqGet = (qs = "", id = CANAL) =>
   new NextRequest(`http://localhost/api/v1/channel-sessions/${id}${qs}`);
 
@@ -238,14 +243,67 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe("PATCH /api/v1/channel-sessions/[id]", () => {
+  it("exige manager e para o transporte antes de gravar STOPPED com filtro de organização", async () => {
+    authOk();
+    const db = makeDb();
+    wahaOk(db);
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(reqPatch(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(requireRole).mock.calls[0]?.[0]).toBe("manager");
+    expect(db.eventos).toEqual(["waha:stop", "update:channel_sessions"]);
+    expect(db.escritas[0]).toMatchObject({
+      tipo: "update",
+      table: "channel_sessions",
+      patch: { status: "STOPPED", status_reason: null },
+      filtros: [["organization_id", ORG], ["id", CANAL]],
+    });
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "channel.disconnected",
+      organizationId: ORG,
+      resourceId: CANAL,
+    }));
+  });
+
+  it("falha ao parar mantém o estado anterior, não escreve e não audita sucesso", async () => {
+    authOk();
+    const db = makeDb();
+    const waha = wahaOk(db);
+    waha.stopSession.mockRejectedValue(new Error("remote_stop_failed"));
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(reqPatch(), ctx());
+
+    expect(res.status).toBe(502);
+    expect(db.escritas).toEqual([]);
+    expect(audit).not.toHaveBeenCalledWith(expect.objectContaining({
+      action: "channel.disconnected",
+    }));
+  });
+
+  it("canal de outra organização não chama o transporte nem escreve", async () => {
+    authOk();
+    const db = makeDb({ sessions: [canal({ organization_id: OUTRA_ORG })] });
+    const waha = wahaOk(db);
+    const { PATCH } = await import("./route");
+
+    expect((await PATCH(reqPatch(), ctx())).status).toBe(404);
+    expect(waha.stopSession).not.toHaveBeenCalled();
+    expect(db.escritas).toEqual([]);
+  });
+});
+
 describe("DELETE /api/v1/channel-sessions/[id]", () => {
-  it("exige admin", async () => {
+  it("exige manager", async () => {
     authOk();
     const db = makeDb();
     wahaOk(db);
     const { DELETE } = await import("./route");
     await DELETE(reqDelete(), ctx());
-    expect(vi.mocked(requireRole).mock.calls[0]?.[0]).toBe("admin");
+    expect(vi.mocked(requireRole).mock.calls[0]?.[0]).toBe("manager");
   });
 
   it("sem auth → repassa a resposta, sem escrever nem revogar", async () => {

@@ -1,5 +1,5 @@
 /**
- * LIGAR A CHAMADA DE VOZ DA ORGANIZAÇÃO É AÇÃO DE ADMIN — NO BANCO, NÃO NA ROTA.
+ * LIGAR A CHAMADA DE VOZ EXIGE ACESSO GERAL DE GESTÃO NO BANCO.
  *
  * ## O que está sendo protegido
  *
@@ -51,11 +51,10 @@ beforeAll(() => {
   `);
 });
 
-describe("escrita em org_voice_calls exige admin", () => {
+describe("escrita em org_voice_calls exige acesso geral de gestão", () => {
   for (const [rotulo, usuario] of [
     ["viewer", GOV_VIEWER],
     ["agent", GOV_AGENT_A],
-    ["manager", GOV_MANAGER],
   ] as const) {
     it(`${rotulo} NÃO liga a chamada de voz da organização`, () => {
       const escritas = writeCountAs(
@@ -82,6 +81,16 @@ describe("escrita em org_voice_calls exige admin", () => {
       expect(escritas).toBe(0);
     });
   }
+
+  it("manager liga a chamada de voz", () => {
+    expect(
+      writeCountAs(
+        GOV_MANAGER,
+        `update public.org_voice_calls set enabled = true
+           where organization_id = '${GOV_ORG}'`,
+      ),
+    ).toBe(1);
+  });
 
   it("admin liga", () => {
     // GUARDA DO INSTRUMENTO: sem este caso, uma policy que recusa TODO MUNDO

@@ -3,6 +3,7 @@ import { Draggable } from "@hello-pangea/dnd";
 import type { MouseEvent } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
+import { useUser } from "@/hooks/auth/AuthProvider";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
 import {
@@ -70,6 +71,46 @@ function formatBRL(cents: number | null, currency: string | null): string | null
   }
 }
 
+export function formatLeadEntryDate(
+  value: string,
+  locale: string,
+  timeZone?: string | null,
+  now = new Date(),
+): string | null {
+  const enteredAt = new Date(value);
+  if (Number.isNaN(enteredAt.getTime())) return null;
+
+  const options = timeZone ? { timeZone } : {};
+  try {
+    const dateFormatter = new Intl.DateTimeFormat("en-CA", {
+      ...options,
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    const parts = (date: Date) =>
+      Object.fromEntries(
+        dateFormatter
+          .formatToParts(date)
+          .filter((part) => part.type === "day" || part.type === "month" || part.type === "year")
+          .map((part) => [part.type, part.value]),
+      );
+    const enteredParts = parts(enteredAt);
+    const includeYear = enteredParts.year !== parts(now).year;
+    const date = `${enteredParts.day}/${enteredParts.month}${includeYear ? `/${enteredParts.year}` : ""}`;
+    const time = new Intl.DateTimeFormat(locale, {
+      ...options,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(enteredAt);
+    const connector = locale.toLowerCase().startsWith("es") ? "a las" : "às";
+    return `${date} ${connector} ${time}`;
+  } catch {
+    return timeZone ? formatLeadEntryDate(value, locale, null, now) : null;
+  }
+}
+
 /**
  * O card do quadro, no formato do Kommo: compacto, cada canto com função.
  *
@@ -107,7 +148,9 @@ export function KanbanCard({
 }: KanbanCardProps) {
   const t = useT();
   const tagDoIdioma = useTagDeIdioma();
+  const user = useUser();
   const value = formatBRL(card.valueCents, card.currency);
+  const entryDate = formatLeadEntryDate(lead.created_at, tagDoIdioma, user.timezone);
   const state = resolveCardState(card, t);
   const age = stageAgeLabel(card.hoursInStage, t);
   const ageTooltip = stageAgeTooltip(card.stageEnteredAt, tagDoIdioma);
@@ -304,6 +347,12 @@ export function KanbanCard({
               {card.title}
             </button>
           </h3>
+
+          {entryDate && (
+            <p className="mt-0.5 text-[10px] leading-3 tabular-nums text-text-subtle">
+              {entryDate}
+            </p>
+          )}
 
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <Badge

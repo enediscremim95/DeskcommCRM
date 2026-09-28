@@ -98,7 +98,9 @@
     { "id": "lgpdemail", "lane": "saida", "col": 7, "type": "service", "label": "lib/lgpd/email-delivery.ts", "sublabel": "diz quem PROCESSOU a solicitação — era 'DeskcommCRM' em 100% dos casos, não em borda" },
     { "id": "slaalarm", "lane": "saida", "col": 7, "type": "service", "label": "lib/lgpd/sla-alarm.ts", "sublabel": "marca resolvida no cabeçalho; o #dc2626 do alerta FICA — é semântica de urgência, não marca" },
     { "id": "enrollmfa", "lane": "saida", "col": 7, "type": "api", "label": "app/actions/auth/enrollMfa.ts", "sublabel": "issuer (o campo que o celular grava), não friendlyName — medido contra GoTrue v2.188.1" },
-    { "id": "resend", "lane": "saida", "col": 7, "type": "service", "label": "lib/email/resend.ts", "sublabel": "nome de exibição = marca; endereço = do OPERADOR (domínio verificado). Vazio = not_configured" },
+    { "id": "resend", "lane": "saida", "col": 7, "type": "service", "label": "lib/email/resend.ts (fachada)", "sublabel": "sendEmail/fromAddress/isEmailConfigured estáveis; EMAIL_PROVIDER escolhe o adaptador sem vazar aos chamadores" },
+    { "id": "resendadapter", "lane": "saida", "col": 8, "type": "service", "label": "lib/email/adapters/resend.ts", "sublabel": "Resend legado e padrão compatível" },
+    { "id": "sesadapter", "lane": "saida", "col": 8, "type": "service", "label": "lib/email/adapters/ses.ts", "sublabel": "SESv2 via HTTP assinado com SigV4; sem SDK no bundle" },
     { "id": "lgpdworker", "lane": "saida", "col": 6, "type": "service", "label": "workers/lgpd-export-worker.ts + export-collector", "sublabel": "monta o ExportPayload; roda pelo scheduler (event-log-drain), nunca no contêiner worker" },
     { "id": "pdf", "lane": "saida", "col": 7, "type": "service", "label": "lib/lgpd/pdf-renderer.tsx", "sublabel": "DESLIGADO da marca de propósito — ver o card vermelho" }
   ],
@@ -141,11 +143,11 @@
     { "id": "e36", "from": "saida", "to": "slaalarm", "label": "marcaDaSaida(orgId) vindo do cron lgpd-sla-watcher" },
     { "id": "e37", "from": "saida", "to": "enrollmfa", "label": "marcaDaSaida(null): classe B, MFA é anterior à escolha de organização" },
     { "id": "e38", "from": "saida", "to": "resend", "label": "fromName = marca resolvida" },
-    { "id": "e39", "from": "env", "to": "resend", "label": "RESEND_API_KEY + RESEND_FROM_EMAIL (agora dentro do Zod, não process.env cru)" },
+    { "id": "e39", "from": "env", "to": "resend", "label": "EMAIL_PROVIDER + credenciais e remetente do provedor selecionado, validados em lib/env.ts" },
     { "id": "e40", "from": "invite", "to": "resend", "label": "sendEmail()" },
     { "id": "e41", "from": "lgpdemail", "to": "resend", "label": "sendEmail()" },
     { "id": "e42", "from": "slaalarm", "to": "resend", "label": "sendEmail()" },
-    { "id": "e43", "from": "resend", "to": "caixaentrada", "label": "sem RESEND_FROM_EMAIL não há envio silencioso: EmailNotConfigured vira pending_review e accept_url na tela" },
+    { "id": "e43", "from": "resendadapter", "to": "caixaentrada", "label": "Resend entrega o e-mail sem mudar o SendResult público" },
     { "id": "e44", "from": "enrollmfa", "to": "autenticador", "label": "otpauth://…?issuer=<marca da instalação>" },
     { "id": "e45", "from": "env", "to": "marcaemails", "label": "lê a marca do .env e substitui __APP_NAME__/__ACCENT__/__ACCENT_FG__ nos HTML" },
     { "id": "e46", "from": "installsh", "to": "marcaemails", "label": "chamado após o provision; e por update.sh, para o clone que já roda" },
@@ -166,7 +168,10 @@
     { "id": "e61", "from": "bucketlogos", "to": "resolver", "label": "logoDaCamada(): o ARQUIVO vence a URL colada; urlPublicaDoLogo deriva a URL do caminho + host em runtime" },
     { "id": "e62", "from": "rotalogo", "to": "auditlog", "label": "reusa platform_branding.updated / org.branding_updated — código de ação novo não responderia pergunta nova" },
     { "id": "e63", "from": "layout", "to": "marcacliente", "label": "a MESMA marcaResolvida() do título e do CSS desce por prop, no payload do RSC — mesma rota de user/activeOrg" },
-    { "id": "e64", "from": "marcacliente", "to": "interface", "label": "useMarcaDaInstalacao(): SSR e hidratação leem o mesmo objeto, então o logo do revendedor não troca de elemento no meio do caminho" }
+    { "id": "e64", "from": "marcacliente", "to": "interface", "label": "useMarcaDaInstalacao(): SSR e hidratação leem o mesmo objeto, então o logo do revendedor não troca de elemento no meio do caminho" },
+    { "id": "e65", "from": "resend", "to": "resendadapter", "label": "EMAIL_PROVIDER ausente ou resend" },
+    { "id": "e66", "from": "resend", "to": "sesadapter", "label": "EMAIL_PROVIDER=ses" },
+    { "id": "e67", "from": "sesadapter", "to": "caixaentrada", "label": "SESv2 entrega o mesmo e-mail e devolve o mesmo SendResult" }
   ],
   "cards": [
     {

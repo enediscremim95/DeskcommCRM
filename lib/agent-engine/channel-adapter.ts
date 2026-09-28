@@ -48,6 +48,8 @@ export interface ChannelSendInput {
  * sink F2-06 num vocabulário agnóstico de canal.
  */
 export type ChannelSendResult =
+  /** outro atendimento ocupa o canal: devolver o job à fila sem gastar tentativa */
+  | { kind: 'deferred'; retryAfterMs: number }
   /** enviada agora — messageId é o id da mensagem no canal/CRM */
   | { kind: 'sent'; idempotencyKey: string; messageId: string }
   /** replay pós-crash: já estava aceita, nada reenviado */

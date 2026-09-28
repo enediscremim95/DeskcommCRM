@@ -13,7 +13,7 @@ export async function POST() {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
-  const auth = await requireRole("admin", { requestId, resource: "channel_sessions", allowPlatformAdmin: true });
+  const auth = await requireRole("manager", { requestId, resource: "channel_sessions", allowPlatformAdmin: true });
   if (!auth.ok) return auth.response;
   const admin = createAdminClient();
   if (!(auth.user.is_platform_admin && !auth.user.support) && !(await clientCanReconnectWhatsapp(admin, auth.org.orgId))) {

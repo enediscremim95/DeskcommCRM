@@ -291,3 +291,62 @@ it("anti-backlog: ordena a última inbound por coalesce(sent_at, created_at), n�
   expect(consultaUltima).toContain('coalesce(sent_at, created_at) desc');
   expect(consultaUltima).not.toContain('nulls last');
 });
+
+it('bug 1, duas mensagens em menos de um segundo produzem um único turno', async () => {
+  const primeira = {
+    ...event,
+    id: 'evento-primeiro',
+    created_at: '2026-09-25T12:00:00.000Z',
+  };
+  const segunda = {
+    ...event,
+    id: 'evento-segundo',
+    created_at: '2026-09-25T12:00:00.800Z',
+    payload: {
+      ...event.payload,
+      inbound_message_id: '55555555-5555-4555-8555-555555555555',
+    },
+  };
+  const inserts: string[] = [];
+  const query = vi.fn().mockImplementation((sql: string) => {
+    if (sql.includes('returning e.id')) return { rows: [primeira, segunda] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null }] };
+    if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
+    if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
+    if (sql.includes("direction = 'inbound'")) {
+      return { rows: [{ id: segunda.payload.inbound_message_id }] };
+    }
+    if (sql.includes('as available')) return { rows: [{ available: false }] };
+    if (sql.includes('channel_metadata')) {
+      return {
+        rows: [{
+          channel_metadata: {},
+          force_human: false,
+          assignee_kind: 'ai',
+          bot_silenced_until: null,
+          ai_authorized_at: null,
+          phone_number: null,
+        }],
+      };
+    }
+    if (sql.includes('media_derived_status')) {
+      return { rows: [{ type: 'text', media_derived_status: null }] };
+    }
+    if (sql.includes("kind = 'inbound_turn'") && sql.includes("status = 'pending'")) {
+      return { rows: [] };
+    }
+    if (sql.includes('insert into job_queue')) {
+      inserts.push(sql);
+      return { rows: [{ id: 'job-unico' }] };
+    }
+    return { rows: [] };
+  });
+
+  await drainTick(
+    { query } as unknown as pg.Pool,
+    { ...knobs, debounceMs: 8_000 },
+    log,
+  );
+
+  expect(inserts).toHaveLength(1);
+});

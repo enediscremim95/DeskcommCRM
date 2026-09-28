@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { empresaExigeMfa } from "@/lib/auth/politica-mfa";
 import { SecurityClient } from "./_client";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { roleAtLeast } from "@/lib/auth/types";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,7 @@ export default async function SecurityPage() {
       <SecurityClient
         mfaEnrolled={enrolled}
         obrigatorio={obrigatorio}
-        podeExigirDaEquipe={org?.role === "admin"}
+        podeExigirDaEquipe={roleAtLeast(org?.role, "admin")}
         empresaExige={empresaExige}
       />
     </div>

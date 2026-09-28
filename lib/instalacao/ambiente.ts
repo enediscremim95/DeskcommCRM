@@ -33,7 +33,7 @@ export interface AmbienteDaInstalacao {
   chavesDeProvedor: Record<string, boolean>;
   /** Gateway de IA configurado (alternativa a chave direta de provedor). */
   gateway: boolean;
-  /** Envio de e-mail configurado — falso em toda instalação pelo kit hoje. */
+  /** Envio de e-mail configurado para o provedor selecionado. */
   email: boolean;
   /**
    * O transporte de WhatsApp está apontado e com chave?
@@ -65,6 +65,19 @@ function preenchida(source: FonteDeAmbiente, nome: string | undefined): boolean 
   return (source[nome] ?? "").trim() !== "";
 }
 
+function emailConfigurado(source: FonteDeAmbiente): boolean {
+  const provider = (source.EMAIL_PROVIDER ?? "resend").trim().toLowerCase();
+  if (provider === "ses") {
+    return [
+      "AWS_SES_REGION",
+      "AWS_SES_ACCESS_KEY_ID",
+      "AWS_SES_SECRET_ACCESS_KEY",
+      "SES_FROM_EMAIL",
+    ].every((key) => preenchida(source, key));
+  }
+  return ["RESEND_API_KEY", "RESEND_FROM_EMAIL"].every((key) => preenchida(source, key));
+}
+
 export function lerAmbiente(source: FonteDeAmbiente = process.env): AmbienteDaInstalacao {
   const chavesDeProvedor: Record<string, boolean> = {};
   for (const id of IDS_DE_PROVEDOR) {
@@ -74,7 +87,7 @@ export function lerAmbiente(source: FonteDeAmbiente = process.env): AmbienteDaIn
   return {
     chavesDeProvedor,
     gateway: preenchida(source, "AI_GATEWAY_API_KEY"),
-    email: preenchida(source, "RESEND_API_KEY"),
+    email: emailConfigurado(source),
     transporteDeWhatsapp: lerTransporteDeWhatsapp(source),
   };
 }

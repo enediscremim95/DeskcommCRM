@@ -29,6 +29,7 @@ import {
   rotuloDoTipo,
 } from "@/lib/ai/rag/tipos-de-fonte";
 import { BUCKET_DE_CONHECIMENTO } from "@/lib/ai/rag/ingest/documento";
+import { extrairTextoDeSite } from "@/lib/ai/rag/ingest/site";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +60,7 @@ const createSourceSchema = z.object({
   name: z.string().trim().min(2).max(120),
   items: z.array(faqItemSchema).optional(),
   markdown_blob: z.string().optional(),
+  source_url: z.string().url().optional(),
   source_metadata: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
@@ -144,8 +146,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Conteúdo mandado para um tipo que esta rota não ingere era ACEITO e
   // descartado em silêncio: a fonte nascia vazia, com 201, e ninguém entendia
   // por que o agente não sabia nada dali. Recusar alto é a única resposta honesta.
+  let markdownBlob = input.markdown_blob;
+  if (input.source_url) {
+    if (input.items?.length || input.markdown_blob?.trim()) {
+      return fail('validation_failed', t('Envie texto, arquivo ou site, apenas uma opção por material.'), 422, { requestId });
+    }
+    try {
+      markdownBlob = await extrairTextoDeSite(input.source_url);
+    } catch {
+      return fail('unprocessable_entity', t('Não foi possível ler esse site com segurança.'), 422, { requestId });
+    }
+  }
   const temConteudo =
-    (input.items?.length ?? 0) > 0 || (input.markdown_blob?.trim().length ?? 0) > 0;
+    (input.items?.length ?? 0) > 0 || (markdownBlob?.trim().length ?? 0) > 0;
   if (temConteudo && !aceitaTextoColado(tipo)) {
     return fail(
       "unprocessable_entity",
@@ -187,8 +200,8 @@ export async function POST(req: NextRequest): Promise<Response> {
         tags: it.tags,
         locale: it.locale,
       }));
-    } else if (input.markdown_blob) {
-      faqItems = parseFaqMarkdown(input.markdown_blob);
+    } else if (markdownBlob) {
+      faqItems = parseFaqMarkdown(markdownBlob);
       if (faqItems.length === 0) {
         return fail(
           "invalid_request",
@@ -202,7 +215,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         requestId,
       });
     }
-  } else if (tipo === "documento" && !input.markdown_blob?.trim()) {
+  } else if (tipo === "documento" && !markdownBlob?.trim()) {
     return fail(
       "invalid_request",
       "Cole o texto do documento, ou envie o arquivo em /api/v1/ai/knowledge/sources/upload.",
@@ -223,11 +236,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   // como `.md` no mesmo bucket dos arquivos e segue exatamente a mesma rota de
   // extração. Um destino, um caminho, um lugar para consertar.
   let metadata: Record<string, unknown> = { ...(input.source_metadata ?? {}) };
-  if (tipo === "documento" && input.markdown_blob) {
+  if (tipo === "documento" && markdownBlob) {
     const blobPath = `${activeOrg.orgId}/${randomUUID()}.md`;
     const { error: upErr } = await admin.storage
       .from(BUCKET_DE_CONHECIMENTO)
-      .upload(blobPath, Buffer.from(input.markdown_blob, "utf8"), {
+      .upload(blobPath, Buffer.from(markdownBlob, "utf8"), {
         contentType: "text/markdown",
         upsert: false,
       });
@@ -235,7 +248,13 @@ export async function POST(req: NextRequest): Promise<Response> {
       console.error("[ai-knowledge-sources] guardar o texto falhou:", upErr.message);
       return fail("internal_error", t("Erro ao guardar o conteúdo do material."), 500, { requestId });
     }
-    metadata = { ...metadata, blob_path: blobPath, ext: "md", origem: "texto_colado" };
+    metadata = {
+      ...metadata,
+      blob_path: blobPath,
+      ext: "md",
+      origem: input.source_url ? "site" : "texto_colado",
+      ...(input.source_url ? { source_url: input.source_url } : {}),
+    };
   }
 
   const { data: ks, error: ksErr } = await admin

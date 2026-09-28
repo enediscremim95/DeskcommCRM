@@ -6,6 +6,7 @@
  * segurança traz a mudança, e o que estava bloqueado por uma investigação em
  * disputa passa a depender de uma peça que não pode mentir.
  */
+import type * as PlaywrightTestTypes from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
 import { chromium } from "@playwright/test";
@@ -23,7 +24,7 @@ const ORG = "6e567068-fd1c-4f94-ae1f-40e0334be190";
 const PIPE = "35bf4ac9-c5e0-4f7d-846a-99b1bcc92d69";
 
 /** Em que COLUNA do board o card está — a pergunta que a tela responde. */
-async function colunaDoCard(page: import("@playwright/test").Page, leadId: string): Promise<string> {
+async function colunaDoCard(page: PlaywrightTestTypes.Page, leadId: string): Promise<string> {
   return page.evaluate((id) => {
     const card = document.querySelector(`[data-rfd-draggable-id="${id}"]`);
     if (!card) return "(card não está na tela)";

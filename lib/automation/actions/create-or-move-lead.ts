@@ -26,7 +26,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     actor: { type: "webhook_source", id: ctx.ruleId },
     requestId: `rule:${ctx.ruleId}`,
   };
-  const lead = ctx.context.lead as { id: string; pipeline_id: string; contact_id?: string } | undefined;
+  let lead = ctx.context.lead as { id: string; pipeline_id: string; contact_id?: string } | undefined;
   const contact = ctx.context.contact as
     | { id: string; name?: string | null; display_name?: string | null; phone_number?: string | null }
     | undefined;
@@ -37,6 +37,29 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     : { kind: "unavailable", reason: "origin_capture_failed" };
 
   try {
+    // `message.received` hidrata o contato, não um lead específico. Antes de
+    // criar outro negócio, procura o aberto desse contato NO funil configurado.
+    // Sem isso o modelo "respondeu → próxima etapa" duplicaria o lead em vez de
+    // mover o que a pessoa acabou de responder.
+    if (!lead && contact) {
+      const { data: existentes, error: buscaErro } = await ctx.admin
+        .from("crm_leads")
+        .select("id, pipeline_id, contact_id")
+        .eq("organization_id", ctx.organizationId)
+        .eq("contact_id", contact.id)
+        .eq("pipeline_id", pipelineId)
+        .eq("status", "open");
+      if (buscaErro) {
+        return { type: "create_or_move_lead", status: "failed", error: buscaErro.message };
+      }
+      if ((existentes?.length ?? 0) > 1) {
+        return { type: "create_or_move_lead", status: "failed", error: "ambiguous_open_leads" };
+      }
+      const existente = existentes?.[0];
+      if (existente) {
+        lead = existente as { id: string; pipeline_id: string; contact_id?: string };
+      }
+    }
     if (lead) {
       if (lead.pipeline_id !== pipelineId) {
         return { type: "create_or_move_lead", status: "failed", error: "cross_pipeline_move_not_allowed" };

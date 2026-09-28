@@ -87,6 +87,14 @@ function reactivityDb(): ReactivityAdminClient {
       );
       return rows;
     },
+    async cancelPendingScheduledFollowups(orgId, contactId) {
+      const result = await pool.query(
+        `update cron_jobs set enabled = false, updated_at = now()
+         where organization_id = $1 and contact_id = $2 and enabled = true`,
+        [orgId, contactId],
+      );
+      return result.rowCount ?? 0;
+    },
     async insertEnrollmentEvent(event) {
       try {
         await pool.query(

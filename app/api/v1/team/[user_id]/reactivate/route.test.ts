@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { createClient } from "@/lib/supabase/server";
 import { audit } from "@/lib/audit";
 
@@ -19,7 +19,7 @@ import { audit } from "@/lib/audit";
  * ninguém para reativar).
  */
 
-vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/auth/require-permission", () => ({ requirePermission: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({
   requireSupportWrite: vi.fn(async () => null),
@@ -60,7 +60,7 @@ const ctx = { params: Promise.resolve({ user_id: ALVO }) };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireRole).mockResolvedValue({
+  vi.mocked(requirePermission).mockResolvedValue({
     ok: true,
     user: { id: ADMIN, idioma: "pt-BR" },
     org: { orgId: ORG },
@@ -125,10 +125,10 @@ describe("reativar membro", () => {
     expect(res.status).toBe(404);
   });
 
-  it("CONTROLE — só admin passa", async () => {
+  it("CONTROLE: sem team.manage não passa", async () => {
     // Sem este caso, uma rota sem gate passaria verde: qualquer membro
     // devolveria o acesso de quem o admin acabou de tirar.
-    vi.mocked(requireRole).mockResolvedValue({
+    vi.mocked(requirePermission).mockResolvedValue({
       ok: false,
       response: new Response(null, { status: 403 }),
     } as never);

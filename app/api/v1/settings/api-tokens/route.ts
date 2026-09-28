@@ -12,6 +12,7 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { requireRole } from "@/lib/auth/require-role";
 import { createApiTokenSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
@@ -43,7 +44,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("admin", { requestId, resource: "api_tokens" });
+  const authz = await requirePermission("api.tokens.manage", {
+    requestId,
+    resource: "api_tokens",
+  });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
@@ -102,7 +106,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     {
       ...created,
       plaintext,
-      _warning: t("Salve este token agora — ele não será mostrado novamente."),
+      _warning: t("Salve este token agora. Ele não será mostrado novamente."),
     },
     { status: 201, requestId },
   );

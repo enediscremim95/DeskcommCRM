@@ -15,6 +15,7 @@ import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { buildAuthorizeUrl } from "@/lib/nuvemshop/oauth";
 import { getConfig } from "@/lib/nuvemshop/config";
 import { issueState } from "@/lib/nuvemshop/state";
+import { roleAtLeast } from "@/lib/auth/types";
 
 export type ConnectResult =
   | { ok: false; error: "auth_required" | "no_active_org" | "forbidden" | "not_configured" };
@@ -27,9 +28,8 @@ export async function connectNuvemshop(): Promise<ConnectResult> {
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) return { ok: false, error: "no_active_org" };
 
-  // Only `admin` can wire up integrations (RBAC). `manager`/`agent`/`viewer`
-  // see the UI read-only.
-  if (activeOrg.role !== "admin" && !user.is_platform_admin) {
+  // O acesso geral de gestão inclui gerente e administrador da organização.
+  if (!roleAtLeast(activeOrg.role, "admin") && !user.is_platform_admin) {
     return { ok: false, error: "forbidden" };
   }
 

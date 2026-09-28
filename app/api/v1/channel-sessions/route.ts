@@ -3,7 +3,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * GET  /api/v1/channel-sessions — lista os canais WhatsApp da org (do DB).
  *   Acessível a qualquer membro (usado pelo seletor do inbox e pela sidebar).
  * POST /api/v1/channel-sessions — conecta um NOVO número (cria a sessão com
- *   nome único e inicia no WAHA). Admin only.
+ *   nome único e inicia no WAHA). Gerente ou administrador.
  *
  * organization_id resolvido da sessão (cookie) — nunca do body.
  */
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("admin", {
+  const authz = await requireRole("manager", {
     requestId,
     resource: "channel_sessions",
     allowPlatformAdmin: true,

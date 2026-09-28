@@ -77,7 +77,7 @@ type OrgGate =
   | { autorizado: false; resposta: NextResponse };
 
 async function orgOrFail(requestId: string): Promise<OrgGate> {
-  const authz = await requireRole("admin", { requestId, resource: "channels_templates" });
+  const authz = await requireRole("manager", { requestId, resource: "channels_templates" });
   if (!authz.ok) return { autorizado: false, resposta: authz.response };
   return { autorizado: true, orgId: authz.org.orgId };
 }

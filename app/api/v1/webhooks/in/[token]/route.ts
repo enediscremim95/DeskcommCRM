@@ -104,7 +104,7 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
   const admin = createAdminClient();
   const { data: source, error: srcErr } = await admin
     .from("webhook_sources")
-    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, field_map, redirect_to, is_active")
+    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, default_owner_user_id, field_map, redirect_to, is_active")
     .eq("path_token", token)
     .maybeSingle();
   if (srcErr) return fail("internal_error", srcErr.message, 500, { requestId });
@@ -538,6 +538,7 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
     source: "webhook",
     custom_fields: mapped.custom_fields,
     source_metadata: { webhook_source_id: source.id, ...mapped.source_metadata },
+    owner_user_id: source.default_owner_user_id ?? null,
     ...(externalId ? { external_id: externalId } : {}),
   };
 
@@ -590,7 +591,8 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
   await admin
     .from("webhook_sources")
     .update({ last_received_at: new Date().toISOString() })
-    .eq("id", source.id);
+    .eq("id", source.id)
+    .eq("organization_id", source.organization_id);
 
   await audit({
     action: "webhook.lead_received",

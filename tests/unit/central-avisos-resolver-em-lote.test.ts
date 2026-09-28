@@ -45,6 +45,7 @@ interface Linha {
   id: string;
   organization_id: string;
   status: "open" | "ack" | "resolved";
+  kind: string;
 }
 
 let tabela: Linha[];
@@ -56,6 +57,7 @@ function adminFalso() {
     from(nome: string) {
       expect(nome).toBe("agent_inbox_items");
       const filtros: Array<[keyof Linha, unknown]> = [];
+      const diferentes: Array<[keyof Linha, unknown]> = [];
       let patch: Partial<Linha> | null = null;
       const cadeia = {
         update(p: Partial<Linha>) {
@@ -66,9 +68,16 @@ function adminFalso() {
           filtros.push([coluna, valor]);
           return cadeia;
         },
+        neq(coluna: keyof Linha, valor: unknown) {
+          diferentes.push([coluna, valor]);
+          return cadeia;
+        },
         select() {
           if (erroDoBanco) return Promise.resolve({ data: null, error: erroDoBanco });
-          const alvo = tabela.filter((linha) => filtros.every(([c, v]) => linha[c] === v));
+          const alvo = tabela.filter((linha) =>
+            filtros.every(([c, v]) => linha[c] === v) &&
+            diferentes.every(([c, v]) => linha[c] !== v),
+          );
           if (patch) for (const linha of alvo) Object.assign(linha, patch);
           return Promise.resolve({ data: alvo.map((l) => ({ id: l.id })), error: null });
         },
@@ -85,10 +94,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   erroDoBanco = null;
   tabela = [
-    { id: "a1", organization_id: ORG, status: "open" },
-    { id: "a2", organization_id: ORG, status: "open" },
-    { id: "a3", organization_id: ORG, status: "resolved" },
-    { id: "b1", organization_id: OUTRA_ORG, status: "open" },
+    { id: "a1", organization_id: ORG, status: "open", kind: "handoff" },
+    { id: "a2", organization_id: ORG, status: "open", kind: "job_dead" },
+    { id: "a3", organization_id: ORG, status: "resolved", kind: "handoff" },
+    { id: "b1", organization_id: OUTRA_ORG, status: "open", kind: "handoff" },
   ];
   vi.mocked(requireSupportWrite).mockResolvedValue(null);
   vi.mocked(requireRole).mockResolvedValue({

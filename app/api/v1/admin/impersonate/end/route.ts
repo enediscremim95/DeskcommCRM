@@ -27,5 +27,5 @@ export async function POST() {
     actingAsPlatformAdmin: true, bypassedRls: true, organizationId: session.organization_id,
     resourceType: "organization", resourceId: session.organization_id, requestId,
     metadata: { auth_session_id: sessionId, support_session_id: session.id, access_mode: session.access_mode } });
-  return ok({ ended: !!session?.id, redirect_url: "/app/inbox" }, { requestId });
+  return ok({ ended: !!session?.id, redirect_url: "/app/kanban" }, { requestId });
 }

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -101,6 +101,7 @@ describe("colunas da tabela de campanhas", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("carrega o preset padrão e permite ao admin salvar as colunas na ordem escolhida", async () => {
@@ -161,7 +162,7 @@ describe("colunas da tabela de campanhas", () => {
     await user.click(screen.getByText("Colunas (2)"));
     expect(screen.getByText("Captação")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Renomear predefinição" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "+ Impressões" }));
+    await user.click(screen.getByRole("checkbox", { name: "Impressões" }));
     expect(
       JSON.parse(
         localStorage.getItem("traffic-campaign-columns:org-1:user-1:leads:meta_ads") ?? "[]",
@@ -222,114 +223,117 @@ describe("colunas da tabela de campanhas", () => {
     await screen.findByText("Meta A");
 
     const menus = screen.getAllByText("Colunas (1)");
+    const metaMenu = menus[0]!.parentElement!;
     await user.click(menus[0]!);
-    await user.click(screen.getByRole("button", { name: "+ Alcance" }));
+    await user.click(within(metaMenu).getByRole("checkbox", { name: "Alcance" }));
 
-    const metaSection = screen.getByRole("heading", { name: "Meta Ads" }).closest("details")!;
-    const googleSection = screen.getByRole("heading", { name: "Google Ads" }).closest("details")!;
+    const metaSection = screen.getByRole("heading", { name: "Meta Ads" }).closest("section")!;
+    const googleSection = screen.getByRole("heading", { name: "Google Ads" }).closest("section")!;
     expect(within(metaSection).getByRole("columnheader", { name: /Alcance/ })).toBeInTheDocument();
     expect(
       within(googleSection).queryByRole("columnheader", { name: /Alcance/ }),
     ).not.toBeInTheDocument();
-    expect(
-      localStorage.getItem("traffic-campaign-columns:org-1:user-1:leads:meta_ads"),
-    ).toBe('["spend","reach"]');
+    expect(localStorage.getItem("traffic-campaign-columns:org-1:user-1:leads:meta_ads")).toBe(
+      '["spend","reach"]',
+    );
     expect(
       localStorage.getItem("traffic-campaign-columns:org-1:user-1:leads:google_ads"),
     ).toBeNull();
   });
 
   it("busca de métrica filtra a lista, sem ligar para acento", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
-      new Response(
-        JSON.stringify({
-          data: {
-            model: "leads",
-            organization_key: "org-1",
-            viewer_key: "user-1",
-            default_columns: ["spend", "leads"],
-            default_preset_id: "11111111-1111-4111-8111-111111111111",
-            column_presets: [
-              {
-                id: "11111111-1111-4111-8111-111111111111",
-                name: "Captação",
-                columns: ["spend", "leads"],
-                is_default: true,
-              },
-            ],
-            can_manage_defaults: true,
-            sync: { status: "ready", last_succeeded_at: "2026-09-18T20:00:00Z", error: null },
-            crm: { leads_entered: 8, in_service: 5, closed_won: 3 },
-            currencies: [
-              {
-                currency: "BRL",
-                summary: metrics,
-                daily: [],
-                platforms: [{ ...metrics, platform: "meta_ads" }],
-                campaigns: [{ ...metrics, name: "Campanha A", platform: "meta_ads", adsets: [] }],
-              },
-            ],
-          },
-        }),
-        { status: 200 },
-      ),
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              model: "leads",
+              organization_key: "org-1",
+              viewer_key: "user-1",
+              default_columns: ["spend", "leads"],
+              default_preset_id: "11111111-1111-4111-8111-111111111111",
+              column_presets: [
+                {
+                  id: "11111111-1111-4111-8111-111111111111",
+                  name: "Captação",
+                  columns: ["spend", "leads"],
+                  is_default: true,
+                },
+              ],
+              can_manage_defaults: true,
+              sync: { status: "ready", last_succeeded_at: "2026-09-18T20:00:00Z", error: null },
+              crm: { leads_entered: 8, in_service: 5, closed_won: 3 },
+              currencies: [
+                {
+                  currency: "BRL",
+                  summary: metrics,
+                  daily: [],
+                  platforms: [{ ...metrics, platform: "meta_ads" }],
+                  campaigns: [{ ...metrics, name: "Campanha A", platform: "meta_ads", adsets: [] }],
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        ),
     );
     const user = userEvent.setup();
     render(<TrafficDashboard />);
     expect(await screen.findByText("Campanha A")).toBeInTheDocument();
     await user.click(screen.getByText("Colunas (2)"));
     await user.type(screen.getByRole("textbox", { name: "Buscar métrica" }), "VISUALIZA");
-    expect(screen.getByRole("button", { name: "+ Visualizações da página" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "+ Impressões" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Visualizações da página" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Impressões" })).not.toBeInTheDocument();
   });
 
   it("recarrega o funil quando o período muda", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
-      new Response(
-        JSON.stringify({
-          data: {
-            model: "leads",
-            organization_key: "org-1",
-            viewer_key: "user-1",
-            default_columns: ["spend", "leads"],
-            default_preset_id: "11111111-1111-4111-8111-111111111111",
-            column_presets: [
-              {
-                id: "11111111-1111-4111-8111-111111111111",
-                name: "Captação",
-                columns: ["spend", "leads"],
-                is_default: true,
-              },
-              {
-                id: "22222222-2222-4222-8222-222222222222",
-                name: "Diretoria",
-                columns: ["roas"],
-                is_default: false,
-              },
-            ],
-            can_manage_defaults: false,
-            sync: { status: "ready", last_succeeded_at: null, error: null },
-            crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
-            currencies: [
-              {
-                currency: "BRL",
-                summary: metrics,
-                daily: [],
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              model: "leads",
+              organization_key: "org-1",
+              viewer_key: "user-1",
+              default_columns: ["spend", "leads"],
+              default_preset_id: "11111111-1111-4111-8111-111111111111",
+              column_presets: [
+                {
+                  id: "11111111-1111-4111-8111-111111111111",
+                  name: "Captação",
+                  columns: ["spend", "leads"],
+                  is_default: true,
+                },
+                {
+                  id: "22222222-2222-4222-8222-222222222222",
+                  name: "Diretoria",
+                  columns: ["roas"],
+                  is_default: false,
+                },
+              ],
+              can_manage_defaults: false,
+              sync: { status: "ready", last_succeeded_at: null, error: null },
+              crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
+              currencies: [
+                {
+                  currency: "BRL",
+                  summary: metrics,
+                  daily: [],
                   platforms: [{ ...metrics, platform: "meta_ads" }],
-                  campaigns: [
-                    { ...metrics, name: "Campanha A", platform: "meta_ads", adsets: [] },
-                  ],
-              },
-            ],
-          },
-        }),
-        { status: 200 },
-      ),
+                  campaigns: [{ ...metrics, name: "Campanha A", platform: "meta_ads", adsets: [] }],
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        ),
     );
 
     const user = userEvent.setup();
     render(<TrafficDashboard />);
-    expect(await screen.findByRole("region", { name: "Do alcance à venda fechada" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("region", { name: "Do alcance à venda fechada" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Do alcance à venda fechada")).not.toBeInTheDocument();
     expect(screen.getAllByRole("region", { name: "Do alcance à venda fechada" })).toHaveLength(1);
     await user.click(screen.getByText("Colunas (2)"));
@@ -414,7 +418,7 @@ describe("colunas da tabela de campanhas", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("/api/v1/reports/traffic/pdf?")) {
-        return new Response(new Blob(["pdf"], { type: "application/pdf" }), {
+        return new Response(new TextEncoder().encode("pdf"), {
           status: 200,
           headers: {
             "Content-Disposition":
@@ -455,11 +459,22 @@ describe("colunas da tabela de campanhas", () => {
       configurable: true,
       value: vi.fn(),
     });
-    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-
     const user = userEvent.setup();
     render(<TrafficDashboard />);
-    await user.click(await screen.findByRole("button", { name: "Baixar relatório" }));
+    const downloadButton = await screen.findByRole("button", { name: "Baixar relatório" });
+    await waitFor(() => expect(downloadButton).toBeEnabled());
+    const appendChild = document.body.appendChild.bind(document.body);
+    let downloadLink: HTMLAnchorElement | null = null;
+    const click = vi.fn();
+    vi.spyOn(document.body, "appendChild").mockImplementation((node) => {
+      if (node instanceof HTMLAnchorElement) {
+        downloadLink = node;
+        vi.spyOn(node, "click").mockImplementation(click);
+      }
+      return appendChild(node);
+    });
+
+    await user.click(downloadButton);
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -471,26 +486,61 @@ describe("colunas da tabela de campanhas", () => {
     expect(pdfUrl).toContain("from=");
     expect(pdfUrl).toContain("to=");
     expect(pdfUrl).toContain("language=pt-BR");
-    expect(click).toHaveBeenCalledOnce();
+    await waitFor(() => expect(click).toHaveBeenCalledOnce());
+    expect(downloadLink).not.toBeNull();
+    expect(downloadLink).toHaveAttribute(
+      "download",
+      "relatorio-resumido-2026-09-01-a-2026-09-30.pdf",
+    );
   });
 
   it("filtra por status, persiste a escolha e ordena campanhas sem separar seus detalhes", async () => {
     const response = {
       data: {
-        model: "leads", organization_key: "org-1", viewer_key: "viewer-1",
-        default_columns: ["spend", "leads"], default_preset_id: null,
-        column_presets: [], can_manage_defaults: false,
+        model: "leads",
+        organization_key: "org-1",
+        viewer_key: "viewer-1",
+        default_columns: ["spend", "leads"],
+        default_preset_id: null,
+        column_presets: [],
+        can_manage_defaults: false,
         sync: { status: "ready", last_succeeded_at: null, error: null },
         crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
-        currencies: [{
-          currency: "BRL", summary: metrics, comparison: null, daily: [],
-          platforms: [{ ...metrics, platform: "meta_ads" }],
-          campaigns: [
-            { ...metrics, spend: 10, name: "Alpha", platform: "meta_ads", campaign_status: "ACTIVE", adsets: [{ ...metrics, name: "Conjunto Alpha", ads: [] }] },
-            { ...metrics, spend: 30, name: "Beta", platform: "meta_ads", campaign_status: "PAUSED", adsets: [{ ...metrics, name: "Conjunto Beta", ads: [] }] },
-            { ...metrics, spend: 20, name: "Gamma", platform: "meta_ads", campaign_status: "ARCHIVED", adsets: [{ ...metrics, name: "Conjunto Gamma", ads: [] }] },
-          ],
-        }],
+        currencies: [
+          {
+            currency: "BRL",
+            summary: metrics,
+            comparison: null,
+            daily: [],
+            platforms: [{ ...metrics, platform: "meta_ads" }],
+            campaigns: [
+              {
+                ...metrics,
+                spend: 10,
+                name: "Alpha",
+                platform: "meta_ads",
+                campaign_status: "ACTIVE",
+                adsets: [{ ...metrics, name: "Conjunto Alpha", ads: [] }],
+              },
+              {
+                ...metrics,
+                spend: 30,
+                name: "Beta",
+                platform: "meta_ads",
+                campaign_status: "PAUSED",
+                adsets: [{ ...metrics, name: "Conjunto Beta", ads: [] }],
+              },
+              {
+                ...metrics,
+                spend: 20,
+                name: "Gamma",
+                platform: "meta_ads",
+                campaign_status: "ARCHIVED",
+                adsets: [{ ...metrics, name: "Conjunto Gamma", ads: [] }],
+              },
+            ],
+          },
+        ],
       },
     };
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(response));
@@ -625,7 +675,10 @@ describe("colunas da tabela de campanhas", () => {
     const pending: Array<() => void> = [];
     let captureStatusRestore = false;
     const nativeGetItem = Storage.prototype.getItem;
-    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key: string) {
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (
+      this: Storage,
+      key: string,
+    ) {
       const value = nativeGetItem.call(this, key);
       if (key === "traffic-campaign-status-filter:meta_ads") captureStatusRestore = true;
       return value;
@@ -645,10 +698,13 @@ describe("colunas da tabela de campanhas", () => {
     }) as unknown as typeof window.setTimeout);
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       Response.json(
-        baseResponse([
-          campaignWithStatus("Meta ativa", "ACTIVE", 10),
-          campaignWithStatus("Meta pausada", "PAUSED", 30),
-        ], ["spend"]),
+        baseResponse(
+          [
+            campaignWithStatus("Meta ativa", "ACTIVE", 10),
+            campaignWithStatus("Meta pausada", "PAUSED", 30),
+          ],
+          ["spend"],
+        ),
       ),
     );
 
@@ -671,16 +727,25 @@ describe("colunas da tabela de campanhas", () => {
 
   const baseResponse = (campaigns: unknown[], columns = ["spend", "leads", "impressions"]) => ({
     data: {
-      model: "leads", organization_key: "org-1", viewer_key: "viewer-1",
-      default_columns: columns, default_preset_id: null,
-      column_presets: [], can_manage_defaults: false,
+      model: "leads",
+      organization_key: "org-1",
+      viewer_key: "viewer-1",
+      default_columns: columns,
+      default_preset_id: null,
+      column_presets: [],
+      can_manage_defaults: false,
       sync: { status: "ready", last_succeeded_at: null, error: null },
       crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
-      currencies: [{
-        currency: "BRL", summary: metrics, comparison: null, daily: [],
-        platforms: [{ ...metrics, platform: "meta_ads" }],
-        campaigns,
-      }],
+      currencies: [
+        {
+          currency: "BRL",
+          summary: metrics,
+          comparison: null,
+          daily: [],
+          platforms: [{ ...metrics, platform: "meta_ads" }],
+          campaigns,
+        },
+      ],
     },
   });
   const campaignWithStatus = (name: string, campaign_status: string | null, spend: number) => ({
@@ -691,28 +756,105 @@ describe("colunas da tabela de campanhas", () => {
     spend,
     adsets: [],
   });
+  const creativeResponse = (priorityMetrics: string[] = ["leads", "spend"]) => {
+    const response = baseResponse([
+      {
+        ...metrics,
+        name: "Campanha de criativos",
+        platform: "meta_ads",
+        campaign_status: "ACTIVE",
+        adsets: [
+          {
+            ...metrics,
+            name: "Conjunto principal",
+            ads: [
+              {
+                ...metrics,
+                name: "Criativo campeão",
+                spend: 80,
+                conversions: 8,
+                thumbnail_url: null,
+              },
+              {
+                ...metrics,
+                name: "Criativo secundário",
+                spend: 20,
+                conversions: 2,
+                thumbnail_url: null,
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    return { data: { ...response.data, priority_metrics: priorityMetrics } };
+  };
   const headerNames = (table: HTMLTableElement) =>
     Array.from(table.tHead?.rows[0]?.cells ?? []).map((cell) =>
       (cell.textContent ?? "").replace(/[▼▲]/g, "").trim(),
     );
   const columnIndex = (table: HTMLTableElement, header: string) =>
     headerNames(table).findIndex((name) => name.includes(header));
+  const dragColumn = (source: HTMLElement, target: HTMLElement, clientX = 90) => {
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      setData: vi.fn(),
+      getData: vi.fn(),
+    };
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue({
+      width: 0,
+      height: 40,
+      top: 0,
+      right: 0,
+      bottom: 40,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    fireEvent.dragStart(source, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer, clientX });
+    return {
+      drop: () => {
+        fireEvent.drop(target, { dataTransfer, clientX });
+        fireEvent.dragEnd(source, { dataTransfer });
+      },
+    };
+  };
 
   it("campanhas com o MESMO nome ordenam certo e não se repetem (print do dono, 21/09/2026)", async () => {
     const mesmoNome = (id: string, spend: number) => ({
-      ...metrics, id: `meta_ads:${id}`, spend, name: "Nova campanha de Leads",
-      platform: "meta_ads", campaign_status: "ACTIVE", adsets: [],
+      ...metrics,
+      id: `meta_ads:${id}`,
+      spend,
+      name: "Nova campanha de Leads",
+      platform: "meta_ads",
+      campaign_status: "ACTIVE",
+      adsets: [],
     });
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json(
-        baseResponse([mesmoNome("1", 599.65), mesmoNome("2", 499.86), mesmoNome("3", 199.06), mesmoNome("4", 21.27)], ["spend"]),
+        baseResponse(
+          [
+            mesmoNome("1", 599.65),
+            mesmoNome("2", 499.86),
+            mesmoNome("3", 199.06),
+            mesmoNome("4", 21.27),
+          ],
+          ["spend"],
+        ),
       ),
     );
     const user = userEvent.setup();
     render(<TrafficDashboard />);
-    const table = (await screen.findAllByText("Nova campanha de Leads"))[0]!.closest("table") as HTMLTableElement;
+    const table = (await screen.findAllByText("Nova campanha de Leads"))[0]!.closest(
+      "table",
+    ) as HTMLTableElement;
     const gastos = () =>
-      Array.from(table.tBodies[0]?.rows ?? []).map((row) => (row.cells[row.cells.length - 1]?.textContent ?? "").replace(/ /g, " "));
+      Array.from(table.tBodies[0]?.rows ?? []).map((row) =>
+        (row.cells[row.cells.length - 1]?.textContent ?? "").replace(/ /g, " "),
+      );
 
     expect(gastos()).toEqual(["R$ 599,65", "R$ 499,86", "R$ 199,06", "R$ 21,27"]);
     await user.click(within(table).getByRole("button", { name: /Ordenar por Valor gasto/i }));
@@ -724,8 +866,30 @@ describe("colunas da tabela de campanhas", () => {
       Response.json(
         baseResponse(
           [
-            { ...metrics, spend: 30, impressions: 10, ctr: 1, cpc: 3, link_clicks: 5, name: "Gasta mais", platform: "meta_ads", campaign_status: "ACTIVE", adsets: [] },
-            { ...metrics, spend: 10, impressions: 500, ctr: 5, cpc: 1, link_clicks: 50, name: "Gasta menos", platform: "meta_ads", campaign_status: "ACTIVE", adsets: [] },
+            {
+              ...metrics,
+              spend: 30,
+              impressions: 10,
+              ctr: 1,
+              cpc: 3,
+              link_clicks: 5,
+              name: "Gasta mais",
+              platform: "meta_ads",
+              campaign_status: "ACTIVE",
+              adsets: [],
+            },
+            {
+              ...metrics,
+              spend: 10,
+              impressions: 500,
+              ctr: 5,
+              cpc: 1,
+              link_clicks: 50,
+              name: "Gasta menos",
+              platform: "meta_ads",
+              campaign_status: "ACTIVE",
+              adsets: [],
+            },
           ],
           ["spend", "impressions", "ctr", "link_clicks", "cpc"],
         ),
@@ -738,9 +902,13 @@ describe("colunas da tabela de campanhas", () => {
 
     expect(primeira()).toContain("Gasta mais");
     for (const coluna of ["Impressões", "CTR", "Cliques no link"]) {
-      await user.click(within(table).getByRole("button", { name: new RegExp(`Ordenar por ${coluna}`, "i") }));
+      await user.click(
+        within(table).getByRole("button", { name: new RegExp(`Ordenar por ${coluna}`, "i") }),
+      );
       expect(primeira(), coluna).toContain("Gasta menos");
-      await user.click(within(table).getByRole("button", { name: new RegExp(`Ordenar por ${coluna}`, "i") }));
+      await user.click(
+        within(table).getByRole("button", { name: new RegExp(`Ordenar por ${coluna}`, "i") }),
+      );
       expect(primeira(), `${coluna} ao contrário`).toContain("Gasta mais");
     }
   });
@@ -749,8 +917,26 @@ describe("colunas da tabela de campanhas", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json(
         baseResponse([
-          { ...metrics, spend: 30, leads: 7, impressions: 1234, name: "Beta", platform: "meta_ads", campaign_status: "ACTIVE", adsets: [{ ...metrics, name: "Conjunto Beta", ads: [] }] },
-          { ...metrics, spend: 10, leads: 2, impressions: 99, name: "Alpha", platform: "meta_ads", campaign_status: null, adsets: [] },
+          {
+            ...metrics,
+            spend: 30,
+            leads: 7,
+            impressions: 1234,
+            name: "Beta",
+            platform: "meta_ads",
+            campaign_status: "ACTIVE",
+            adsets: [{ ...metrics, name: "Conjunto Beta", ads: [] }],
+          },
+          {
+            ...metrics,
+            spend: 10,
+            leads: 2,
+            impressions: 99,
+            name: "Alpha",
+            platform: "meta_ads",
+            campaign_status: null,
+            adsets: [],
+          },
         ]),
       ),
     );
@@ -760,7 +946,11 @@ describe("colunas da tabela de campanhas", () => {
     const table = beta.closest("table") as HTMLTableElement;
 
     expect(headerNames(table)).toEqual([
-      "Campanha", "Status", "Valor gasto", "Leads", "Impressões",
+      "Campanha",
+      "Status",
+      "Valor gasto",
+      "Leads",
+      "Impressões",
     ]);
     const statusColumn = columnIndex(table, "Status");
     const spendColumn = columnIndex(table, "Valor gasto");
@@ -782,7 +972,7 @@ describe("colunas da tabela de campanhas", () => {
     const totalRow = screen.getByText("Total").closest("tr") as HTMLTableRowElement;
     expect(totalRow.cells).toHaveLength(headerNames(table).length);
     expect(totalRow.cells[statusColumn]?.textContent).toBe("");
-    expect(totalRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s50,00$/);
+    expect(totalRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s40,00$/);
 
     // Sem status conhecido a campanha só aparece em "Todas".
     await user.click(screen.getByRole("button", { name: "Ativas" }));
@@ -792,12 +982,114 @@ describe("colunas da tabela de campanhas", () => {
     expect(screen.queryByText("Beta")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Todas" }));
 
-    // Abrir os conjuntos não desalinha: a linha extra ocupa todas as colunas.
-    await user.click(screen.getByRole("button", { name: "Beta", expanded: false }));
+    // O conjunto é uma linha da mesma tabela, com as mesmas colunas e larguras.
+    await user.click(screen.getByRole("button", { name: /^Beta/, expanded: false }));
     const adsetRow = screen.getByText("Conjunto Beta").closest("tr") as HTMLTableRowElement;
-    expect(adsetRow.cells).toHaveLength(1);
-    expect(adsetRow.cells[0]?.colSpan).toBe(headerNames(table).length);
-    expect(screen.getByRole("button", { name: "Beta", expanded: true })).toBeInTheDocument();
+    expect(adsetRow.cells).toHaveLength(headerNames(table).length);
+    expect(adsetRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s50,00$/);
+    expect(adsetRow.cells[impressionsColumn]?.textContent).toBe("1.000");
+    expect(within(adsetRow).queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Beta/, expanded: true })).toBeInTheDocument();
+  });
+
+  it("alinha conjunto e anúncio, respeita colunas ocultas e abre os dois níveis pelo teclado", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [
+            {
+              ...metrics,
+              name: "Campanha com detalhe",
+              platform: "meta_ads",
+              campaign_status: "ACTIVE",
+              spend: 30,
+              leads: 7,
+              impressions: 1234,
+              adsets: [
+                {
+                  ...metrics,
+                  name: "Conjunto alinhado",
+                  spend: 12,
+                  leads: 3,
+                  impressions: 456,
+                  ads: [
+                    {
+                      ...metrics,
+                      name: "Anúncio alinhado",
+                      spend: 4,
+                      leads: 1,
+                      impressions: 123,
+                      thumbnail_url: null,
+                      story_id: null,
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              ...metrics,
+              name: "Campanha sem filhos",
+              platform: "meta_ads",
+              campaign_status: "ACTIVE",
+              adsets: [],
+            },
+          ],
+          ["spend", "leads", "impressions"],
+        ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const campaignButton = await screen.findByRole("button", {
+      name: /^Campanha com detalhe/,
+      expanded: false,
+    });
+    expect(campaignButton).toHaveTextContent("1 conjunto");
+    expect(screen.queryByRole("button", { name: /Campanha sem filhos/ })).not.toBeInTheDocument();
+
+    campaignButton.focus();
+    await user.keyboard("{Enter}");
+    expect(campaignButton).toHaveAttribute("aria-expanded", "true");
+
+    const table = campaignButton.closest("table") as HTMLTableElement;
+    const spendColumn = columnIndex(table, "Valor gasto");
+    const leadsColumn = columnIndex(table, "Leads");
+    const impressionsColumn = columnIndex(table, "Impressões");
+    const adsetButton = screen.getByRole("button", {
+      name: /^Conjunto alinhado/,
+      expanded: false,
+    });
+    expect(adsetButton).toHaveTextContent("1 anúncio");
+    const adsetRow = adsetButton.closest("tr") as HTMLTableRowElement;
+    expect(adsetRow.cells).toHaveLength(headerNames(table).length);
+    expect(adsetRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s12,00$/);
+    expect(adsetRow.cells[leadsColumn]?.textContent).toBe("3");
+    expect(adsetRow.cells[impressionsColumn]?.textContent).toBe("456");
+
+    adsetButton.focus();
+    await user.keyboard(" ");
+    expect(adsetButton).toHaveAttribute("aria-expanded", "true");
+    const adRow = within(table).getByText("Anúncio alinhado").closest("tr") as HTMLTableRowElement;
+    expect(adRow.cells).toHaveLength(headerNames(table).length);
+    expect(adRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s4,00$/);
+    expect(adRow.cells[leadsColumn]?.textContent).toBe("1");
+    expect(adRow.cells[impressionsColumn]?.textContent).toBe("123");
+
+    await user.click(screen.getByText("Colunas (3)"));
+    await user.click(screen.getByRole("checkbox", { name: "Impressões" }));
+    expect(headerNames(table)).toEqual(["Campanha", "Status", "Valor gasto", "Leads"]);
+    expect(adsetRow.cells).toHaveLength(4);
+    expect(adRow.cells).toHaveLength(4);
+    expect(within(adsetRow).queryByText("456")).not.toBeInTheDocument();
+    expect(within(adRow).queryByText("123")).not.toBeInTheDocument();
+
+    adsetButton.focus();
+    await user.keyboard(" ");
+    expect(within(table).queryByText("Anúncio alinhado")).not.toBeInTheDocument();
+    campaignButton.focus();
+    await user.keyboard("{Enter}");
+    expect(within(table).queryByText("Conjunto alinhado")).not.toBeInTheDocument();
   });
 
   it("esconde o filtro e a coluna de status quando nenhuma campanha tem status conhecido", async () => {
@@ -805,8 +1097,22 @@ describe("colunas da tabela de campanhas", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json(
         baseResponse([
-          { ...metrics, spend: 30, name: "Beta", platform: "meta_ads", campaign_status: null, adsets: [] },
-          { ...metrics, spend: 10, name: "Alpha", platform: "meta_ads", campaign_status: "", adsets: [] },
+          {
+            ...metrics,
+            spend: 30,
+            name: "Beta",
+            platform: "meta_ads",
+            campaign_status: null,
+            adsets: [],
+          },
+          {
+            ...metrics,
+            spend: 10,
+            name: "Alpha",
+            platform: "meta_ads",
+            campaign_status: "",
+            adsets: [],
+          },
         ]),
       ),
     );
@@ -814,7 +1120,9 @@ describe("colunas da tabela de campanhas", () => {
     const beta = await screen.findByText("Beta");
     const table = beta.closest("table") as HTMLTableElement;
     expect(headerNames(table)).toEqual(["Campanha", "Valor gasto", "Leads", "Impressões"]);
-    expect(screen.queryByRole("group", { name: "Filtrar campanhas por status" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: "Filtrar campanhas por status" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Não informada")).not.toBeInTheDocument();
     // O filtro "Ativas" lembrado não some com as campanhas quando o status ainda não chegou.
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
@@ -824,48 +1132,332 @@ describe("colunas da tabela de campanhas", () => {
     expect(screen.getByText("Total").closest("tr")?.cells).toHaveLength(4);
   });
 
+  it("marca uma campanha sem ordenar nem abrir o detalhamento", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [
+            campaignWithStatus("Maior investimento", "ACTIVE", 80),
+            campaignWithStatus("Menor investimento", "ACTIVE", 20),
+          ],
+          ["spend"],
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Maior investimento")).closest(
+      "table",
+    ) as HTMLTableElement;
+
+    await user.click(
+      within(table).getByRole("checkbox", {
+        name: "Selecionar campanha Menor investimento",
+      }),
+    );
+
+    expect(table.tBodies[0]?.rows[0]).toHaveTextContent("Maior investimento");
+    expect(
+      within(table).queryByRole("button", {
+        name: "Maior investimento",
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("1 campanha marcada");
+  });
+
+  it("marcar tudo respeita o filtro de status e mantém seleções fora dele", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [
+            campaignWithStatus("Meta ativa", "ACTIVE", 70),
+            campaignWithStatus("Meta pausada", "PAUSED", 30),
+          ],
+          ["spend"],
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Meta ativa")).closest("table") as HTMLTableElement;
+
+    await user.click(screen.getByRole("button", { name: "Pausadas" }));
+    await user.click(
+      within(table).getByRole("checkbox", {
+        name: "Selecionar campanhas visíveis",
+      }),
+    );
+    expect(
+      within(table).getByRole("checkbox", {
+        name: "Selecionar campanha Meta pausada",
+      }),
+    ).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Todas" }));
+    expect(
+      within(table).getByRole("checkbox", {
+        name: "Selecionar campanha Meta ativa",
+      }),
+    ).not.toBeChecked();
+    expect(screen.getByRole("status")).toHaveTextContent("1 campanha marcada");
+    await user.click(screen.getByRole("button", { name: "Pausadas" }));
+    await user.click(
+      within(table).getByRole("checkbox", {
+        name: "Selecionar campanhas visíveis",
+      }),
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("busca sem acento, marca só o resultado e limpa sem perder a seleção", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [
+            campaignWithStatus("Promoção de Inverno", "ACTIVE", 50),
+            campaignWithStatus("Sempre Visível", "ACTIVE", 30),
+            campaignWithStatus("Outra Campanha", "ACTIVE", 20),
+          ],
+          ["spend"],
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Promoção de Inverno")).closest(
+      "table",
+    ) as HTMLTableElement;
+
+    await user.click(
+      within(table).getByRole("checkbox", {
+        name: "Selecionar campanha Sempre Visível",
+      }),
+    );
+    await user.type(screen.getByRole("searchbox", { name: "Pesquisar campanha" }), "promocao");
+
+    expect(within(table).getByText("Promoção de Inverno")).toBeInTheDocument();
+    expect(within(table).queryByText("Sempre Visível")).not.toBeInTheDocument();
+    expect(screen.getByText("1 campanha encontrada")).toBeInTheDocument();
+
+    await user.click(
+      within(table).getByRole("checkbox", {
+        name: "Selecionar campanhas visíveis",
+      }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("2 campanhas marcadas");
+
+    await user.click(screen.getByRole("button", { name: "Limpar pesquisa" }));
+    expect(
+      within(table).getByRole("checkbox", {
+        name: "Selecionar campanha Promoção de Inverno",
+      }),
+    ).toBeChecked();
+    expect(
+      within(table).getByRole("checkbox", {
+        name: "Selecionar campanha Sempre Visível",
+      }),
+    ).toBeChecked();
+    expect(
+      within(table).getByRole("checkbox", {
+        name: "Selecionar campanha Outra Campanha",
+      }),
+    ).not.toBeChecked();
+
+    await user.type(screen.getByRole("searchbox", { name: "Pesquisar campanha" }), "inexistente");
+    expect(
+      within(table).getByText("Nenhuma campanha corresponde à pesquisa e aos filtros."),
+    ).toBeInTheDocument();
+  });
+
+  it("resume as marcadas e o total acompanha exatamente as linhas visíveis", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [
+            { ...campaignWithStatus("Campanha A", "ACTIVE", 30), conversions: 3, leads: 3 },
+            { ...campaignWithStatus("Campanha B", "ACTIVE", 20), conversions: 1, leads: 1 },
+            { ...campaignWithStatus("Campanha C", "PAUSED", 50), conversions: 5, leads: 5 },
+          ],
+          ["spend", "leads"],
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Campanha A")).closest("table") as HTMLTableElement;
+    const spendColumn = columnIndex(table, "Valor gasto");
+    const leadsColumn = columnIndex(table, "Leads");
+
+    await user.click(
+      within(table).getByRole("checkbox", { name: "Selecionar campanha Campanha A" }),
+    );
+    await user.click(
+      within(table).getByRole("checkbox", { name: "Selecionar campanha Campanha B" }),
+    );
+
+    const bar = screen.getByRole("status");
+    expect(bar).toHaveTextContent("2 campanhas marcadas");
+    expect(bar).toHaveTextContent(/Investimento:\s*R\$\s*50,00/);
+    expect(bar).toHaveTextContent(/Conversões:\s*4/);
+    expect(bar).toHaveTextContent(/Custo por conversão:\s*R\$\s*12,50/);
+    expect(bar).toHaveTextContent("Os cards do topo e o funil mostram o período inteiro.");
+
+    await user.click(screen.getByRole("button", { name: "Ver só as selecionadas" }));
+    expect(screen.queryByText("Campanha C")).not.toBeInTheDocument();
+    const totalRow = screen.getByText("Total").closest("tr") as HTMLTableRowElement;
+    expect(totalRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s50,00$/);
+    expect(totalRow.cells[leadsColumn]?.textContent).toBe("4");
+
+    await user.click(screen.getByRole("button", { name: "Ver todas as campanhas" }));
+    expect(screen.getByText("Campanha C")).toBeInTheDocument();
+    expect(totalRow.cells[spendColumn]?.textContent).toMatch(/^R\$\s100,00$/);
+    await user.click(screen.getByRole("button", { name: "Limpar seleção" }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("limpa a seleção quando o período muda", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () =>
+        Response.json(baseResponse([campaignWithStatus("Campanha do período", "ACTIVE", 50)])),
+      );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    await user.click(
+      await screen.findByRole("checkbox", {
+        name: "Selecionar campanha Campanha do período",
+      }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("1 campanha marcada");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Período" }), "7");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await screen.findByText("Campanha do período");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Selecionar campanha Campanha do período",
+      }),
+    ).not.toBeChecked();
+  });
+
+  it("mantém as seleções de Meta e Google independentes", async () => {
+    const response = baseResponse([
+      campaignWithStatus("Meta escolhida", "ACTIVE", 30),
+      {
+        ...metrics,
+        id: "google_ads:1",
+        name: "Google separada",
+        platform: "google_ads",
+        campaign_status: "ENABLED",
+        spend: 20,
+        adsets: [],
+      },
+    ]);
+    response.data.currencies[0]!.platforms.push({ ...metrics, platform: "google_ads" });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(response));
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+
+    await user.click(
+      await screen.findByRole("checkbox", {
+        name: "Selecionar campanha Meta escolhida",
+      }),
+    );
+
+    expect(
+      screen.getByRole("checkbox", { name: "Selecionar campanha Meta escolhida" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Selecionar campanha Google separada" }),
+    ).not.toBeChecked();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+  });
+
   it("fala em linguagem simples: nome da organização, frases nos KPIs, retenção real e detalhe do anúncio", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({
         data: {
-          model: "leads", organization_key: "org-1", viewer_key: "viewer-1",
-          default_columns: ["spend", "leads"], default_preset_id: null,
-          column_presets: [], can_manage_defaults: false,
+          model: "leads",
+          organization_key: "org-1",
+          viewer_key: "viewer-1",
+          default_columns: ["spend", "leads"],
+          default_preset_id: null,
+          column_presets: [],
+          can_manage_defaults: false,
           sync: { status: "ready", last_succeeded_at: "2026-09-18T20:00:00Z", error: null },
           crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
-          currencies: [{
-            currency: "BRL",
-            summary: { ...metrics, cost_per_lead: 12.5 },
-            comparison: { ...metrics, cost_per_lead: 20, spend: 40 },
-            daily: [],
-            platforms: [{
-              ...metrics, platform: "meta_ads",
-              impressions: 1000, video_views: 300, video_p25: 200, video_p50: 100, video_p75: 50, video_p95: 10,
-            }],
-            campaigns: [{
-              ...metrics, name: "RMKT Clínica", platform: "meta_ads", campaign_status: "ACTIVE",
-              adsets: [{
-                ...metrics, name: "Conjunto Frio", spend: 40, conversions: 4,
-                ads: [
-                  { ...metrics, name: "Vídeo depoimento", spend: 30, conversions: 3, thumbnail_url: null, story_id: "123_456" },
-                  { ...metrics, name: "Imagem oferta", spend: 10, conversions: 0, thumbnail_url: "https://cdn.example/x.jpg", story_id: null },
-                ],
-              }],
-            }],
-          }],
+          currencies: [
+            {
+              currency: "BRL",
+              summary: { ...metrics, cost_per_lead: 12.5 },
+              comparison: { ...metrics, cost_per_lead: 20, spend: 40 },
+              daily: [],
+              platforms: [
+                {
+                  ...metrics,
+                  platform: "meta_ads",
+                  impressions: 1000,
+                  video_views: 300,
+                  video_p25: 200,
+                  video_p50: 100,
+                  video_p75: 50,
+                  video_p95: 10,
+                },
+              ],
+              campaigns: [
+                {
+                  ...metrics,
+                  name: "RMKT Clínica",
+                  platform: "meta_ads",
+                  campaign_status: "ACTIVE",
+                  adsets: [
+                    {
+                      ...metrics,
+                      name: "Conjunto Frio",
+                      spend: 40,
+                      conversions: 4,
+                      ads: [
+                        {
+                          ...metrics,
+                          name: "Vídeo depoimento",
+                          spend: 30,
+                          conversions: 3,
+                          thumbnail_url: null,
+                          story_id: "123_456",
+                        },
+                        {
+                          ...metrics,
+                          name: "Imagem oferta",
+                          spend: 10,
+                          conversions: 0,
+                          thumbnail_url: "https://cdn.example/x.jpg",
+                          story_id: null,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
         },
       }),
     );
     const user = userEvent.setup();
     render(<TrafficDashboard />);
-    expect(await screen.findByRole("heading", { level: 1, name: "Clínica Exemplo" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Clínica Exemplo" }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/^Dados até 18\/09\/2026$/)).toBeInTheDocument();
 
     // Frases embaixo dos KPIs e a cor da variação seguindo "melhor quando".
     expect(screen.getAllByText("pessoas únicas que viram").length).toBeGreaterThan(0);
     expect(screen.getByText("custo por 1.000 exibições")).toBeInTheDocument();
     expect(screen.getByText("Meta + Google")).toBeInTheDocument();
-    const cpl = screen.getByText("Custo por lead").closest("button") as HTMLButtonElement;
+    const cpl = screen
+      .getAllByText("Custo por lead")
+      .map((element) => element.closest("button"))
+      .find((element): element is HTMLButtonElement => element instanceof HTMLButtonElement)!;
     expect(cpl.textContent).toContain("↓ 37,5%");
     expect(cpl.querySelector(".text-success-fg")).not.toBeNull();
     const spend = screen.getByRole("button", { name: /^Investimento/ });
@@ -874,9 +1466,15 @@ describe("colunas da tabela de campanhas", () => {
     // Retenção real: Hook = 3s ÷ impressões, Body = 75% ÷ impressões, barras relativas ao 25%.
     expect(screen.getByText("pararam para assistir").parentElement?.textContent).toContain("30%");
     expect(screen.getByText("viram até o fim").parentElement?.textContent).toContain("5%");
-    const bar95 = screen.getByText("View 95%").closest("li")?.querySelector(".bg-error") as HTMLElement;
+    const bar95 = screen
+      .getByText("View 95%")
+      .closest("li")
+      ?.querySelector(".bg-error") as HTMLElement;
     expect(bar95.style.width).toBe("5%");
-    const bar25 = screen.getByText("View 25%").closest("li")?.querySelector(".bg-success") as HTMLElement;
+    const bar25 = screen
+      .getByText("View 25%")
+      .closest("li")
+      ?.querySelector(".bg-success") as HTMLElement;
     expect(bar25.style.width).toBe("100%");
 
     // Descrição leiga embaixo do nome da campanha e detalhamento conjunto → anúncio.
@@ -884,7 +1482,12 @@ describe("colunas da tabela de campanhas", () => {
     await user.click(screen.getByRole("button", { name: /RMKT Clínica/, expanded: false }));
     expect(screen.getByText("Conjunto Frio")).toBeInTheDocument();
     expect(screen.getByText("2 anúncios")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Conjunto Frio/, expanded: false }));
+    // O CTA agora fica junto do nome do anúncio, não na última coluna de métricas.
     const link = screen.getByRole("link", { name: "Ver anúncio" });
+    const adNameCell = link.closest("td");
+    expect(adNameCell).not.toBeNull();
+    expect(within(adNameCell!).getByText("Vídeo depoimento")).toBeInTheDocument();
     expect(link).toHaveAttribute("href", "https://www.facebook.com/123/posts/456/");
     expect(screen.getByRole("link", { name: "Ver anúncio: Vídeo depoimento" })).toHaveAttribute(
       "href",
@@ -899,7 +1502,15 @@ describe("colunas da tabela de campanhas", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json(
         baseResponse(
-          [{ ...metrics, name: "Beta", platform: "meta_ads", campaign_status: "PAUSED", adsets: [] }],
+          [
+            {
+              ...metrics,
+              name: "Beta",
+              platform: "meta_ads",
+              campaign_status: "PAUSED",
+              adsets: [],
+            },
+          ],
           ["impressions", "ctr", "spend"],
         ),
       ),
@@ -912,5 +1523,351 @@ describe("colunas da tabela de campanhas", () => {
     expect(row.cells[3]?.textContent).toBe("5%");
     expect(row.cells[4]?.textContent).toMatch(/^R\$\s50,00$/);
     expect(screen.getByText("Pausada")).toBeInTheDocument();
+  });
+
+  it("arrasta a métrica, persiste por pessoa e organização e volta à ordem padrão", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [campaignWithStatus("Campanha reordenável", "ACTIVE", 50)],
+          ["spend", "leads"],
+        ),
+      ),
+    );
+
+    const firstMount = render(<TrafficDashboard />);
+    const firstTable = (await screen.findByText("Campanha reordenável")).closest(
+      "table",
+    ) as HTMLTableElement;
+    const spendHeader = within(firstTable).getByRole("columnheader", { name: /Valor gasto/ });
+    const leadsHeader = within(firstTable).getByRole("columnheader", { name: /Leads/ });
+
+    expect(within(firstTable).getByRole("columnheader", { name: /Campanha/ })).not.toHaveAttribute(
+      "draggable",
+      "true",
+    );
+    expect(spendHeader).toHaveAttribute("draggable", "true");
+    const drag = dragColumn(leadsHeader, spendHeader);
+    expect(spendHeader).toHaveAttribute("data-drop-position", "antes");
+    drag.drop();
+
+    expect(headerNames(firstTable)).toEqual(["Campanha", "Status", "Leads", "Valor gasto"]);
+    const storageKey = "traffic-report-column-order:org-1:viewer-1:meta_ads";
+    expect(JSON.parse(localStorage.getItem(storageKey) ?? "[]")).toEqual([
+      "name",
+      "status",
+      "leads",
+      "spend",
+    ]);
+
+    firstMount.unmount();
+    render(<TrafficDashboard />);
+    const restoredTable = (await screen.findByText("Campanha reordenável")).closest(
+      "table",
+    ) as HTMLTableElement;
+    await waitFor(() =>
+      expect(headerNames(restoredTable)).toEqual(["Campanha", "Status", "Leads", "Valor gasto"]),
+    );
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Voltar à ordem padrão" }));
+    expect(headerNames(restoredTable)).toEqual(["Campanha", "Status", "Valor gasto", "Leads"]);
+    expect(localStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it("reordena também as colunas de Anúncios Meta sem mover o criativo", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(creativeResponse()));
+    render(<TrafficDashboard />);
+    const section = (await screen.findByText("Anúncios Meta")).closest("section") as HTMLElement;
+    const table = section.querySelector("table") as HTMLTableElement;
+    const spendHeader = within(table).getByRole("columnheader", { name: /Investimento/ });
+    const impressionsHeader = within(table).getByRole("columnheader", { name: /Impressões/ });
+
+    expect(within(table).getByRole("columnheader", { name: /Criativo/ })).not.toHaveAttribute(
+      "draggable",
+      "true",
+    );
+    const drag = dragColumn(impressionsHeader, spendHeader);
+    expect(spendHeader).toHaveAttribute("data-drop-position", "antes");
+    drag.drop();
+
+    expect(headerNames(table).slice(0, 4)).toEqual([
+      "Criativo",
+      "Impressões",
+      "Investimento",
+      "Cliques",
+    ]);
+    expect(
+      JSON.parse(
+        localStorage.getItem("traffic-report-column-order:org-1:viewer-1:meta-ads-creatives") ??
+          "[]",
+      ).slice(0, 4),
+    ).toEqual(["creative", "impressions", "spend", "clicks"]);
+  });
+
+  it("desliga a reordenação de colunas no celular", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse([campaignWithStatus("Campanha no celular", "ACTIVE", 50)], ["spend", "leads"]),
+      ),
+    );
+
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Campanha no celular")).closest(
+      "table",
+    ) as HTMLTableElement;
+    expect(within(table).getByRole("columnheader", { name: /Valor gasto/ })).not.toHaveAttribute(
+      "draggable",
+      "true",
+    );
+  });
+
+  it("redimensiona sem ordenar e restaura a largura persistida pela organização", async () => {
+    const campanhas = [
+      campaignWithStatus("Maior investimento", "ACTIVE", 80),
+      campaignWithStatus("Menor investimento", "ACTIVE", 20),
+    ];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(baseResponse(campanhas, ["spend", "leads"])),
+    );
+
+    const firstMount = render(<TrafficDashboard />);
+    const firstTable = (await screen.findByText("Maior investimento")).closest(
+      "table",
+    ) as HTMLTableElement;
+    const spendHeader = within(firstTable).getByRole("columnheader", { name: /Valor gasto/ });
+    vi.spyOn(spendHeader, "getBoundingClientRect").mockReturnValue({
+      width: 160,
+      height: 40,
+      top: 0,
+      right: 160,
+      bottom: 40,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const separator = within(spendHeader).getByRole("separator", { name: /Valor gasto/ });
+
+    fireEvent.pointerDown(separator, {
+      pointerType: "mouse",
+      button: 0,
+      clientX: 100,
+      pointerId: 7,
+    });
+    fireEvent.pointerMove(separator, { pointerType: "mouse", clientX: 180, pointerId: 7 });
+    fireEvent.pointerUp(separator, { pointerType: "mouse", clientX: 180, pointerId: 7 });
+
+    expect(spendHeader).toHaveStyle({ width: "240px" });
+    expect(spendHeader).toHaveAttribute("aria-sort", "descending");
+    expect(firstTable.tBodies[0]?.rows[0]).toHaveTextContent("Maior investimento");
+    expect(
+      JSON.parse(localStorage.getItem("traffic-report-column-widths:org-1:meta_ads") ?? "{}"),
+    ).toEqual({ spend: 240 });
+
+    firstMount.unmount();
+    render(<TrafficDashboard />);
+    const secondTable = (await screen.findByText("Maior investimento")).closest(
+      "table",
+    ) as HTMLTableElement;
+    const restoredHeader = within(secondTable).getByRole("columnheader", { name: /Valor gasto/ });
+    await waitFor(() => expect(restoredHeader).toHaveStyle({ width: "240px" }));
+  });
+
+  it("duplo clique restaura somente a coluna escolhida", async () => {
+    localStorage.setItem(
+      "traffic-report-column-widths:org-1:meta_ads",
+      JSON.stringify({ spend: 260, leads: 180 }),
+    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse([campaignWithStatus("Campanha ajustável", "ACTIVE", 50)], ["spend", "leads"]),
+      ),
+    );
+
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Campanha ajustável")).closest(
+      "table",
+    ) as HTMLTableElement;
+    const spendHeader = within(table).getByRole("columnheader", { name: /Valor gasto/ });
+    await waitFor(() => expect(spendHeader).toHaveStyle({ width: "260px" }));
+
+    fireEvent.doubleClick(within(spendHeader).getByRole("separator", { name: /Valor gasto/ }));
+
+    expect(spendHeader.style.width).toBe("");
+    expect(
+      JSON.parse(localStorage.getItem("traffic-report-column-widths:org-1:meta_ads") ?? "{}"),
+    ).toEqual({ leads: 180 });
+  });
+
+  it("distingue na tabela a métrica prioritária escolhida", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      const response = baseResponse(
+        [campaignWithStatus("Campanha em destaque", "ACTIVE", 50)],
+        ["spend", "leads"],
+      );
+      return Response.json({ data: { ...response.data, priority_metrics: ["leads", "spend"] } });
+    });
+
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Campanha em destaque")).closest(
+      "table",
+    ) as HTMLTableElement;
+    const leadHeader = within(table).getByRole("columnheader", { name: /Leads/ });
+    const leadColumn = columnIndex(table, "Leads");
+
+    expect(leadHeader).toHaveAttribute("data-priority", "true");
+    expect(leadHeader).toHaveClass("bg-primary/[0.10]");
+    expect(table.tBodies[0]?.rows[0]?.cells[leadColumn]).toHaveAttribute("data-priority", "true");
+    expect(table.tBodies[0]?.rows[0]?.cells[leadColumn]).toHaveClass("text-base", "font-semibold");
+    expect(table.tFoot?.rows[0]?.cells[leadColumn]).toHaveAttribute("data-priority", "true");
+  });
+
+  it("redimensiona Anúncios Meta sem mudar a ordenação e restaura por organização e tabela", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(creativeResponse()));
+
+    const firstMount = render(<TrafficDashboard />);
+    const section = (await screen.findByText("Anúncios Meta")).closest("section") as HTMLElement;
+    const table = section.querySelector("table") as HTMLTableElement;
+    const spendHeader = within(table).getByRole("columnheader", { name: /Investimento/ });
+    vi.spyOn(spendHeader, "getBoundingClientRect").mockReturnValue({
+      width: 160,
+      height: 40,
+      top: 0,
+      right: 160,
+      bottom: 40,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const separator = within(spendHeader).getByRole("separator", { name: /Investimento/ });
+
+    expect(
+      fireEvent.pointerDown(separator, {
+        pointerType: "mouse",
+        button: 0,
+        clientX: 100,
+        pointerId: 11,
+      }),
+    ).toBe(false);
+    fireEvent.pointerMove(separator, { pointerType: "mouse", clientX: 180, pointerId: 11 });
+    fireEvent.pointerUp(separator, { pointerType: "mouse", clientX: 180, pointerId: 11 });
+
+    expect(spendHeader).toHaveStyle({ width: "240px" });
+    expect(within(section).getByRole("combobox")).toHaveValue("conversions");
+    expect(table.tBodies[0]?.rows[0]).toHaveTextContent("Criativo campeão");
+    expect(
+      JSON.parse(
+        localStorage.getItem("traffic-report-column-widths:org-1:meta-ads-creatives") ?? "{}",
+      ),
+    ).toEqual({ spend: 240 });
+    expect(localStorage.getItem("traffic-report-column-widths:org-1:meta_ads")).toBeNull();
+
+    firstMount.unmount();
+    render(<TrafficDashboard />);
+    const restoredSection = (await screen.findByText("Anúncios Meta")).closest(
+      "section",
+    ) as HTMLElement;
+    const restoredTable = restoredSection.querySelector("table") as HTMLTableElement;
+    const restoredHeader = within(restoredTable).getByRole("columnheader", {
+      name: /Investimento/,
+    });
+    await waitFor(() => expect(restoredHeader).toHaveStyle({ width: "240px" }));
+  });
+
+  it("ajusta Anúncios Meta pelo teclado e restaura somente a coluna escolhida", async () => {
+    localStorage.setItem(
+      "traffic-report-column-widths:org-1:meta-ads-creatives",
+      JSON.stringify({ spend: 260, impressions: 180 }),
+    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(creativeResponse()));
+
+    render(<TrafficDashboard />);
+    const section = (await screen.findByText("Anúncios Meta")).closest("section") as HTMLElement;
+    const table = section.querySelector("table") as HTMLTableElement;
+    const impressionsHeader = within(table).getByRole("columnheader", { name: /Impressões/ });
+    await waitFor(() => expect(impressionsHeader).toHaveStyle({ width: "180px" }));
+    const impressionsHandle = within(impressionsHeader).getByRole("separator", {
+      name: /Impressões/,
+    });
+
+    fireEvent.keyDown(impressionsHandle, { key: "ArrowRight" });
+    expect(impressionsHeader).toHaveStyle({ width: "188px" });
+    fireEvent.keyDown(impressionsHandle, { key: "Home" });
+    expect(impressionsHeader.style.width).toBe("");
+    expect(
+      JSON.parse(
+        localStorage.getItem("traffic-report-column-widths:org-1:meta-ads-creatives") ?? "{}",
+      ),
+    ).toEqual({ spend: 260 });
+
+    const spendHeader = within(table).getByRole("columnheader", { name: /Investimento/ });
+    fireEvent.doubleClick(within(spendHeader).getByRole("separator", { name: /Investimento/ }));
+    expect(
+      localStorage.getItem("traffic-report-column-widths:org-1:meta-ads-creatives"),
+    ).toBeNull();
+  });
+
+  it("mantém a ênfase da métrica prioritária em Anúncios Meta ao trocar a ordenação", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(creativeResponse()));
+    const user = userEvent.setup();
+
+    render(<TrafficDashboard />);
+    const section = (await screen.findByText("Anúncios Meta")).closest("section") as HTMLElement;
+    const table = section.querySelector("table") as HTMLTableElement;
+    const leadsHeader = within(table).getByRole("columnheader", {
+      name: /^Leads/,
+    }) as HTMLTableCellElement;
+    const leadsIndex = Array.from(table.tHead?.rows[0]?.cells ?? []).indexOf(leadsHeader);
+
+    expect(leadsHeader).toHaveAttribute("data-priority", "true");
+    expect(leadsHeader).toHaveClass("bg-primary/[0.10]");
+    expect(table.tBodies[0]?.rows[0]?.cells[leadsIndex]).toHaveAttribute("data-priority", "true");
+    await user.selectOptions(within(section).getByRole("combobox"), "spend");
+    expect(leadsHeader).toHaveAttribute("data-priority", "true");
+    expect(within(table).getByRole("columnheader", { name: /Investimento/ })).not.toHaveAttribute(
+      "data-priority",
+    );
+  });
+
+  it("esconde controles de edição no modo apresentação e os devolve ao sair", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse(
+          [campaignWithStatus("Campanha em apresentação", "ACTIVE", 50)],
+          ["spend", "leads"],
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+
+    const campaign = await screen.findByText("Campanha em apresentação");
+    const table = campaign.closest("table") as HTMLTableElement;
+    expect(screen.getByText("Colunas (2)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Escolher etapas" })).toBeInTheDocument();
+    expect(within(table).getAllByRole("checkbox").length).toBeGreaterThan(0);
+    expect(within(table).getAllByRole("separator").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "Modo apresentação" }));
+
+    expect(screen.getByRole("button", { name: "Sair do modo apresentação" })).toBeInTheDocument();
+    expect(screen.queryByText("Colunas (2)")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Escolher etapas" })).not.toBeInTheDocument();
+    expect(within(table).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(table).queryByRole("separator")).not.toBeInTheDocument();
+    expect(screen.getByText("Campanha em apresentação")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Sair do modo apresentação" }));
+    expect(screen.getByText("Colunas (2)")).toBeInTheDocument();
+    expect(within(table).getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
 });

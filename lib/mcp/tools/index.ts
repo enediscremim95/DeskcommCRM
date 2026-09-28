@@ -22,10 +22,12 @@ import {
   crmMoveLeadStage,
 } from "./leads";
 import { crmListPipelines } from "./pipelines";
+import { crmComoFunciona } from "./contexto";
 import { crmSendWhatsappMessage } from "./messages";
 import {
   crmAssignConversation,
   crmManageTags,
+  crmApplyChannelLabel,
   crmGetQueueStatus,
 } from "./governance";
 import {
@@ -50,8 +52,6 @@ import {
   crmArchiveStage,
   crmCreateStage,
   crmCreateWebhookSource,
-  crmListAutomationRules,
-  crmListAutomationRuns,
   crmListMessageTemplates,
   crmListStages,
   crmListTags,
@@ -59,10 +59,18 @@ import {
   crmListWebhookSourceEvents,
   crmListWebhookSources,
   crmRenderMessageTemplate,
-  crmSetAutomationRuleActive,
   crmSetWebhookSourceActive,
   crmUpdateStage,
 } from "./operacao";
+import {
+  crmApplyAutomationModel,
+  crmCreateAutomationRule,
+  crmDescribeAutomationOptions,
+  crmListAutomationRules,
+  crmListAutomationRuns,
+  crmSetAutomationRuleActive,
+  crmUpdateAutomationRule,
+} from "./automation";
 import {
   crmBookAppointment,
   crmCancelAppointment,
@@ -81,6 +89,7 @@ import {
   crmCloseDemand,
   crmProposeReactivation,
 } from "./retencao";
+import { ferramentasDeMontagem } from "./montagem";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
 // em TInput (handler usa TInput em posicao contravariante). Coletar
@@ -89,6 +98,7 @@ import {
 // unknown>` e cada handler valida no Zod do registerTool.
 export const allTools: ReadonlyArray<McpToolDefinition> = [
   // read
+  crmComoFunciona,
   crmListEventTypes,
   crmFindFreeSlots,
   crmListAppointments,
@@ -119,12 +129,14 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmListWebhookSourceEvents,
   crmListAutomationRules,
   crmListAutomationRuns,
+  crmDescribeAutomationOptions,
   crmListTeamMembers,
   crmListFollowups,
   crmListAtRiskLeads,
   crmListAvailableAttendants,
   crmListHumanCases,
   crmGetHumanCase,
+  ...ferramentasDeMontagem,
   // write
   crmBookAppointment,
   crmRescheduleAppointment,
@@ -137,6 +149,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmSendWhatsappMessage,
   crmAssignConversation,
   crmManageTags,
+  crmApplyChannelLabel,
   // write — organizar a operação (W4)
   crmCreateStage,
   crmUpdateStage,
@@ -144,6 +157,9 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmCreateWebhookSource,
   crmSetWebhookSourceActive,
   crmSetAutomationRuleActive,
+  crmCreateAutomationRule,
+  crmUpdateAutomationRule,
+  crmApplyAutomationModel,
   crmScheduleFollowup,
   crmCancelFollowup,
   crmCloseDemand,

@@ -162,10 +162,10 @@ function toPartnerSession(row: Record<string, unknown> | null): PartnerSession |
   };
 }
 
-export async function findPartnerSession(
+async function readPartnerSession(
   admin: SupabaseClient,
   organizationId: string,
-): Promise<PartnerSession | null> {
+): Promise<{ session: PartnerSession | null; error: string | null }> {
   const buscar = (colunas: string) =>
     admin
       .from("channel_sessions")
@@ -174,11 +174,31 @@ export async function findPartnerSession(
       .eq("provider", PARTNER_CHANNEL_PROVIDER)
       .maybeSingle();
 
-  const { data } = await queryTolerantToMissingArchived(
+  const { data, error } = await queryTolerantToMissingArchived(
     () => buscar(`${COLUNAS}, ${ARCHIVED_AT}`),
     () => buscar(COLUNAS),
   );
-  return toPartnerSession(data as Record<string, unknown> | null);
+  return {
+    session: toPartnerSession(data as Record<string, unknown> | null),
+    error: error?.message ?? null,
+  };
+}
+
+export async function findPartnerSession(
+  admin: SupabaseClient,
+  organizationId: string,
+): Promise<PartnerSession | null> {
+  return (await readPartnerSession(admin, organizationId)).session;
+}
+
+/** A aba só some quando a leitura confirmou que não há conexão ativa. */
+export async function partnerSessionInUse(
+  admin: SupabaseClient,
+  organizationId: string,
+): Promise<boolean> {
+  const { session, error } = await readPartnerSession(admin, organizationId);
+  if (error) throw new Error(`partner_session_read_failed: ${error}`);
+  return Boolean(session && !session.archivedAt);
 }
 
 /**

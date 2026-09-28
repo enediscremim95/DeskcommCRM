@@ -15,6 +15,9 @@ import {
   type EdgeMouseHandler,
   type NodeMouseHandler,
   type NodeTypes,
+  type ReactFlowProps,
+  type Node,
+  type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -77,6 +80,24 @@ const nodeTypes: NodeTypes = {
 interface Props {
   flowId: string;
   initialData: FollowupFlowDetailRow;
+}
+
+/**
+ * Superfície visual compartilhada. O atendimento reutiliza exatamente o mesmo
+ * viewport, controles e comportamento de zoom do construtor de follow-up, mas
+ * injeta os nós do seu próprio domínio.
+ */
+export function FlowCanvasSurface<NodeType extends Node = Node, EdgeType extends Edge = Edge>({
+  children,
+  ...props
+}: ReactFlowProps<NodeType, EdgeType> & { children?: React.ReactNode }) {
+  return (
+    <ReactFlow<NodeType, EdgeType> {...props}>
+      <Background />
+      <Controls />
+      {children}
+    </ReactFlow>
+  );
 }
 
 function FlowCanvasInner({ flowId, initialData }: Props) {
@@ -324,7 +345,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
         </Sheet>
 
         <div className="relative min-h-0 flex-1" data-testid="flow-canvas" onDragOver={onDragOver} onDrop={onDrop}>
-          <ReactFlow
+          <FlowCanvasSurface
             nodes={nodes}
             edges={edgesForRender}
             nodeTypes={nodeTypes}
@@ -338,10 +359,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
             connectionLineType={ConnectionLineType.SmoothStep}
             elevateEdgesOnSelect
             fitView
-          >
-            <Background />
-            <Controls />
-          </ReactFlow>
+          />
           <Button
             type="button"
             variant="secondary"

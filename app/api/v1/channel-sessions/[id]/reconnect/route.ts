@@ -29,7 +29,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * tem sessão no transporte para parar e subir — `waha_session_name` é NULL nele
  * por CHECK. Reiniciar não é a operação dele; trocar a credencial é.
  *
- * Admin only. organization_id vem da sessão — nunca do path/body.
+ * Manager e admin. organization_id vem da sessão, nunca do path/body.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -69,7 +69,7 @@ export async function POST(
   const parsedBody = reconnectSchema.safeParse(rawBody ?? {});
   const force = parsedBody.success ? (parsedBody.data.force ?? false) : false;
 
-  const authz = await requireRole("admin", {
+  const authz = await requireRole("manager", {
     requestId,
     resource: "channel_sessions",
     allowPlatformAdmin: true,

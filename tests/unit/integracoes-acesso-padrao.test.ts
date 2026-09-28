@@ -20,7 +20,15 @@ describe("acesso padrão às integrações", () => {
     expect(access.n8n.client_visible).toBe(true);
   });
 
-  it("mantém a reconexão do WhatsApp fechada por padrão", async () => {
-    expect(integrationAccessFromRows([]).whatsapp.client_can_reconnect).toBe(false);
+  it("permite reconectar o WhatsApp quando não existe linha de permissão", async () => {
+    expect(integrationAccessFromRows([]).whatsapp.client_can_reconnect).toBe(true);
+  });
+
+  it("mantém o fechamento explícito da reconexão do WhatsApp", async () => {
+    const access = integrationAccessFromRows([
+      { integration: "whatsapp", client_visible: true, client_can_reconnect: false },
+    ]);
+
+    expect(access.whatsapp.client_can_reconnect).toBe(false);
   });
 });

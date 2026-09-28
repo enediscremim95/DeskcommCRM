@@ -6,10 +6,9 @@
  * carga). Retorna UMA linha por membro agent+ da org (LEFT JOIN availability),
  * com nome/carga — o painel de gestão (G5-04) consome só este endpoint.
  *
- * Por que service role + filtro manual de org (doutrina): a RLS de
- * user_organizations restringe manager a ver só a PRÓPRIA linha (só admin vê o
- * roster inteiro), então listar a equipe pelo client user-scoped devolveria 1
- * linha. O admin client resolve a org de fonte confiável (activeOrg do cookie) e
+ * Por que service role + filtro manual de org (doutrina): o roster combina
+ * vínculos com dados de perfil que não saem completos pelo client de sessão.
+ * O admin client resolve a org de fonte confiável (activeOrg do cookie) e
  * filtra organization_id manualmente. Degrada (availability-only, sem nomes)
  * quando o service role não está configurado (dev), como o /api/v1/team faz.
  */

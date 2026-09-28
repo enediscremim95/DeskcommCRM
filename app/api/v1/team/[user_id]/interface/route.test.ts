@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
 }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: mocks.support }));
-vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.role }));
+vi.mock("@/lib/auth/require-permission", () => ({ requirePermission: mocks.role }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: () => ({ from: mocks.from }) }));
 vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 import { PATCH } from "./route";
@@ -30,10 +30,10 @@ it("readonly nega antes de consultar/escrever", async () => {
   expect(mocks.role).not.toHaveBeenCalled();
   expect(mocks.from).not.toHaveBeenCalled();
 });
-it("gate admin nega ao atendente", async () => {
+it("capacidade de equipe nega ao atendente", async () => {
   mocks.role.mockResolvedValue({ ok: false, response: new Response(null, { status: 403 }) });
   expect((await PATCH(request(), ctx)).status).toBe(403);
-  expect(mocks.role).toHaveBeenCalledWith("admin", expect.anything());
+  expect(mocks.role).toHaveBeenCalledWith("team.manage", expect.anything());
   expect(mocks.from).not.toHaveBeenCalled();
 });
 it("destino arbitrário ou vazio não chega ao banco", async () => {

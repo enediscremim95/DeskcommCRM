@@ -71,7 +71,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = randomUUID();
   // Conectar um canal move dinheiro e expõe a conta da empresa: é decisão de
   // dono, não de quem atende.
-  const authz = await requireRole("admin", { requestId, resource: "channels_partner" });
+  const authz = await requireRole("manager", { requestId, resource: "channels_partner" });
   if (!authz.ok) return authz.response;
   const orgId = authz.org.orgId;
 
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = randomUUID();
   // Conectar um canal move dinheiro e expõe a conta da empresa: é decisão de
   // dono, não de quem atende.
-  const authz = await requireRole("admin", { requestId, resource: "channels_partner" });
+  const authz = await requireRole("manager", { requestId, resource: "channels_partner" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;

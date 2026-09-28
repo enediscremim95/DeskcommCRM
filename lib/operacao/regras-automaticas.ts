@@ -9,21 +9,24 @@
  * verdade. Nenhuma dessas duas coisas volta atrás. Por isso a capacidade de
  * ligar/desligar é `critico` no catálogo — nunca entra por pacote.
  *
- * ⚠️ O QUE O AGENTE **NÃO** PODE FAZER, e é decisão, não omissão: criar regra,
- * editar o gatilho, editar as ações ou apagar. Ligar uma regra que um humano
- * escreveu e revisou é reversível por um clique na tela e o humano sabe o que
- * ela faz. Deixar o agente ESCREVER a ação seria deixá-lo escolher para qual
- * endereço externo a empresa manda dados — e aí o gate humano vira decorativo.
+ * Criar e editar são permitidos pelo MCP, mas criação sempre nasce PAUSADA e
+ * ativação continua numa ferramenta separada. O modelo pode preparar a regra;
+ * o efeito externo só começa depois da revisão explícita.
  *
  * ⚠️ `actions` NUNCA SAI COM `config` CRU. A configuração de `call_webhook`
  * carrega `secret_enc` e a URL de destino. O que sai daqui é a LISTA DE TIPOS de
- * ação — o suficiente para dizer "esta regra manda mensagem e aplica marcador",
- * que é o que alguém precisa saber para decidir se liga.
+ * ação, o suficiente para dizer "esta regra manda mensagem e aplica marcador".
  */
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
+import { regrasDoModeloAtendimento } from "@/lib/automation/modelo-atendimento";
 import { autoriaDaMudanca } from "@/lib/operacao/autoria";
 import type { DepsDaOperacao } from "@/lib/operacao/entradas-automaticas";
+import type {
+  CreateAutomationRuleInput,
+  UpdateAutomationRuleInput,
+} from "@/lib/schemas/webhooks";
+import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
 
 export interface RegraVisivel {
   id: string;
@@ -31,7 +34,7 @@ export interface RegraVisivel {
   is_active: boolean;
   /** O evento que a dispara, no vocabulário do sistema (`lead.created`, …). */
   trigger_event: string;
-  /** Só os TIPOS das ações — nunca a configuração. Ver o aviso no topo. */
+  /** Só os TIPOS das ações, nunca a configuração. Ver o aviso no topo. */
   acoes: string[];
   quantidade_de_condicoes: number;
   last_run_at: string | null;
@@ -94,6 +97,264 @@ async function regraDaOrg(
     throw new ApiError(404, "not_found", undefined, deps.requestId, "Essa regra não existe aqui.");
   }
   return data as unknown as { id: string; name: string; is_active: boolean };
+}
+
+async function exigirReferencia(
+  deps: DepsDaOperacao,
+  table: string,
+  id: string,
+  mensagem: string,
+  filtros: Record<string, unknown> = {},
+): Promise<void> {
+  let q = deps.supabase
+    .from(table)
+    .select("id")
+    .eq("id", id)
+    .eq("organization_id", deps.organizationId);
+  for (const [campo, valor] of Object.entries(filtros)) q = q.eq(campo, valor);
+  const { data, error } = await q.maybeSingle();
+  if (error) throw new ApiError(500, "internal_error", undefined, deps.requestId, error.message);
+  if (!data) throw new ApiError(422, "unprocessable_entity", undefined, deps.requestId, mensagem);
+}
+
+async function validarAcoes(
+  deps: DepsDaOperacao,
+  actions: CreateAutomationRuleInput["actions"],
+): Promise<void> {
+  for (const action of actions) {
+    if (action.type === "create_or_move_lead") {
+      await exigirReferencia(deps, "crm_pipelines", action.config.pipeline_id, "O funil não pertence a esta organização.");
+      await exigirReferencia(
+        deps,
+        "crm_stages",
+        action.config.stage_id,
+        "A etapa não pertence ao funil escolhido nesta organização.",
+        { pipeline_id: action.config.pipeline_id, is_archived: false },
+      );
+    } else if (action.type === "send_whatsapp_message") {
+      await exigirReferencia(deps, "channel_sessions", action.config.channel_session_id, "O número não pertence a esta organização.");
+    } else if (action.type === "send_ai_message") {
+      await exigirReferencia(deps, "channel_sessions", action.config.channel_session_id, "O número não pertence a esta organização.");
+      await exigirReferencia(deps, "ai_agents", action.config.agent_id, "O agente não pertence a esta organização.");
+    } else if (action.type === "assign_owner") {
+      const { data, error } = await deps.supabase
+        .from("user_organizations")
+        .select("user_id")
+        .eq("organization_id", deps.organizationId)
+        .eq("user_id", action.config.user_id)
+        .is("revoked_at", null)
+        .in("role", ["agent", "manager", "admin"])
+        .maybeSingle();
+      if (error) throw new ApiError(500, "internal_error", undefined, deps.requestId, error.message);
+      if (!data) {
+        throw new ApiError(422, "unprocessable_entity", undefined, deps.requestId, "A pessoa responsável não está ativa nesta organização.");
+      }
+    } else if (action.type === "start_message_flow") {
+      await exigirReferencia(deps, "followup_flow_pointers", action.config.flow_pointer_id, "O fluxo não pertence a esta organização.", { status: "active" });
+    }
+  }
+}
+
+export async function criarRegraAutomatica(
+  deps: DepsDaOperacao,
+  input: CreateAutomationRuleInput,
+): Promise<RegraVisivel> {
+  await validarAcoes(deps, input.actions);
+  const actions = await encryptRuleActionSecrets(deps.supabase, input.actions);
+  if (actions === null) {
+    throw new ApiError(422, "encryption_unavailable", undefined, deps.requestId, "Não foi possível guardar o segredo do webhook com segurança.");
+  }
+  const { data, error } = await deps.supabase
+    .from("automation_rules")
+    .insert({
+      organization_id: deps.organizationId,
+      created_by_user_id: deps.actor.type === "user" ? deps.actor.id : null,
+      name: input.name,
+      trigger_event: input.trigger_event,
+      conditions: input.conditions,
+      actions,
+      is_active: false,
+      ...autoriaDaMudanca(deps.actor),
+    })
+    .select(COLUNAS)
+    .single();
+  if (error || !data) throw new ApiError(500, "internal_error", undefined, deps.requestId, error?.message ?? "automation_rule_insert_failed");
+
+  await audit({
+    action: "automation.rule_created",
+    actorUserId: deps.actor.type === "user" ? deps.actor.id : null,
+    organizationId: deps.organizationId,
+    resourceType: "automation_rule",
+    resourceId: (data as unknown as { id: string }).id,
+    requestId: deps.requestId,
+    metadata: { name: input.name, trigger_event: input.trigger_event, actor_type: deps.actor.type },
+  });
+  return semConfig(data as unknown as Record<string, unknown>);
+}
+
+export async function atualizarRegraAutomatica(
+  deps: DepsDaOperacao,
+  id: string,
+  input: Omit<UpdateAutomationRuleInput, "is_active">,
+): Promise<RegraVisivel> {
+  await regraDaOrg(deps, id);
+  const patch: Record<string, unknown> = {
+    ...input,
+    // Editar uma regra ligada sem pausá-la faria a configuração nova agir antes
+    // da revisão humana. Toda edição pelo MCP volta a regra para revisão.
+    is_active: false,
+    updated_at: new Date().toISOString(),
+    ...autoriaDaMudanca(deps.actor),
+  };
+  if (input.actions) {
+    await validarAcoes(deps, input.actions);
+    const actions = await encryptRuleActionSecrets(deps.supabase, input.actions);
+    if (actions === null) throw new ApiError(422, "encryption_unavailable", undefined, deps.requestId, "Não foi possível guardar o segredo do webhook com segurança.");
+    patch.actions = actions;
+  }
+  const { data, error } = await deps.supabase
+    .from("automation_rules")
+    .update(patch)
+    .eq("id", id)
+    .eq("organization_id", deps.organizationId)
+    .select(COLUNAS)
+    .single();
+  if (error || !data) throw new ApiError(500, "internal_error", undefined, deps.requestId, error?.message ?? "automation_rule_update_failed");
+
+  await audit({
+    action: "automation.rule_updated",
+    actorUserId: deps.actor.type === "user" ? deps.actor.id : null,
+    organizationId: deps.organizationId,
+    resourceType: "automation_rule",
+    resourceId: id,
+    requestId: deps.requestId,
+    metadata: { fields: Object.keys(input), actor_type: deps.actor.type },
+  });
+  return semConfig(data as unknown as Record<string, unknown>);
+}
+
+export interface ResultadoDoModeloAtendimento {
+  regras: RegraVisivel[];
+  criadas: number;
+  preservadas: number;
+  mensagem: string;
+}
+
+export async function aplicarModeloAtendimento(
+  deps: DepsDaOperacao,
+): Promise<ResultadoDoModeloAtendimento> {
+  const { data: canal, error: canalErro } = await deps.supabase
+    .from("channel_sessions")
+    .select("id")
+    .eq("organization_id", deps.organizationId)
+    .eq("status", "WORKING")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (canalErro) throw new ApiError(500, "internal_error", undefined, deps.requestId, canalErro.message);
+  if (!canal) throw new ApiError(422, "unprocessable_entity", undefined, deps.requestId, "Conecte um número de WhatsApp antes de aplicar o modelo.");
+
+  let { data: funil, error: funilErro } = await deps.supabase
+    .from("crm_pipelines")
+    .select("id")
+    .eq("organization_id", deps.organizationId)
+    .eq("is_default", true)
+    .eq("is_archived", false)
+    .maybeSingle();
+  if (!funil && !funilErro) {
+    const fallback = await deps.supabase
+      .from("crm_pipelines")
+      .select("id")
+      .eq("organization_id", deps.organizationId)
+      .eq("is_archived", false)
+      .order("position", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    funil = fallback.data;
+    funilErro = fallback.error;
+  }
+  if (funilErro) throw new ApiError(500, "internal_error", undefined, deps.requestId, funilErro.message);
+  if (!funil) throw new ApiError(422, "unprocessable_entity", undefined, deps.requestId, "Crie um funil com pelo menos uma etapa antes de aplicar o modelo.");
+
+  const { data: etapas, error: etapasErro } = await deps.supabase
+    .from("crm_stages")
+    .select("id, name, position")
+    .eq("organization_id", deps.organizationId)
+    .eq("pipeline_id", funil.id)
+    .eq("is_archived", false)
+    .eq("is_won", false)
+    .eq("is_lost", false)
+    .order("position", { ascending: true });
+  if (etapasErro) throw new ApiError(500, "internal_error", undefined, deps.requestId, etapasErro.message);
+  if (!etapas?.length) throw new ApiError(422, "unprocessable_entity", undefined, deps.requestId, "O funil precisa ter uma etapa aberta antes de aplicar o modelo.");
+
+  const { data: responsavel, error: responsavelErro } = await deps.supabase
+    .from("user_organizations")
+    .select("user_id")
+    .eq("organization_id", deps.organizationId)
+    .is("revoked_at", null)
+    .in("role", ["agent", "manager", "admin"])
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (responsavelErro) throw new ApiError(500, "internal_error", undefined, deps.requestId, responsavelErro.message);
+  if (!responsavel) throw new ApiError(422, "unprocessable_entity", undefined, deps.requestId, "Adicione uma pessoa que possa atender leads antes de aplicar o modelo.");
+
+  const proxima = etapas[1] ?? etapas[0]!;
+  const followup = etapas.find((e) => /follow|retom|seguim/i.test(e.name));
+  if (!followup) {
+    throw new ApiError(
+      422,
+      "unprocessable_entity",
+      undefined,
+      deps.requestId,
+      "Crie ou renomeie uma etapa de follow-up antes de aplicar o modelo.",
+    );
+  }
+  const regras = regrasDoModeloAtendimento({
+    organizationId: deps.organizationId,
+    channelSessionId: canal.id,
+    pipelineId: funil.id,
+    nextStageId: proxima.id,
+    followupStageId: followup.id,
+    ownerUserId: responsavel.user_id,
+  });
+  const ids = regras.map((r) => r.id);
+  const existentes = await deps.supabase
+    .from("automation_rules")
+    .select("id")
+    .eq("organization_id", deps.organizationId)
+    .in("id", ids);
+  if (existentes.error) throw new ApiError(500, "internal_error", undefined, deps.requestId, existentes.error.message);
+  const preservadas = existentes.data?.length ?? 0;
+  const linhas = regras.map((regra) => ({
+    ...regra,
+    organization_id: deps.organizationId,
+    created_by_user_id: deps.actor.type === "user" ? deps.actor.id : null,
+    is_active: false,
+    ...autoriaDaMudanca(deps.actor),
+  }));
+  const { error: upsertErro } = await deps.supabase
+    .from("automation_rules")
+    .upsert(linhas, { onConflict: "id", ignoreDuplicates: true });
+  if (upsertErro) throw new ApiError(500, "internal_error", undefined, deps.requestId, upsertErro.message);
+
+  await audit({
+    action: "automation.model_applied",
+    actorUserId: deps.actor.type === "user" ? deps.actor.id : null,
+    organizationId: deps.organizationId,
+    resourceType: "automation_rule",
+    requestId: deps.requestId,
+    metadata: { criadas: regras.length - preservadas, preservadas, actor_type: deps.actor.type },
+  });
+  const todas = await listarRegrasAutomaticas(deps);
+  const porId = new Map(todas.map((r) => [r.id, r]));
+  return {
+    regras: ids.map((id) => porId.get(id)).filter((r): r is RegraVisivel => Boolean(r)),
+    criadas: regras.length - preservadas,
+    preservadas,
+    mensagem: "Os modelos foram criados pausados. Revise textos, etapas, condição e responsável antes de ligar.",
+  };
 }
 
 /** Liga ou desliga a regra. Ver o aviso do topo antes de afrouxar o risco disto. */

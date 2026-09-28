@@ -709,6 +709,15 @@
   ],
   "cards": [
     {
+      "dot": "blue",
+      "title": "Entrada MCP externa começa com contexto",
+      "items": [
+        "O token resolve organização, marca, idioma, vocabulário, papel e escopos antes de criar o servidor",
+        "O mesmo texto segue nas instructions do protocolo e na ferramenta crm_como_funciona",
+        "A tela /app/mcp antecipa o texto por token sem voltar a exibir o segredo"
+      ]
+    },
+    {
       "dot": "amber",
       "title": "Saídas do painel (Fase 4)",
       "items": [

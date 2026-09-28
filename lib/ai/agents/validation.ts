@@ -163,6 +163,25 @@ const versionShapeSchema = z
      * organização é o servidor.
      */
     knowledge_source_ids: z.array(z.string().uuid()).default([]),
+    /**
+     * NULL preserva o comportamento histórico: todas as skills ativas da
+     * organização. Um array é a seleção explícita desta versão, inclusive [].
+     */
+    skill_names: z.array(z.string().trim().min(1).max(120)).max(100).nullable().default(null),
+    /** Proposta versionada. Só o trigger de publicação a aplica ao canal. */
+    channel_config: z
+      .object({
+        throttle_ms: z.number().int().min(1200).max(300000).optional(),
+        jitter_max_ms: z.number().int().min(0).max(60000).optional(),
+        window_start_hour: z.number().int().min(0).max(23).optional(),
+        window_end_hour: z.number().int().min(1).max(24).optional(),
+        allow_sunday: z.boolean().optional(),
+        timezone: z.string().trim().min(1).max(80).optional(),
+        max_concurrent_ai_conversations: z.number().int().min(1).max(20).optional(),
+      })
+      .strict()
+      .nullable()
+      .default(null),
   })
   .strict();
 

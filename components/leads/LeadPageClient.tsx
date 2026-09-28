@@ -23,13 +23,14 @@ import { OpenConversationProvider } from "@/hooks/notifications/OpenConversation
 import { useT } from "@/hooks/i18n/useT";
 import { usePipelineStages } from "@/hooks/webhooks/useWebhookSources";
 import { estadoDaJanela, formatarDecorrido } from "@/lib/channels/janela";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { roleAtLeast, ROLE_RANK } from "@/lib/auth/types";
 import { activityLabel, actorName } from "@/lib/leads/activity-vocabulary";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import type { Lead } from "@/lib/types/leads";
 import type { Message } from "@/lib/types/messaging";
 import type { Stage } from "@/lib/kanban/types";
 import { apiClient } from "@/lib/api/client";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { ChatCircle, Gear, Phone, Trash } from "@/lib/ui/icons";
 import { DadosCompletosDoLead } from "./DadosCompletosDoLead";
 import { FollowupsDoLead } from "./FollowupsDoLead";
@@ -57,10 +58,6 @@ interface Props {
   conversationId: string | null;
   hasConnectedChannel: boolean;
   canReplyInConversation: boolean;
-}
-
-function nomeDoContato(contact: ContactSummary | null): string {
-  return contact?.display_name?.trim() || contact?.name?.trim() || "Contato sem nome";
 }
 
 function valorDoNegocio(
@@ -105,8 +102,8 @@ export function LeadPageClient({
   const podeEditar = Boolean(
     activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && !supportReadonly,
   );
-  const podeConfigurar = activeOrg?.role === "admin" && !supportReadonly;
-  const podeExcluir = usePermission("resource.delete") && !supportReadonly;
+  const podeConfigurar = roleAtLeast(activeOrg?.role, "admin") && !supportReadonly;
+  const podeExcluir = usePermission("lead.delete") && !supportReadonly;
   const timeline = useLeadTimeline(lead.id, lead.contact_id);
   const conversation = useConversation(conversationId, Boolean(conversationId));
   const selectedConversation = conversation.data ?? null;
@@ -180,7 +177,7 @@ export function LeadPageClient({
     isNotFound(conversation.error);
 
   const valor = valorDoNegocio(leadAtual.value_cents, leadAtual.currency, locale);
-  const nome = nomeDoContato(contact);
+  const nome = rotuloDoContato(contact, t);
   const stageAtual = etapas.find((stage) => stage.id === leadAtual.stage_id);
   const nomeDaEtapa = stageAtual?.name ?? stageName;
   const diasNaEtapa = Math.max(

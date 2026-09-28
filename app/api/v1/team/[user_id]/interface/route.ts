@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { NextRequest } from "next/server";
 import { requireSupportWrite } from "@/lib/impersonate/support";
-import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { createClient } from "@/lib/supabase/server";
 import { interfaceSettingsSchema, interfaceTemDestino } from "@/lib/navigation/interface";
 import type { Role } from "@/lib/auth/types";
@@ -12,7 +12,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ user_id: 
   const denied = await requireSupportWrite();
   if (denied) return denied;
   const requestId = randomUUID();
-  const authz = await requireRole("admin", { requestId, resource: "team" });
+  const authz = await requirePermission("team.manage", { requestId, resource: "team" });
   if (!authz.ok) return authz.response;
   const { user_id } = await ctx.params;
   const parsed = z

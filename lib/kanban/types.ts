@@ -34,8 +34,24 @@ export interface Stage {
   expected_duration_hours: number | null;
 }
 
+export interface BoardStagePage {
+  total: number;
+  cursor: string | null;
+  has_more: boolean;
+  /** Posição do primeiro card ainda não carregado, usada como limite no arrasto. */
+  next_position_in_stage: number | null;
+}
+
 export interface BoardData {
   pipeline: Pipeline;
   stages: Stage[];
   leads: Lead[];
+  /** Metadados independentes por coluna. Opcional para consumidores legados. */
+  stage_pages?: Record<string, BoardStagePage>;
+}
+
+export interface BoardStageChunk {
+  stage_id: string;
+  leads: Lead[];
+  page: BoardStagePage;
 }

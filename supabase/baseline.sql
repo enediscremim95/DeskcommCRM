@@ -99,6 +99,7 @@ begin
 end $$;
 
 
+
 ALTER FUNCTION "public"."emit_event"("p_event_type" "text", "p_entity_kind" "text", "p_entity_id" "uuid", "p_payload" "jsonb", "p_metadata" "jsonb", "p_organization_id" "uuid") OWNER TO "postgres";
 
 
@@ -10137,6 +10138,10 @@ alter table public.agent_inbox_items
     -- mesma razão de midia_nao_lida/conhecimento_nao_indexado. Entra NESTA
     -- lista, não em bloco novo (#159, bloco único por constraint).
     'voice_call_missed',
+    -- (migration 0262) Uma fonte que já recebia e fica 48 horas sem lead
+    -- deixa de falhar em silêncio e aparece na Central.
+    'webhook_source_silent',
+    'followup_suggestion',
     'other'
   ));
 
@@ -24898,6 +24903,94 @@ begin
   end loop;
 end $$;
 
+-- BEGIN 0263_limite_conversas_por_canal
+alter table public.channel_sessions
+  add column if not exists max_concurrent_ai_conversations smallint not null default 1;
+alter table public.channel_sessions
+  drop constraint if exists channel_sessions_max_concurrent_ai_conversations_check;
+alter table public.channel_sessions
+  add constraint channel_sessions_max_concurrent_ai_conversations_check
+  check (max_concurrent_ai_conversations between 1 and 20);
+create table if not exists public.channel_delivery_leases (
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  channel_session_id uuid not null references public.channel_sessions(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  job_id uuid not null references public.job_queue(id) on delete cascade,
+  acquired_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  primary key (channel_session_id, conversation_id),
+  unique (job_id)
+);
+create index if not exists channel_delivery_leases_active_idx
+  on public.channel_delivery_leases (channel_session_id, expires_at);
+alter table public.channel_delivery_leases enable row level security;
+drop policy if exists channel_delivery_leases_tenant on public.channel_delivery_leases;
+create policy channel_delivery_leases_tenant
+  on public.channel_delivery_leases for all to authenticated
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+revoke all on table public.channel_delivery_leases from anon, authenticated;
+grant all on table public.channel_delivery_leases to service_role;
+create or replace function public.fn_try_acquire_channel_delivery_lease(
+  p_organization_id uuid, p_conversation_id uuid, p_job_id uuid,
+  p_ttl_seconds integer default 960
+) returns table(acquired boolean, retry_after_ms integer)
+language plpgsql set search_path = public as $$
+declare
+  v_channel_session_id uuid;
+  v_limit integer;
+  v_active integer;
+  v_next_expiry timestamptz;
+begin
+  if p_ttl_seconds < 30 or p_ttl_seconds > 3600 then
+    raise exception 'invalid_channel_delivery_lease_ttl';
+  end if;
+  select c.channel_session_id, s.max_concurrent_ai_conversations
+    into v_channel_session_id, v_limit
+    from public.conversations c
+    join public.channel_sessions s on s.id = c.channel_session_id
+      and s.organization_id = c.organization_id
+   where c.id = p_conversation_id and c.organization_id = p_organization_id
+   for update of s;
+  if v_channel_session_id is null then raise exception 'channel_session_not_found'; end if;
+  delete from public.channel_delivery_leases
+   where channel_session_id = v_channel_session_id and expires_at <= now();
+  update public.channel_delivery_leases
+     set acquired_at = now(), expires_at = now() + make_interval(secs => p_ttl_seconds)
+   where channel_session_id = v_channel_session_id
+     and conversation_id = p_conversation_id and job_id = p_job_id;
+  if found then return query select true, 0; return; end if;
+  select count(*)::integer, min(expires_at) into v_active, v_next_expiry
+    from public.channel_delivery_leases
+   where channel_session_id = v_channel_session_id and expires_at > now();
+  if v_active >= coalesce(v_limit, 1) then
+    return query select false, greatest(1000, least(60000,
+      ceil(extract(epoch from (v_next_expiry - now())) * 1000)::integer));
+    return;
+  end if;
+  insert into public.channel_delivery_leases
+    (organization_id, channel_session_id, conversation_id, job_id, expires_at)
+  values (p_organization_id, v_channel_session_id, p_conversation_id, p_job_id,
+    now() + make_interval(secs => p_ttl_seconds));
+  return query select true, 0;
+end;
+$$;
+create or replace function public.fn_release_channel_delivery_lease(
+  p_organization_id uuid, p_job_id uuid
+) returns void language sql set search_path = public as $$
+  delete from public.channel_delivery_leases
+   where organization_id = p_organization_id and job_id = p_job_id;
+$$;
+revoke execute on function public.fn_try_acquire_channel_delivery_lease(uuid, uuid, uuid, integer)
+  from public, anon, authenticated;
+revoke execute on function public.fn_release_channel_delivery_lease(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_try_acquire_channel_delivery_lease(uuid, uuid, uuid, integer)
+  to service_role;
+grant execute on function public.fn_release_channel_delivery_lease(uuid, uuid)
+  to service_role;
+-- END 0263_limite_conversas_por_canal
+
 -- regra 2 (authenticated): as 5 que o update abriu e o install não abre. Aqui não
 -- cabe varredura — `authenticated` PRECISA de EXECUTE nos helpers de RLS e em
 -- `retrieve_top_k_chunks` (num install fresco ele tem). É julgamento por função,
@@ -25937,6 +26030,454 @@ end; $$;
 revoke execute on function public.fn_enqueue_message_template_audio_cleanup() from public, anon, authenticated;
 drop trigger if exists trg_message_template_audio_cleanup on public.message_templates;
 create trigger trg_message_template_audio_cleanup before update of audio_storage_path or delete on public.message_templates for each row execute function public.fn_enqueue_message_template_audio_cleanup();
+-- ---- reconexão do WhatsApp liberada por padrão (migration 0261) ----
+update public.organization_integration_permissions
+set client_visible = true,
+    client_can_reconnect = true,
+    updated_at = now()
+where integration = 'whatsapp'
+  and client_can_reconnect = false
+  and updated_by is null
+  and updated_at = created_at;
+
+create or replace function public.fn_configure_organization_integrations(
+  p_organization_id uuid,
+  p_actor uuid,
+  p_permissions jsonb,
+  p_workflow_ids text[]
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_integration text;
+  v_workflow_id text;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+  if not exists (select 1 from public.organizations where id = p_organization_id) then
+    raise exception 'organization_not_found' using errcode = 'P0002';
+  end if;
+
+  foreach v_integration in array array['whatsapp', 'n8n', 'windsor'] loop
+    insert into public.organization_integration_permissions (
+      organization_id, integration, client_visible, client_can_reconnect, updated_by, updated_at
+    ) values (
+      p_organization_id,
+      v_integration,
+      coalesce((p_permissions -> v_integration ->> 'client_visible')::boolean, false),
+      case when v_integration = 'whatsapp'
+        then coalesce((p_permissions -> v_integration ->> 'client_visible')::boolean, false)
+          and coalesce((p_permissions -> v_integration ->> 'client_can_reconnect')::boolean, true)
+        else false
+      end,
+      p_actor,
+      now()
+    )
+    on conflict (organization_id, integration) do update set
+      client_visible = excluded.client_visible,
+      client_can_reconnect = excluded.client_can_reconnect,
+      updated_by = excluded.updated_by,
+      updated_at = now();
+  end loop;
+
+  delete from public.n8n_workflow_bindings where organization_id = p_organization_id;
+  foreach v_workflow_id in array coalesce(p_workflow_ids, array[]::text[]) loop
+    v_workflow_id := btrim(v_workflow_id);
+    if length(v_workflow_id) not between 1 and 200 then
+      raise exception 'invalid_workflow_id' using errcode = '22023';
+    end if;
+    insert into public.n8n_workflow_bindings (organization_id, workflow_id, assigned_by, updated_at)
+    values (p_organization_id, v_workflow_id, p_actor, now());
+  end loop;
+end;
+$$;
+
+revoke execute on function public.fn_configure_organization_integrations(uuid, uuid, jsonb, text[]) from public, anon, authenticated;
+grant execute on function public.fn_configure_organization_integrations(uuid, uuid, jsonb, text[]) to service_role;
+
+-- ---- integrar site: responsável e alerta de silêncio (migration 0262) ----
+alter table public.webhook_sources
+  add column if not exists default_owner_user_id uuid references auth.users(id) on delete set null;
+
+comment on column public.webhook_sources.default_owner_user_id is
+  'Responsável humano padrão dos leads desta fonte. O código valida membership ativa na mesma organização antes de gravar.';
+
+create unique index if not exists uniq_agent_inbox_webhook_source_silent_open
+  on public.agent_inbox_items (organization_id, kind, ref_id)
+  where kind = 'webhook_source_silent' and status = 'open';
+
+-- ---- capacidades não lineares de gerente (migration 0264) ----
+create or replace function public.fn_role_at_least(p_org uuid, p_min text)
+returns boolean language sql stable security definer set search_path = public as $$
+  with levels(role, lvl) as (
+    values ('viewer',1),('agent',2),('manager',4),('admin',4)
+  )
+  select coalesce(
+    (select user_lvl.lvl >= min_lvl.lvl
+       from levels user_lvl
+       join levels min_lvl on min_lvl.role = p_min
+      where user_lvl.role = public.fn_user_role_in_org(p_org)), false);
+$$;
+
+create or replace function public.fn_user_role_in(p_org uuid)
+returns integer language sql stable security definer set search_path = public as $$
+  select case public.fn_user_role_in_org(p_org)
+    when 'viewer' then 1 when 'agent' then 2
+    when 'manager' then 4 when 'admin' then 4 else 0 end;
+$$;
+
+create or replace function public.fn_has_capability(p_org uuid, p_capability text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select case p_capability
+    when 'team.manage' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'manager'
+    when 'lead.delete' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'manager'
+    else false end;
+$$;
+alter function public.fn_has_capability(uuid, text) owner to postgres;
+revoke execute on function public.fn_has_capability(uuid, text) from public, anon;
+grant execute on function public.fn_has_capability(uuid, text) to authenticated, service_role;
+comment on column public.user_organizations.role is
+  'Papéis canônicos: viewer (1) < agent (2) < manager (4) = admin (4) no acesso geral; team.manage e lead.delete são capacidades nomeadas.';
+
+do $capability$
+declare
+  v_function regprocedure;
+  v_definition text;
+  v_updated text;
+begin
+  foreach v_function in array array[
+    'public.fn_definir_marca_da_organizacao(uuid,uuid,jsonb)'::regprocedure,
+    'public.fn_definir_logo_da_organizacao(uuid,uuid,text)'::regprocedure
+  ] loop
+    select pg_get_functiondef(v_function) into v_definition;
+    v_updated := replace(v_definition, 'and uo.role = ''admin''',
+      'and uo.role in (''manager'', ''admin'')');
+    if v_updated = v_definition then
+      raise exception 'capacidade_gerente_funcao_sem_predicado_esperado: %', v_function;
+    end if;
+    execute v_updated;
+  end loop;
+end
+$capability$;
+
+drop policy if exists user_orgs_insert on public.user_organizations;
+create policy user_orgs_insert on public.user_organizations for insert to authenticated
+  with check (public.fn_has_capability(organization_id, 'team.manage'));
+drop policy if exists user_orgs_update on public.user_organizations;
+create policy user_orgs_update on public.user_organizations for update to authenticated
+  using (public.fn_has_capability(organization_id, 'team.manage'))
+  with check (public.fn_has_capability(organization_id, 'team.manage'));
+drop policy if exists user_orgs_delete on public.user_organizations;
+create policy user_orgs_delete on public.user_organizations for delete to authenticated
+  using (public.fn_has_capability(organization_id, 'team.manage'));
+drop policy if exists crm_leads_delete on public.crm_leads;
+create policy crm_leads_delete on public.crm_leads for delete to authenticated
+  using (public.fn_has_capability(organization_id, 'lead.delete'));
+
+-- ---- montagem do atendimento pelo MCP (migration 0266) ----
+alter table public.ai_agent_versions
+  add column if not exists skill_names text[],
+  add column if not exists channel_config jsonb,
+  add column if not exists mcp_api_token_id uuid,
+  add column if not exists mcp_change_summary jsonb not null default '[]'::jsonb;
+
+alter table public.ai_agent_versions drop constraint if exists ai_agent_versions_channel_config_object;
+alter table public.ai_agent_versions add constraint ai_agent_versions_channel_config_object
+  check (channel_config is null or jsonb_typeof(channel_config) = 'object');
+alter table public.ai_agent_versions drop constraint if exists ai_agent_versions_mcp_change_summary_array;
+alter table public.ai_agent_versions add constraint ai_agent_versions_mcp_change_summary_array
+  check (jsonb_typeof(mcp_change_summary) = 'array');
+
+create unique index if not exists api_tokens_organization_id_id_uidx
+  on public.api_tokens(organization_id, id);
+do $fk$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'ai_agent_versions_mcp_token_org_fk'
+       and conrelid = 'public.ai_agent_versions'::regclass
+  ) then
+    alter table public.ai_agent_versions
+      add constraint ai_agent_versions_mcp_token_org_fk
+      foreign key (organization_id, mcp_api_token_id)
+      references public.api_tokens(organization_id, id)
+      on delete no action;
+  end if;
+end
+$fk$;
+create index if not exists ai_agent_versions_mcp_token_idx
+  on public.ai_agent_versions(organization_id, mcp_api_token_id)
+  where mcp_api_token_id is not null;
+
+alter table public.ai_agent_versions
+  alter column skill_names drop default,
+  alter column skill_names drop not null;
+
+alter table public.ai_agent_versions drop constraint if exists ai_agent_versions_provisioning_origin_check;
+alter table public.ai_agent_versions add constraint ai_agent_versions_provisioning_origin_check
+  check (provisioning_origin in ('onboarding', 'legacy_reconciliation', 'mcp'));
+
+create or replace function public.fn_ai_agent_version_content_immutable() returns trigger
+language plpgsql as $fn$
+begin
+  if old.status <> 'draft' and (
+       new.system_prompt          is distinct from old.system_prompt
+    or new.provider               is distinct from old.provider
+    or new.model                  is distinct from old.model
+    or new.credential_id          is distinct from old.credential_id
+    or new.tool_ids               is distinct from old.tool_ids
+    or new.trigger_config         is distinct from old.trigger_config
+    or new.channel_session_id     is distinct from old.channel_session_id
+    or new.max_steps              is distinct from old.max_steps
+    or new.token_budget           is distinct from old.token_budget
+    or new.cost_budget_cents      is distinct from old.cost_budget_cents
+    or new.history_message_window is distinct from old.history_message_window
+    or new.history_token_window   is distinct from old.history_token_window
+    or new.handoff_keywords       is distinct from old.handoff_keywords
+    or new.handoff_tool_enabled   is distinct from old.handoff_tool_enabled
+    or new.followup               is distinct from old.followup
+    or new.multimodal_input       is distinct from old.multimodal_input
+    or new.video_frames_enabled   is distinct from old.video_frames_enabled
+    or new.split_messages         is distinct from old.split_messages
+    or new.split_max_chars        is distinct from old.split_max_chars
+    or new.cases_enabled          is distinct from old.cases_enabled
+    or new.operator_enabled       is distinct from old.operator_enabled
+    or new.operator_model         is distinct from old.operator_model
+    or new.operator_tool_ids      is distinct from old.operator_tool_ids
+    or new.pipeline_ids           is distinct from old.pipeline_ids
+    or new.knowledge_source_ids   is distinct from old.knowledge_source_ids
+    or new.skill_names            is distinct from old.skill_names
+    or new.channel_config         is distinct from old.channel_config
+    or new.mcp_api_token_id       is distinct from old.mcp_api_token_id
+    or new.mcp_change_summary     is distinct from old.mcp_change_summary
+    or new.version_number         is distinct from old.version_number
+    or new.agent_id               is distinct from old.agent_id
+    or new.organization_id        is distinct from old.organization_id
+  ) then
+    raise exception 'ai_agent_versions % é imutável (status=%): mudança de conteúdo = versão draft nova; rollback = revert (clona + publica)', old.id, old.status;
+  end if;
+  return new;
+end;
+$fn$;
+
+revoke execute on function public.fn_ai_agent_version_content_immutable()
+  from public, anon, authenticated;
+
+create or replace function public.fn_apply_agent_channel_config_on_publish() returns trigger
+language plpgsql security definer set search_path = public as $fn$
+declare
+  c jsonb := new.channel_config;
+begin
+  if new.status = 'published'
+     and old.status is distinct from new.status
+     and c is not null then
+    if c ? 'max_concurrent_ai_conversations' then
+      update public.channel_sessions
+         set max_concurrent_ai_conversations = (c->>'max_concurrent_ai_conversations')::smallint,
+             updated_at = now()
+       where id = new.channel_session_id
+         and organization_id = new.organization_id
+         and archived_at is null;
+      if not found then
+        raise exception 'channel_session_not_found' using errcode = 'P0001';
+      end if;
+    end if;
+
+    if c ?| array[
+      'throttle_ms', 'jitter_max_ms', 'window_start_hour',
+      'window_end_hour', 'allow_sunday', 'timezone'
+    ] then
+      insert into public.channel_knobs (
+        organization_id, channel_session_id, throttle_ms, jitter_max_ms,
+        window_start_hour, window_end_hour, allow_sunday, timezone
+      ) values (
+        new.organization_id,
+        new.channel_session_id,
+        case when c ? 'throttle_ms' then (c->>'throttle_ms')::integer end,
+        case when c ? 'jitter_max_ms' then (c->>'jitter_max_ms')::integer end,
+        case when c ? 'window_start_hour' then (c->>'window_start_hour')::smallint end,
+        case when c ? 'window_end_hour' then (c->>'window_end_hour')::smallint end,
+        case when c ? 'allow_sunday' then (c->>'allow_sunday')::boolean end,
+        case when c ? 'timezone' then c->>'timezone' end
+      )
+      on conflict (organization_id, channel_session_id) do update set
+        throttle_ms = case when c ? 'throttle_ms' then excluded.throttle_ms else channel_knobs.throttle_ms end,
+        jitter_max_ms = case when c ? 'jitter_max_ms' then excluded.jitter_max_ms else channel_knobs.jitter_max_ms end,
+        window_start_hour = case when c ? 'window_start_hour' then excluded.window_start_hour else channel_knobs.window_start_hour end,
+        window_end_hour = case when c ? 'window_end_hour' then excluded.window_end_hour else channel_knobs.window_end_hour end,
+        allow_sunday = case when c ? 'allow_sunday' then excluded.allow_sunday else channel_knobs.allow_sunday end,
+        timezone = case when c ? 'timezone' then excluded.timezone else channel_knobs.timezone end,
+        updated_at = now();
+    end if;
+  end if;
+  return new;
+end;
+$fn$;
+revoke execute on function public.fn_apply_agent_channel_config_on_publish() from public, anon, authenticated;
+grant execute on function public.fn_apply_agent_channel_config_on_publish() to service_role;
+drop trigger if exists trg_apply_agent_channel_config_on_publish on public.ai_agent_versions;
+create trigger trg_apply_agent_channel_config_on_publish
+  after update of status on public.ai_agent_versions
+  for each row execute function public.fn_apply_agent_channel_config_on_publish();
+
+-- ---- mestre pessoal de notificações por e-mail (migration 0268) ----
+alter table public.notification_email_preferences
+  add column if not exists email_enabled boolean not null default true;
+
+comment on column public.notification_email_preferences.email_enabled is
+  'Barreira pessoal para qualquer e-mail de notificação; não altera as escolhas por categoria.';
+
+-- ---- gerente não apaga credencial de IA (migration 0269) ----
+-- A chave do provedor sustenta o atendimento inteiro. Uma exclusão acidental
+-- derruba o agente para todos os clientes da organização, então o DELETE é uma
+-- capacidade nomeada de admin/plataforma, não uma consequência do rank geral.
+create or replace function public.fn_has_capability(p_org uuid, p_capability text)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case p_capability
+    when 'team.manage' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'manager'
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    when 'lead.delete' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'manager'
+    when 'ai.credentials.delete' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    else false
+  end;
+$$;
+alter function public.fn_has_capability(uuid, text) owner to postgres;
+revoke execute on function public.fn_has_capability(uuid, text) from public, anon;
+grant execute on function public.fn_has_capability(uuid, text) to authenticated, service_role;
+
+drop policy if exists tenant_isolation_ai_provider_credentials_write on public.ai_provider_credentials;
+drop policy if exists tenant_isolation_ai_provider_credentials_insert on public.ai_provider_credentials;
+create policy tenant_isolation_ai_provider_credentials_insert
+  on public.ai_provider_credentials for insert to authenticated
+  with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists tenant_isolation_ai_provider_credentials_update on public.ai_provider_credentials;
+create policy tenant_isolation_ai_provider_credentials_update
+  on public.ai_provider_credentials for update to authenticated
+  using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin()
+  )
+  with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists tenant_isolation_ai_provider_credentials_delete on public.ai_provider_credentials;
+create policy tenant_isolation_ai_provider_credentials_delete
+  on public.ai_provider_credentials for delete to authenticated
+  using (public.fn_has_capability(organization_id, 'ai.credentials.delete'));
+
+comment on column public.user_organizations.role is
+  'Papéis canônicos: viewer (1) < agent (2) < manager (4) = admin (4) no acesso geral; team.manage, lead.delete e ai.credentials.delete são capacidades nomeadas.';
+
+notify pgrst, 'reload schema';
+
+-- ---- e-mail de lead novo desligado por padrão (migration 0270) ----
+-- Novas preferências exigem opt-in. Escolhas já gravadas permanecem intactas.
+alter table public.notification_email_preferences
+  alter column new_lead set default false;
+
+comment on column public.notification_email_preferences.new_lead is
+  'Opt-in pessoal para e-mail de lead novo; desligado por padrão para preservar a cota transacional.';
+
+-- ---- plataforma enxerga a credencial que pode apagar (migration 0271) ----
+-- O DELETE com RETURNING também precisa que a linha passe pela policy de SELECT.
+-- O grant por coluna da 0150 continua escondendo o segredo cifrado.
+drop policy if exists tenant_isolation_ai_provider_credentials_select
+  on public.ai_provider_credentials;
+create policy tenant_isolation_ai_provider_credentials_select
+  on public.ai_provider_credentials for select to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+    or public.fn_is_platform_admin()
+  );
+
+notify pgrst, 'reload schema';
+
+-- ---- ações irreversíveis só para admin/plataforma (migration 0272) ----
+create or replace function public.fn_has_capability(p_org uuid, p_capability text)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case p_capability
+    when 'team.manage' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'manager'
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    when 'lead.delete' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'manager'
+    when 'ai.credentials.delete' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    when 'organization.data.reset' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    when 'api.tokens.manage' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    else false
+  end;
+$$;
+alter function public.fn_has_capability(uuid, text) owner to postgres;
+revoke execute on function public.fn_has_capability(uuid, text) from public, anon;
+grant execute on function public.fn_has_capability(uuid, text) to authenticated, service_role;
+
+drop policy if exists api_tokens_admin_only on public.api_tokens;
+drop policy if exists api_tokens_select on public.api_tokens;
+create policy api_tokens_select
+  on public.api_tokens for select to authenticated
+  using (
+    public.fn_role_at_least(organization_id, 'admin')
+    or public.fn_is_platform_admin()
+  );
+drop policy if exists api_tokens_insert on public.api_tokens;
+create policy api_tokens_insert
+  on public.api_tokens for insert to authenticated
+  with check (public.fn_has_capability(organization_id, 'api.tokens.manage'));
+drop policy if exists api_tokens_update on public.api_tokens;
+create policy api_tokens_update
+  on public.api_tokens for update to authenticated
+  using (public.fn_has_capability(organization_id, 'api.tokens.manage'))
+  with check (public.fn_has_capability(organization_id, 'api.tokens.manage'));
+drop policy if exists api_tokens_delete on public.api_tokens;
+create policy api_tokens_delete
+  on public.api_tokens for delete to authenticated
+  using (public.fn_has_capability(organization_id, 'api.tokens.manage'));
+
+comment on column public.user_organizations.role is
+  'Papéis canônicos: viewer (1) < agent (2) < manager (4) = admin (4) no acesso geral; operações irreversíveis usam capacidades nomeadas.';
+
+notify pgrst, 'reload schema';
+
+-- ---- follow-up aprovável (migration 0273) ----
+alter table public.crm_lead_reactivations
+  add column if not exists automation_rule_id uuid references public.automation_rules(id) on delete set null,
+  add column if not exists stage_id_at_proposal uuid references public.crm_stages(id) on delete set null,
+  add column if not exists last_inbound_at_at_proposal timestamptz,
+  add column if not exists resuggest_after_at timestamptz;
+
+create index if not exists idx_crm_lead_reactivations_ultima_decisao
+  on public.crm_lead_reactivations (lead_id, proposed_at desc)
+  where status <> 'pending';
+
+create unique index if not exists uniq_agent_inbox_followup_suggestion_open
+  on public.agent_inbox_items (organization_id, kind, ref_id)
+  where kind = 'followup_suggestion' and status = 'open';
 
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
@@ -25972,3 +26513,7 @@ begin
     end if;
   end loop;
 end $$;
+
+-- ---- metadata dos avisos da Central (migration 0265) ----
+alter table public.agent_inbox_items
+  add column if not exists metadata jsonb;

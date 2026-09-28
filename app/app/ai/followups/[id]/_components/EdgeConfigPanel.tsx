@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import {
   Select,
   SelectContent,
@@ -22,6 +23,7 @@ interface Props {
   condition: FlowEdge["condition"];
   onChange: (condition: FlowEdge["condition"]) => void;
   onDelete: () => void;
+  custom?: { title: string; description: string; content?: ReactNode };
 }
 
 /**
@@ -34,8 +36,19 @@ interface Props {
  * Um controle que a tela oferece e o motor ignora é pior que um ausente — o
  * ausente o usuário contorna, o decorativo ele acredita.
  */
-export function EdgeConfigPanel({ sourceNode, targetNode, condition, onChange, onDelete }: Props) {
+export function EdgeConfigPanel({ sourceNode, targetNode, condition, onChange, onDelete, custom }: Props) {
   const t = useT();
+  if (custom) {
+    return (
+      <div className="flex h-full flex-col gap-5 overflow-y-auto" data-testid="edge-config-panel">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold text-text">{t(custom.title)}</h2>
+          <p className="text-sm text-text-muted">{t(custom.description)}</p>
+        </div>
+        {custom.content && <div className="border-t border-border pt-4">{custom.content}</div>}
+      </div>
+    );
+  }
   const options = nodeBranches(
     sourceNode ?? { type: "trigger", config: {} },
   ).map((branch) => ({

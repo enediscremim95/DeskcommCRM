@@ -84,7 +84,7 @@ export const NAV_GROUPS: NavGroup[] = [
   // Tarefas, e nada mais.
   { id: "crm", label: "CRM" },
   // Sem hub por decisão do dono (17/09/2026).
-  { id: "ia", label: "Automação" },
+  { id: "ia", label: "Atendimento com IA" },
   { id: "canais", label: "Canais" },
   // Sem hub por decisão do dono (18/09/2026): o grupo mostra só o Relatório.
   { id: "analise", label: "Análise" },
@@ -236,7 +236,8 @@ export const NAV_CATALOG = [
     icon: "Storefront",
     group: "crm",
     section: "Preparar a venda",
-    // SEM `sidebar`: mora atrás de "Ver tudo em CRM".
+    // SEM `sidebar`: continua no catálogo e no ⌘K. O hub do CRM foi removido
+    // por decisão do dono em 17/09/2026.
     //
     // O critério é QUEM CONSOME a tela, e a descrição acima já o entrega: o
     // preço quem responde é o atendente de IA, dentro da conversa. Esta tela é
@@ -283,13 +284,13 @@ export const NAV_CATALOG = [
     group: "crm",
     section: "Preparar a venda",
     minRole: "manager",
-    // SEM `sidebar`: mora atrás de "Ver tudo em CRM".
+    // SEM `sidebar`: continua no catálogo e no ⌘K. O hub do CRM foi removido
+    // por decisão do dono em 17/09/2026.
     //
     // ⚠️ O ACHADO ORIGINAL NÃO FOI DESFEITO. Ele era "esta tela está enterrada
     // em CONFIGURAÇÕES e ninguém sabe que existe" — o problema era o GRUPO
-    // errado, não a profundidade. Ela continua sendo CRM: aparece no hub do
-    // CRM, no ⌘K, e o caminho é "CRM › Ver tudo em CRM", nunca mais
-    // "Configurações". O que muda é a frequência: desenhar as colunas do funil
+    // errado, não a profundidade. Ela continua sendo CRM e aparece no ⌘K,
+    // nunca mais em "Configurações". O que muda é a frequência: desenhar as colunas do funil
     // e escrever os motivos de perda é trabalho de montagem, feito uma vez e
     // revisitado por `manager` de vez em quando — enquanto Funis, Contatos e
     // Tarefas se abrem todo dia. É esse o corte que decide quem fica no menu.
@@ -297,36 +298,44 @@ export const NAV_CATALOG = [
 
   // ---- Agente de IA — montar, ensinar, acompanhar ----
   {
-    href: "/app/ai/workflows",
-    // Renomeado de "Agentes" por decisão do dono (17/09/2026): o agente que
-    // atende mora no N8N, fora deste sistema.
-    label: "N8N",
-    description: "Os fluxos de automação liberados pelo administrador, em modo somente leitura.",
+    href: "/app/ai/atendimento",
+    label: "Atendimento",
+    description: "O fluxo inteiro do atendimento, com agente, conhecimento, ações, retomada e travas visíveis.",
     icon: "Robot",
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
     sidebar: true,
-    integration: "n8n",
   },
   {
     href: "/app/ai/agents",
-    label: "Agentes nativos",
+    label: "Agentes",
     description: "Configuração técnica dos agentes internos mantidos pelo CRM.",
     icon: "Robot",
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
+    sidebar: false,
   },
   {
-    href: "/app/ai/followups",
-    label: "Follow-ups",
-    description: "Como o agente retoma uma conversa que esfriou, para nenhuma morrer no silêncio.",
-    icon: "FlowArrow",
+    href: "/app/ai/knowledge/sources",
+    label: "Conhecimento",
+    description: "Os materiais que o agente consulta antes de responder sobre o seu negócio.",
+    icon: "BookOpen",
     group: "ia",
-    section: "Montar o agente",
+    section: "Ensinar o agente",
     minRole: "manager",
-    sidebar: true,
+    sidebar: false,
+  },
+  {
+    href: "/app/ai/skills",
+    label: "Skills",
+    description: "As ações que o agente pode executar sozinho durante o atendimento.",
+    icon: "PuzzlePiece",
+    group: "ia",
+    section: "Ensinar o agente",
+    minRole: "manager",
+    sidebar: false,
   },
   {
     href: "/app/ai/routers",
@@ -336,8 +345,47 @@ export const NAV_CATALOG = [
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
-    // Fora do menu por decisão do dono (17/09/2026).
     sidebar: false,
+  },
+  {
+    href: "/app/ai/followups",
+    label: "Follow-ups",
+    description: "Como o agente retoma uma conversa que esfriou, para nenhuma morrer no silêncio.",
+    icon: "FlowArrow",
+    group: "ia",
+    section: "Montar o agente",
+    minRole: "manager",
+    sidebar: false,
+  },
+  {
+    href: "/app/ai/cases",
+    label: "Casos",
+    description: "Os atendimentos que o agente conduziu, do início ao desfecho.",
+    icon: "ClipboardText",
+    group: "ia",
+    section: "Acompanhar o agente",
+    minRole: "agent",
+    sidebar: true,
+  },
+  {
+    href: "/app/ai/inbox",
+    label: "Alertas",
+    description: "O que a IA encontrou e precisa de uma decisão sua.",
+    icon: "Flag",
+    group: "ia",
+    section: "Acompanhar o agente",
+    sidebar: true,
+  },
+  {
+    href: "/app/ai/workflows",
+    label: "N8N",
+    description: "Os fluxos de automação liberados pelo administrador, em modo somente leitura.",
+    icon: "Robot",
+    group: "ia",
+    section: "Montar o agente",
+    minRole: "manager",
+    sidebar: false,
+    integration: "n8n",
   },
   {
     href: "/app/ai/credentials",
@@ -350,28 +398,13 @@ export const NAV_CATALOG = [
   },
   {
     // O sistema chama modelo em 23 lugares e, até esta tela, a escolha vivia
-    // espalhada por três pilhas de código e sete variáveis de ambiente — não
-    // havia onde responder "quem usa IA aqui, e com qual chave?".
+    // espalhada por três pilhas de código e sete variáveis de ambiente.
     href: "/app/ai/providers",
     label: "Provedores",
     description: "Qual inteligência atende cada parte do sistema — e o que acontece se ela falhar.",
     icon: "Plugs",
     group: "ia",
     section: "Montar o agente",
-    minRole: "manager",
-    // SEM `sidebar: true`, como as outras nove telas deste grupo. Adicionar as
-    // duas telas novas à sidebar estourou a dobra em 900px — medido pelo e2e
-    // `navegacao.spec.ts`, que existe justamente porque agrupar o menu o faz
-    // crescer. Configurar provedor é tarefa de poucas vezes; o caminho é o hub
-    // "Ver tudo em IA", igual a Credenciais, Conhecimento, Memória e Skills.
-  },
-  {
-    href: "/app/ai/knowledge/sources",
-    label: "Conhecimento",
-    description: "Os materiais que o agente consulta antes de responder sobre o seu negócio.",
-    icon: "BookOpen",
-    group: "ia",
-    section: "Ensinar o agente",
     minRole: "manager",
   },
   {
@@ -382,32 +415,6 @@ export const NAV_CATALOG = [
     group: "ia",
     section: "Ensinar o agente",
     minRole: "manager",
-  },
-  {
-    href: "/app/ai/skills",
-    label: "Skills",
-    description: "As ações que o agente pode executar sozinho durante o atendimento.",
-    icon: "PuzzlePiece",
-    group: "ia",
-    section: "Ensinar o agente",
-    minRole: "manager",
-  },
-  {
-    href: "/app/ai/cases",
-    label: "Casos",
-    description: "Os atendimentos que o agente conduziu, do início ao desfecho.",
-    icon: "ClipboardText",
-    group: "ia",
-    section: "Acompanhar o agente",
-    minRole: "agent",
-  },
-  {
-    href: "/app/ai/inbox",
-    label: "Alertas",
-    description: "O que a IA encontrou e precisa de uma decisão sua.",
-    icon: "Flag",
-    group: "ia",
-    section: "Acompanhar o agente",
   },
   {
     // Órfã: nenhum lugar do app linkava para cá. O flywheel gerava propostas de
@@ -487,11 +494,20 @@ export const NAV_CATALOG = [
   },
   {
     href: "/app/webhooks",
-    label: "Webhooks",
-    description: "Avise outros sistemas quando algo acontecer aqui dentro.",
+    label: "Integre seu site",
+    description: "Conecte páginas e identifique a origem dos leads.",
     icon: "WebhooksLogo",
     group: "canais",
     minRole: "manager",
+    sidebar: true,
+  },
+  {
+    href: "/app/mcp",
+    label: "MCP",
+    description: "Conecte uma IA ou assistente ao CRM para consultar e registrar informações.",
+    icon: "Brain",
+    group: "canais",
+    minRole: "admin",
     sidebar: true,
   },
 

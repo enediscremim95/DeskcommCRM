@@ -54,6 +54,7 @@ import {
   saveAgentDraftAction,
   publishAgentAction,
   createMcpAgentAction,
+  discardMcpDraftAction,
 } from "../_actions";
 
 import {
@@ -87,6 +88,7 @@ interface BaseProps {
   channelSessions: ChannelSessionLite[];
   routerMembership?: { routerId: string; routerName: string } | null;
   readOnly?: boolean;
+  mcpToken?: { name: string; prefix: string } | null;
 }
 
 interface EditProps extends BaseProps {
@@ -160,6 +162,8 @@ interface FormState {
   operator_tool_ids: string[];
   pipeline_ids: string[];
   knowledge_source_ids: string[];
+  skill_names: string[] | null;
+  channel_config: Record<string, unknown> | null;
 }
 
 interface FollowupValue {
@@ -224,6 +228,8 @@ function buildState(args: {
     pipeline_ids: version?.pipeline_ids ?? [],
     // `?? []` = nenhum material. Mesma direção segura: agir de menos.
     knowledge_source_ids: version?.knowledge_source_ids ?? [],
+    skill_names: version?.skill_names ?? null,
+    channel_config: version?.channel_config ?? null,
   };
 }
 
@@ -275,6 +281,8 @@ function toVersionPayload(s: FormState) {
     operator_tool_ids: s.operator_tool_ids,
     pipeline_ids: s.pipeline_ids,
     knowledge_source_ids: s.knowledge_source_ids,
+    skill_names: s.skill_names,
+    channel_config: s.channel_config,
   };
 }
 
@@ -300,6 +308,7 @@ export function AgentForm(props: Props) {
   const [form, setForm] = React.useState<FormState>(baseline);
   const [saving, setSaving] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
+  const [discardingMcp, setDiscardingMcp] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   /**
    * Qual papel está aberto. Estado LOCAL e não rota: trocar de papel não é
@@ -376,7 +385,7 @@ export function AgentForm(props: Props) {
       }
     }
     return errors;
-  }, [form, t]);
+  }, [form, props.provedoresDaInstalacao, t]);
 
   const isValid = Object.keys(validation).length === 0;
 
@@ -467,11 +476,27 @@ export function AgentForm(props: Props) {
     }
   }
 
+  async function handleDiscardMcpDraft() {
+    if (!isEdit || !props.draft || props.draft.provisioning_origin !== "mcp") return;
+    setDiscardingMcp(true);
+    try {
+      const res = await discardMcpDraftAction(props.agent.id, props.draft.id);
+      if (!res.ok) {
+        toast.error(`${t("Falha ao descartar o rascunho:")} ${res.error}`);
+        return;
+      }
+      toast.success(t("Rascunho montado pelo MCP descartado."));
+      router.refresh();
+    } finally {
+      setDiscardingMcp(false);
+    }
+  }
+
   function handleReset() {
     setForm(baseline);
   }
 
-  const disabled = readOnly || saving || publishing;
+  const disabled = readOnly || saving || publishing || discardingMcp;
 
   // Status badge
   const statusBadge = (() => {
@@ -564,6 +589,46 @@ export function AgentForm(props: Props) {
           ) : null}
         </div>
       </div>
+
+      {isEdit && props.draft?.provisioning_origin === "mcp" ? (
+        <Card className="border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">{t("Rascunho montado pelo MCP")}</p>
+              <p className="mt-1 text-sm">
+                {t("Nada abaixo entrou no ar. Revise e publique ou descarte este rascunho.")}
+              </p>
+              <p className="mt-1 text-xs opacity-80">
+                {props.mcpToken
+                  ? `${t("Token:")} ${props.mcpToken.name} (${props.mcpToken.prefix})`
+                  : t("O token de origem foi revogado ou removido.")}
+              </p>
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
+                {(props.draft.mcp_change_summary ?? []).map((change, index) => (
+                  <li key={`${index}-${change}`}>{change}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={handleDiscardMcpDraft}
+                disabled={disabled}
+              >
+                {discardingMcp ? t("Descartando…") : t("Descartar rascunho")}
+              </Button>
+              <span title={publishBlockReason ?? undefined}>
+                <Button
+                  onClick={() => setConfirmOpen(true)}
+                  disabled={disabled || publishBlockReason !== null}
+                >
+                  {`${t("Publicar v")}${props.draft.version_number}`}
+                </Button>
+              </span>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {/*
         NAVEGAÇÃO POR PAPEL (spec 16 §6). Um form só, um save só — os papéis são

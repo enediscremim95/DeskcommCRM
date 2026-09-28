@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Montagem e execução do atendimento",
+    "subtitle": "Quatro perguntas, teste isolado e uma única vez de envio por canal",
+    "output": "fluxo-de-atendimento.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "pessoa", "label": "Pessoa" },
+    { "id": "app", "label": "Aplicativo" },
+    { "id": "motor", "label": "Motor existente" },
+    { "id": "dados", "label": "Banco e canal" }
+  ],
+  "mainPath": ["builder", "draft", "test", "publish", "turn", "lease", "send"],
+  "nodes": [
+    {
+      "id": "builder",
+      "lane": "pessoa",
+      "col": 0,
+      "type": "ui",
+      "label": "Montar atendimento",
+      "sublabel": "Objetivo, conhecimento, comportamento e passagem para humano"
+    },
+    {
+      "id": "draft",
+      "lane": "app",
+      "col": 1,
+      "type": "service",
+      "label": "Estruturas existentes",
+      "sublabel": "Fonte de conhecimento, versão do agente e limite do canal"
+    },
+    {
+      "id": "test",
+      "lane": "motor",
+      "col": 2,
+      "type": "service",
+      "label": "Teste do motor real",
+      "sublabel": "Sem envio ao número"
+    },
+    {
+      "id": "publish",
+      "lane": "app",
+      "col": 3,
+      "type": "service",
+      "label": "Ligar no número",
+      "sublabel": "Só libera depois do teste aprovado"
+    },
+    {
+      "id": "turn",
+      "lane": "motor",
+      "col": 4,
+      "type": "service",
+      "label": "agent-engine",
+      "sublabel": "Atendimento e follow-up usam a mesma borda de envio"
+    },
+    {
+      "id": "lease",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "Lease por canal",
+      "sublabel": "Padrão 1, ajustável, expira em 16 minutos"
+    },
+    {
+      "id": "send",
+      "lane": "motor",
+      "col": 6,
+      "type": "service",
+      "label": "Envio ou reagendamento",
+      "sublabel": "Canal ocupado volta à fila sem consumir tentativa"
+    },
+    {
+      "id": "label",
+      "lane": "dados",
+      "col": 6,
+      "type": "service",
+      "label": "Etiqueta no WhatsApp",
+      "sublabel": "Ação do operador preserva etiquetas existentes"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "builder", "to": "draft", "label": "salva rascunho" },
+    { "id": "e2", "from": "draft", "to": "test", "label": "conversa de teste" },
+    { "id": "e3", "from": "test", "to": "publish", "label": "aprova" },
+    { "id": "e4", "from": "publish", "to": "turn", "label": "recebe mensagens" },
+    { "id": "e5", "from": "turn", "to": "lease", "label": "pede a vez" },
+    { "id": "e6", "from": "lease", "to": "send", "label": "concede ou adia" },
+    { "id": "e7", "from": "turn", "to": "label", "label": "aplica desfecho" }
+  ]
+}

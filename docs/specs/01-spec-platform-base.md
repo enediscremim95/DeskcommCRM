@@ -153,7 +153,7 @@ create trigger trg_user_orgs_touch
 create index idx_user_orgs_user      on public.user_organizations(user_id) where revoked_at is null;
 create index idx_user_orgs_org_role  on public.user_organizations(organization_id, role) where revoked_at is null;
 
-comment on column public.user_organizations.role is '4 roles canônicos: viewer (1) < agent (2) < manager (3) < admin (4). Hierarquia.';
+comment on column public.user_organizations.role is '4 roles canônicos: viewer (1) < agent (2) < manager (4) = admin (4) no acesso geral; capacidades nomeadas cobrem exceções.';
 ```
 
 `interface_settings` aceita preset `completa` ou `simplificada` e pode carregar uma lista não vazia de `destinos` do catálogo canônico. O default `completa` preserva vínculos legados. Esse campo controla apresentação; todo destino continua intersectado com RBAC e não se torna autorização de URL ou API.
@@ -353,7 +353,7 @@ security definer
 set search_path = public
 as $$
   with levels(role, lvl) as (
-    values ('viewer',1),('agent',2),('manager',3),('admin',4)
+values ('viewer',1),('agent',2),('manager',4),('admin',4)
   )
   select coalesce(
     (select user_lvl.lvl >= min_lvl.lvl
@@ -797,22 +797,22 @@ create unique index idx_recovery_unique on public.user_recovery_codes(user_id, c
 | Resource | Ação | viewer | agent | manager | admin | platform_admin |
 |---|---|:---:|:---:|:---:|:---:|:---:|
 | **organizations** | read (self) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| organizations | update | ❌ | ❌ | ❌ | ✅ (settings) | ✅ |
+| organizations | update | ❌ | ❌ | ✅ (settings) | ✅ (settings) | ✅ |
 | organizations | delete/archive | ❌ | ❌ | ❌ | ❌ | ✅ |
 | **user_organizations** | read | ❌ | ❌ | ✅ (own org) | ✅ | ✅ |
-| user_organizations | invite/role change | ❌ | ❌ | ❌ | ✅ | ✅ |
-| user_organizations | revoke | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **api_tokens** | list | ❌ | ❌ | ❌ | ✅ | ✅ |
-| api_tokens | create | ❌ | ❌ | ❌ | ✅ | ✅ |
-| api_tokens | revoke | ❌ | ❌ | ❌ | ✅ | ✅ |
+| user_organizations | invite/role change | ❌ | ❌ | ✅ (`team.manage`) | ❌ | ✅ |
+| user_organizations | revoke | ❌ | ❌ | ✅ (`team.manage`) | ❌ | ✅ |
+| **api_tokens** | list | ❌ | ❌ | ✅ | ✅ | ✅ |
+| api_tokens | create | ❌ | ❌ | ✅ | ✅ | ✅ |
+| api_tokens | revoke | ❌ | ❌ | ✅ | ✅ | ✅ |
 | **leads** (Spec 02/04) | read | ✅ (all) | ✅ (own) | ✅ (all) | ✅ | ✅ |
 | leads | create | ❌ | ✅ | ✅ | ✅ | ✅ |
 | leads | update | ❌ | ✅ (own) | ✅ | ✅ | ✅ |
-| leads | delete | ❌ | ❌ | ✅ | ✅ | ✅ |
+| leads | delete | ❌ | ❌ | ✅ (`lead.delete`) | ❌ | ✅ |
 | leads | reassign | ❌ | ❌ | ✅ | ✅ | ✅ |
 | **pipelines** | read | ✅ | ✅ | ✅ | ✅ | ✅ |
 | pipelines | create/update | ❌ | ❌ | ✅ | ✅ | ✅ |
-| pipelines | delete | ❌ | ❌ | ❌ | ✅ | ✅ |
+| pipelines | delete | ❌ | ❌ | ✅ | ✅ | ✅ |
 | **stages** | read | ✅ | ✅ | ✅ | ✅ | ✅ |
 | stages | mutate | ❌ | ❌ | ✅ | ✅ | ✅ |
 | **contacts** | read | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -824,21 +824,23 @@ create unique index idx_recovery_unique on public.user_recovery_codes(user_id, c
 | conversations | reassign | ❌ | ❌ | ✅ | ✅ | ✅ |
 | conversations | observe (read-only) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **messages** | send | ❌ | ✅ (own claim) | ✅ | ✅ | ✅ |
-| **audit_log** | read | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **lgpd.data_request** | execute | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **lgpd.redact** | execute | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **webhooks** (Spec 06) | manage | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **audit_log** | read | ❌ | ❌ | ✅ | ✅ | ✅ |
+| **lgpd.data_request** | execute | ❌ | ❌ | ✅ | ✅ | ✅ |
+| **lgpd.redact** | execute | ❌ | ❌ | ✅ | ✅ | ✅ |
+| **webhooks** (Spec 06) | manage | ❌ | ❌ | ✅ | ✅ | ✅ |
 | **platform_admins** | read | ❌ | ❌ | ❌ | ❌ | ✅ |
 | platform_admins | mutate | ❌ | ❌ | ❌ | ❌ | ❌ (DBA only) |
 
 **Regra transversal de exclusão:** o papel `agent` (Atendente) pode criar e atualizar
 recursos operacionais dentro do seu escopo, mas nunca excluir, cancelar ou desconectar
-um recurso persistente. Toda ação destrutiva exige `manager` ou `admin`, na API e na
-interface. Comandos sem exclusão de recurso, como encerrar a própria chamada de voz ou
-cancelar uma soneca, não entram nessa regra.
+um recurso persistente. Toda ação destrutiva exige acesso geral de gestão. Excluir
+lead é a exceção explícita: exige `lead.delete`, concedida ao gerente e ao administrador
+de plataforma, nunca ao administrador da organização. Comandos sem exclusão de recurso,
+como encerrar a própria chamada de voz ou cancelar uma soneca, não entram nessa regra.
 
 **Implementação**: `requirePermission("resource.delete")` resolve a permissão semântica
-para `manager+` e reutiliza `requireRole`. Falha → 403 com
+linear; `requirePermission("lead.delete")` e `requirePermission("team.manage")` resolvem
+as exceções não lineares. Falha → 403 com
 `error.code='forbidden_role'`.
 
 ---

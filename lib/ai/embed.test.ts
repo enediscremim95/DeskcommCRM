@@ -20,6 +20,7 @@
  * a chave da organização é usada, e a ausência dela vira erro TIPADO em vez de
  * uma falha genérica que a tela não sabe traduzir.
  */
+import type * as EmbeddingsChaveTypes from "@/lib/ai/embeddings/chave";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const embedSpy = vi.fn();
@@ -30,7 +31,7 @@ vi.mock("ai", () => ({
 let chaveMock: () => unknown;
 vi.mock("@/lib/ai/embeddings/chave", async () => {
   const real =
-    await vi.importActual<typeof import("@/lib/ai/embeddings/chave")>("@/lib/ai/embeddings/chave");
+    await vi.importActual<typeof EmbeddingsChaveTypes>("@/lib/ai/embeddings/chave");
   return {
     ...real,
     // Mockado porque a resposta REAL depende de banco e de `.env.local`, e este

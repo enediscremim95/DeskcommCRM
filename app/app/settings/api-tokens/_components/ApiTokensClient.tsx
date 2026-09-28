@@ -32,6 +32,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useT } from "@/hooks/i18n/useT";
+import Link from "next/link";
+import { comandosDoTokenMcp } from "@/lib/mcp/conexao";
 
 /**
  * `mcp:read`/`mcp:write` faltavam nesta lista, e sem eles NENHUMA ferramenta
@@ -44,6 +46,10 @@ import { useT } from "@/hooks/i18n/useT";
 const SCOPES: { id: string; label: string }[] = [
   { id: "mcp:read", label: "Agentes de IA podem LER o CRM (MCP)" },
   { id: "mcp:write", label: "Agentes de IA podem AGIR no CRM (MCP)" },
+  {
+    id: "mcp:configure",
+    label: "Agentes de IA podem MONTAR o atendimento em rascunho (MCP, não publica)",
+  },
   // Sem isto o token nasce como 'agent' e as ferramentas de nível gerente
   // (criar lead, atribuir conversa) respondem "Role 'agent' insufficient".
   // O papel viaja junto dos escopos (ver lib/mcp/auth.ts) e também não
@@ -58,7 +64,13 @@ const SCOPES: { id: string; label: string }[] = [
   { id: "audit:read", label: "Ler o log de auditoria" },
 ];
 
-export function ApiTokensClient() {
+export function ApiTokensClient({
+  connectorUrl,
+  canManage,
+}: {
+  connectorUrl: string;
+  canManage: boolean;
+}) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   const { data, isLoading } = useApiTokens();
@@ -72,6 +84,9 @@ export function ApiTokensClient() {
   const [created, setCreated] = useState<CreatedApiToken | null>(null);
 
   const tokens = data?.data ?? [];
+  const comandosCriados = created
+    ? comandosDoTokenMcp(connectorUrl, created.scopes, created.plaintext)
+    : null;
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,11 +116,13 @@ export function ApiTokensClient() {
 
   return (
     <>
-      <div className="flex sm:justify-end">
-        <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
-          {t("Criar token")}
-        </Button>
-      </div>
+      {canManage ? (
+        <div className="flex sm:justify-end">
+          <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
+            {t("Criar token")}
+          </Button>
+        </div>
+      ) : null}
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>
@@ -148,10 +165,12 @@ export function ApiTokensClient() {
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {tok.expires_at ? new Date(tok.expires_at).toLocaleDateString(tagDoIdioma) : "—"}
+                    {tok.expires_at
+                      ? new Date(tok.expires_at).toLocaleDateString(tagDoIdioma)
+                      : t("Sem expiração")}
                   </TableCell>
                   <TableCell>
-                    {!tok.revoked_at ? (
+                    {canManage && !tok.revoked_at ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -172,13 +191,11 @@ export function ApiTokensClient() {
         </div>
       )}
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={canManage && createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("Criar novo token")}</DialogTitle>
-            <DialogDescription>
-              {t("O plaintext será mostrado apenas uma vez.")}
-            </DialogDescription>
+            <DialogDescription>{t("O plaintext será mostrado apenas uma vez.")}</DialogDescription>
           </DialogHeader>
           <form onSubmit={onCreate} className="space-y-4">
             <div className="space-y-2">
@@ -255,16 +272,16 @@ export function ApiTokensClient() {
       </Dialog>
 
       <Dialog open={!!created} onOpenChange={(o) => !o && setCreated(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t("Token criado")}</DialogTitle>
             <DialogDescription>
-              {t("Copie e guarde agora — não conseguiremos exibir novamente.")}
+              {t("Copie e guarde agora. Não conseguiremos exibir novamente.")}
             </DialogDescription>
           </DialogHeader>
           {created ? (
             <div className="space-y-3">
-              <code className="block break-all rounded-md border bg-muted p-3 text-sm">
+              <code className="block rounded-md border bg-muted p-3 text-sm break-all">
                 {created.plaintext}
               </code>
               <Button
@@ -273,13 +290,67 @@ export function ApiTokensClient() {
                 onClick={() => {
                   void copyToClipboard(created.plaintext).then((ok) => {
                     if (ok) toast.success(t("Token copiado."));
-                    else toast.error(t("Não foi possível copiar — selecione o token acima."));
+                    else toast.error(t("Não foi possível copiar. Selecione o token acima."));
                   });
                 }}
               >
                 {t("Copiar para clipboard")}
               </Button>
               <p className="text-xs text-muted-foreground">{created._warning}</p>
+              {comandosCriados ? (
+                <div className="space-y-3 rounded-md border p-3">
+                  <p className="text-sm font-medium">{t("Formas de conectar pelo MCP")}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "O texto exibido protege o token. Ao copiar uma opção, o token recém-criado será incluído.",
+                    )}
+                  </p>
+                  <div className="grid min-w-0 gap-3 md:grid-cols-2">
+                    {comandosCriados.map((comando) => (
+                      <div key={comando.id} className="min-w-0 space-y-2 rounded-md border p-3">
+                        <p className="text-sm font-medium">
+                          {comando.id === "generico" ? t("Outro aplicativo ou site") : comando.nome}
+                        </p>
+                        {comando.destino ? (
+                          <p className="text-xs text-muted-foreground">
+                            {t("Arquivo:")}{" "}
+                            <code className="break-all text-foreground">{comando.destino}</code>
+                          </p>
+                        ) : null}
+                        <code className="block max-h-52 min-w-0 overflow-auto rounded-md bg-muted p-3 text-xs break-all whitespace-pre-wrap">
+                          {comando.exibido}
+                        </code>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="w-full sm:w-auto"
+                          onClick={() => {
+                            void copyToClipboard(comando.copiado).then((ok) => {
+                              if (ok) toast.success(t("Configuração copiada."));
+                              else
+                                toast.error(
+                                  t("Não foi possível copiar. Selecione o conteúdo acima."),
+                                );
+                            });
+                          }}
+                        >
+                          {comando.formato === "comando"
+                            ? t("Copiar comando")
+                            : comando.formato === "configuracao"
+                              ? t("Copiar configuração")
+                              : t("Copiar dados")}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t("Não salve o token em arquivo de texto.")}{" "}
+                    <Link className="underline" href="/app/mcp">
+                      {t("Ver instruções completas do conector")}
+                    </Link>
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <DialogFooter>

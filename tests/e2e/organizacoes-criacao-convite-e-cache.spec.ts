@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "@playwright/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, { auth: { persistSession: false } });
@@ -13,18 +14,18 @@ async function insert(table: string, value: Record<string, unknown>) {
   return data.id as string;
 }
 async function login(page: Page, email: string) {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/settings/profile");
   await page.getByLabel(/e-?mail/i).fill(email);
   await page.getByLabel(/senha/i).fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(\/|$)/, { timeout: 60_000 });
+  await aguardarSessaoCompleta(page, "aal1");
 }
 async function conversation(org: string, name: string) {
   const contact = await insert("contacts", { organization_id: org, name, display_name: name });
   const session = await insert("channel_sessions", { organization_id: org,
     waha_session_name: `local-${randomUUID()}`, display_name: name, status: "STOPPED",
     webhook_secret_encrypted: "\\x00" });
-  await insert("conversations", { organization_id: org, contact_id: contact,
+  return insert("conversations", { organization_id: org, contact_id: contact,
     channel_session_id: session, status: "open", last_message_at: new Date().toISOString(),
     last_message_preview: `Mensagem de ${name}` });
 }
@@ -50,7 +51,7 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
     if (pa.error) throw pa.error;
     const forgedTarget = await insert("organizations", { display_name: `Alvo ${suffix}`, legal_name: "Alvo", slug: `alvo-${suffix}` });
     orgs.push(forgedTarget);
-    await conversation(orgA, `Cliente A ${suffix}`);
+    const conversationA = await conversation(orgA, `Cliente A ${suffix}`);
     await login(page, ownerEmail);
     await page.getByTestId("tenant-switcher").click();
     await page.getByRole("menuitem", { name: "Gerenciar organizações" }).click();
@@ -118,9 +119,9 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
     const pronta = await db.from("organizations").select("onboarded_at").eq("id", orgB).single();
     expect(pronta.error).toBeNull();
     expect(pronta.data?.onboarded_at).toBeTruthy();
-    await conversation(orgB, `Cliente B ${suffix}`);
+    const conversationB = await conversation(orgB, `Cliente B ${suffix}`);
     await page.getByRole("link", { name: "Voltar ao aplicativo" }).click();
-    await page.waitForURL("**/app/inbox", { waitUntil: "load" });
+    await page.goto(`/app/inbox?conversation=${conversationA}`);
     await expect(page.locator("[data-conversation-id]").getByText(`Cliente A ${suffix}`, { exact: true })).toBeVisible();
     const cookieBeforeFailure = (await page.context().cookies()).find(cookie => cookie.name === "active_org")?.value;
     await page.route("**/app/**", async route => {
@@ -136,7 +137,10 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
     expect((await page.context().cookies()).find(cookie => cookie.name === "active_org")?.value).toBe(cookieBeforeFailure);
     await page.screenshot({ path: ".superpowers/evidence/comunidade-360/troca-falhou-contexto-preservado.png" });
     await page.unroute("**/app/**");
-    for (const [target, own, foreign] of [[orgB, "B", "A"], [orgA, "A", "B"]]) {
+    for (const [target, own, foreign, selected] of [
+      [orgB, "B", "A", conversationB],
+      [orgA, "A", "B", conversationA],
+    ]) {
       await page.evaluate(() => { (window as unknown as Record<string, unknown>).__oldDocument = true; });
       let release!: () => void;
       const held = new Promise<void>(resolve => { release = resolve; });
@@ -158,7 +162,7 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
         await page.screenshot({ path: `.superpowers/evidence/comunidade-360/transicao-para-${own}.png` });
       } finally { release(); }
       await navigation;
-      await page.waitForURL("**/app/inbox", { waitUntil: "load" });
+      await page.goto(`/app/inbox?conversation=${selected}`);
       await page.unroute("**/app/**");
       await expect(page.getByTestId("tenant-switcher")).toContainText(`Empresa ${own} ${suffix}`);
       expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).__oldDocument)).toBeUndefined();
@@ -174,6 +178,7 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
     await guest.goto(new URL(link).pathname);
     await guest.getByRole("button", { name: "Aceitar convite", exact: true }).click();
     await expect(guest.getByTestId("tenant-switcher")).toContainText(`Empresa B ${suffix}`);
+    await guest.goto(`/app/inbox?conversation=${conversationB}`);
     await expect(guest.locator("[data-conversation-id]").getByText(`Cliente B ${suffix}`, { exact: true })).toBeVisible();
     const membership = await db.from("user_organizations").select("invited_by,role").eq("organization_id", orgB).eq("user_id", users[1]).single();
     expect(membership.data).toEqual({ invited_by: users[0], role: "admin" });

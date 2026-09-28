@@ -12,6 +12,7 @@
  *   `agent_run:<uuid>` -> vincula tool_call ao run (Spec 10)
  *   `mcp:read`         -> habilita read tools desta wave
  *   `mcp:write`        -> habilita write tools (S-13.04)
+ *   `mcp:configure`    -> monta atendimento em rascunho, sem publicar
  */
 import { createHash } from "node:crypto";
 
@@ -19,6 +20,8 @@ import type { Actor } from "@/lib/api/handlers/types";
 import type { Role } from "@/lib/auth/types";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { montarApresentacaoMcp, papelDoTokenMcp } from "./apresentacao";
+import { carregarBaseApresentacaoMcp } from "./contexto-apresentacao";
 
 export interface McpAuthResult {
   organizationId: string;
@@ -26,6 +29,8 @@ export interface McpAuthResult {
   actor: Actor;
   apiTokenId: string;
   scopes: string[];
+  tokenName?: string;
+  apresentacao?: string;
 }
 
 export class McpAuthError extends Error {
@@ -39,26 +44,14 @@ export class McpAuthError extends Error {
   }
 }
 
-const VALID_ROLES = new Set<Role>(["viewer", "agent", "ai_operator", "manager", "admin"]);
-
 function parseScopes(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter((s): s is string => typeof s === "string");
 }
 
-function scopesRole(scopes: string[]): Role {
-  for (const s of scopes) {
-    if (s.startsWith("role:")) {
-      const r = s.slice("role:".length) as Role;
-      if (VALID_ROLES.has(r)) return r;
-    }
-  }
-  return "agent";
-}
-
 function deriveActor(scopes: string[], tokenId: string): Actor {
   const isAiAgent = scopes.includes("actor:ai_agent");
-  const role = scopesRole(scopes);
+  const role = papelDoTokenMcp(scopes);
   if (isAiAgent) {
     const runScope = scopes.find((s) => s.startsWith("agent_run:"));
     const runId = runScope ? runScope.slice("agent_run:".length) : tokenId;
@@ -91,7 +84,7 @@ export async function validateBearerToken(
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("api_tokens")
-    .select("id, organization_id, scopes, revoked_at, expires_at")
+    .select("id, organization_id, name, scopes, revoked_at, expires_at")
     .eq("token_hash", hashLiteral)
     .maybeSingle();
 
@@ -109,8 +102,15 @@ export async function validateBearerToken(
   }
 
   const scopes = parseScopes(data.scopes);
-  const role = scopesRole(scopes);
+  const role = papelDoTokenMcp(scopes);
   const actor = deriveActor(scopes, data.id);
+  const baseApresentacao = await carregarBaseApresentacaoMcp(data.organization_id, supabase);
+  const apresentacao = montarApresentacaoMcp({
+    ...baseApresentacao,
+    tokenName: data.name,
+    role,
+    scopes,
+  });
 
   supabase
     .from("api_tokens")
@@ -126,6 +126,8 @@ export async function validateBearerToken(
     actor,
     apiTokenId: data.id,
     scopes,
+    tokenName: data.name,
+    apresentacao,
   };
 }
 

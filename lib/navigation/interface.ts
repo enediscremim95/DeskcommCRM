@@ -1,6 +1,6 @@
 /** Apresentação por vínculo. Nunca é autorização de página, API ou ação. */
 import { z } from "zod";
-import { ROLE_RANK, type Role } from "@/lib/auth/types";
+import { roleAtLeast, ROLE_RANK, type Role } from "@/lib/auth/types";
 import { NAV_CATALOG, type NavMetadata, type NavDestinationId } from "./catalogo";
 import type { IntegrationAccessMap } from "@/lib/integrations/types";
 
@@ -38,7 +38,7 @@ export function essencial(d: NavMetadata, role: Role | null, platform = false): 
     d.href === "/app/settings/aparencia" ||
     d.href === PORTAS_ESSENCIAIS[0] ||
     d.href === PORTAS_ESSENCIAIS[1] ||
-    (d.href === PORTAS_ESSENCIAIS[2] && (platform || role === "admin"))
+    (d.href === PORTAS_ESSENCIAIS[2] && (platform || roleAtLeast(role, "manager")))
   );
 }
 export function canSee(

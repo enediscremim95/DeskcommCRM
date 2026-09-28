@@ -84,7 +84,8 @@ test("importa uma planilha sem escolher etapa (não há esse seletor) e o negóc
   page,
 }) => {
   await login(page, creds.users.agent!.email);
-  await page.goto("/app/kanban");
+  // Desde b8124bc3, a raiz abre o quadro padrão; importar pertence à lista.
+  await page.goto("/app/kanban?lista=1");
 
   await page.getByTestId("abrir-importar-leads").click();
 

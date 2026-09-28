@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { userHasPermission } from "@/lib/auth/permissions";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TeamMembersClient } from "./_components/TeamMembersClient";
@@ -39,7 +40,7 @@ export default async function TeamPage({
   // padrão vive em `lib/auth/server.ts`).
   const t = (texto: string) => traduzir(texto, user.idioma);
   const activeOrg = await resolveActiveOrg(user);
-  const isAdmin = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
+  const canManage = userHasPermission(user, activeOrg, "team.manage");
   const isManager = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
   return (
@@ -51,7 +52,7 @@ export default async function TeamPage({
             {t("Gestão de membros, roles e atendimento do tenant.")}
           </p>
         </div>
-        {isAdmin ? (
+        {canManage ? (
           <Button asChild className="shrink-0">
             <Link href="/app/team/invite">{t("Convidar membros")}</Link>
           </Button>
@@ -64,7 +65,7 @@ export default async function TeamPage({
           <TabsTrigger value="attendants">{t("Atendimento")}</TabsTrigger>
         </TabsList>
         <TabsContent value="members" className="mt-4">
-          <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />
+          <TeamMembersClient currentUserId={user.id} canManage={canManage} />
         </TabsContent>
         <TabsContent value="attendants" className="mt-4">
           {isManager ? (

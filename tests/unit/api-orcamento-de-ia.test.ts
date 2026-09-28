@@ -20,6 +20,7 @@
  *     meu clique").
  *  5. **O laço de retorno**: afrouxar fecha os avisos abertos na hora.
  */
+import type * as ImpersonateSupportTypes from "@/lib/impersonate/support";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
@@ -149,7 +150,7 @@ beforeEach(() => {
 
 describe("PATCH /api/v1/ai/budget", () => {
   describe("quem pode mexer", () => {
-    for (const papel of ["viewer", "agent", "manager"] as const) {
+    for (const papel of ["viewer", "agent"] as const) {
       it(`${papel} recebe 403 — mexer no teto é decisão de admin`, async () => {
         sessao(papel);
         const { cliente } = fazerAdmin({ linha: null });
@@ -651,7 +652,7 @@ describe("desarmar devolve a carência inteira — a coluna NÃO fica pré-gasta
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  ...await importOriginal<typeof ImpersonateSupportTypes>(),
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));

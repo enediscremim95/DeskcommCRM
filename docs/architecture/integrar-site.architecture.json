@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Integre seu site",
+    "subtitle": "Uma fonte por página, origem preservada e silêncio visível",
+    "output": "integrar-site.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "pessoa", "label": "Pessoa" },
+    { "id": "app", "label": "Aplicativo" },
+    { "id": "db", "label": "Banco" }
+  ],
+  "mainPath": ["assistente", "fonte", "script", "entrada", "captura", "resumo"],
+  "nodes": [
+    { "id": "assistente", "lane": "pessoa", "col": 0, "type": "ui", "label": "Página + funil + etapa + responsável" },
+    { "id": "fonte", "lane": "db", "col": 1, "type": "database", "label": "webhook_sources: destino e responsável padrão" },
+    { "id": "script", "lane": "app", "col": 2, "type": "lib", "label": "Script estático: página + UTMs + external_id" },
+    { "id": "entrada", "lane": "app", "col": 3, "type": "route", "label": "POST /webhooks/in/[token]: cria contato e lead" },
+    { "id": "captura", "lane": "db", "col": 4, "type": "database", "label": "webhook_lead_captures + source_metadata" },
+    { "id": "resumo", "lane": "pessoa", "col": 5, "type": "ui", "label": "30 dias: origem, campanha, página e sem marcação" },
+    { "id": "vigia", "lane": "app", "col": 4, "type": "service", "label": "Cron existente verifica 48h sem lead" },
+    { "id": "central", "lane": "pessoa", "col": 5, "type": "ui", "label": "Central mostra aviso crítico da fonte" }
+  ],
+  "edges": [
+    { "from": "assistente", "to": "fonte", "label": "configuração validada na organização" },
+    { "from": "fonte", "to": "script", "label": "token e nome da página" },
+    { "from": "script", "to": "entrada", "label": "payload identificado e testável" },
+    { "from": "entrada", "to": "captura", "label": "resultado durável e metadados" },
+    { "from": "captura", "to": "resumo", "label": "agregação dos últimos 30 dias" },
+    { "from": "fonte", "to": "vigia", "label": "ativa e já recebeu pelo menos uma vez" },
+    { "from": "vigia", "to": "central", "label": "48h sem lead abre episódio único" },
+    { "from": "entrada", "to": "vigia", "label": "novo lead resolve o aviso aberto" }
+  ]
+}

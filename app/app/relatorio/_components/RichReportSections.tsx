@@ -16,10 +16,62 @@ import {
 import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { buildFunnelReadings, type TrafficRichCrmInsights } from "@/lib/windsor/traffic-insights";
+import type { PriorityMetricColumn } from "@/lib/windsor/priority-metrics";
 import { CostSignal, type CostThreshold } from "./CostThresholds";
+import { useColunasAjustaveis, type ConfiguracaoColunaAjustavel } from "./colunas-ajustaveis";
+import { BlocoRecolhivel, ControleEdicaoRelatorio } from "./RelatorioRecolhivel";
 
 type Platform = "meta_ads" | "google_ads";
 type Model = "leads" | "messages" | "ecommerce";
+type CreativeResizableColumnKey =
+  | "creative"
+  | "spend"
+  | "impressions"
+  | "clicks"
+  | "ctr"
+  | "conversions"
+  | "cost_per_conversion"
+  | "conversion_rate"
+  | "revenue"
+  | "roas";
+
+const CREATIVE_RESIZABLE_COLUMNS: Record<CreativeResizableColumnKey, ConfiguracaoColunaAjustavel> =
+  {
+    creative: { larguraMinima: 180, larguraPadrao: 280 },
+    spend: { larguraMinima: 104, larguraPadrao: 144 },
+    impressions: { larguraMinima: 104, larguraPadrao: 144 },
+    clicks: { larguraMinima: 104, larguraPadrao: 144 },
+    ctr: { larguraMinima: 104, larguraPadrao: 144 },
+    conversions: { larguraMinima: 104, larguraPadrao: 144 },
+    cost_per_conversion: { larguraMinima: 104, larguraPadrao: 144 },
+    conversion_rate: { larguraMinima: 104, larguraPadrao: 144 },
+    revenue: { larguraMinima: 104, larguraPadrao: 144 },
+    roas: { larguraMinima: 104, larguraPadrao: 144 },
+  };
+
+function creativePriorityColumn(
+  metric: PriorityMetricColumn | "conversions",
+): CreativeResizableColumnKey | null {
+  if (
+    metric === "leads" ||
+    metric === "purchases" ||
+    metric === "messaging_conversations" ||
+    metric === "conversions"
+  ) {
+    return "conversions";
+  }
+  if (
+    metric === "cost_per_lead" ||
+    metric === "cost_per_purchase" ||
+    metric === "cost_per_messaging_conversation"
+  ) {
+    return "cost_per_conversion";
+  }
+  if (metric === "link_clicks") return "clicks";
+  if (metric === "spend" || metric === "impressions" || metric === "ctr") return metric;
+  if (metric === "revenue" || metric === "roas") return metric;
+  return null;
+}
 
 interface Metrics {
   spend: number;
@@ -166,10 +218,14 @@ export function TrafficTimeline({
   daily,
   currency,
   idioma,
+  organizationKey,
+  viewerKey,
 }: {
   daily: RichCurrencyGroup["daily"];
   currency: string;
   idioma: string;
+  organizationKey: string;
+  viewerKey: string;
 }) {
   const t = useT();
   const days = daily.length;
@@ -180,24 +236,33 @@ export function TrafficTimeline({
     days > 120 && selectedGranularity === "daily" ? "monthly" : selectedGranularity;
   const data = useMemo(() => aggregateTimeline(daily, granularity), [daily, granularity]);
   return (
-    <details open className="group overflow-hidden rounded-2xl border bg-card shadow-sm">
-      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 border-b px-4 py-4 sm:px-5">
-        <h3 className="text-lg font-semibold">{t("Investimento e resultado no tempo")}</h3>
-        <div className="flex gap-1" onClick={(event) => event.preventDefault()}>
-          {(["daily", "weekly", "monthly"] as const).map((value) => (
-            <Button
-              key={value}
-              type="button"
-              size="sm"
-              variant={granularity === value ? "secondary" : "ghost"}
-              disabled={value === "daily" && days > 120}
-              onClick={() => setSelectedGranularity(value)}
-            >
-              {value === "daily" ? t("Diário") : value === "weekly" ? t("Semanal") : t("Mensal")}
-            </Button>
-          ))}
-        </div>
-      </summary>
+    <BlocoRecolhivel
+      organizationKey={organizationKey}
+      viewerKey={viewerKey}
+      sectionKey={`timeline-${currency}`}
+      idioma={idioma}
+      label={t("Investimento e resultado no tempo")}
+      header={
+        <span className="text-lg font-semibold">{t("Investimento e resultado no tempo")}</span>
+      }
+      className="overflow-hidden rounded-2xl border bg-card shadow-sm"
+      headerClassName="px-4 py-4 sm:px-5"
+      contentClassName="border-t"
+    >
+      <div className="flex flex-wrap justify-end gap-1 px-3 pt-3 sm:px-5">
+        {(["daily", "weekly", "monthly"] as const).map((value) => (
+          <Button
+            key={value}
+            type="button"
+            size="sm"
+            variant={granularity === value ? "secondary" : "ghost"}
+            disabled={value === "daily" && days > 120}
+            onClick={() => setSelectedGranularity(value)}
+          >
+            {value === "daily" ? t("Diário") : value === "weekly" ? t("Semanal") : t("Mensal")}
+          </Button>
+        ))}
+      </div>
       <div className="h-72 p-3 sm:h-80 sm:p-5">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data}>
@@ -252,7 +317,7 @@ export function TrafficTimeline({
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-    </details>
+    </BlocoRecolhivel>
   );
 }
 
@@ -388,15 +453,54 @@ export function CreativePerformance({
   model,
   threshold,
   idioma,
+  organizationKey,
+  viewerKey,
+  priorityMetric,
 }: {
   group: RichCurrencyGroup;
   model: Model;
   threshold?: CostThreshold;
   idioma: string;
+  organizationKey: string;
+  viewerKey: string;
+  priorityMetric: PriorityMetricColumn | "conversions";
 }) {
   const t = useT();
   const [showAll, setShowAll] = useState(false);
   const [sort, setSort] = useState<"conversions" | "spend" | "cost">("conversions");
+  const defaultColumnOrder = useMemo(
+    () =>
+      [
+        "creative",
+        "spend",
+        "impressions",
+        "clicks",
+        "ctr",
+        "conversions",
+        "cost_per_conversion",
+        "conversion_rate",
+        ...(model === "ecommerce" ? (["revenue", "roas"] as const) : []),
+      ] as CreativeResizableColumnKey[],
+    [model],
+  );
+  const {
+    alcaDaColuna,
+    estiloDaColuna,
+    ordemDasColunas: columnOrder,
+    propriedadesDeArraste: reorderProps,
+    classeDoIndicadorDeQueda: dropIndicatorClass,
+    restaurarOrdemPadrao: resetColumnOrder,
+    ordemFoiAlterada: columnOrderChanged,
+  } = useColunasAjustaveis({
+    storageKey: `traffic-report-column-widths:${organizationKey}:meta-ads-creatives`,
+    colunas: CREATIVE_RESIZABLE_COLUMNS,
+    traduzir: t,
+    ordem: {
+      storageKey: `traffic-report-column-order:${organizationKey}:${viewerKey}:meta-ads-creatives`,
+      padrao: defaultColumnOrder,
+      fixa: "creative",
+    },
+  });
   const creatives = flattenCreatives(group);
   if (creatives.length === 0) return null;
   const conversionLabel = model === "ecommerce" ? t("Compras") : t("Leads");
@@ -404,10 +508,10 @@ export function CreativePerformance({
     model === "ecommerce"
       ? local(idioma, "Custo/compra", "Costo/compra")
       : local(idioma, "Custo/lead", "Costo/lead");
-  const rateLabel =
-    model === "ecommerce"
-      ? local(idioma, "Cliques para compras", "Clics a compras")
-      : t("Cliques para leads");
+  // "Taxa de conv. site" e não "Cliques para leads": o número é a fatia de quem
+  // clicou e virou resultado na página, então o nome que o gestor usa no dia a
+  // dia é taxa de conversão do site.
+  const rateLabel = local(idioma, "Taxa de conv. site", "Tasa de conv. sitio");
   const costHighlightLabel =
     model === "ecommerce"
       ? local(idioma, "Menor custo por compra", "Menor costo por compra")
@@ -434,10 +538,46 @@ export function CreativePerformance({
         (b.clicks > 0 ? b.conversions / b.clicks : 0) -
         (a.clicks > 0 ? a.conversions / a.clicks : 0),
     )[0];
+  const priorityColumn = creativePriorityColumn(priorityMetric);
+  const header = (
+    column: CreativeResizableColumnKey,
+    label: string,
+    align: "left" | "right" = "right",
+  ) => {
+    const priority = column === priorityColumn;
+    return (
+      <th
+        key={column}
+        scope="col"
+        className={`relative overflow-hidden px-3 py-2 whitespace-nowrap ${dropIndicatorClass(column)} ${align === "left" ? "text-left" : "text-right"} ${priority ? "bg-primary/[0.10] font-semibold text-foreground" : ""}`}
+        style={estiloDaColuna(column)}
+        data-priority={priority || undefined}
+        {...(column === "creative" ? {} : reorderProps(column))}
+      >
+        <span className="block truncate" title={label}>
+          {label}
+        </span>
+        {alcaDaColuna(column, label)}
+      </th>
+    );
+  };
+  const cellClass = (column: CreativeResizableColumnKey, align = "text-right") =>
+    `overflow-hidden px-3 py-2 whitespace-nowrap ${align} ${column === priorityColumn ? "bg-primary/[0.06] text-base font-semibold" : ""}`;
   return (
-    <section className="rounded-2xl border bg-card p-4 sm:p-5">
-      <h3 className="text-lg font-semibold">{t("Criativos que mais trazem resultado")}</h3>
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
+    <BlocoRecolhivel
+      organizationKey={organizationKey}
+      viewerKey={viewerKey}
+      sectionKey={`ads-${group.currency}`}
+      idioma={idioma}
+      label={local(idioma, "Tabela de anúncios", "Tabla de anuncios")}
+      header={
+        <span className="text-lg font-semibold">{t("Criativos que mais trazem resultado")}</span>
+      }
+      className="rounded-2xl border bg-card"
+      headerClassName="p-4 sm:p-5"
+      contentClassName="border-t p-4 sm:p-5"
+    >
+      <div className="grid gap-3 md:grid-cols-3">
         {[
           [
             model === "ecommerce" ? t("Mais vendas") : t("Mais leads"),
@@ -461,108 +601,159 @@ export function CreativePerformance({
         ]
           .filter(([, creative]) => creative && typeof creative === "object")
           .map(([label, creative, value]) => (
-          <div key={String(label)} className="rounded-xl border p-4">
-            <p className="text-sm text-muted-foreground">{label as string}</p>
-            <p className="mt-1 font-semibold">
-              {creative && typeof creative === "object"
-                ? creative.name
-                : t("Sem dados suficientes")}
-            </p>
-            <p className="text-sm">{value as string}</p>
-          </div>
-        ))}
+            <div key={String(label)} className="rounded-xl border p-4">
+              <p className="text-sm text-muted-foreground">{label as string}</p>
+              <p className="mt-1 font-semibold">
+                {creative && typeof creative === "object"
+                  ? creative.name
+                  : t("Sem dados suficientes")}
+              </p>
+              <p className="text-sm">{value as string}</p>
+            </div>
+          ))}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">{t("Anúncios Meta")}</span>
-        <select
-          className="rounded-md border bg-background px-2 py-1 text-sm"
-          value={sort}
-          onChange={(event) => setSort(event.target.value as typeof sort)}
-        >
-          <option value="conversions">{conversionLabel}</option>
-          <option value="cost">{local(idioma, "Menor custo", "Menor costo")}</option>
-          <option value="spend">{t("Investimento")}</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <ControleEdicaoRelatorio>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={!columnOrderChanged}
+              onClick={resetColumnOrder}
+            >
+              {t("Voltar à ordem padrão")}
+            </Button>
+          </ControleEdicaoRelatorio>
+          <select
+            className="rounded-md border bg-background px-2 py-1 text-sm"
+            value={sort}
+            onChange={(event) => setSort(event.target.value as typeof sort)}
+          >
+            <option value="conversions">{conversionLabel}</option>
+            <option value="cost">{local(idioma, "Menor custo", "Menor costo")}</option>
+            <option value="spend">{t("Investimento")}</option>
+          </select>
+        </div>
       </div>
       <DragScroll className="mt-2 overflow-x-auto">
         <table className="w-full min-w-max text-sm">
           <thead className="border-y bg-muted/35">
             <tr>
-              <th className="px-3 py-2 text-left">{t("Criativo")}</th>
-              <th className="px-3 py-2 text-right">{t("Investimento")}</th>
-              <th className="px-3 py-2 text-right">{t("Impressões")}</th>
-              <th className="px-3 py-2 text-right">{t("Cliques")}</th>
-              <th className="px-3 py-2 text-right">CTR</th>
-              <th className="px-3 py-2 text-right">{conversionLabel}</th>
-              <th className="px-3 py-2 text-right">{compactCostLabel}</th>
-              <th className="px-3 py-2 text-right">{rateLabel}</th>
-              {model === "ecommerce" && (
-                <>
-                  <th className="px-3 py-2 text-right">{t("Receita")}</th>
-                  <th className="px-3 py-2 text-right">ROAS</th>
-                </>
+              {columnOrder.map((column) =>
+                header(
+                  column,
+                  column === "creative"
+                    ? t("Criativo")
+                    : column === "spend"
+                      ? t("Investimento")
+                      : column === "impressions"
+                        ? t("Impressões")
+                        : column === "clicks"
+                          ? t("Cliques")
+                          : column === "ctr"
+                            ? "CTR"
+                            : column === "conversions"
+                              ? conversionLabel
+                              : column === "cost_per_conversion"
+                                ? compactCostLabel
+                                : column === "conversion_rate"
+                                  ? rateLabel
+                                  : column === "revenue"
+                                    ? t("Receita")
+                                    : "ROAS",
+                  column === "creative" ? "left" : "right",
+                ),
               )}
             </tr>
           </thead>
           <tbody className="divide-y">
             {sorted.slice(0, showAll ? sorted.length : 10).map((row) => (
               <tr key={`${row.campaign}:${row.adset}:${row.name}`}>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    {row.thumbnail_url ? (
-                      <span
-                        className="size-10 rounded-md bg-cover bg-center"
-                        style={{ backgroundImage: `url(${row.thumbnail_url})` }}
-                      />
-                    ) : (
-                      <span className="grid size-10 place-items-center rounded-md bg-muted text-xs font-bold">
-                        {row.name.slice(0, 2).toUpperCase()}
-                      </span>
-                    )}
-                    <span>
-                      <span className="block font-medium">{row.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {row.campaign} › {row.adset}
-                      </span>
-                    </span>
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right">{money(row.spend, group.currency, idioma)}</td>
-                <td className="px-3 py-2 text-right">{number(row.impressions, idioma)}</td>
-                <td className="px-3 py-2 text-right">{number(row.clicks, idioma)}</td>
-                <td className="px-3 py-2 text-right">{percent(row.ctr, idioma)}</td>
-                <td className="px-3 py-2 text-right">
-                  <span className="relative ml-auto block min-w-16 overflow-hidden rounded-md bg-muted/60 py-0.5">
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-y-0 left-0 bg-primary/20"
-                      style={{ width: `${(row.conversions / maxConversions) * 100}%` }}
-                    />
-                    <span className="relative px-2 font-semibold">
-                      {number(row.conversions, idioma)}
-                    </span>
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <CostSignal value={row.cost_per_conversion} threshold={threshold}>
-                    {row.cost_per_conversion == null
-                      ? ""
-                      : money(row.cost_per_conversion, group.currency, idioma)}
-                  </CostSignal>
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {row.clicks > 0 ? percent((row.conversions / row.clicks) * 100, idioma) : ""}
-                </td>
-                {model === "ecommerce" && (
-                  <>
-                    <td className="px-3 py-2 text-right">
-                      {money(row.revenue, group.currency, idioma)}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {row.roas == null ? "" : `${number(row.roas, idioma)}x`}
-                    </td>
-                  </>
-                )}
+                {columnOrder.map((column) => {
+                  const common = {
+                    key: column,
+                    className: cellClass(
+                      column,
+                      column === "creative" ? "text-left" : "text-right",
+                    ),
+                    style: estiloDaColuna(column),
+                    "data-priority": priorityColumn === column || undefined,
+                  };
+                  if (column === "creative")
+                    return (
+                      <td {...common}>
+                        <div className="flex min-w-0 items-center gap-2">
+                          {row.thumbnail_url ? (
+                            <span
+                              className="size-10 shrink-0 rounded-md bg-cover bg-center"
+                              style={{ backgroundImage: `url(${row.thumbnail_url})` }}
+                            />
+                          ) : (
+                            <span className="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-xs font-bold">
+                              {row.name.slice(0, 2).toUpperCase()}
+                            </span>
+                          )}
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium" title={row.name}>
+                              {row.name}
+                            </span>
+                            <span
+                              className="block truncate text-xs text-muted-foreground"
+                              title={`${row.campaign} › ${row.adset}`}
+                            >
+                              {row.campaign} › {row.adset}
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                    );
+                  if (column === "conversions")
+                    return (
+                      <td {...common}>
+                        <span className="relative ml-auto block min-w-16 overflow-hidden rounded-md bg-muted/60 py-0.5">
+                          <span
+                            aria-hidden="true"
+                            className="absolute inset-y-0 left-0 bg-primary/20"
+                            style={{ width: `${(row.conversions / maxConversions) * 100}%` }}
+                          />
+                          <span className="relative px-2 font-semibold">
+                            {number(row.conversions, idioma)}
+                          </span>
+                        </span>
+                      </td>
+                    );
+                  if (column === "cost_per_conversion")
+                    return (
+                      <td {...common}>
+                        <CostSignal value={row.cost_per_conversion} threshold={threshold}>
+                          {row.cost_per_conversion == null
+                            ? ""
+                            : money(row.cost_per_conversion, group.currency, idioma)}
+                        </CostSignal>
+                      </td>
+                    );
+                  const value =
+                    column === "spend"
+                      ? money(row.spend, group.currency, idioma)
+                      : column === "impressions"
+                        ? number(row.impressions, idioma)
+                        : column === "clicks"
+                          ? number(row.clicks, idioma)
+                          : column === "ctr"
+                            ? percent(row.ctr, idioma)
+                            : column === "conversion_rate"
+                              ? row.clicks > 0
+                                ? percent((row.conversions / row.clicks) * 100, idioma)
+                                : ""
+                              : column === "revenue"
+                                ? money(row.revenue, group.currency, idioma)
+                                : row.roas == null
+                                  ? ""
+                                  : `${number(row.roas, idioma)}x`;
+                  return <td {...common}>{value}</td>;
+                })}
               </tr>
             ))}
           </tbody>
@@ -579,7 +770,7 @@ export function CreativePerformance({
           {showAll ? t("Ver menos") : t("Ver todos")}
         </Button>
       )}
-    </section>
+    </BlocoRecolhivel>
   );
 }
 

@@ -33,6 +33,7 @@ export const KIND_LABEL = {
   next_action_ambiguous: "Próxima ação sem negócio definido — precisa da sua escolha",
   risk_backlog_seeded: "Negócios que já estavam parados — precisam de uma decisão",
   reactivation_expired: "A sugestão de retomar contato venceu — decida",
+  followup_suggestion: "Sugestão de follow-up aguardando decisão",
   // Diz o que ACONTECEU com o cliente, não o que falhou por dentro: o dono do
   // negócio precisa saber que um atendimento saiu capado, não que um token
   // colidiu. O motivo técnico fica no corpo do aviso, para quem for investigar.
@@ -70,6 +71,7 @@ export const KIND_LABEL = {
   // conseguiu. O motivo cru do upstream (`user_ended`, `do_not_disturb`) nunca
   // chega à tela — vira frase de gente no corpo do aviso, escrito pelo worker.
   voice_call_missed: "Alguém ligou e ninguém atendeu",
+  webhook_source_silent: "Uma página está há 48 horas sem enviar leads",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

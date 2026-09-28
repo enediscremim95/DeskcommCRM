@@ -26,6 +26,7 @@ import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { test, expect, type Page } from "@playwright/test";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const APP_URL = `http://localhost:${process.env.E2E_PORT ?? "3001"}`;
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
@@ -54,11 +55,11 @@ const LEAD_NAME = `Beatriz Captada ${ts}`;
 const IP_DE_TESTE = "203.0.113.42";
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto(`${APP_URL}/login`);
+  await page.goto(`${APP_URL}/login?next=/app/settings/profile`);
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await aguardarSessaoCompleta(page, "aal1");
 }
 
 test.describe("histórico de leads captados", () => {
@@ -76,11 +77,14 @@ test.describe("histórico de leads captados", () => {
       await page.goto(`${APP_URL}/app/webhooks`);
 
       // ── Uma fonte de captação, criada pela tela ──────────────────────────
-      await page.getByRole("button", { name: /Nova fonte|Criar primeira fonte/ }).click();
+      await page
+        .getByRole("button", { name: /Conectar primeira página|Conectar página/ })
+        .click();
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.locator("#src-name").fill(SOURCE_NAME);
+      await page.getByRole("button", { name: "Continuar" }).click();
       const dialog = page.getByRole("dialog");
-      for (const i of [0, 1]) {
+      for (const i of [0, 1, 2]) {
         await dialog.getByRole("combobox").nth(i).click();
         await page.getByRole("option").first().click();
       }
@@ -88,7 +92,7 @@ test.describe("histórico de leads captados", () => {
         page.waitForResponse(
           (r) => r.url().includes("/api/v1/webhook-sources") && r.request().method() === "POST",
         ),
-        page.getByRole("button", { name: "Criar fonte" }).click(),
+        page.getByRole("button", { name: "Criar fonte e gerar script" }).click(),
       ]);
       expect(criacao.ok()).toBeTruthy();
       const corpo = (await criacao.json()) as { data: { id: string; path_token: string } };

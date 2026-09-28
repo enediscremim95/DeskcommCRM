@@ -10,7 +10,10 @@ interface Consulta {
   filtros: Record<string, unknown>;
 }
 
-function clienteFalso(tarefas: Array<Record<string, unknown>>) {
+function clienteFalso(
+  tarefas: Array<Record<string, unknown>>,
+  leads: Array<Record<string, unknown>> = [],
+) {
   const consultas: Consulta[] = [];
   const from = (table: string) => {
     const consulta: Consulta = { table, cols: "", filtros: {} };
@@ -40,8 +43,11 @@ function clienteFalso(tarefas: Array<Record<string, unknown>>) {
       limit: () => chain,
       then: (resolve: (value: unknown) => unknown) => {
         consultas.push({ ...consulta, filtros: { ...consulta.filtros } });
-        const data =
-          table === "crm_tasks" && consulta.cols.includes("contact_id") ? tarefas : [];
+        const data = table === "crm_tasks" && consulta.cols.includes("contact_id")
+          ? tarefas
+          : table === "crm_leads" && consulta.cols.includes("last_activity_at")
+            ? leads
+            : [];
         return Promise.resolve({ data, error: null }).then(resolve);
       },
     };
@@ -104,5 +110,33 @@ describe("tarefas no Radar", () => {
       status: ["pending", "in_progress"],
       due_date_is: null,
     });
+  });
+
+  it("consulta as tarefas do pool de 500 leads em blocos que cabem no PostgREST", async () => {
+    const leads = Array.from({ length: 500 }, (_, i) => ({
+      id: `lead-${i}`,
+      title: `Negócio ${i}`,
+      contact_id: null,
+      owner_user_id: null,
+      owner_kind: null,
+      owner_agent_id: null,
+      stage_id: `stage-${i % 2}`,
+      last_activity_at: "2026-09-01T00:00:00.000Z",
+      created_at: "2026-09-01T00:00:00.000Z",
+      pipeline_id: "pipeline-1",
+    }));
+    const { client, consultas } = clienteFalso([], leads);
+
+    await carregaRadarDeRisco(client, {
+      organizationId: ORG,
+      now: new Date("2026-09-25T12:00:00.000Z"),
+    });
+
+    const lotes = consultas
+      .filter((c) => c.table === "crm_tasks" && Array.isArray(c.filtros.lead_id))
+      .map((c) => c.filtros.lead_id as string[]);
+    expect(lotes).toHaveLength(5);
+    expect(lotes.every((ids) => ids.length === 100)).toBe(true);
+    expect(new Set(lotes.flat()).size).toBe(500);
   });
 });

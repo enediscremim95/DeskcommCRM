@@ -146,6 +146,8 @@ export async function avisarLeadDaEscalacao(
 
     const outcome = chain.outcome;
     switch (outcome.kind) {
+      case 'deferred':
+        return { avisado: false, porque: 'canal_ocupado' };
       case 'sent':
       case 'already_sent':
       case 'queued':

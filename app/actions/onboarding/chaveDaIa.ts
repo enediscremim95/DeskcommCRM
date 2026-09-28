@@ -21,6 +21,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { guardarCredencial } from "@/lib/ai/credenciais/guardar";
 import { IDS_DE_PROVEDOR } from "@/lib/ai/pontos/provedores";
 import type { Provider } from "@/lib/ai/provider-validators";
+import { roleAtLeast } from "@/lib/auth/types";
 import { requireOnboardingCtx, OnboardingError } from "./_shared";
 
 export type ResultadoDaChave = { ok: true; final: string } | { ok: false; erro: string };
@@ -34,10 +35,10 @@ export async function salvarChaveDaIa(formData: FormData): Promise<ResultadoDaCh
     throw err;
   }
 
-  // Guardar chave de provedor é ação de administrador, igual à rota REST. Quem
+  // Guardar chave de provedor exige acesso geral de gestão, igual à rota REST. Quem
   // faz o onboarding é o dono, mas o papel é verificado e não presumido.
-  if (ctx.role !== "admin") {
-    return { ok: false, erro: "Só um administrador pode cadastrar a chave da inteligência artificial." };
+  if (!roleAtLeast(ctx.role, "admin")) {
+    return { ok: false, erro: "Só quem administra a empresa pode cadastrar a chave da inteligência artificial." };
   }
 
   const provider = String(formData.get("provider") ?? "");

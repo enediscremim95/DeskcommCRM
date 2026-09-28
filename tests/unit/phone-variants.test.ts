@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { canonicalPhoneBR, phoneForDisplay, phoneLookupVariants, samePhone } from "@/lib/channels/phone-variants";
+import { canonicalPhoneBR, phoneForChannelCard, phoneForDisplay, phoneLookupVariants, samePhone } from "@/lib/channels/phone-variants";
 
 /** Payloads REAIS capturados da WABA de teste em 2026-07-29. */
 const INBOUND = JSON.parse(
@@ -130,5 +130,15 @@ describe("samePhone", () => {
 
   it("fixo e celular com dígitos parecidos NÃO se confundem", () => {
     expect(samePhone("553132345678", "5531932345678")).toBe(false);
+  });
+});
+
+describe("phoneForChannelCard", () => {
+  it("formata número brasileiro de oito dígitos sem alterar o aparelho observado", () => {
+    expect(phoneForChannelCard("+554198475286")).toBe("+55 41 9847-5286");
+  });
+
+  it("formata número brasileiro de nove dígitos", () => {
+    expect(phoneForChannelCard("5511999999999")).toBe("+55 11 99999-9999");
   });
 });

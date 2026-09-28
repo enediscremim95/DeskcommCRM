@@ -98,6 +98,8 @@ export const AUDIT_ACTIONS = [
   // auditoria. Desligar uma automação é decisão auditável tanto quanto religá-la.
   "conversation.ai_paused",
   "conversation.tags_changed",
+  "conversation.channel_label_applied",
+  "channel_session.ai_concurrency_changed",
   "contact.tags_changed",
   // Fila de confirmação (spec 17 §4b): a IA PROPÕE, uma pessoa decide. As três
   // entram porque a proposta é intenção auditável mesmo quando nunca vira
@@ -170,6 +172,8 @@ export const AUDIT_ACTIONS = [
   "ai_agent.published",
   "ai_agent.version_created",
   "ai_agent.version_updated",
+  "ai_agent.guardrails_disabled",
+  "ai_agent.mcp_draft_discarded",
   "ai_agent.tested",
   "ai_agent.reconciled",
   "ai_reply.generated",
@@ -196,6 +200,7 @@ export const AUDIT_ACTIONS = [
   "channel.connected",
   "channel.ai_access_updated",
   "channel.reconnected",
+  "channel.disconnected",
   "channel.managed_configured",
   "channel.managed_qr_requested",
   "channel.managed_opened",
@@ -251,6 +256,7 @@ export const AUDIT_ACTIONS = [
   "automation.rule_updated",
   "automation.rule_deleted",
   "automation.rule_executed",
+  "automation.model_applied",
   "automation.run_resent",
   "ai.skill_imported",
   "ai.skill_installed",

@@ -41,6 +41,7 @@ import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao
 interface Props {
   credential: CredentialRow;
   canWrite: boolean;
+  canDelete: boolean;
   usageCount: number;
 }
 
@@ -60,7 +61,7 @@ const STATUS_VARIANT: Record<CredentialStatus, "default" | "secondary" | "destru
   inactive: "outline",
 };
 
-export function CredentialCard({ credential, canWrite, usageCount }: Props) {
+export function CredentialCard({ credential, canWrite, canDelete, usageCount }: Props) {
   const t = useT();
   const router = useRouter();
   const qc = useQueryClient();
@@ -179,7 +180,7 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
           >
             <ArrowsClockwise size={14} aria-hidden />
           </Button>
-          {inUse ? (
+          {canDelete && (inUse ? (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -194,7 +195,7 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
             </TooltipProvider>
           ) : (
             deleteButton
-          )}
+          ))}
         </div>
       )}
 

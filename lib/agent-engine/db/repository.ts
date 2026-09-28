@@ -41,6 +41,7 @@ export type InboxKind =
   | 'next_action_ambiguous'
   | 'risk_backlog_seeded'
   | 'reactivation_expired'
+  | 'followup_suggestion'
   | 'capabilities_missing'
   | 'message_send_stuck'
   // (migration 0120) A plataforma do canal decide sozinha: reprova um modelo
@@ -71,6 +72,7 @@ export type InboxKind =
   // não distingue "tocou e ninguém pegou" de "o operador recusou", e para quem
   // lê a Central os dois pedem a mesma coisa: alguém precisa ligar de volta.
   | 'voice_call_missed'
+  | 'webhook_source_silent'
   | 'other';
 
 export interface InboxItemRow {

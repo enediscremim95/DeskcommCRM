@@ -1,9 +1,9 @@
 /**
  * GET /api/v1/pipelines/[id]/board
  *
- * Returns the full board snapshot for the Kanban: pipeline metadata + active
- * stages (ordered by position) + open leads (excluding archived). All RLS-
- * filtered to the caller's org via cookie session.
+ * Returns pipeline metadata, active stages and the first page of each column.
+ * A request with `stage_id` + `cursor` returns the next page of that stage.
+ * All reads are RLS-filtered to the caller's org via cookie session.
  *
  * Why this exists: previously useBoard hit supabase-js directly from the
  * browser. The auth cookie is httpOnly, which the browser Supabase client
@@ -14,6 +14,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
@@ -25,13 +26,104 @@ import {
 } from "@/lib/leads/next-action";
 import type { LeadCandidate } from "@/lib/leads/active-lead";
 import { createClient } from "@/lib/supabase/server";
-import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
+import { queryInBatches } from "@/lib/supabase/query-in-batches";
+import type {
+  BoardData,
+  BoardStageChunk,
+  BoardStagePage,
+  Pipeline,
+  Stage,
+} from "@/lib/kanban/types";
 import type { Lead } from "@/lib/types/leads";
 
 export const dynamic = "force-dynamic";
 
 interface RouteCtx {
   params: Promise<{ id: string }>;
+}
+
+const STAGE_PAGE_SIZE = 50;
+
+const querySchema = z
+  .object({
+    stage_id: z.string().min(1).max(128).optional(),
+    cursor: z.string().min(1).max(512).optional(),
+  })
+  .refine((query) => !query.cursor || query.stage_id, { path: ["cursor"] });
+
+interface BoardCursor {
+  position: number;
+  id: string;
+}
+
+function encodeBoardCursor(cursor: BoardCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+function decodeBoardCursor(raw: string): BoardCursor | null {
+  try {
+    const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as BoardCursor;
+    if (!Number.isFinite(parsed.position) || typeof parsed.id !== "string") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function loadStagePage(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  pipelineId: string,
+  stageId: string,
+  cursor: BoardCursor | null,
+): Promise<{ chunk: BoardStageChunk | null; error: string | null }> {
+  let pageQuery = supabase
+    .from("crm_leads")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .eq("pipeline_id", pipelineId)
+    .eq("stage_id", stageId)
+    .neq("status", "archived")
+    .order("position_in_stage", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(STAGE_PAGE_SIZE + 1);
+
+  if (cursor) {
+    pageQuery = pageQuery.or(
+      `position_in_stage.gt.${cursor.position},and(position_in_stage.eq.${cursor.position},id.gt.${cursor.id})`,
+    );
+  }
+
+  const [pageResult, countResult] = await Promise.all([
+    pageQuery,
+    supabase
+      .from("crm_leads")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .eq("pipeline_id", pipelineId)
+      .eq("stage_id", stageId)
+      .neq("status", "archived"),
+  ]);
+
+  if (pageResult.error) return { chunk: null, error: pageResult.error.message };
+  if (countResult.error) return { chunk: null, error: countResult.error.message };
+
+  const rows = (pageResult.data ?? []) as Lead[];
+  const hasMore = rows.length > STAGE_PAGE_SIZE;
+  const leads = hasMore ? rows.slice(0, STAGE_PAGE_SIZE) : rows;
+  const last = leads[leads.length - 1];
+  const next = hasMore ? rows[STAGE_PAGE_SIZE] : undefined;
+  const page: BoardStagePage = {
+    total: countResult.count ?? leads.length,
+    has_more: hasMore,
+    cursor:
+      hasMore && last
+        ? encodeBoardCursor({ position: Number(last.position_in_stage), id: last.id })
+        : null,
+    next_position_in_stage: next ? Number(next.position_in_stage) : null,
+  };
+
+  return { chunk: { stage_id: stageId, leads, page }, error: null };
 }
 
 /**
@@ -61,31 +153,35 @@ async function withOwnerAgents(
   ];
   if (agentIds.length === 0) return { leads, error: null };
 
-  const { data: agents, error: agentsErr } = await supabase
-    .from("ai_agents")
-    .select("id, name, published_version_id")
-    .eq("organization_id", organizationId)
-    .in("id", agentIds);
-  if (agentsErr) return { leads, error: agentsErr.message };
-
-  const agentRows = (agents ?? []) as Array<{
+  const agentsResult = await queryInBatches<{
     id: string;
     name: string;
     published_version_id: string | null;
-  }>;
+  }>(agentIds, (batch) =>
+    supabase
+      .from("ai_agents")
+      .select("id, name, published_version_id")
+      .eq("organization_id", organizationId)
+      .in("id", batch),
+  );
+  if (agentsResult.error) return { leads, error: agentsResult.error };
 
-  const publishedIds = agentRows
-    .map((a) => a.published_version_id)
-    .filter((v): v is string => !!v);
+  const agentRows = agentsResult.data;
+
+  const publishedIds = agentRows.map((a) => a.published_version_id).filter((v): v is string => !!v);
   const versionById = new Map<string, number>();
   if (publishedIds.length > 0) {
-    const { data: versions, error: versionsErr } = await supabase
-      .from("ai_agent_versions")
-      .select("id, version_number")
-      .eq("organization_id", organizationId)
-      .in("id", publishedIds);
-    if (versionsErr) return { leads, error: versionsErr.message };
-    for (const v of (versions ?? []) as Array<{ id: string; version_number: number }>) {
+    const versionsResult = await queryInBatches<{ id: string; version_number: number }>(
+      publishedIds,
+      (batch) =>
+        supabase
+          .from("ai_agent_versions")
+          .select("id, version_number")
+          .eq("organization_id", organizationId)
+          .in("id", batch),
+    );
+    if (versionsResult.error) return { leads, error: versionsResult.error };
+    for (const v of versionsResult.data) {
       versionById.set(v.id, v.version_number);
     }
   }
@@ -138,19 +234,18 @@ async function avisaAmbiguas(
 ): Promise<void> {
   if (ambiguas.length === 0) return;
 
-  const { data: jaAbertos } = await supabase
-    .from("agent_inbox_items")
-    .select("ref_id")
-    .eq("organization_id", organizationId)
-    .eq("kind", "next_action_ambiguous")
-    .eq("status", "open")
-    .in(
-      "ref_id",
-      ambiguas.map((a) => a.contact_id),
-    );
-  const abertos = new Set(
-    ((jaAbertos ?? []) as Array<{ ref_id: string }>).map((r) => r.ref_id),
+  const jaAbertosResult = await queryInBatches<{ ref_id: string }>(
+    ambiguas.map((a) => a.contact_id),
+    (batch) =>
+      supabase
+        .from("agent_inbox_items")
+        .select("ref_id")
+        .eq("organization_id", organizationId)
+        .eq("kind", "next_action_ambiguous")
+        .eq("status", "open")
+        .in("ref_id", batch),
   );
+  const abertos = new Set(jaAbertosResult.data.map((r) => r.ref_id));
 
   const novos = ambiguas
     .filter((a) => !abertos.has(a.contact_id))
@@ -159,7 +254,7 @@ async function avisaAmbiguas(
       kind: "next_action_ambiguous",
       severity: "warn",
       title: `A IA propôs uma próxima ação, mas o contato tem ${a.candidateIds.length} negócios abertos`,
-      body: `Proposta: "${a.texto}". Escolha a qual negócio ela pertence — o sistema não adivinha para não executar no negócio errado.`,
+      body: `Proposta: "${a.texto}". Escolha a qual negócio ela pertence, o sistema não adivinha para não executar no negócio errado.`,
       ref_kind: "contact",
       ref_id: a.contact_id,
       status: "open",
@@ -187,27 +282,28 @@ async function withScores(
 ): Promise<{ leads: Lead[]; error: string | null }> {
   if (leads.length === 0) return { leads, error: null };
 
-  const { data, error } = await supabase
-    .from("crm_lead_scores")
-    .select(
-      "lead_id, ai_probability, ai_probability_reason, ai_probability_band, ai_probability_evidence, ai_probability_at",
-    )
-    .eq("organization_id", organizationId)
-    .in(
-      "lead_id",
-      leads.map((l) => l.id),
-    );
-  if (error) return { leads, error: error.message };
-
-  const porLead = new Map<string, NonNullable<Lead["score"]>>();
-  for (const row of (data ?? []) as Array<{
+  const result = await queryInBatches<{
     lead_id: string;
     ai_probability: number | string | null;
     ai_probability_reason: string | null;
     ai_probability_band: string | null;
     ai_probability_evidence: { factors?: unknown } | null;
     ai_probability_at: string | null;
-  }>) {
+  }>(
+    leads.map((lead) => lead.id),
+    (batch) =>
+      supabase
+        .from("crm_lead_scores")
+        .select(
+          "lead_id, ai_probability, ai_probability_reason, ai_probability_band, ai_probability_evidence, ai_probability_at",
+        )
+        .eq("organization_id", organizationId)
+        .in("lead_id", batch),
+  );
+  if (result.error) return { leads, error: result.error };
+
+  const porLead = new Map<string, NonNullable<Lead["score"]>>();
+  for (const row of result.data) {
     // `numeric` chega como string no supabase-js; `null` continua null — e a
     // diferença entre null e 0 é justamente o que não pode se perder aqui.
     if (row.ai_probability === null || row.ai_probability_band === null) continue;
@@ -253,22 +349,24 @@ async function withConversas(
   const contactIds = [...new Set(leads.map((l) => l.contact_id).filter((c): c is string => !!c))];
   if (contactIds.length === 0) return { leads, error: null };
 
-  const { data, error } = await supabase
-    .from("conversations")
-    .select("id, contact_id, last_message_preview, last_message_at, unread_count_for_assignee")
-    .eq("organization_id", organizationId)
-    .in("contact_id", contactIds)
-    .order("last_message_at", { ascending: false, nullsFirst: false });
-  if (error) return { leads, error: error.message };
-
-  const porContato = new Map<string, NonNullable<Lead["conversa"]>>();
-  for (const row of (data ?? []) as Array<{
+  const result = await queryInBatches<{
     id: string;
     contact_id: string;
     last_message_preview: string | null;
     last_message_at: string | null;
     unread_count_for_assignee: number | null;
-  }>) {
+  }>(contactIds, (batch) =>
+    supabase
+      .from("conversations")
+      .select("id, contact_id, last_message_preview, last_message_at, unread_count_for_assignee")
+      .eq("organization_id", organizationId)
+      .in("contact_id", batch)
+      .order("last_message_at", { ascending: false, nullsFirst: false }),
+  );
+  if (result.error) return { leads, error: result.error };
+
+  const porContato = new Map<string, NonNullable<Lead["conversa"]>>();
+  for (const row of result.data) {
     // Primeira vista vence: a consulta já veio ordenada por atividade.
     if (porContato.has(row.contact_id)) continue;
     porContato.set(row.contact_id, {
@@ -294,19 +392,19 @@ async function withNextActions(
   leads: Lead[],
   defaultPipelineId: string | null,
 ): Promise<{ leads: Lead[]; error: string | null }> {
-  const contactIds = [
-    ...new Set(leads.map((l) => l.contact_id).filter((c): c is string => !!c)),
-  ];
+  const contactIds = [...new Set(leads.map((l) => l.contact_id).filter((c): c is string => !!c))];
   if (contactIds.length === 0) return { leads, error: null };
 
-  const [{ data: estados, error: estadosErr }, { data: candidatos, error: candErr }] =
-    await Promise.all([
+  const [estadosResult, candidatosResult] = await Promise.all([
+    queryInBatches<EstadoDoContato>(contactIds, (batch) =>
       supabase
         .from("lead_state")
         .select("contact_id, next_action, next_action_seq, updated_at")
         .eq("organization_id", organizationId)
-        .in("contact_id", contactIds)
+        .in("contact_id", batch)
         .not("next_action", "is", null),
+    ),
+    queryInBatches<LeadCandidate & { contact_id: string | null }>(contactIds, (batch) =>
       supabase
         .from("crm_leads")
         .select(
@@ -314,17 +412,16 @@ async function withNextActions(
         )
         .eq("organization_id", organizationId)
         .eq("status", "open")
-        .in("contact_id", contactIds),
-    ]);
-  if (estadosErr) return { leads, error: estadosErr.message };
-  if (candErr) return { leads, error: candErr.message };
-  if (!estados || estados.length === 0) return { leads, error: null };
+        .in("contact_id", batch),
+    ),
+  ]);
+  if (estadosResult.error) return { leads, error: estadosResult.error };
+  if (candidatosResult.error) return { leads, error: candidatosResult.error };
+  if (estadosResult.data.length === 0) return { leads, error: null };
 
-  const { porLead, ambiguas } = roteiaProximasAcoes(
-    estados as EstadoDoContato[],
-    (candidatos ?? []) as Array<LeadCandidate & { contact_id: string | null }>,
-    { defaultPipelineId },
-  );
+  const { porLead, ambiguas } = roteiaProximasAcoes(estadosResult.data, candidatosResult.data, {
+    defaultPipelineId,
+  });
 
   // Recusar o palpite não pode virar silêncio: a proposta que não achou dono vai
   // para a caixa, onde um humano desambigua. Escrever a partir de um GET não é
@@ -345,7 +442,31 @@ async function withNextActions(
   };
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+async function enrichLeads(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  leads: Lead[],
+  defaultPipelineId: string | null,
+): Promise<{ leads: Lead[]; error: string | null }> {
+  const leadsWithOwner = await withOwnerAgents(supabase, organizationId, leads);
+  if (leadsWithOwner.error) return leadsWithOwner;
+
+  const leadsComAcao = await withNextActions(
+    supabase,
+    organizationId,
+    leadsWithOwner.leads,
+    defaultPipelineId,
+  );
+  if (leadsComAcao.error) return leadsComAcao;
+
+  const leadsComScore = await withScores(supabase, organizationId, leadsComAcao.leads);
+  if (leadsComScore.error) return leadsComScore;
+
+  const leadsComConversa = await withConversas(supabase, organizationId, leadsComScore.leads);
+  return leadsComConversa;
+}
+
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: pipelineId } = await ctx.params;
 
@@ -360,79 +481,111 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const authUser = await loadAuthUser();
   const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
 
-  const [
-    { data: pipeline, error: pipelineErr },
-    { data: stages, error: stagesErr },
-    { data: leads, error: leadsErr },
-  ] = await Promise.all([
-    supabase.from("crm_pipelines").select("*").eq("id", pipelineId).maybeSingle(),
-    supabase
-      .from("crm_stages")
-      .select("*")
-      .eq("pipeline_id", pipelineId)
-      .eq("is_archived", false)
-      .order("position"),
-    supabase
-      .from("crm_leads")
-      .select("*")
-      .eq("pipeline_id", pipelineId)
-      .neq("status", "archived")
-      .order("position_in_stage"),
-  ]);
+  const parsedQuery = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams.entries()));
+  if (!parsedQuery.success) {
+    return fail("validation_failed", t("Parâmetros de paginação inválidos."), 400, {
+      requestId,
+      details: parsedQuery.error.flatten(),
+    });
+  }
+  const rawCursor = parsedQuery.data.cursor;
+  const cursor = rawCursor ? decodeBoardCursor(rawCursor) : null;
+  if (rawCursor && !cursor) {
+    return fail("invalid_cursor", t("Cursor inválido."), 400, { requestId });
+  }
+
+  const [{ data: pipeline, error: pipelineErr }, { data: stages, error: stagesErr }] =
+    await Promise.all([
+      supabase.from("crm_pipelines").select("*").eq("id", pipelineId).maybeSingle(),
+      supabase
+        .from("crm_stages")
+        .select("*")
+        .eq("pipeline_id", pipelineId)
+        .eq("is_archived", false)
+        .order("position"),
+    ]);
 
   if (pipelineErr) return fail("internal_error", pipelineErr.message, 500, { requestId });
   if (stagesErr) return fail("internal_error", stagesErr.message, 500, { requestId });
-  if (leadsErr) return fail("internal_error", leadsErr.message, 500, { requestId });
-  if (!pipeline) return fail("resource_not_found", t("Pipeline não encontrado."), 404, { requestId });
+  if (!pipeline)
+    return fail("resource_not_found", t("Pipeline não encontrado."), 404, { requestId });
 
-  const leadsWithOwner = await withOwnerAgents(
-    supabase,
-    (pipeline as Pipeline).organization_id,
-    (leads ?? []) as Lead[],
-  );
-  if (leadsWithOwner.error) {
-    return fail("internal_error", leadsWithOwner.error, 500, { requestId });
+  const typedPipeline = pipeline as Pipeline;
+  const typedStages = (stages ?? []) as Stage[];
+  const requestedStageId = parsedQuery.data.stage_id;
+  if (requestedStageId && !typedStages.some((stage) => stage.id === requestedStageId)) {
+    return fail("resource_not_found", t("Etapa não encontrada neste funil."), 404, {
+      requestId,
+    });
   }
 
   const { data: pipelinePadrao } = await supabase
     .from("crm_pipelines")
     .select("id")
-    .eq("organization_id", (pipeline as Pipeline).organization_id)
+    .eq("organization_id", typedPipeline.organization_id)
     .eq("is_default", true)
     .maybeSingle();
+  const defaultPipelineId = (pipelinePadrao as { id: string } | null)?.id ?? null;
 
-  const leadsComAcao = await withNextActions(
-    supabase,
-    (pipeline as Pipeline).organization_id,
-    leadsWithOwner.leads,
-    (pipelinePadrao as { id: string } | null)?.id ?? null,
-  );
-  if (leadsComAcao.error) {
-    return fail("internal_error", leadsComAcao.error, 500, { requestId });
+  if (requestedStageId) {
+    const pageResult = await loadStagePage(
+      supabase,
+      typedPipeline.organization_id,
+      pipelineId,
+      requestedStageId,
+      cursor,
+    );
+    if (pageResult.error || !pageResult.chunk) {
+      return fail(
+        "internal_error",
+        pageResult.error ?? t("Não foi possível carregar a etapa."),
+        500,
+        {
+          requestId,
+        },
+      );
+    }
+    const leadsComConversa = await enrichLeads(
+      supabase,
+      typedPipeline.organization_id,
+      pageResult.chunk.leads,
+      defaultPipelineId,
+    );
+    if (leadsComConversa.error) {
+      return fail("internal_error", leadsComConversa.error, 500, { requestId });
+    }
+    return ok<BoardStageChunk>(
+      { ...pageResult.chunk, leads: leadsComConversa.leads },
+      { requestId },
+    );
   }
 
-  const leadsComScore = await withScores(
-    supabase,
-    (pipeline as Pipeline).organization_id,
-    leadsComAcao.leads,
+  const pageResults = await Promise.all(
+    typedStages.map((stage) =>
+      loadStagePage(supabase, typedPipeline.organization_id, pipelineId, stage.id, null),
+    ),
   );
-  if (leadsComScore.error) {
-    return fail("internal_error", leadsComScore.error, 500, { requestId });
-  }
+  const pageError = pageResults.find((result) => result.error)?.error;
+  if (pageError) return fail("internal_error", pageError, 500, { requestId });
 
-  const leadsComConversa = await withConversas(
+  const chunks = pageResults.flatMap((result) => (result.chunk ? [result.chunk] : []));
+  const firstLeads = chunks.flatMap((chunk) => chunk.leads);
+  const leadsComConversa = await enrichLeads(
     supabase,
-    (pipeline as Pipeline).organization_id,
-    leadsComScore.leads,
+    typedPipeline.organization_id,
+    firstLeads,
+    defaultPipelineId,
   );
   if (leadsComConversa.error) {
     return fail("internal_error", leadsComConversa.error, 500, { requestId });
   }
+  const stagePages = Object.fromEntries(chunks.map((chunk) => [chunk.stage_id, chunk.page]));
 
   const board: BoardData = {
-    pipeline: pipeline as Pipeline,
-    stages: (stages ?? []) as Stage[],
+    pipeline: typedPipeline,
+    stages: typedStages,
     leads: leadsComConversa.leads,
+    stage_pages: stagePages,
   };
 
   return ok(board, { requestId });
