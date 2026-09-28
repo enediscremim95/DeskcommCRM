@@ -195,9 +195,15 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
   page.on("websocket",socket=>socket.on("framereceived",frame=>{
    try {const parsed=JSON.parse(frame.payload.toString());const message=Array.isArray(parsed)?{topic:parsed[2],event:parsed[3],payload:parsed[4]}:parsed;realtimeEvidence.push({topic:message.topic,event:message.event,status:message.payload?.status});if(message.topic?.startsWith(`realtime:inbox-${orgs[1]}::`)&&message.event==="postgres_changes")inboxPushed=true;if(message.topic?.startsWith(`realtime:inbox-${orgs[1]}::`)&&message.event==="phx_reply"&&message.payload?.status==="ok")inboxSubscribed=true;}catch{/* frames de controle não JSON */}
   }));
+  // Negação ESPERADA no modo somente leitura: o suporte entra como `viewer`
+  // (`require-role.ts`: access_mode "support_readonly" → role "viewer"), e o
+  // Radar de risco exige `agent`. O 403 ali não é falha do acompanhamento — é
+  // a mesma porta fechada que um viewer comum do cliente encontra. Sem esta
+  // exceção, o teste reprovava o sistema por ele estar funcionando.
+  const NEGACAO_ESPERADA=/\/api\/v1\/leads\/at-risk/;
   const unexpectedDenials:string[]=[];const inboxRequests=new WeakSet<Request>();
   page.on("request",request=>inboxRequests.add(request));
-  page.on("response",response=>{if(response.status()===403&&inboxRequests.has(response.request()))unexpectedDenials.push(response.url());});
+  page.on("response",response=>{if(response.status()===403&&inboxRequests.has(response.request())&&!NEGACAO_ESPERADA.test(response.url()))unexpectedDenials.push(response.url());});
   await start(page,orgs[1]!,true);
   await expect(sameTab.getByTestId("tenant-switcher")).toContainText(`Suporte B ${suffix}`);
   await page.goto(`/app/inbox?conversation=${convs[1]}`);
