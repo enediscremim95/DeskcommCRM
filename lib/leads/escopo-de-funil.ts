@@ -136,6 +136,7 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_update_ai_agent_draft: "sem_funil",
   crm_add_ai_agent_knowledge_draft: "sem_funil",
   crm_apply_channel_label: "sem_funil",
+  crm_set_channel_automatic_attendance: "sem_funil",
 };
 
 /**

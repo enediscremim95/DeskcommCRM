@@ -52,7 +52,7 @@ export function ChannelAiAccess({ channelId }: { channelId: string }) {
         <SheetContent className="flex w-full flex-col gap-6 overflow-y-auto sm:max-w-lg">
           <SheetHeader>
             <SheetTitle>{t("Acesso da IA no WhatsApp")}</SheetTitle>
-            <SheetDescription>{t("Teste com pessoas de confiança antes de liberar o atendimento automático.")}</SheetDescription>
+            <SheetDescription>{t("Estas regras valem depois que o atendimento automático do número estiver ligado. Teste com pessoas de confiança antes de liberar ao público.")}</SheetDescription>
           </SheetHeader>
           {query.isFetching ? <p role="status">{t("Carregando…")}</p> : query.isError ? (
             <div className="flex flex-col gap-3" role="alert">

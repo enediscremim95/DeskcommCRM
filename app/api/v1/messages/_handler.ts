@@ -591,12 +591,19 @@ export async function sendMessageHandler(
     contactPhoneNumber: c.contacts?.phone_number ?? "",
   }).catch(() => ({ permite: false, motivo: "pre_go_live_indisponivel" }));
   if (acessoAtual && !acessoAtual.permite) {
+    const atendimentoDesligado = acessoAtual.motivo === "atendimento_automatico_desligado";
     const { data: updated, error } = await supabase.from("messages").update({
       status: "failed",
-      error_code: acessoAtual.motivo === "pre_go_live_indisponivel" ? "pre_go_live_indisponivel" : "pre_go_live",
-      error_message: acessoAtual.motivo === "pre_go_live_indisponivel"
-        ? "Não foi possível verificar o acesso da IA. Nenhuma mensagem foi enviada."
-        : "Envio automático bloqueado pelo modo de teste do canal.",
+      error_code: atendimentoDesligado
+        ? "automatic_attendance_disabled"
+        : acessoAtual.motivo === "pre_go_live_indisponivel"
+          ? "pre_go_live_indisponivel"
+          : "pre_go_live",
+      error_message: atendimentoDesligado
+        ? "Atendimento automático desligado neste número. Nenhuma mensagem foi enviada."
+        : acessoAtual.motivo === "pre_go_live_indisponivel"
+          ? "Não foi possível verificar o acesso da IA. Nenhuma mensagem foi enviada."
+          : "Envio automático bloqueado pelo modo de teste do canal.",
     }).eq("organization_id", ctx.organization_id).eq("id", message.id).select(MSG_COLS).single();
     if (error || !updated) throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Não foi possível registrar o bloqueio do envio.");
     message = updated as unknown as Message;

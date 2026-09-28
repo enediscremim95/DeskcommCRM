@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "diagram_type": "architecture",
-  "meta": { "title": "Pré-go-live do WhatsApp", "subtitle": "Lista por canal sem autorização implícita por origem", "output": "pre-go-live-whatsapp.html", "quality_profile": "standard" },
+  "meta": { "title": "Autorização de atendimento no WhatsApp", "subtitle": "Chave mestra desligada por padrão e lista de teste por canal", "output": "pre-go-live-whatsapp.html", "quality_profile": "standard" },
   "lanes": [
     { "id": "operador", "label": "Operação" },
     { "id": "servidor", "label": "Servidor" },
@@ -9,9 +9,11 @@
   ],
   "mainPath": ["tela", "api", "config", "gate", "inbox"],
   "nodes": [
-    { "id": "tela", "lane": "operador", "col": 1, "type": "frontend", "label": "Conexões / ChannelAiAccess" },
+    { "id": "tela", "lane": "operador", "col": 1, "type": "frontend", "label": "Conexões / interruptor por número" },
     { "id": "api", "lane": "servidor", "col": 2, "type": "route", "label": "GET/PATCH channel-sessions/:id/ai-access" },
     { "id": "config", "lane": "banco", "col": 3, "type": "database", "label": "metadata / fn_configurar_pre_go_live_canal" },
+    { "id": "interruptor", "lane": "banco", "col": 3, "type": "database", "label": "automatic_attendance_enabled / default false" },
+    { "id": "entrada", "lane": "servidor", "col": 4, "type": "service", "label": "ingestão preserva mensagem, contato, conversa e lead" },
     { "id": "gate", "lane": "servidor", "col": 4, "type": "lib", "label": "gate.ts / drain / turnos / sweep / automação" },
     { "id": "sink", "lane": "servidor", "col": 5, "type": "service", "label": "sendMessageHandler / redrive watchdog / releitura antes do envio" },
     { "id": "inbox", "lane": "operador", "col": 5, "type": "frontend", "label": "Inbox / conversa real e atendimento humano" },
@@ -21,6 +23,9 @@
   "edges": [
     { "id": "e1", "from": "tela", "to": "api", "label": "admin configura" },
     { "id": "e2", "from": "api", "to": "config", "label": "UPDATE atômico por tenant" },
+    { "id": "e2a", "from": "tela", "to": "interruptor", "label": "gerente liga ou desliga via API auditada" },
+    { "id": "e2b", "from": "interruptor", "to": "entrada", "label": "desligado não interrompe a entrada" },
+    { "id": "e2c", "from": "entrada", "to": "gate", "label": "só pede despacho quando ligado" },
     { "id": "e3", "from": "config", "to": "tela", "label": "modo salvo e lista" },
     { "id": "e4", "from": "config", "to": "gate", "label": "allowlist estrita por telefone" },
     { "id": "e5", "from": "gate", "to": "sink", "label": "somente elegíveis" },

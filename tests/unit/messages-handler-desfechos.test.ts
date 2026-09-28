@@ -90,7 +90,7 @@ function makeSupabase(
   conversation: Row,
   templateRow: Row | null = null,
   /** `semColunaArquivada`: banco em que a migration 0106 ainda não rodou. */
-  opts: { semColunaArquivada?: boolean; channelMetadata?: Row } = {},
+  opts: { semColunaArquivada?: boolean; channelMetadata?: Row; automaticAttendanceEnabled?: boolean } = {},
 ) {
   const state: { message: Row | null } = { message: null };
 
@@ -100,7 +100,13 @@ function makeSupabase(
         const query = {
           select: () => query,
           eq: () => query,
-          maybeSingle: async () => ({ data: { metadata: opts.channelMetadata ?? {} }, error: null }),
+          maybeSingle: async () => ({
+            data: {
+              metadata: opts.channelMetadata ?? {},
+              automatic_attendance_enabled: opts.automaticAttendanceEnabled ?? true,
+            },
+            error: null,
+          }),
         };
         return query;
       }
@@ -204,6 +210,19 @@ afterEach(() => {
 });
 
 describe('sendMessageHandler — os 6 desfechos do envio', () => {
+  it("revalida a chave mestra no sink e não envia quando foi desligada durante a geração", async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const message = await sendMessageHandler(
+      makeSupabase(conversationRow(), null, { automaticAttendanceEnabled: false }),
+      { ...ctx, actor: { type: "ai_agent", id: USER, role: "agent" } },
+      textInput(),
+    );
+    expect(message).toMatchObject({ status: "failed", error_code: "automatic_attendance_disabled" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("revalida a lista no sink, inclusive para automação, sem transformar teste em opt-out", async () => {
     wahaConfigured(true);
     const fetchMock = vi.fn();

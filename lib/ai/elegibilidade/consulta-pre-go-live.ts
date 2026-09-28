@@ -5,6 +5,7 @@ import { lerNumerosDeTeste, numeroPodeTestar, preGoLiveAtivo } from "./pre-go-li
 export type DecisaoPreGoLive =
   | { ativo: false; permite: true; motivo: "fora_do_pre_go_live" }
   | { ativo: true; permite: true; motivo: "numero_de_teste" }
+  | { ativo: true; permite: false; motivo: "atendimento_automatico_desligado" }
   | { ativo: true; permite: false; motivo: "fora_da_lista_de_teste" };
 
 /**
@@ -18,7 +19,7 @@ export async function decidirPreGoLiveDoCanalViaSupabase(
 ): Promise<DecisaoPreGoLive> {
   const { data, error } = await admin
     .from("channel_sessions")
-    .select("metadata")
+    .select("*")
     .eq("organization_id", input.organizationId)
     .eq("id", input.channelSessionId)
     .maybeSingle();
@@ -26,7 +27,11 @@ export async function decidirPreGoLiveDoCanalViaSupabase(
   if (error) throw new Error(`pre-go-live: leitura do canal falhou — ${error.message}`);
   if (!data) throw new Error("pre-go-live: canal não encontrado");
 
-  const metadata = (data as { metadata: unknown }).metadata;
+  const canal = data as { metadata: unknown; automatic_attendance_enabled?: boolean };
+  if (canal.automatic_attendance_enabled !== true) {
+    return { ativo: true, permite: false, motivo: "atendimento_automatico_desligado" };
+  }
+  const metadata = canal.metadata;
   if (!preGoLiveAtivo(metadata)) {
     return { ativo: false, permite: true, motivo: "fora_do_pre_go_live" };
   }
