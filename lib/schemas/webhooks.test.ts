@@ -59,6 +59,7 @@ describe("createAutomationRuleSchema", () => {
       { type: "create_or_move_lead", config: { pipeline_id: UUID, stage_id: UUID2 } },
       { type: "send_whatsapp_message", config: { channel_session_id: UUID, template: "Oi!" } },
       { type: "add_tag", config: { tags: ["vip"] } },
+      { type: "remove_tag", config: { tags: ["aguardando_resposta"] } },
       { type: "assign_owner", config: { user_id: UUID } },
       { type: "call_webhook", config: { url: "https://example.com/hook" } },
       { type: "start_message_flow", config: { flow_pointer_id: UUID } },
