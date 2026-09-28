@@ -30,6 +30,7 @@ import type { Lead } from "@/lib/types/leads";
 import type { Message } from "@/lib/types/messaging";
 import type { Stage } from "@/lib/kanban/types";
 import { apiClient } from "@/lib/api/client";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { ChatCircle, Gear, Phone, Trash } from "@/lib/ui/icons";
 import { DadosCompletosDoLead } from "./DadosCompletosDoLead";
 import { FollowupsDoLead } from "./FollowupsDoLead";
@@ -57,10 +58,6 @@ interface Props {
   conversationId: string | null;
   hasConnectedChannel: boolean;
   canReplyInConversation: boolean;
-}
-
-function nomeDoContato(contact: ContactSummary | null): string {
-  return contact?.display_name?.trim() || contact?.name?.trim() || "Contato sem nome";
 }
 
 function valorDoNegocio(
@@ -180,7 +177,7 @@ export function LeadPageClient({
     isNotFound(conversation.error);
 
   const valor = valorDoNegocio(leadAtual.value_cents, leadAtual.currency, locale);
-  const nome = nomeDoContato(contact);
+  const nome = rotuloDoContato(contact, t);
   const stageAtual = etapas.find((stage) => stage.id === leadAtual.stage_id);
   const nomeDaEtapa = stageAtual?.name ?? stageName;
   const diasNaEtapa = Math.max(

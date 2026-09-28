@@ -18,7 +18,9 @@ export const REFERENCIAS_DE_AVISO = {
   appointment: {tabela:"calendar_appointments",papel:"agent",rotulo:"Abrir compromisso",href:(id:string)=>`/app/agenda?compromisso=${id}`},
   conversation: { tabela: "conversations", papel: "agent", rotulo: "Abrir conversa", href: (id: string) => `/app/inbox/${id}` },
   contact: { tabela: "contacts", papel: "agent", rotulo: "Ver contato", href: (id: string) => `/app/contacts/${id}` },
-  lead: { tabela: "crm_leads", papel: "agent", rotulo: "Abrir negócio", href: (id: string, pipelineId?: string) => `/app/pipelines/${pipelineId}?lead=${id}` },
+  // Desde b8124bc3 o negócio tem página canônica. O deep-link antigo do
+  // quadro ainda redireciona, mas não deve ser emitido por uma superfície nova.
+  lead: { tabela: "crm_leads", papel: "agent", rotulo: "Abrir negócio", href: (id: string) => `/app/leads/${id}` },
   followup_enrollment: { tabela: "followup_enrollments", papel: "viewer", rotulo: "Abrir acompanhamento", href: (id: string) => `/app/ai/followups/enrollments/${id}` },
   channel_session: { tabela: "channel_sessions", papel: "admin", rotulo: "Revisar conexão", href: () => "/app/connections", ativo: true },
   ai_knowledge_source: { tabela: "ai_knowledge_sources", papel: "manager", rotulo: "Abrir base de conhecimento", href: () => "/app/ai/knowledge/sources" },
@@ -49,6 +51,7 @@ export const POLITICAS_DE_AVISO = {
   next_action_ambiguous: { refs: ["contact"], orientacao: "Confira os negócios do contato e escolha a qual deles pertence a próxima ação." },
   risk_backlog_seeded: { refs: ["organization"], orientacao: "Revise os negócios parados no Radar e defina o próximo passo." },
   reactivation_expired: { refs: ["organization"], orientacao: "Revise no Radar se ainda cabe retomar os negócios indicados." },
+  followup_suggestion: { refs: ["lead"], orientacao: "Confira a mensagem fixa e decida se este contato deve ser retomado." },
   capabilities_missing: { refs: ["conversation"], orientacao: "Peça ao gestor para revisar as ferramentas habilitadas para o assistente deste atendimento." },
   message_send_stuck: { refs: ["conversation"], orientacao: "Confira a resposta que não chegou antes de decidir se precisa enviar novamente." },
   midia_nao_lida: { refs: [], orientacao: "Peça ao gestor para revisar o provedor e as credenciais de leitura de fotos e áudios.", geral: { papel: "manager", href: "/app/ai/providers", rotulo: "Revisar provedores de IA" } },

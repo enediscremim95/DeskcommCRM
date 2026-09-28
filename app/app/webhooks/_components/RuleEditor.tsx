@@ -30,6 +30,7 @@ import { usePipelines, usePipelineStages } from "@/hooks/webhooks/useWebhookSour
 import { TRIGGER_LABELS, ACTION_LABELS, type TriggerEvent, type ActionType } from "./labels";
 import { ActionConfigForm, defaultActionConfig, type ActionItem } from "./ActionConfigForm";
 import { useT } from "@/hooks/i18n/useT";
+import { MODELO_ATENDIMENTO_PREFIXO } from "@/lib/automation/catalogo";
 
 interface Props {
   open: boolean;
@@ -199,6 +200,11 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
         </SheetHeader>
 
         <div className="mt-6 space-y-8">
+          {rule?.name.startsWith(MODELO_ATENDIMENTO_PREFIXO) ? (
+            <div className="rounded-sm border border-accent/30 bg-accent/5 p-3 text-sm text-muted-foreground">
+              {t("Este é um modelo pausado. Revise a mensagem, a condição, a etapa, o número e o responsável antes de ligar.")}
+            </div>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="rule-name">{t("Nome da automação")}</Label>
             <Input

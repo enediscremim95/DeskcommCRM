@@ -39,6 +39,7 @@
  * transformou um `not null` num diagnóstico de horas. O motivo cru do banco vai
  * em `details`, nunca na `message` traduzida que o operador lê.
  */
+import type * as ImpersonateSupportTypes from "@/lib/impersonate/support";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -314,7 +315,7 @@ describe("A TELA e o texto que ela promete", () => {
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  ...await importOriginal<typeof ImpersonateSupportTypes>(),
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));

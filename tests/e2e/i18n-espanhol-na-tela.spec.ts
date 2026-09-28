@@ -62,7 +62,8 @@ const PRAZO = 60_000;
  * varre tudo é o guarda estático, que alcança arquivo que ainda não existe e
  * roda em segundos.
  */
-const TELAS = ["/app/inbox", "/app/kanban", "/app/contacts", "/app/metrics", "/app/settings"];
+// A lista de funis exige ?lista=1 desde b8124bc3; a raiz abre o quadro padrão.
+const TELAS = ["/app/inbox", "/app/kanban?lista=1", "/app/contacts", "/app/metrics", "/app/settings"];
 
 /**
  * Chaves que o dicionário traduz de verdade — o espanhol DIFERE do português.

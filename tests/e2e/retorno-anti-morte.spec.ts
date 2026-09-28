@@ -22,6 +22,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const EVIDENCIA = path.join(process.cwd(), ".superpowers", "evidence");
@@ -60,11 +61,11 @@ function loadCreds(): Creds {
 const creds = loadCreds();
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/settings/profile");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await aguardarSessaoCompleta(page, "aal1");
 }
 
 function captura(page: Page, nome: string) {
@@ -105,15 +106,14 @@ test("o retorno marcado pelo agente protege o Radar e aparece na linha do tempo"
 
 test("a linha do tempo do negócio mostra o retorno em português de gente", async ({ page }) => {
   await login(page, creds.users.manager!.email);
-  await page.goto(`/app/pipelines/${creds.retorno.pipeline_id}`);
-
-  await page.getByRole("button", { name: creds.retorno.lead_title, exact: true }).click();
-  const dossie = page.getByRole("dialog").first();
-  await expect(dossie.getByText("Retorno agendado", { exact: true }).first()).toBeVisible();
+  // Desde b8124bc3 o dossiê é a página canônica do lead, não um dialog do quadro.
+  await page.goto(`/app/leads/${creds.retorno.lead_id}`);
+  const dossie = page.getByTestId("lead-page-workspace");
+  await expect(dossie.getByTestId("lead-context-event").filter({ hasText: "Retorno agendado" })).toBeVisible();
 
   // O que o operador LÊ, não o que a API devolve: rótulo humano, sem
   // identificador técnico e sem a frase repetida.
-  const linha = (await dossie.innerText()).split("LINHA DO TEMPO")[1] ?? "";
+  const linha = await dossie.getByTestId("chat-thread").innerText();
   expect(linha).not.toMatch(/followup_scheduled|followup_cancelled|demand_closed/);
   expect(linha).not.toContain("Atividade registrada");
   await captura(page, "w2-retorno-na-linha-do-tempo.png");

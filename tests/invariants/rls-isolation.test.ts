@@ -265,6 +265,22 @@ beforeAll(() => {
               'auth-rls'
             );
         end if;
+
+        insert into public.notification_email_preferences (organization_id, user_id)
+          values (
+            v_org,
+            case when v_org = '${ORG_A}'::uuid then '${USER_A}'::uuid else '${USER_B}'::uuid end
+          ) on conflict (organization_id, user_id) do nothing;
+
+        insert into public.traffic_dashboard_column_presets
+          (organization_id, name, metric_columns, platform)
+          values (v_org, 'RLS invariant preset', array['spend','leads'], 'meta_ads')
+          on conflict do nothing;
+
+        insert into public.traffic_report_cost_thresholds
+          (organization_id, platform, good_until, acceptable_until)
+          values (v_org, 'meta_ads', 10, 20)
+          on conflict (organization_id, platform) do nothing;
       end loop;
     end
     $seed$;
@@ -327,6 +343,12 @@ export const TABLES = [
   // aceitou o risco do segundo aparelho vinculado: vazar entre organizacoes
   // diria a uma empresa quem, na outra, ligou a feature e quando.
   "org_voice_calls",
+  // 0250/0254/0251: configurações legíveis pelo tenant. As três recebem uma
+  // linha real por organização no seed acima, para o controle positivo não
+  // passar por vacuidade.
+  "traffic_dashboard_column_presets",
+  "traffic_report_cost_thresholds",
+  "notification_email_preferences",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"

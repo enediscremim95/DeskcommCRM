@@ -223,6 +223,11 @@ describe("0150 — a dívida de RBAC não cresce", () => {
       select coalesce(string_agg(distinct tablename, ',' order by tablename), '') from pg_policies
        where schemaname = 'public'
          and cmd = 'ALL'
+         and (
+           has_table_privilege('authenticated', format('%I.%I', schemaname, tablename), 'INSERT')
+           or has_table_privilege('authenticated', format('%I.%I', schemaname, tablename), 'UPDATE')
+           or has_table_privilege('authenticated', format('%I.%I', schemaname, tablename), 'DELETE')
+         )
          and (coalesce(qual, '') || coalesce(with_check, '')) not like '%role_at_least%';
     `)
       .trim()

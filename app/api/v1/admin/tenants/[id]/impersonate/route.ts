@@ -48,5 +48,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     actingAsPlatformAdmin: true, bypassedRls: true, organizationId: tenantId,
     resourceType: "organization", resourceId: tenantId, requestId,
     metadata: { auth_session_id: sessionId, support_session_id: id, access_mode: session.access_mode, expires_at: session.expires_at } });
-  return ok({ redirect_url: "/app/inbox", expires_at: session.expires_at, support_session_id: id }, { requestId });
+  return ok({ redirect_url: "/app/kanban", expires_at: session.expires_at, support_session_id: id }, { requestId });
 }

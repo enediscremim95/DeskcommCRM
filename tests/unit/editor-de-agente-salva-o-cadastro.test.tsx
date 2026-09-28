@@ -35,6 +35,7 @@
  *    contra a repetição: o próximo campo que alguém acrescentar ao estado sem
  *    acrescentar ao envio reprova aqui, e não em produção.
  */
+import type * as _actionsTypes from "@/app/app/ai/agents/[id]/_actions";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -332,7 +333,7 @@ const CADASTRO_ATUAL = { id: AGENTE, kind: "mcp_agent", archived_at: null, name:
 
 async function salvarNoServidor(cadastro: unknown, agente = CADASTRO_ATUAL) {
   vi.mocked(createAdminClient).mockReturnValue(adminDuble(agente) as never);
-  const real = await vi.importActual<typeof import("@/app/app/ai/agents/[id]/_actions")>(
+  const real = await vi.importActual<typeof _actionsTypes>(
     "@/app/app/ai/agents/[id]/_actions",
   );
   return (real.saveAgentDraftAction as (a: string, b: unknown, c: unknown) => Promise<unknown>)(

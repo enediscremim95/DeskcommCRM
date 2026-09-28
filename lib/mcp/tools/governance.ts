@@ -241,7 +241,7 @@ export const crmApplyChannelLabel: McpToolDefinition<typeof channelLabelInputSha
     "etiquetas ou a etiqueta não existir, o atendimento continua normalmente.",
   inputSchema: channelLabelInputShape,
   category: "write",
-  requiresRole: "agent",
+  requiresRole: "ai_operator",
   requiresScope: "mcp:write",
   handler: async (input, ctx) => {
     const status = await aplicarEtiquetaNaConversa(ctx.supabase, {

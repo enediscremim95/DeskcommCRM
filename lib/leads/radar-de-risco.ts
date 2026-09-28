@@ -30,6 +30,10 @@ import {
 // tenant-alvo (~centenas de leads abertos) cabe nisso; se um tenant estourar, vira
 // query paginada com índice (organization_id, status, last_activity_at).
 const SCAN_CAP = 500;
+// Um `in` com 500 UUIDs gera uma URL PostgREST grande o bastante para ser
+// recusada pelo proxy antes de chegar ao banco. O Radar varre até 500 leads,
+// portanto consultas derivadas desse pool precisam sair em blocos menores.
+const IDS_POR_CONSULTA = 100;
 
 export const RADAR_MIN_HOURS_PADRAO = RISK_COLD_HOURS;
 
@@ -238,16 +242,33 @@ export async function carregaRadarDeRisco(
   const leadIdsComTarefaAberta = new Set<string>();
   const leadIdsDoRadar = rows.map(l => l.id);
   if (leadIdsDoRadar.length > 0) {
-    const { data: tarefas, error } = await admin
-      .from("crm_tasks")
-      .select("id, lead_id, title, description, due_date, status")
-      .eq("organization_id", organizationId)
-      .in("status", ["pending", "in_progress"])
-      .in("lead_id", leadIdsDoRadar)
-      .order("due_date", { ascending: true, nullsFirst: false })
-      .limit(SCAN_CAP);
-    if (error) throw new Error(`radar_tasks_failed: ${error.message}`);
-    for (const tarefa of tarefas ?? []) {
+    const tarefas: Array<{
+      id: string;
+      lead_id: string | null;
+      title: string;
+      description: string | null;
+      due_date: string | null;
+      status: string;
+    }> = [];
+    for (let i = 0; i < leadIdsDoRadar.length; i += IDS_POR_CONSULTA) {
+      const ids = leadIdsDoRadar.slice(i, i + IDS_POR_CONSULTA);
+      const { data, error } = await admin
+        .from("crm_tasks")
+        .select("id, lead_id, title, description, due_date, status")
+        .eq("organization_id", organizationId)
+        .in("status", ["pending", "in_progress"])
+        .in("lead_id", ids)
+        .order("due_date", { ascending: true, nullsFirst: false })
+        .limit(SCAN_CAP);
+      if (error) throw new Error(`radar_tasks_failed: ${error.message}`);
+      tarefas.push(...((data ?? []) as typeof tarefas));
+    }
+    tarefas.sort((a, b) => {
+      if (a.due_date === null) return 1;
+      if (b.due_date === null) return -1;
+      return a.due_date.localeCompare(b.due_date);
+    });
+    for (const tarefa of tarefas.slice(0, SCAN_CAP)) {
       if (!tarefa.lead_id) continue;
       if (tarefa.status !== "pending" && tarefa.status !== "in_progress") continue;
       leadIdsComTarefaAberta.add(tarefa.lead_id);

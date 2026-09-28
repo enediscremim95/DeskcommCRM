@@ -120,7 +120,7 @@ export const TOOLS_OPERACAO = declararTools([
       "Lista os textos que a empresa já escreveu para responder as situações de sempre, com o atalho de cada um.",
     oQueToca: "Respostas prontas",
     risco: "seguro",
-    pacotes: ["atender", "organizar"],
+    pacotes: ["atender"],
   },
   {
     name: "crm_render_message_template",
@@ -130,7 +130,7 @@ export const TOOLS_OPERACAO = declararTools([
       "Pega uma resposta pronta e troca as lacunas pelos dados do cliente, avisando se sobrou alguma sem preencher. Não envia nada.",
     oQueToca: "Respostas prontas",
     risco: "seguro",
-    pacotes: ["atender", "organizar"],
+    pacotes: ["atender"],
   },
 
   // ---- entradas automáticas de contatos ----
@@ -172,39 +172,6 @@ export const TOOLS_OPERACAO = declararTools([
     explicacao:
       "Faz uma origem voltar a receber contatos, ou parar. Desligada, o formulário do seu site continua no ar e ninguém do outro lado é avisado.",
     oQueToca: "Entrada automática de contatos",
-    risco: "critico",
-    pacotes: ["organizar"],
-    apenasHumano: true,
-  },
-
-  // ---- regras automáticas ----
-  {
-    name: "crm_list_automation_rules",
-    category: "read",
-    rotulo: "Ver as regras automáticas",
-    explicacao:
-      "Mostra o que a empresa deixou configurado para acontecer sozinho, o que dispara cada regra e se ela está ligada.",
-    oQueToca: "Regras automáticas",
-    risco: "seguro",
-    pacotes: ["organizar"],
-  },
-  {
-    name: "crm_list_automation_runs",
-    category: "read",
-    rotulo: "Ver o que as regras dispararam",
-    explicacao:
-      "Mostra o que rodou sozinho nos últimos tempos e o que deu errado, para descobrir o que parou de funcionar sem ninguém perceber.",
-    oQueToca: "Regras automáticas",
-    risco: "seguro",
-    pacotes: ["organizar"],
-  },
-  {
-    name: "crm_set_automation_rule_active",
-    category: "write",
-    rotulo: "Ligar ou desligar uma regra automática",
-    explicacao:
-      "Faz uma regra passar a rodar sozinha, sempre que o gatilho dela acontecer, ou parar de rodar. Ligada, ela pode falar com clientes de verdade.",
-    oQueToca: "Regras automáticas",
     risco: "critico",
     pacotes: ["organizar"],
     apenasHumano: true,

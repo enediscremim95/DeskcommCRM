@@ -10,6 +10,7 @@
  * validado contra memberships (`requireRole`); no modo Bearer vem da LINHA DO
  * TOKEN no banco (`validateBearerToken`). Isto é o que a suíte prova.
  */
+import type * as McpAuthTypes from "@/lib/mcp/auth";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
@@ -31,7 +32,7 @@ vi.mock("./_handler", () => ({
 }));
 
 vi.mock("@/lib/mcp/auth", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/mcp/auth")>("@/lib/mcp/auth");
+  const actual = await vi.importActual<typeof McpAuthTypes>("@/lib/mcp/auth");
   return { ...actual, validateBearerToken: vi.fn() };
 });
 

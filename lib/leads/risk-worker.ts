@@ -100,7 +100,22 @@ export async function observaTravessias(
 
   for (const e of atuais) {
     const de = anterior.get(e.leadId) ?? null;
-    if (de === e.bucket) continue; // nada mudou: NÃO escreve (ver o ⚠️ acima)
+    if (de === e.bucket) {
+      // A recusa precisa sobreviver a ticks idênticos, e o prazo longo precisa
+      // vencer mesmo sem nova travessia. A proposta compara os fatos e segue
+      // idempotente; o estado de risco, este sim, não recebe escrita repetida.
+      if (e.bucket === "em_risco" || e.bucket === "critico") {
+        const proposta = await propoeReativacao(admin, {
+          organizationId,
+          leadId: e.leadId,
+          coldHours: e.coldHours,
+          now,
+          requireApprovalConfig: true,
+        });
+        if (proposta) r.propostas += 1;
+      }
+      continue;
+    }
     r.travessias += 1;
 
     const linha = narra(de, e.bucket);
@@ -121,6 +136,17 @@ export async function observaTravessias(
     );
     if (upErr) throw new Error(`observador de risco (gravação): ${upErr.message}`);
 
+    if (e.bucket === "em_risco" || e.bucket === "critico") {
+      const proposta = await propoeReativacao(admin, {
+        organizationId,
+        leadId: e.leadId,
+        coldHours: e.coldHours,
+        now,
+        requireApprovalConfig: true,
+      });
+      if (proposta) r.propostas += 1;
+    }
+
     if (!linha) {
       r.silenciosas += 1;
       continue;
@@ -135,13 +161,6 @@ export async function observaTravessias(
       // uma indisponibilidade do provedor viraria silêncio, que é a doença que
       // esta wave cura. "Sem rascunho ainda" é estado honesto; "proposta que não
       // nasceu" não é estado, é ausência.
-      const proposta = await propoeReativacao(admin, {
-        organizationId,
-        leadId: e.leadId,
-        coldHours: e.coldHours,
-        now,
-      });
-      if (proposta) r.propostas += 1;
     } else r.reativaram += 1;
 
     const atividade = await emitLeadActivity(admin, {

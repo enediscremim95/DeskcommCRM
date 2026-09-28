@@ -8,6 +8,7 @@
  * teste ficar verde com uma segunda maneira, divergente, de descobrir por qual
  * número falar — que é exatamente o defeito que a doutrina de canal proíbe.
  */
+import type * as WahaClientTypes from "@/lib/waha/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const setPresence = vi.fn(async () => undefined);
@@ -15,7 +16,7 @@ const setPresence = vi.fn(async () => undefined);
 let clienteDoTransporte: { setPresence: typeof setPresence } | null = { setPresence };
 
 vi.mock("@/lib/waha/client", async (original) => ({
-  ...(await original<typeof import("@/lib/waha/client")>()),
+  ...(await original<typeof WahaClientTypes>()),
   getWahaClient: () => clienteDoTransporte,
 }));
 

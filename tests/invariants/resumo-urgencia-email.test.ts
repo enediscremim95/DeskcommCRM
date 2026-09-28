@@ -22,6 +22,7 @@ function sql(script: string): string {
       "postgres",
       "-v",
       "ON_ERROR_STOP=1",
+      "-q",
       "-tA",
       "-f",
       "-",
@@ -61,24 +62,24 @@ afterAll(() => {
 });
 
 describe("resumo de urgência por pessoa", () => {
-  it("preserva a janela curta de lead novo", () => {
+  it("mantém o e-mail de lead novo desligado por padrão no banco", () => {
+    // Decisão do dono em 25/09/2026: 28 leads x 3 pessoas geraram 84 e-mails
+    // num plano de 100/dia, o mesmo que sustenta convite e recuperação de senha.
+    // O opt-in continua possível, mas uma preferência nova não pode nascer ligada.
     const result = sql(`
-      insert into public.crm_leads
-        (id, organization_id, pipeline_id, stage_id, title, owner_user_id)
-      values ('a2590000-0000-4000-8000-000000000010', '${ORG}', '${PIPELINE}', '${STAGE}', 'Lead novo', '${USER}')
-      on conflict (id) do nothing;
-      insert into public.event_log
-        (id, organization_id, event_type, entity_kind, entity_id, payload, metadata)
-      values ('a2590000-0000-4000-8000-000000000011', '${ORG}', 'lead.created', 'crm_lead',
-        'a2590000-0000-4000-8000-000000000010', '{}'::jsonb, '{}'::jsonb)
-      on conflict (id) do nothing;
-      select b.kind || '|' || (extract(epoch from (b.due_at - b.created_at)) between 29 and 31)::text
-        from public.fn_queue_lead_email_batch(
-          'a2590000-0000-4000-8000-000000000011', '${USER}', 30
-        ) q
-        join public.notification_email_batches b on b.id = q.batch_id;
+      delete from public.notification_email_preferences
+       where organization_id = '${ORG}' and user_id = '${USER}';
+      insert into public.notification_email_preferences (organization_id, user_id)
+      values ('${ORG}', '${USER}');
+      select p.new_lead::text || '|' || (c.column_default = 'false')::text
+        from public.notification_email_preferences p
+        join information_schema.columns c
+          on c.table_schema = 'public'
+         and c.table_name = 'notification_email_preferences'
+         and c.column_name = 'new_lead'
+       where p.organization_id = '${ORG}' and p.user_id = '${USER}';
     `);
-    expect(result).toBe("new_lead|true");
+    expect(result).toBe("false|true");
   });
 
   it("agrupa 20 leads urgentes, não repete a mesma situação e adia após o teto", () => {
@@ -119,7 +120,7 @@ describe("resumo de urgência por pessoa", () => {
     `);
     expect(repeated).toBe("f");
 
-    const deferred = sql(`
+    const deferredBatchId = sql(`
       update public.notification_email_batches
          set status = 'sent', sent_at = now()
        where organization_id = '${ORG}' and kind = 'urgent_lead' and status = 'pending';
@@ -134,10 +135,19 @@ describe("resumo de urgência por pessoa", () => {
         (id, organization_id, event_type, entity_kind, entity_id, payload, metadata)
       values ('a2590000-0000-4000-8002-000000000002', '${ORG}', 'lead.action_required', 'crm_lead',
         'a2590000-0000-4000-8000-000000000200', '{"reason":"risk"}'::jsonb, '{}'::jsonb);
-      select (b.due_at > date_trunc('day', now()) + interval '1 day')::text || '|' || b.deferred_count
-        from public.fn_queue_lead_email_batch(
-          'a2590000-0000-4000-8002-000000000002', '${USER}', 30
-        ) q join public.notification_email_batches b on b.id = q.batch_id;
+      select batch_id from public.fn_queue_lead_email_batch(
+        'a2590000-0000-4000-8002-000000000002', '${USER}', 30
+      );
+    `);
+    expect(deferredBatchId, "a fila devolveu uma linha para o novo evento urgente").not.toBe("");
+
+    // O batch é criado dentro da função chamada no SELECT anterior. A leitura
+    // fica após o command boundary para observar o estado persistido, em vez de
+    // disputar o mesmo snapshot num JOIN da própria chamada mutante.
+    const deferred = sql(`
+      select (due_at > date_trunc('day', now()) + interval '1 day')::text || '|' || deferred_count
+        from public.notification_email_batches
+       where id = '${deferredBatchId}'::uuid;
     `);
     expect(deferred).toBe("true|1");
   });

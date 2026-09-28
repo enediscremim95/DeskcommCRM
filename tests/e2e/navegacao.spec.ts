@@ -110,8 +110,10 @@ test.describe("navegação agrupada", () => {
     // O caso que originou tudo: o usuário não sabia que esta tela existia.
     //
     // ⚠️ O ITEM MUDOU DE NOME, e o nome antigo ("Funis") passou para o VIZINHO —
-    // a lista de funis, em /app/kanban. Um teste que continuasse clicando em
-    // "Funis" seguiria verde medindo a outra tela; por isso a asserção de URL
+    // o atalho operacional dos funis. Desde b8124bc3, /app/kanban redireciona
+    // para o quadro padrão; a lista administrativa exige ?lista=1. Um teste que
+    // esperasse a lista depois do clique mediria um contrato que deixou de existir.
+    // Por isso a asserção de URL
     // abaixo é específica (`settings/tenant/pipelines`) e não o antigo
     // /pipelines/, que casa com as duas.
     //
@@ -147,11 +149,15 @@ test.describe("navegação agrupada", () => {
     await page.waitForURL(/\/app\/products/);
   });
 
-  test("e a lista de funis é o item vizinho, com nome próprio", async ({ page }) => {
+  test("e Funis abre diretamente o quadro padrão", async ({ page }) => {
     await loginAdmin(page);
     await sidebar(page).getByRole("link", { name: "Funis", exact: true }).click();
-    await page.waitForURL(/\/app\/kanban/);
-    await expect(page.getByRole("heading", { name: "Funis", level: 1 })).toBeVisible();
+    // Decisão de produto em b8124bc3: a raiz é só a porta para o padrão.
+    await page.waitForURL(/\/app\/pipelines\/[^/]+$/);
+    await expect(sidebar(page).getByRole("link", { name: "Funis", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   test("chega em Conhecimento, que só existia atrás das abas de IA", async ({ page }) => {
@@ -254,7 +260,8 @@ test.describe("navegação agrupada", () => {
       await expectSemOverflowHorizontal(page, "shell mobile com dock");
 
       await dock.getByRole("link", { name: "Funis", exact: true }).click();
-      await page.waitForURL(/\/app\/kanban/);
+      // /app/kanban redireciona para o quadro padrão desde b8124bc3.
+      await page.waitForURL(/\/app\/pipelines\/[^/]+$/);
       await expect(dock.getByRole("link", { name: "Funis", exact: true })).toHaveAttribute(
         "aria-current",
         "page",
@@ -281,7 +288,8 @@ test.describe("navegação agrupada", () => {
       });
 
       await sidebar(page).getByRole("link", { name: "Funis", exact: true }).click();
-      await page.waitForURL(/\/app\/kanban/);
+      // A navegação termina no quadro padrão, não mais na lista.
+      await page.waitForURL(/\/app\/pipelines\/[^/]+$/);
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expectSemOverflowHorizontal(page, "shell mobile após navegar pelo drawer");
 

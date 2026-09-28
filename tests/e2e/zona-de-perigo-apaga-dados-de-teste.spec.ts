@@ -33,6 +33,7 @@ import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "@playwright/test";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const RAIZ = path.resolve(__dirname, "../..");
 const CREDS_PATH = path.join(RAIZ, ".e2e-creds.json");
@@ -104,19 +105,30 @@ async function contarTudo(orgId: string): Promise<Record<string, number>> {
 }
 
 async function entrar(page: Page, email: string, senha: string) {
-  await page.goto("/login");
+  await page.goto("/login?next=/app/settings/profile");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(senha);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(\/|$)/, { timeout: 30_000 });
+  await aguardarSessaoCompleta(page, "aal1");
 }
 
 async function trocarPara(page: Page, orgId: string) {
   const seletor = page.getByTestId("tenant-switcher");
   await expect(seletor).toBeVisible({ timeout: 20_000 });
   await seletor.click();
-  await page.getByTestId(`tenant-switcher-item-${orgId}`).click();
-  await expect(seletor).toBeEnabled({ timeout: 60_000 });
+  const item = page.getByTestId(`tenant-switcher-item-${orgId}`);
+  const nome = (await item.locator("span").first().innerText()).trim();
+  if ((await seletor.innerText()).trim() === nome) {
+    await page.keyboard.press("Escape");
+    return;
+  }
+  // `/app/kanban` redireciona no servidor para o funil padrão. A troca só
+  // terminou quando esse segundo documento carregou; navegar antes aborta o goto.
+  const navigation = page.waitForURL((url) => url.pathname.startsWith("/app/pipelines/"));
+  await item.click();
+  await navigation;
+  await page.waitForLoadState("load");
+  await expect(page.getByTestId("tenant-switcher")).toContainText(nome);
 }
 
 test.describe.configure({ timeout: 180_000 });
@@ -136,7 +148,7 @@ test("o admin zera os dados da sua organização pela tela — e a vizinha não 
   }
 
   await entrar(page, z.usuario_email, creds.password);
-  await page.goto("/app/inbox");
+  await page.goto("/app/settings/profile");
   await trocarPara(page, z.org_a_id);
 
   // ── O dado ESTÁ na tela antes ───────────────────────────────────────────
@@ -190,11 +202,11 @@ test("o admin zera os dados da sua organização pela tela — e a vizinha não 
 
   // ── A prova pela TELA: a vizinha continua inteira ───────────────────────
   //
-  // A volta ao Inbox NÃO é enfeite: trocar de organização estando no quadro de
+  // A volta a uma rota neutra NÃO é enfeite: trocar de organização no quadro de
   // um funil da organização ANTIGA deixa o seletor desabilitado para sempre —
   // o id do funil não existe na organização de destino. Medido: `toBeEnabled`
   // estourou 60 s com o botão preso em `disabled`.
-  await page.goto("/app/inbox");
+  await page.goto("/app/settings/profile");
   await trocarPara(page, z.org_b_id);
   await page.goto("/app/contacts");
   await expect(
@@ -233,7 +245,7 @@ test("o admin zera os dados da sua organização pela tela — e a vizinha não 
   expect(meta?.counts?.contacts).toBe(antesA.contacts);
 });
 
-test("quem não administra a organização não chega na zona de perigo", async ({ page }) => {
+test("agent não entra na organização; gerente entra sem a zona de perigo", async ({ page }) => {
   const creds = semear();
   const z = creds.zona_de_perigo!;
 
@@ -242,16 +254,18 @@ test("quem não administra a organização não chega na zona de perigo", async 
   if (!agente) throw new Error("`.e2e-creds.json` sem o usuário `agent`");
   await entrar(page, agente.email, creds.password);
   await page.goto("/app/settings/tenant");
-  await expect(page.getByTestId("zona-de-perigo")).toHaveCount(0);
+  // A negação é um redirect de servidor. Primeiro esperamos o destino final;
+  // medir o DOM durante a transição lia por instantes a tela anterior.
   await expect(page).toHaveURL(/\/403/, { timeout: 20_000 });
+  await expect(page.getByTestId("zona-de-perigo")).toHaveCount(0);
 
   // E o MESMO usuário do primeiro caso — que é admin em A — não alcança a tela
   // na organização onde ele é só `manager`. É o gate de PAPEL, não de pessoa.
   await page.context().clearCookies();
   await entrar(page, z.usuario_email, creds.password);
-  await page.goto("/app/inbox");
+  await page.goto("/app/settings/profile");
   await trocarPara(page, creds.org_id);
   await page.goto("/app/settings/tenant");
+  await expect(page).toHaveURL(/\/app\/settings\/tenant$/, { timeout: 20_000 });
   await expect(page.getByTestId("zona-de-perigo")).toHaveCount(0);
-  await expect(page).toHaveURL(/\/403/, { timeout: 20_000 });
 });

@@ -209,6 +209,10 @@ desmarcar, e o agente descobre que desmarcaram. Spec: `tests/e2e/retorno-anti-mo
 | J8.7 | Humano marca follow-up no dossiê ou na ficha do contato | a mesma `crm_task`, presa ao negócio, aparece nas duas superfícies e pode ser concluída | UNIT (`followups-do-lead.test.tsx`) |
 | J8.8 | Follow-up humano vence num lead ainda recente | o lead entra no Radar mesmo antes da janela de esfriamento, com o texto do que fazer | UNIT (`mcp-retencao-tools.test.ts`) |
 | J8.9 | Clicar no follow-up humano no Radar | abre `/app/pipelines/:pipeline?lead=:lead`, direto no dossiê do negócio | UNIT (`radar-followup-manual-ui.test.tsx`) |
+| J8.10 | Radar detecta lead frio com automação fixa configurada | nasce um aviso individual na Central com a mensagem e os botões Aprovar/Não aprovar | UNIT (`central-followup-aprovavel.test.tsx`) |
+| J8.11 | Aprovar com janela fechada | card muda para a etapa configurada; a tela diz quando a janela abre, e não afirma envio | UNIT (`followup-aprovavel.test.ts`, `central-followup-aprovavel.test.tsx`) |
+| J8.12 | Não aprovar | aviso sai da fila e o mesmo estado não volta no tick seguinte | UNIT (`followup-aprovavel.test.ts`) |
+| J8.13 | Lead recusado ganha fato novo | nova resposta do contato ou mudança de etapa permite ressugerir; sem fato novo, só após o prazo longo configurado | UNIT (`followup-aprovavel.test.ts`) |
 
 Evidência: `.superpowers/evidence/w2-retorno-{no-radar,na-fila-agendada,dialogo-de-cancelamento,na-fila-cancelada}.png`.
 

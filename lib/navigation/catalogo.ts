@@ -236,7 +236,8 @@ export const NAV_CATALOG = [
     icon: "Storefront",
     group: "crm",
     section: "Preparar a venda",
-    // SEM `sidebar`: mora atrás de "Ver tudo em CRM".
+    // SEM `sidebar`: continua no catálogo e no ⌘K. O hub do CRM foi removido
+    // por decisão do dono em 17/09/2026.
     //
     // O critério é QUEM CONSOME a tela, e a descrição acima já o entrega: o
     // preço quem responde é o atendente de IA, dentro da conversa. Esta tela é
@@ -283,13 +284,13 @@ export const NAV_CATALOG = [
     group: "crm",
     section: "Preparar a venda",
     minRole: "manager",
-    // SEM `sidebar`: mora atrás de "Ver tudo em CRM".
+    // SEM `sidebar`: continua no catálogo e no ⌘K. O hub do CRM foi removido
+    // por decisão do dono em 17/09/2026.
     //
     // ⚠️ O ACHADO ORIGINAL NÃO FOI DESFEITO. Ele era "esta tela está enterrada
     // em CONFIGURAÇÕES e ninguém sabe que existe" — o problema era o GRUPO
-    // errado, não a profundidade. Ela continua sendo CRM: aparece no hub do
-    // CRM, no ⌘K, e o caminho é "CRM › Ver tudo em CRM", nunca mais
-    // "Configurações". O que muda é a frequência: desenhar as colunas do funil
+    // errado, não a profundidade. Ela continua sendo CRM e aparece no ⌘K,
+    // nunca mais em "Configurações". O que muda é a frequência: desenhar as colunas do funil
     // e escrever os motivos de perda é trabalho de montagem, feito uma vez e
     // revisitado por `manager` de vez em quando — enquanto Funis, Contatos e
     // Tarefas se abrem todo dia. É esse o corte que decide quem fica no menu.

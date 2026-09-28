@@ -1,3 +1,4 @@
+import type * as PlaywrightTestTypes from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -61,7 +62,7 @@ function lerCreds(): Creds {
   return c;
 }
 
-async function entrar(page: import("@playwright/test").Page, creds: Creds) {
+async function entrar(page: PlaywrightTestTypes.Page, creds: Creds) {
   // `manager` porque criar e editar tipo exige `manager` na rota — e o `admin`
   // do seed tem MFA, que não é o assunto desta spec.
   const usuario = creds.users.manager;

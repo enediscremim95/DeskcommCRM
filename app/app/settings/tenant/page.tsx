@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
+import { userHasPermission } from "@/lib/auth/permissions";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { businessProfileSchema } from "@/lib/schemas/business-profile";
 import { moedaServidaOu } from "@/lib/money";
@@ -28,9 +28,11 @@ export default async function TenantSettingsPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
-  if (!(user.is_platform_admin && !user.support) && ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
+  if (!userHasPermission(user, activeOrg, "settings.write")) {
     redirect("/403");
   }
+  const podeZerarDados =
+    !user.support && userHasPermission(user, activeOrg, "organization.data.reset");
 
   const supabase = await createClient();
   const { data } = await supabase
@@ -75,7 +77,7 @@ export default async function TenantSettingsPage() {
           }}
         />
       )}
-      {row && <ZonaDePerigoDaOrganizacao displayName={row.display_name} />}
+      {row && podeZerarDados && <ZonaDePerigoDaOrganizacao displayName={row.display_name} />}
     </div>
   );
 }

@@ -209,4 +209,40 @@ describe("requireRole — helper único (spec 13 §4)", () => {
     const granted = await requireRole("admin", { allowPlatformAdmin: true });
     expect(granted.ok).toBe(true);
   });
+
+  it("suporte readonly só ultrapassa o rank em leitura que declara a exceção", async () => {
+    const supportUser: AuthUser = {
+      ...authUserFixture(null, true),
+      support: {
+        id: "33333333-3333-4333-8333-333333333333",
+        organization_id: ORG_ID,
+        actor_user_id: USER_ID,
+        auth_session_id: "44444444-4444-4444-8444-444444444444",
+        previous_organization_id: null,
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+        name: "Org acompanhada",
+        locale: "pt-BR",
+        access_mode: "support_readonly",
+        status: "active",
+      },
+    };
+    vi.mocked(loadAuthUser).mockResolvedValue(supportUser);
+    vi.mocked(resolveActiveOrg).mockResolvedValue({
+      orgId: ORG_ID,
+      name: "Org acompanhada",
+      role: "viewer",
+    });
+    vi.mocked(createClient).mockResolvedValue({
+      rpc: vi.fn(async () => ({ data: "viewer", error: null })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const denied = await requireRole("agent");
+    expect(denied.ok).toBe(false);
+
+    const granted = await requireRole("agent", { allowSupportReadonly: true });
+    expect(granted.ok).toBe(true);
+    if (!granted.ok) throw new Error("unreachable");
+    expect(granted.org.orgId).toBe(ORG_ID);
+  });
 });

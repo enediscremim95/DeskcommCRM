@@ -1,3 +1,4 @@
+import type * as PlaywrightTestTypes from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -59,7 +60,7 @@ function lerCreds(): Creds {
   return c;
 }
 
-async function entrar(page: import("@playwright/test").Page, creds: Creds) {
+async function entrar(page: PlaywrightTestTypes.Page, creds: Creds) {
   // `manager` pelo mesmo motivo das specs irmãs: o `admin` do seed tem TOTP, e a
   // tela de 2FA não é o assunto aqui.
   const usuario = creds.users.manager;
@@ -72,7 +73,7 @@ async function entrar(page: import("@playwright/test").Page, creds: Creds) {
 }
 
 /** Os nomes dos chips de tipo, como quem olha a tela os leria. */
-async function tiposOferecidos(page: import("@playwright/test").Page): Promise<string[]> {
+async function tiposOferecidos(page: PlaywrightTestTypes.Page): Promise<string[]> {
   await page.goto("/app/agenda");
   await page.getByRole("button", { name: /Novo agendamento/i }).click();
   const lista = page.getByTestId("tipos-de-agendamento");
@@ -90,7 +91,7 @@ async function tiposOferecidos(page: import("@playwright/test").Page): Promise<s
   return textos.map((t) => t.split("\n")[0]!.replace(/\d+\s*min$/i, "").trim());
 }
 
-async function trocarPara(page: import("@playwright/test").Page, orgId: string, nome: string) {
+async function trocarPara(page: PlaywrightTestTypes.Page, orgId: string, nome: string) {
   await page.getByTestId("tenant-switcher").click();
   await page.getByTestId(`tenant-switcher-item-${orgId}`).click();
   if (nome) {

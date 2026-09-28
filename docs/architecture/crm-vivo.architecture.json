@@ -48,6 +48,8 @@
     { "id": "workerscore", "lane": "fila", "col": 2, "type": "service", "label": "worker do score", "sublabel": "fórmula determinística, nunca modelo" },
     { "id": "fila", "lane": "fila", "col": 4, "type": "service", "label": "job_queue · followup_turn", "sublabel": "o envio passa pelos portões" },
     { "id": "risco", "lane": "fila", "col": 5, "type": "service", "label": "classifyRisk + resolveStageWindow", "sublabel": "fonte ÚNICA de esfriamento" },
+    { "id": "reativacoes", "lane": "fila", "col": 4, "type": "database", "label": "crm_lead_reactivations", "sublabel": "decisão + fotografia dos fatos + prazo longo" },
+    { "id": "automacao", "lane": "fila", "col": 3, "type": "service", "label": "automation_rules", "sublabel": "etapa de destino → mensagem fixa + guardas" },
 
     { "id": "inbox", "lane": "fora", "col": 4, "type": "frontend", "label": "agent_inbox_items", "sublabel": "demanda sem dono não mora no Kanban" }
   ],
@@ -107,7 +109,14 @@
     { "id": "e53", "from": "radar", "to": "dossie", "label": "deep link ?lead=<id>" },
     { "id": "e54", "from": "tarefas", "to": "radar", "label": "toda tarefa aberta com prazo, pela urgência" },
     { "id": "e55", "from": "radar", "to": "tarefas", "label": "porta para executar e concluir" },
-    { "id": "e56", "from": "dossie", "to": "chat", "label": "mensagens, notas e eventos na mesma rolagem" }
+    { "id": "e56", "from": "dossie", "to": "chat", "label": "mensagens, notas e eventos na mesma rolagem" },
+    { "id": "e57", "from": "risco", "to": "reativacoes", "label": "lead frio → sugestão idempotente" },
+    { "id": "e58", "from": "reativacoes", "to": "inbox", "label": "Aprovar · Não aprovar" },
+    { "id": "e59", "from": "inbox", "to": "leads", "label": "aprovar move para a etapa configurada", "route": "highlight" },
+    { "id": "e60", "from": "leads", "to": "eventlog", "label": "lead.stage_changed" },
+    { "id": "e61", "from": "eventlog", "to": "automacao", "label": "regra fixa selecionada" },
+    { "id": "e62", "from": "automacao", "to": "fila", "label": "janela · limite · espaçamento · bloqueio · consentimento" },
+    { "id": "e63", "from": "reativacoes", "to": "risco", "label": "recusa só volta com fato novo ou prazo", "route": "drop" }
   ],
   "cards": [
     {

@@ -59,6 +59,29 @@ export async function changeMemberRole(
     return fail("state_conflict", t("Membro está revogado."), 409, { requestId });
   }
 
+  // Uma organização sem nenhum `admin` perde a referência explícita de quem
+  // responde pelas configurações mais sensíveis. `manager` tem o mesmo piso
+  // de acesso geral, mas continua sendo um papel diferente no modelo e nas
+  // capacidades nomeadas, portanto não substitui silenciosamente o último
+  // administrador cadastrado.
+  if (target.role === "admin" && input.role !== "admin") {
+    const { count, error: countErr } = await supabase
+      .from("user_organizations")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", activeOrg.orgId)
+      .eq("role", "admin")
+      .is("revoked_at", null);
+    if (countErr) return fail("internal_error", countErr.message, 500, { requestId });
+    if ((count ?? 0) <= 1) {
+      return fail(
+        "state_conflict",
+        t("A organização precisa manter ao menos um administrador."),
+        409,
+        { requestId },
+      );
+    }
+  }
+
   const { error: updErr } = await supabase
     .from("user_organizations")
     .update({ role: input.role, updated_at: new Date().toISOString() })

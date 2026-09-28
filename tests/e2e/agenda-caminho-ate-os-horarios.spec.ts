@@ -1,3 +1,4 @@
+import type * as PlaywrightTestTypes from "@playwright/test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -47,7 +48,7 @@ function lerCreds(): Creds {
   return JSON.parse(fs.readFileSync(p, "utf8")) as Creds;
 }
 
-async function entrar(page: import("@playwright/test").Page, creds: Creds) {
+async function entrar(page: PlaywrightTestTypes.Page, creds: Creds) {
   // `manager` é o piso que a aba de Atendimento exige (a tela mostra o aviso de
   // permissão abaixo disso), e o `admin` do seed tem TOTP, que não é o assunto.
   const usuario = creds.users.manager;

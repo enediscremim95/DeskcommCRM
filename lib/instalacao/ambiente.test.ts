@@ -55,11 +55,23 @@ describe("lerAmbiente", () => {
   // `lib/channels/transporte.test.ts`.
 
   it("e-mail configurado é o que decide se o convite sai de verdade", () => {
-    // Falso em toda instalação pelo kit hoje: o `install.sh` não coleta essa
-    // chave. É por isso que o passo de convites precisa tratar o link manual
-    // como caminho NORMAL, e não como exceção.
     expect(lerAmbiente({}).email).toBe(false);
-    expect(lerAmbiente({ RESEND_API_KEY: "re_x" }).email).toBe(true);
+    expect(
+      lerAmbiente({
+        RESEND_API_KEY: "re_x",
+        RESEND_FROM_EMAIL: "nao-responda@exemplo.com.br",
+      }).email,
+    ).toBe(true);
+    expect(
+      lerAmbiente({
+        EMAIL_PROVIDER: "ses",
+        AWS_SES_REGION: "sa-east-1",
+        AWS_SES_ACCESS_KEY_ID: "AKIA_TESTE",
+        AWS_SES_SECRET_ACCESS_KEY: "segredo-teste",
+        SES_FROM_EMAIL: "nao-responda@exemplo.com.br",
+      }).email,
+    ).toBe(true);
+    expect(lerAmbiente({ EMAIL_PROVIDER: "ses", AWS_SES_REGION: "sa-east-1" }).email).toBe(false);
   });
 });
 

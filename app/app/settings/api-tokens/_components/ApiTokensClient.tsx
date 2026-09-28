@@ -64,7 +64,13 @@ const SCOPES: { id: string; label: string }[] = [
   { id: "audit:read", label: "Ler o log de auditoria" },
 ];
 
-export function ApiTokensClient({ connectorUrl }: { connectorUrl: string }) {
+export function ApiTokensClient({
+  connectorUrl,
+  canManage,
+}: {
+  connectorUrl: string;
+  canManage: boolean;
+}) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   const { data, isLoading } = useApiTokens();
@@ -110,11 +116,13 @@ export function ApiTokensClient({ connectorUrl }: { connectorUrl: string }) {
 
   return (
     <>
-      <div className="flex sm:justify-end">
-        <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
-          {t("Criar token")}
-        </Button>
-      </div>
+      {canManage ? (
+        <div className="flex sm:justify-end">
+          <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
+            {t("Criar token")}
+          </Button>
+        </div>
+      ) : null}
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>
@@ -160,7 +168,7 @@ export function ApiTokensClient({ connectorUrl }: { connectorUrl: string }) {
                     {tok.expires_at ? new Date(tok.expires_at).toLocaleDateString(tagDoIdioma) : t("Sem expiração")}
                   </TableCell>
                   <TableCell>
-                    {!tok.revoked_at ? (
+                    {canManage && !tok.revoked_at ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -181,7 +189,7 @@ export function ApiTokensClient({ connectorUrl }: { connectorUrl: string }) {
         </div>
       )}
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={canManage && createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("Criar novo token")}</DialogTitle>
@@ -293,7 +301,7 @@ export function ApiTokensClient({ connectorUrl }: { connectorUrl: string }) {
                 <div className="space-y-3 rounded-md border p-3">
                   <p className="text-sm font-medium">{t("Comando para conectar pelo MCP")}</p>
                   <p className="text-xs text-muted-foreground">{t("O comando exibido protege o token. Ao copiar, o token recém-criado será incluído.")}</p>
-                  <code className="block overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted p-3 text-xs">
+                  <code className="block overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs">
                     {comandosCriados.exibido}
                   </code>
                   <Button

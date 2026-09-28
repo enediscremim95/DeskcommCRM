@@ -22,6 +22,7 @@ import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
 import { Plus, Trash } from "@/lib/ui/icons";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
+import type { ConfiguracaoFollowupAprovavel } from "@/lib/leads/followup-aprovavel";
 
 export interface PipelineRow {
   id: string;
@@ -29,6 +30,10 @@ export interface PipelineRow {
   slug: string;
   vocabulary: Record<string, string> | null;
   settings: Record<string, unknown> | null;
+}
+
+export interface FollowupRuleOption extends Omit<ConfiguracaoFollowupAprovavel, "resuggestAfterDays"> {
+  pipelineId: string;
 }
 
 /**
@@ -64,10 +69,12 @@ function readLostReasons(settings: Record<string, unknown> | null): string[] {
 export function PipelinesClient({
   pipelines,
   podeEditarConfig,
+  followupRules = [],
 }: {
   pipelines: PipelineRow[];
   /** Vocabulário/custom fields são admin (a server action recusa o resto). */
   podeEditarConfig: boolean;
+  followupRules?: FollowupRuleOption[];
 }) {
   const t = useT();
   if (pipelines.length === 0) {
@@ -100,14 +107,38 @@ export function PipelinesClient({
           <div className="border-t border-border pt-6">
             <AgentMappingSection pipelineId={p.id} ancoraEtapas={ancoraDasEtapas(p.id)} />
           </div>
-          {podeEditarConfig && <PipelineEditor pipeline={p} />}
+          {podeEditarConfig && (
+            <PipelineEditor
+              pipeline={p}
+              followupRules={followupRules.filter((rule) => rule.pipelineId === p.id)}
+            />
+          )}
         </Card>
       ))}
     </div>
   );
 }
 
-function PipelineEditor({ pipeline }: { pipeline: PipelineRow }) {
+function readFollowupApproval(settings: Record<string, unknown> | null): {
+  automation_rule_id: string;
+  resuggest_after_days: number;
+} | null {
+  const value = settings?.followup_approval;
+  if (!value || typeof value !== "object") return null;
+  const ruleId = (value as { automation_rule_id?: unknown }).automation_rule_id;
+  const days = (value as { resuggest_after_days?: unknown }).resuggest_after_days;
+  return typeof ruleId === "string" && typeof days === "number"
+    ? { automation_rule_id: ruleId, resuggest_after_days: days }
+    : null;
+}
+
+function PipelineEditor({
+  pipeline,
+  followupRules,
+}: {
+  pipeline: PipelineRow;
+  followupRules: FollowupRuleOption[];
+}) {
   const t = useT();
   const v = pipeline.vocabulary ?? {};
   const [lead, setLead] = useState(v.lead ?? "Lead");
@@ -116,6 +147,9 @@ function PipelineEditor({ pipeline }: { pipeline: PipelineRow }) {
   const [lost, setLost] = useState(v.lost ?? "Perdido");
   const [reasonsText, setReasonsText] = useState(readLostReasons(pipeline.settings).join(", "));
   const [fields, setFields] = useState<CustomFieldDef[]>(camposDoFunil(pipeline.settings));
+  const savedFollowup = readFollowupApproval(pipeline.settings);
+  const [followupRuleId, setFollowupRuleId] = useState(savedFollowup?.automation_rule_id ?? "disabled");
+  const [resuggestAfterDays, setResuggestAfterDays] = useState(savedFollowup?.resuggest_after_days ?? 14);
   const [isPending, startTransition] = useTransition();
 
   function handleSave() {
@@ -137,6 +171,13 @@ function PipelineEditor({ pipeline }: { pipeline: PipelineRow }) {
       vocabulary: { lead, deal, won, lost },
       fields: ok,
       lost_reasons: reasons,
+      followup_approval:
+        followupRuleId === "disabled"
+          ? null
+          : {
+              automation_rule_id: followupRuleId,
+              resuggest_after_days: resuggestAfterDays,
+            },
     };
     startTransition(async () => {
       const r = await updatePipelineConfig(pipeline.id, patch);
@@ -148,7 +189,7 @@ function PipelineEditor({ pipeline }: { pipeline: PipelineRow }) {
 
   return (
     <div className="space-y-4 border-t border-border pt-6">
-      <h3 className="text-sm font-semibold">{t("Vocabulário e campos")}</h3>
+      <h3 className="text-sm font-semibold">{t("Vocabulário, campos e follow-up")}</h3>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div className="space-y-1">
@@ -266,9 +307,59 @@ function PipelineEditor({ pipeline }: { pipeline: PipelineRow }) {
         )}
       </div>
 
+      <div className="space-y-3 rounded-md border border-border p-4">
+        <div>
+          <h3 className="text-sm font-semibold">{t("Follow-up aprovável")}</h3>
+          <p className="text-xs text-muted-foreground">
+            {t("Escolha uma automação ativa do tipo etapa de destino → mensagem fixa. Aprovar move o negócio para essa etapa; o motor mantém janela, limite, espaçamento, bloqueio e consentimento.")}
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem]">
+          <div className="space-y-1">
+            <Label className="text-xs">{t("Automação da mensagem fixa")}</Label>
+            <Select value={followupRuleId} onValueChange={setFollowupRuleId}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="disabled">{t("Desativado")}</SelectItem>
+                {followupRules.map((rule) => (
+                  <SelectItem key={rule.automationRuleId} value={rule.automationRuleId}>
+                    {rule.automationRuleName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs" htmlFor={`resuggest-${pipeline.id}`}>
+              {t("Sugerir de novo após (dias)")}
+            </Label>
+            <Input
+              id={`resuggest-${pipeline.id}`}
+              type="number"
+              min={2}
+              max={365}
+              value={resuggestAfterDays}
+              disabled={followupRuleId === "disabled"}
+              onChange={(event) => setResuggestAfterDays(Number(event.target.value))}
+            />
+          </div>
+        </div>
+        {followupRuleId !== "disabled" ? (
+          <p className="text-xs text-muted-foreground">
+            {t("Mensagem fixa:")} {followupRules.find((rule) => rule.automationRuleId === followupRuleId)?.message}
+          </p>
+        ) : followupRules.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {t("Crie e ative em Automações uma regra com uma condição de etapa de destino e uma ação de mensagem WhatsApp fixa.")}
+          </p>
+        ) : null}
+      </div>
+
       <div className="flex sm:justify-end">
         <Button onClick={handleSave} disabled={isPending} className="w-full sm:w-auto">
-          {isPending ? t("Salvando…") : t("Salvar vocabulário e campos")}
+          {isPending ? t("Salvando…") : t("Salvar configurações")}
         </Button>
       </div>
     </div>

@@ -606,7 +606,6 @@ export const DICIONARIO: Traducoes = {
   "cadências (desligadas)": { es: "secuencias (apagadas)" },
   Aplicar: { es: "Aplicar" },
   "Aplicar modelo": { es: "Aplicar modelo" },
-  "Aplicando…": { es: "Aplicando…" },
   "As colunas do funil atual serão substituídas pelas do modelo. Só funciona em funil vazio: se já tiver negócio dentro, nada é alterado.":
     {
       es: "Las columnas del embudo actual se reemplazan por las del modelo. Solo funciona con el embudo vacío: si ya tiene negocios dentro, nada cambia.",
@@ -1990,6 +1989,10 @@ export const DICIONARIO: Traducoes = {
     {
       es: "La cuenta de inteligencia artificial es tuya: la contratas directo con Anthropic, OpenAI o Google y pegas la clave aquí. Se guarda cifrada y nunca vuelve a aparecer en la pantalla después de guardada — ni siquiera para ti.",
     },
+  "Ainda não tem uma chave de IA? A OpenRouter oferece uma única chave para dezenas de modelos. Depois de cadastrá-la aqui, os modelos aparecem automaticamente.": {
+    es: "¿Aún no tienes una clave de IA? OpenRouter ofrece una sola clave para decenas de modelos. Después de registrarla aquí, los modelos aparecen automáticamente.",
+  },
+  "Criar chave na OpenRouter": { es: "Crear clave en OpenRouter" },
   "Nenhuma chave cadastrada ainda": { es: "Todavía no hay ninguna clave registrada" },
   "Seus agentes só conseguem pensar depois que você cola aqui uma chave da Anthropic, da OpenAI ou do Google. A cobrança vai direto para a sua conta no provedor, e a chave fica guardada criptografada.":
     {
@@ -2963,6 +2966,11 @@ export const DICIONARIO: Traducoes = {
   alerta: { es: "alerta" },
   alertas: { es: "alertas" },
   "alertas adicionais": { es: "alertas adicionales" },
+  "Alertas": { es: "Alertas" },
+  "MCP": { es: "MCP" },
+  "A organização precisa manter ao menos um administrador.": {
+    es: "La organización debe mantener al menos un administrador.",
+  },
   "Tenants Ativos": { es: "Tenants Activos" },
   "organizações ativas": { es: "organizaciones activas" },
   "Pendentes >10min": { es: "Pendientes >10min" },
@@ -3523,6 +3531,64 @@ export const DICIONARIO: Traducoes = {
   "Receber dados": { es: "Recibir datos" },
   "Leads recebidos": { es: "Leads recibidos" },
   Automações: { es: "Automatizaciones" },
+  "Fluxo modelo de atendimento": { es: "Flujo modelo de atención" },
+  "Cria modelos pausados de primeira abordagem, avanço do lead, entrega a uma pessoa e follow-up por etapa.": {
+    es: "Crea modelos pausados de primer contacto, avance del lead, entrega a una persona y seguimiento por etapa.",
+  },
+  "Aplicando…": { es: "Aplicando…" },
+  "Aplicar modelos pausados": { es: "Aplicar modelos pausados" },
+  "São modelos editáveis. As mensagens são exemplos e nenhuma regra é ligada sem sua revisão.": {
+    es: "Son modelos editables. Los mensajes son ejemplos y ninguna regla se activa sin tu revisión.",
+  },
+  "Este é um modelo pausado. Revise a mensagem, a condição, a etapa, o número e o responsável antes de ligar.": {
+    es: "Este es un modelo pausado. Revisa el mensaje, la condición, la etapa, el número y el responsable antes de activarlo.",
+  },
+  "Modelos criados e pausados. Revise cada regra antes de ligar.": {
+    es: "Modelos creados y pausados. Revisa cada regla antes de activarla.",
+  },
+  "O modelo já estava aplicado. Suas edições foram preservadas.": {
+    es: "El modelo ya estaba aplicado. Tus ediciones se conservaron.",
+  },
+  "Nenhuma regra foi duplicada.": { es: "No se duplicó ninguna regla." },
+  "a etapa configurada": { es: "la etapa configurada" },
+  "o lead entrar na etapa": { es: "el lead entre en la etapa" },
+  "chegar uma mensagem que contém": { es: "llegue un mensaje que contiene" },
+  "mande a mensagem": { es: "envía el mensaje" },
+  "peça para a IA escrever e enviar a mensagem": { es: "pide a la IA que escriba y envíe el mensaje" },
+  "mova o lead para": { es: "mueve el lead a" },
+  "atribua o responsável e pare o atendimento automático": {
+    es: "asigna al responsable y detén la atención automática",
+  },
+  "adicione a tag configurada": { es: "agrega la etiqueta configurada" },
+  "inicie o fluxo de follow-up configurado": { es: "inicia el flujo de seguimiento configurado" },
+  "execute a ação configurada": { es: "ejecuta la acción configurada" },
+  "Esta regra não envia mensagem sozinha.": { es: "Esta regla no envía mensajes por sí sola." },
+  "número configurado": { es: "número configurado" },
+  "RESPEITANDO a janela de horário, o consentimento e o limite diário": {
+    es: "RESPETANDO el horario, el consentimiento y el límite diario",
+  },
+  "do número": { es: "del número" },
+  "Você revisou este modelo?": { es: "¿Revisaste este modelo?" },
+  "Confirme que revisou a mensagem, a condição, a etapa, o número e o responsável. Ao ligar, a regra pode agir sozinha.": {
+    es: "Confirma que revisaste el mensaje, la condición, la etapa, el número y el responsable. Al activarla, la regla puede actuar sola.",
+  },
+  "Voltar e revisar": { es: "Volver y revisar" },
+  "Revisei e quero ligar": { es: "Revisé y quiero activar" },
+  "Conecte um número de WhatsApp antes de aplicar o modelo.": {
+    es: "Conecta un número de WhatsApp antes de aplicar el modelo.",
+  },
+  "Crie um funil com pelo menos uma etapa antes de aplicar o modelo.": {
+    es: "Crea un embudo con al menos una etapa antes de aplicar el modelo.",
+  },
+  "O funil precisa ter uma etapa aberta antes de aplicar o modelo.": {
+    es: "El embudo debe tener una etapa abierta antes de aplicar el modelo.",
+  },
+  "Adicione uma pessoa que possa atender leads antes de aplicar o modelo.": {
+    es: "Agrega una persona que pueda atender oportunidades antes de aplicar el modelo.",
+  },
+  "Crie ou renomeie uma etapa de follow-up antes de aplicar o modelo.": {
+    es: "Crea o cambia el nombre de una etapa de seguimiento antes de aplicar el modelo.",
+  },
   Atividade: { es: "Actividad" },
   Funil: { es: "Embudo" },
   "Escolha o funil": { es: "Elige el embudo" },
@@ -6912,6 +6978,8 @@ export const DICIONARIO: Traducoes = {
   "Avisos importantes por e-mail": { es: "Avisos importantes por correo" },
   "Ligados por padrão para você não perder uma oportunidade. Cada pessoa controla os próprios avisos.": { es: "Activados de forma predeterminada para que no pierdas una oportunidad. Cada persona controla sus propios avisos." },
   "O envio de e-mail ainda não foi configurado nesta instalação.": { es: "El envío de correo todavía no fue configurado en esta instalación." },
+  "Receber avisos por e-mail": { es: "Recibir avisos por correo" },
+  "Os avisos por e-mail estão desligados.": { es: "Los avisos por correo están desactivados." },
   "Novo lead entrou": { es: "Entró un nuevo lead" },
   "Formulário, WhatsApp, importação ou API.": { es: "Formulario, WhatsApp, importación o API." },
   "Novo lead via email": { es: "Nuevo lead por correo" },
@@ -8915,6 +8983,10 @@ export const DICIONARIO: Traducoes = {
   "Abrir mídia": { es: "Abrir medio" },
   "Ainda não há dados para este período.": { es: "Todavía no hay datos para este período." },
   "Baixar relatório": { es: "Descargar informe" },
+  "Modo apresentação": { es: "Modo presentación" },
+  "Sair do modo apresentação": { es: "Salir del modo presentación" },
+  "Recolher tudo": { es: "Contraer todo" },
+  "Expandir tudo": { es: "Expandir todo" },
   "Campanhas": { es: "Campañas" },
   "Carregando relatório…": { es: "Cargando informe…" },
   "Cliques no link": { es: "Clics en el enlace" },
@@ -9332,6 +9404,22 @@ export const DICIONARIO: Traducoes = {
   "Pode montar e revisar o atendimento em rascunho. Nada do que for montado entra no ar sozinho: uma pessoa precisa publicar pela tela de Agentes.": { es: "Puede montar y revisar la atención como borrador. Nada de lo montado se activa solo: una persona debe publicarlo desde la pantalla de Agentes." },
   "Não pode montar o atendimento porque esse escopo exige papel de gerente ou administrador.": { es: "No puede montar la atención porque este alcance exige el rol de gerente o administrador." },
   "Não pode montar o atendimento porque o token não tem o escopo mcp:configure, que nasce desligado.": { es: "No puede montar la atención porque el token no tiene el alcance mcp:configure, que viene desactivado." },
+  "follow-ups aprovados hoje": { es: "follow-ups aprobados hoy" },
+  "Sugestão removida. Ela só volta com fato novo ou após o prazo configurado.": { es: "Sugerencia eliminada. Solo vuelve con un hecho nuevo o después del plazo configurado." },
+  "Aprovado. A mensagem sairá quando a janela de envio abrir:": { es: "Aprobado. El mensaje saldrá cuando se abra la ventana de envío:" },
+  "Aprovado. A mensagem fixa foi encaminhada ao motor de envio.": { es: "Aprobado. El mensaje fijo fue enviado al motor de entrega." },
+  "Não aprovar": { es: "No aprobar" },
+  "Vocabulário, campos e follow-up": { es: "Vocabulario, campos y follow-up" },
+  "Follow-up aprovável": { es: "Follow-up aprobable" },
+  "Escolha uma automação ativa do tipo etapa de destino → mensagem fixa. Aprovar move o negócio para essa etapa; o motor mantém janela, limite, espaçamento, bloqueio e consentimento.": { es: "Elige una automatización activa del tipo etapa de destino → mensaje fijo. Aprobar mueve el negocio a esa etapa; el motor mantiene ventana, límite, espaciado, bloqueo y consentimiento." },
+  "Automação da mensagem fixa": { es: "Automatización del mensaje fijo" },
+  "Sugerir de novo após (dias)": { es: "Volver a sugerir después de (días)" },
+  "Mensagem fixa:": { es: "Mensaje fijo:" },
+  "Crie e ative em Automações uma regra com uma condição de etapa de destino e uma ação de mensagem WhatsApp fixa.": { es: "Crea y activa en Automatizaciones una regla con una condición de etapa de destino y una acción de mensaje fijo de WhatsApp." },
+  "Salvar configurações": { es: "Guardar configuraciones" },
+  "Confira a mensagem fixa e decida se este contato deve ser retomado.": { es: "Revisa el mensaje fijo y decide si se debe retomar este contacto." },
+  "Não foi possível conferir a resposta mais recente do contato.": { es: "No fue posible comprobar la respuesta más reciente del contacto." },
+  "Não foi possível registrar os fatos desta decisão.": { es: "No fue posible registrar los hechos de esta decisión." },
 };
 
 /**

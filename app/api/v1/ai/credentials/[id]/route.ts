@@ -1,6 +1,6 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
- * DELETE /api/v1/ai/credentials/:id (admin)
+ * DELETE /api/v1/ai/credentials/:id (capacidade ai.credentials.delete)
  *
  * Bloqueia se a credential é referenciada por uma `ai_agent_versions` que é a
  * `published_version_id` de algum agent não-arquivado da org.
@@ -12,7 +12,7 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { contarUsoPublicado, type VersaoVinculada } from "@/lib/ai/credenciais/uso";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -29,7 +29,13 @@ export async function DELETE(
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("admin", { requestId, resource: "ai_credentials" });
+  // A chave do provedor sustenta o atendimento inteiro. Apagá-la por engano
+  // derruba o agente de todos os clientes da organização, então esta exclusão
+  // não segue a escada geral de papéis: gerente não recebe esta capacidade.
+  const authz = await requirePermission("ai.credentials.delete", {
+    requestId,
+    resource: "ai_credentials",
+  });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;

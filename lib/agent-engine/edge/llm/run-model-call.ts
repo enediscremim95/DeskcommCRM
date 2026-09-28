@@ -1,3 +1,4 @@
+import type * as CredentialsTypes from "./credentials";
 import { guardServiceTools } from "@/lib/atendimento/fronteira-server";
 /**
  * SEAM ÚNICO de chamada de modelo: TODA chamada de LLM do harness passa por
@@ -131,7 +132,7 @@ export interface RunModelCallInput {
    * Override de provider/credencial vindo da versão PUBLICADA do agente (Fase
    * 2B) — resolvido no seam, nunca no call site. Sem ele, config da org.
    */
-  llmOverride?: import('./credentials').LlmResolveOverride;
+  llmOverride?: CredentialsTypes.LlmResolveOverride;
 }
 
 export interface RunModelCallDeps {

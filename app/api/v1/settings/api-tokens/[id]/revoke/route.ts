@@ -8,7 +8,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -24,7 +24,10 @@ export async function POST(
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("admin", { requestId, resource: "api_tokens" });
+  const authz = await requirePermission("api.tokens.manage", {
+    requestId,
+    resource: "api_tokens",
+  });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;

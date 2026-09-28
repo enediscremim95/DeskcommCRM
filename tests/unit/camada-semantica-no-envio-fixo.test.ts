@@ -35,6 +35,7 @@
  * propósito: assim o verde só é possível se a preferência da organização tiver
  * viajado até a cadeia. Com os dois ligados, o teste passaria pelo motivo errado.
  */
+import type * as AgentFollowupTurnTypes from "@/lib/agent-engine/agent/followup-turn";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { JobRow } from "@/lib/agent-engine/queue/queue";
@@ -126,7 +127,7 @@ function deps() {
   } as never;
 }
 
-let criarHandler: typeof import("@/lib/agent-engine/agent/followup-turn").createFollowupTurnHandler;
+let criarHandler: typeof AgentFollowupTurnTypes.createFollowupTurnHandler;
 
 // Fora do relógio do `it()` pelo mesmo motivo de `followup-canal-arquivado`:
 // o transform do grafo do agent-engine seria cronometrado como asserção.

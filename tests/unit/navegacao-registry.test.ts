@@ -93,10 +93,10 @@ describe("sidebarGroups", () => {
   it("Etapas do funil é CRM, não Configurações — o achado que originou esta mudança", () => {
     // ⚠️ ESTA ASSERÇÃO MUDOU DE SUPERFÍCIE, e a propriedade guardada é a mesma.
     // Ela cobrava presença no SIDEBAR, que era só o jeito de a tela deixar de
-    // ser "um card perdido em Configurações". Com o hub do CRM (`/app/crm`),
-    // ela mora atrás de "Ver tudo em CRM" — continua sendo CRM, continua fora
-    // de Configurações, e o caminho tem um clique a mais porque desenhar as
-    // colunas do funil é trabalho de montagem, não de todo dia.
+    // ser "um card perdido em Configurações". Depois da retirada do hub do CRM
+    // em 17/09/2026, ela continua sendo CRM, fora de Configurações e disponível
+    // no ⌘K. `hubSections` aqui verifica a classificação do catálogo, não uma
+    // porta que ainda apareça na interface.
     //
     // O que NÃO pode voltar é o destino trocar de grupo: é isso que a primeira
     // asserção prende, e ela não depende de onde o item é desenhado.
@@ -105,11 +105,10 @@ describe("sidebarGroups", () => {
     expect(hub).toContain("/app/settings/tenant/pipelines");
   });
 
-  it("o CRM tem hub, e o sidebar dele fica só com o uso diário", () => {
-    // A decisão que devolveu a dobra em 900px (e2e `navegacao.spec.ts`): quando
-    // Tarefas virou o quinto destino de CRM, o menu passou a rolar por 13px.
-    // O conserto foi o hub — o desenho que o grupo IA já usava —, não mais
-    // densidade raspada do `Sidebar.tsx`.
+  it("o CRM ficou sem hub, e o sidebar dele mostra só as três portas escolhidas", () => {
+    // Decisão do dono em 17/09/2026: o hub saiu e o grupo ficou limitado a
+    // Funis, Contatos e Tarefas. As demais telas seguem no registro e no ⌘K;
+    // este teste não pode continuar ressuscitando a navegação anterior.
     //
     // A lista é EXATA de propósito. `toContain` deixaria um sexto item entrar
     // calado no sidebar e reabrir a mesma corrida por pixel.
@@ -119,7 +118,7 @@ describe("sidebarGroups", () => {
       "/app/contacts",
       "/app/tasks",
     ]);
-    expect(NAV_GROUPS.find((g) => g.id === "crm")?.hub?.href).toBe("/app/crm");
+    expect(NAV_GROUPS.find((g) => g.id === "crm")?.hub).toBeUndefined();
   });
 
   it("omite o grupo inteiro quando o papel não vê nenhum item dele", () => {
@@ -152,7 +151,7 @@ describe("sidebarGroups", () => {
 });
 
 describe("hubSections", () => {
-  it("o hub do CRM é inventário: as cinco telas do grupo, nas duas seções", () => {
+  it("o catálogo do CRM preserva as cinco telas nas duas seções", () => {
     // As seções são a régua do sidebar escrita por extenso — o que se abre todo
     // dia contra o que se define uma vez. Lista EXATA: `toContain` deixaria uma
     // tela nova entrar sem que ninguém decidisse de que lado dela ela cai.

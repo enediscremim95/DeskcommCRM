@@ -37,7 +37,7 @@ export function TenantSwitcher() {
       const result = await setActiveOrg(orgId);
       if (!result.ok) throw new Error(result.error);
       // Novo documento elimina QueryClient, subscriptions e respostas em voo.
-      window.location.assign("/app/inbox");
+      window.location.assign("/app/kanban");
     } catch {
       transition.cancel();
       setPending(false);

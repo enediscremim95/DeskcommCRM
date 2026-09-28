@@ -171,9 +171,9 @@ it("porta legada preserva timestamp/retomada e cerca papel, tenant, suporte e MF
   await expect(call(null)).rejects.toMatchObject({ code: "42501" });
   await expect(call(other.user)).rejects.toMatchObject({ code: "42501" });
   await expect(call(f.user, f.org, other.contact)).rejects.toMatchObject({ code: "P0002" });
-  await pool.query("update user_organizations set role='manager' where organization_id=$1 and user_id=$2", [f.org, f.user]);
+  await pool.query("update user_organizations set role='agent' where organization_id=$1 and user_id=$2", [f.org, f.user]);
   await expect(call(f.user)).rejects.toMatchObject({ code: "42501" });
-  await pool.query("update user_organizations set role='admin' where organization_id=$1 and user_id=$2", [f.org, f.user]);
+  await pool.query("update user_organizations set role='manager' where organization_id=$1 and user_id=$2", [f.org, f.user]);
   await pool.query("insert into auth.mfa_factors(id,user_id,status,factor_type) values($1,$2,'verified','totp')", [factor, f.user]);
   try {
     await expect(call(f.user)).rejects.toMatchObject({ code: "42501" });

@@ -19,7 +19,10 @@ import {
   type NotifyCategory,
   type NotifyChannelPref,
 } from "@/lib/notifications/prefs";
-import type { EmailNotificationPreferences } from "@/lib/notifications/email-preferences";
+import {
+  DEFAULT_EMAIL_NOTIFICATION_PREFERENCES,
+  type EmailNotificationPreferences,
+} from "@/lib/notifications/email-preferences";
 import type { EmailNotificationPolicy } from "@/lib/notifications/email-policy";
 
 const LABELS: Record<NotifyCategory, string> = {
@@ -31,7 +34,7 @@ const LABELS: Record<NotifyCategory, string> = {
 };
 
 export function NotificationPrefsClient({
-  initialEmailPrefs = { new_lead: true, urgent_lead: true },
+  initialEmailPrefs = DEFAULT_EMAIL_NOTIFICATION_PREFERENCES,
   initialEmailPolicy = { urgent_batch_window_minutes: 60, urgent_daily_limit: 6 },
   canManageEmailPolicy = false,
   emailConfigured = false,
@@ -114,7 +117,25 @@ export function NotificationPrefsClient({
           ) : null}
         </div>
         <div className="space-y-3">
-          <label className="flex items-center justify-between gap-4">
+          <label className="flex items-center justify-between gap-4 pb-3">
+            <span>
+              <span className="block text-sm font-medium">
+                {t("Receber avisos por e-mail")}
+              </span>
+              {!emailPrefs.email_enabled ? (
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  {t("Os avisos por e-mail estão desligados.")}
+                </span>
+              ) : null}
+            </span>
+            <Switch
+              checked={emailPrefs.email_enabled}
+              disabled={!emailConfigured || savingEmail !== null}
+              onCheckedChange={(on) => void onEmailToggle("email_enabled", on)}
+              aria-label={t("Receber avisos por e-mail")}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-4 border-t pt-3">
             <span>
               <span className="block text-sm font-medium">{t("Novo lead entrou")}</span>
               <span className="block text-xs text-muted-foreground">
@@ -123,7 +144,9 @@ export function NotificationPrefsClient({
             </span>
             <Switch
               checked={emailPrefs.new_lead}
-              disabled={!emailConfigured || savingEmail !== null}
+              disabled={
+                !emailConfigured || !emailPrefs.email_enabled || savingEmail !== null
+              }
               onCheckedChange={(on) => void onEmailToggle("new_lead", on)}
               aria-label={t("Novo lead via email")}
             />
@@ -137,7 +160,9 @@ export function NotificationPrefsClient({
             </span>
             <Switch
               checked={emailPrefs.urgent_lead}
-              disabled={!emailConfigured || savingEmail !== null}
+              disabled={
+                !emailConfigured || !emailPrefs.email_enabled || savingEmail !== null
+              }
               onCheckedChange={(on) => void onEmailToggle("urgent_lead", on)}
               aria-label={t("Ação urgente via email")}
             />

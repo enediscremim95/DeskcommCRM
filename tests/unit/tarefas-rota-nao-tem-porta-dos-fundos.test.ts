@@ -24,6 +24,7 @@
  * `calendar_appointments` (migration 0177). O caso `só toca crm_tasks` prende
  * as duas ausências de uma vez: qualquer volta a `crm_leads` reprova.
  */
+import type * as ImpersonateSupportTypes from "@/lib/impersonate/support";
 import { NextRequest } from "next/server";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
@@ -298,7 +299,7 @@ describe("PATCH e DELETE /api/v1/tasks/[id]", () => {
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  ...await importOriginal<typeof ImpersonateSupportTypes>(),
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));

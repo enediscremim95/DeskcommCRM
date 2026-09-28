@@ -71,6 +71,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   document.body.innerHTML = "";
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -91,13 +92,19 @@ function renderizarComoPrimeiraPassadaDoCliente(): string {
   return renderToStaticMarkup(<NotificationPrefsClient />);
 }
 
-function montar(): HTMLDivElement {
+function montar(props: Parameters<typeof NotificationPrefsClient>[0] = {}): HTMLDivElement {
   const container = document.createElement("div");
   document.body.appendChild(container);
   act(() => {
-    createRoot(container).render(<NotificationPrefsClient />);
+    createRoot(container).render(<NotificationPrefsClient {...props} />);
   });
   return container;
+}
+
+function interruptor(container: HTMLElement, nome: string): HTMLButtonElement {
+  const element = container.querySelector(`[role="switch"][aria-label="${nome}"]`);
+  if (!(element instanceof HTMLButtonElement)) throw new Error(`Interruptor ausente: ${nome}`);
+  return element;
 }
 
 describe("as preferências de notificação não divergem entre o SSR e a primeira renderização do cliente", () => {
@@ -152,5 +159,46 @@ describe("as preferências de notificação não divergem entre o SSR e a primei
     });
 
     expect(container.innerHTML).toContain('data-testid="alerts-enable"');
+  });
+
+  it("mostra o mestre desligado, explica o estado e desabilita as categorias", () => {
+    const container = montar({
+      emailConfigured: true,
+      initialEmailPrefs: { email_enabled: false, new_lead: true, urgent_lead: false },
+    });
+
+    expect(container.textContent).toContain("Os avisos por e-mail estão desligados.");
+    expect(interruptor(container, "Receber avisos por e-mail").getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    expect(interruptor(container, "Novo lead via email").disabled).toBe(true);
+    expect(interruptor(container, "Ação urgente via email").disabled).toBe(true);
+  });
+
+  it("religar o mestre preserva as escolhas anteriores por categoria", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+    const container = montar({
+      emailConfigured: true,
+      initialEmailPrefs: { email_enabled: false, new_lead: true, urgent_lead: false },
+    });
+
+    await act(async () => {
+      interruptor(container, "Receber avisos por e-mail").click();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/notifications/email",
+      expect.objectContaining({ body: JSON.stringify({ email_enabled: true }) }),
+    );
+    expect(interruptor(container, "Novo lead via email").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(interruptor(container, "Ação urgente via email").getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    expect(interruptor(container, "Novo lead via email").disabled).toBe(false);
+    expect(interruptor(container, "Ação urgente via email").disabled).toBe(false);
   });
 });

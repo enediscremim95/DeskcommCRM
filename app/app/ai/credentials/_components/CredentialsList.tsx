@@ -13,6 +13,7 @@ import { AddCredentialDialog } from "./AddCredentialDialog";
 interface Props {
   initialData: CredentialRow[];
   canWrite: boolean;
+  canDelete: boolean;
   usageMap: Record<string, number>;
 }
 
@@ -24,7 +25,7 @@ const PROVIDER_LABELS: Record<string, string> = Object.fromEntries(
 
 const PROVIDER_ORDER: Provider[] = PROVEDORES.map((p) => p.id);
 
-export function CredentialsList({ initialData, canWrite, usageMap }: Props) {
+export function CredentialsList({ initialData, canWrite, canDelete, usageMap }: Props) {
   const t = useT();
   const { data } = useCredentialsList({ initialData });
   const [addOpen, setAddOpen] = useState(false);
@@ -88,6 +89,7 @@ export function CredentialsList({ initialData, canWrite, usageMap }: Props) {
                   <CredentialCard
                     credential={row}
                     canWrite={canWrite}
+                    canDelete={canDelete}
                     usageCount={usageMap[row.id] ?? 0}
                   />
                 </li>

@@ -30,9 +30,10 @@ export interface SelectableChannel {
   display_name: string;
   status: string;
   phone_number: string | null;
+  daily_message_limit: number | null;
 }
 
-const COLUNAS = "id, display_name, status, phone_number, waha_session_name";
+const COLUNAS = "id, display_name, status, phone_number, waha_session_name, daily_message_limit";
 
 interface LinhaCanal {
   id: string;
@@ -40,6 +41,7 @@ interface LinhaCanal {
   status: string;
   phone_number: string | null;
   waha_session_name: string | null;
+  daily_message_limit: number | null;
 }
 
 /**
@@ -84,5 +86,6 @@ export async function listSelectableChannels(
     display_name: nomeDoCanal(c),
     status: c.status,
     phone_number: c.phone_number ?? null,
+    daily_message_limit: c.daily_message_limit ?? null,
   }));
 }

@@ -37,6 +37,12 @@ export interface RequireRoleOpts {
   /** Platform admin (role transversal) bypassa o rank do tenant. */
   allowPlatformAdmin?: boolean;
   /**
+   * Libera uma leitura mínima durante acompanhamento somente leitura mesmo
+   * quando a rota exige `agent` para o usuário comum. Use apenas em GETs sem
+   * dado sensível nem efeito colateral.
+   */
+  allowSupportReadonly?: boolean;
+  /**
    * Override da org onde o role é resolvido (default: org ativa do cookie).
    * Use quando a autorização é sobre a org do RECURSO (ex.: LGPD anonymize —
    * admin na org do CONTATO), resolvida de fonte confiável (query RLS-scoped),
@@ -51,7 +57,13 @@ export interface RequireRoleOpts {
  * `if (!authz.ok) return authz.response;`
  */
 export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promise<RoleCheck> {
-  const { requestId, resource, allowPlatformAdmin = false, organizationId } = opts;
+  const {
+    requestId,
+    resource,
+    allowPlatformAdmin = false,
+    allowSupportReadonly = false,
+    organizationId,
+  } = opts;
 
   const user = await loadAuthUser();
   if (!user) {
@@ -87,6 +99,14 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
   }
 
   if (allowPlatformAdmin && user.is_platform_admin && !user.support) {
+    return { ok: true, user, org };
+  }
+
+  if (
+    allowSupportReadonly &&
+    user.support?.access_mode === "support_readonly" &&
+    user.support.organization_id === org.orgId
+  ) {
     return { ok: true, user, org };
   }
 

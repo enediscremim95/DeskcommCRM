@@ -25,7 +25,11 @@ interface AssignableMember {
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "team" });
+  const authz = await requireRole("agent", {
+    requestId,
+    resource: "team",
+    allowSupportReadonly: true,
+  });
   if (!authz.ok) return authz.response;
   const orgId = authz.org.orgId; // fonte confiável (cookie validado)
 

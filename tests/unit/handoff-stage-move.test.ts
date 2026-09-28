@@ -1,10 +1,11 @@
+import type * as LeadsActivityEmitterTypes from "@/lib/leads/activity-emitter";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { moverLeadParaEtapaDeHandoff, SLUG_ETAPA_HANDOFF } from "@/lib/leads/handoff-stage-move";
 
 vi.mock("@/lib/leads/activity-emitter", async (orig) => ({
-  ...(await orig<typeof import("@/lib/leads/activity-emitter")>()),
+  ...(await orig<typeof LeadsActivityEmitterTypes>()),
   emitLeadActivity: vi.fn(async () => ({ ok: true })),
 }));
 

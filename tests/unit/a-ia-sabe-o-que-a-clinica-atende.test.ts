@@ -1,3 +1,4 @@
+import type * as AgendaConsultaTypes from "@/lib/agenda/consulta";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -35,7 +36,7 @@ vi.mock("@/app/api/v1/agenda/agendamentos/_handler", () => ({
 }));
 
 vi.mock("@/lib/agenda/consulta", async (original) => {
-  const real = await original<typeof import("@/lib/agenda/consulta")>();
+  const real = await original<typeof AgendaConsultaTypes>();
   return {
     ...real,
     listaTiposDeAtendimento: vi.fn(),

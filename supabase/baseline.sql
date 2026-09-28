@@ -10141,6 +10141,7 @@ alter table public.agent_inbox_items
     -- (migration 0262) Uma fonte que já recebia e fica 48 horas sem lead
     -- deixa de falhar em silêncio e aparece na Central.
     'webhook_source_silent',
+    'followup_suggestion',
     'other'
   ));
 
@@ -26267,6 +26268,160 @@ drop trigger if exists trg_apply_agent_channel_config_on_publish on public.ai_ag
 create trigger trg_apply_agent_channel_config_on_publish
   after update of status on public.ai_agent_versions
   for each row execute function public.fn_apply_agent_channel_config_on_publish();
+
+-- ---- mestre pessoal de notificações por e-mail (migration 0268) ----
+alter table public.notification_email_preferences
+  add column if not exists email_enabled boolean not null default true;
+
+comment on column public.notification_email_preferences.email_enabled is
+  'Barreira pessoal para qualquer e-mail de notificação; não altera as escolhas por categoria.';
+
+-- ---- gerente não apaga credencial de IA (migration 0269) ----
+-- A chave do provedor sustenta o atendimento inteiro. Uma exclusão acidental
+-- derruba o agente para todos os clientes da organização, então o DELETE é uma
+-- capacidade nomeada de admin/plataforma, não uma consequência do rank geral.
+create or replace function public.fn_has_capability(p_org uuid, p_capability text)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case p_capability
+    when 'team.manage' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'manager'
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    when 'lead.delete' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'manager'
+    when 'ai.credentials.delete' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    else false
+  end;
+$$;
+alter function public.fn_has_capability(uuid, text) owner to postgres;
+revoke execute on function public.fn_has_capability(uuid, text) from public, anon;
+grant execute on function public.fn_has_capability(uuid, text) to authenticated, service_role;
+
+drop policy if exists tenant_isolation_ai_provider_credentials_write on public.ai_provider_credentials;
+drop policy if exists tenant_isolation_ai_provider_credentials_insert on public.ai_provider_credentials;
+create policy tenant_isolation_ai_provider_credentials_insert
+  on public.ai_provider_credentials for insert to authenticated
+  with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists tenant_isolation_ai_provider_credentials_update on public.ai_provider_credentials;
+create policy tenant_isolation_ai_provider_credentials_update
+  on public.ai_provider_credentials for update to authenticated
+  using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin()
+  )
+  with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists tenant_isolation_ai_provider_credentials_delete on public.ai_provider_credentials;
+create policy tenant_isolation_ai_provider_credentials_delete
+  on public.ai_provider_credentials for delete to authenticated
+  using (public.fn_has_capability(organization_id, 'ai.credentials.delete'));
+
+comment on column public.user_organizations.role is
+  'Papéis canônicos: viewer (1) < agent (2) < manager (4) = admin (4) no acesso geral; team.manage, lead.delete e ai.credentials.delete são capacidades nomeadas.';
+
+notify pgrst, 'reload schema';
+
+-- ---- e-mail de lead novo desligado por padrão (migration 0270) ----
+-- Novas preferências exigem opt-in. Escolhas já gravadas permanecem intactas.
+alter table public.notification_email_preferences
+  alter column new_lead set default false;
+
+comment on column public.notification_email_preferences.new_lead is
+  'Opt-in pessoal para e-mail de lead novo; desligado por padrão para preservar a cota transacional.';
+
+-- ---- plataforma enxerga a credencial que pode apagar (migration 0271) ----
+-- O DELETE com RETURNING também precisa que a linha passe pela policy de SELECT.
+-- O grant por coluna da 0150 continua escondendo o segredo cifrado.
+drop policy if exists tenant_isolation_ai_provider_credentials_select
+  on public.ai_provider_credentials;
+create policy tenant_isolation_ai_provider_credentials_select
+  on public.ai_provider_credentials for select to authenticated
+  using (
+    organization_id in (select public.fn_user_org_ids())
+    or public.fn_is_platform_admin()
+  );
+
+notify pgrst, 'reload schema';
+
+-- ---- ações irreversíveis só para admin/plataforma (migration 0272) ----
+create or replace function public.fn_has_capability(p_org uuid, p_capability text)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case p_capability
+    when 'team.manage' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'manager'
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    when 'lead.delete' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'manager'
+    when 'ai.credentials.delete' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    when 'organization.data.reset' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    when 'api.tokens.manage' then public.fn_is_platform_admin()
+      or public.fn_user_role_in_org(p_org) = 'admin'
+    else false
+  end;
+$$;
+alter function public.fn_has_capability(uuid, text) owner to postgres;
+revoke execute on function public.fn_has_capability(uuid, text) from public, anon;
+grant execute on function public.fn_has_capability(uuid, text) to authenticated, service_role;
+
+drop policy if exists api_tokens_admin_only on public.api_tokens;
+drop policy if exists api_tokens_select on public.api_tokens;
+create policy api_tokens_select
+  on public.api_tokens for select to authenticated
+  using (
+    public.fn_role_at_least(organization_id, 'admin')
+    or public.fn_is_platform_admin()
+  );
+drop policy if exists api_tokens_insert on public.api_tokens;
+create policy api_tokens_insert
+  on public.api_tokens for insert to authenticated
+  with check (public.fn_has_capability(organization_id, 'api.tokens.manage'));
+drop policy if exists api_tokens_update on public.api_tokens;
+create policy api_tokens_update
+  on public.api_tokens for update to authenticated
+  using (public.fn_has_capability(organization_id, 'api.tokens.manage'))
+  with check (public.fn_has_capability(organization_id, 'api.tokens.manage'));
+drop policy if exists api_tokens_delete on public.api_tokens;
+create policy api_tokens_delete
+  on public.api_tokens for delete to authenticated
+  using (public.fn_has_capability(organization_id, 'api.tokens.manage'));
+
+comment on column public.user_organizations.role is
+  'Papéis canônicos: viewer (1) < agent (2) < manager (4) = admin (4) no acesso geral; operações irreversíveis usam capacidades nomeadas.';
+
+notify pgrst, 'reload schema';
+
+-- ---- follow-up aprovável (migration 0273) ----
+alter table public.crm_lead_reactivations
+  add column if not exists automation_rule_id uuid references public.automation_rules(id) on delete set null,
+  add column if not exists stage_id_at_proposal uuid references public.crm_stages(id) on delete set null,
+  add column if not exists last_inbound_at_at_proposal timestamptz,
+  add column if not exists resuggest_after_at timestamptz;
+
+create index if not exists idx_crm_lead_reactivations_ultima_decisao
+  on public.crm_lead_reactivations (lead_id, proposed_at desc)
+  where status <> 'pending';
+
+create unique index if not exists uniq_agent_inbox_followup_suggestion_open
+  on public.agent_inbox_items (organization_id, kind, ref_id)
+  where kind = 'followup_suggestion' and status = 'open';
 
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.

@@ -34,6 +34,7 @@ import {
 import { publishAgentVersion } from "@/lib/ai/agents/publish";
 import { escolherVersoesDaTela } from "@/lib/ai/agents/versoes-da-tela";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
+import { updateChannelAiConcurrency } from "@/lib/channels/configuration";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -823,16 +824,14 @@ export async function configureChannelConcurrencyAction(
   if (!guard.ok) return guard;
   const { authUser, activeOrg } = guard;
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('channel_sessions')
-    .update({ max_concurrent_ai_conversations: maxConcurrent } as never)
-    .eq('id', channelSessionId)
-    .eq('organization_id', activeOrg.orgId)
-    .is('archived_at', null)
-    .select('id')
-    .maybeSingle();
-  if (error) return { ok: false, error: 'internal_error', message: error.message };
-  if (!data) return { ok: false, error: 'not_found' };
+  const updated = await updateChannelAiConcurrency(
+    admin,
+    activeOrg.orgId,
+    channelSessionId,
+    maxConcurrent,
+  );
+  if (updated.error) return { ok: false, error: 'internal_error', message: updated.error };
+  if (!updated.found) return { ok: false, error: 'not_found' };
   await audit({
     action: 'channel_session.ai_concurrency_changed',
     actorUserId: authUser.id,
