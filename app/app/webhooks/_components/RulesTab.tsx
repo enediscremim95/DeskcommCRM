@@ -72,6 +72,7 @@ export function resumoDaRegra(
     }
     if (action.type === "assign_owner") return t("atribua o responsável e pare o atendimento automático");
     if (action.type === "add_tag") return t("adicione a tag configurada");
+    if (action.type === "remove_tag") return t("remova a tag configurada");
     if (action.type === "start_message_flow") return t("inicie o fluxo de follow-up configurado");
     return t("execute a ação configurada");
   });

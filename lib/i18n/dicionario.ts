@@ -3573,6 +3573,7 @@ export const DICIONARIO: Traducoes = {
     es: "asigna al responsable y detén la atención automática",
   },
   "adicione a tag configurada": { es: "agrega la etiqueta configurada" },
+  "remova a tag configurada": { es: "quita la etiqueta configurada" },
   "inicie o fluxo de follow-up configurado": { es: "inicia el flujo de seguimiento configurado" },
   "execute a ação configurada": { es: "ejecuta la acción configurada" },
   "Esta regra não envia mensagem sozinha.": { es: "Esta regla no envía mensajes por sí sola." },
@@ -5048,6 +5049,7 @@ export const DICIONARIO: Traducoes = {
   "Sem tags no contato.": { es: "Sin etiquetas en el contacto." },
   "Adicionar tag ao contato": { es: "Agregar etiqueta al contacto" },
   "Remover tag": { es: "Quitar etiqueta" },
+  "Saudação por horário": { es: "Saludo según la hora" },
   "Tags da conversa": { es: "Etiquetas de la conversación" },
 
   // ─── Inbox: janela de 24h fechada / seletor de modelo aprovado ───

@@ -5,7 +5,7 @@ import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { renderTemplate } from "@/lib/automation/template";
 import { serviceForAutomation } from "@/lib/atendimento/origem-automacao";
 import { checkDailyLimit, espacarEnvio } from "@/lib/automation/throttle";
-import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
+import { adiarAteAJanelaAbrir, knobsDoCanal } from "@/lib/automation/janela-do-canal";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { reportarEnvio, type MensagemEnviada } from "@/lib/automation/desfecho-do-envio";
 import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
@@ -48,7 +48,8 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     const boundary = await serviceForAutomation(ctx, contact.id, sessionId);
     const conversationId = boundary.conversation_id;
     await espacarEnvio(sessionId);
-    const body = renderTemplate(template, ctx.context);
+    const knobs = await knobsDoCanal(ctx.admin, ctx.organizationId, sessionId);
+    const body = renderTemplate(template, ctx.context, { timezone: knobs.timezone });
     const message = await sendMessageHandler(
       ctx.admin,
       {

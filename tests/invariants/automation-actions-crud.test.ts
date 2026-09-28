@@ -314,6 +314,42 @@ describe("add_tag (Task 9)", () => {
   });
 });
 
+describe("remove_tag", () => {
+  it("remove a tag existente do lead e emite lead.tag_removed com anti-loop", async () => {
+    const executor = getAction("remove_tag")!;
+    const ctx = baseCtx({ lead: leadRow(LEAD_T9) });
+    const result = await executor.execute(ctx, { tags: ["vip"] });
+
+    expect(result).toMatchObject({
+      type: "remove_tag",
+      status: "success",
+      detail: { removed: ["vip"] },
+    });
+    expect(leadRow(LEAD_T9).tags).toEqual(["novo"]);
+
+    const found = rows(
+      `select payload, metadata from public.event_log where event_type = 'lead.tag_removed' and entity_id = '${LEAD_T9}' order by created_at desc limit 1`,
+    );
+    expect(found.length).toBe(1);
+    expect((found[0]!.payload as Record<string, unknown>).removed_tags).toEqual(["vip"]);
+    expect((found[0]!.metadata as Record<string, unknown>).caused_by_rule).toBe(RULE_ID);
+  });
+
+  it("é idempotente quando a tag não existe", async () => {
+    const executor = getAction("remove_tag")!;
+    const before = leadRow(LEAD_T9).tags;
+    const ctx = baseCtx({ lead: leadRow(LEAD_T9) });
+    const result = await executor.execute(ctx, { tags: ["inexistente"] });
+
+    expect(result).toMatchObject({
+      type: "remove_tag",
+      status: "success",
+      detail: { removed: [] },
+    });
+    expect(leadRow(LEAD_T9).tags).toEqual(before);
+  });
+});
+
 describe("assign_owner (Task 9)", () => {
   it("4. valida membership na org e seta owner_user_id + assigned_at", async () => {
     const executor = getAction("assign_owner")!;

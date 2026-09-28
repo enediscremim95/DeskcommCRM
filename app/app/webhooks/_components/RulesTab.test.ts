@@ -47,4 +47,13 @@ describe("leitura simples das automações", () => {
       "RESPEITANDO a janela de horário, o consentimento e o limite diário de 120 mensagens do número Comercial Curitiba.",
     );
   });
+
+  it("explica a remoção de tag na leitura simples da regra", () => {
+    const frase = resumoDaRegra(
+      { ...REGRA, actions: [{ type: "remove_tag", config: { tags: ["aguardando_resposta"] } }] },
+      [],
+      t,
+    );
+    expect(frase).toContain("ENTÃO remova a tag configurada");
+  });
 });

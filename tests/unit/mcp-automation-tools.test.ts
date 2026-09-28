@@ -43,7 +43,11 @@ describe("família MCP de automação", () => {
       guards: Record<string, string>;
     };
     expect(result.triggers).toHaveLength(5);
-    expect(result.actions).toHaveLength(7);
+    expect(result.actions).toHaveLength(8);
+    expect(result.actions).toContainEqual(expect.objectContaining({ id: "remove_tag" }));
+    expect(result.actions).toContainEqual(
+      expect.objectContaining({ id: "send_whatsapp_message", faz: expect.stringContaining("{{saudacao}}") }),
+    );
     const texto = `${crmCreateAutomationRule.description} ${Object.values(result.guards).join(" ")}`;
     expect(texto).toMatch(/janela de horário/i);
     expect(texto).toMatch(/limite/i);

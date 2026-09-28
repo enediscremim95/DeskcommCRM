@@ -66,6 +66,14 @@ function makeSupabase(botSilencedUntil: string | null, snapshot?: () => Record<s
   const patches: Row[] = [];
   const client = {
     from(table: string) {
+      if (table === "channel_knobs") {
+        const query = {
+          select: () => query,
+          eq: () => query,
+          maybeSingle: async () => ({ data: null, error: null }),
+        };
+        return query;
+      }
       if (table === "channel_sessions") {
         const query = {
           select: () => query,

@@ -30,6 +30,7 @@ export type ActionItem =
       config: { agent_id: string; channel_session_id: string; instruction: string };
     }
   | { type: "add_tag"; config: { tags: string[] } }
+  | { type: "remove_tag"; config: { tags: string[] } }
   | { type: "assign_owner"; config: { user_id: string } }
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string } }
   | { type: "start_message_flow"; config: { flow_pointer_id: string } };
@@ -43,6 +44,8 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
     case "send_ai_message":
       return { type, config: { agent_id: "", channel_session_id: "", instruction: "" } };
     case "add_tag":
+      return { type, config: { tags: [] } };
+    case "remove_tag":
       return { type, config: { tags: [] } };
     case "assign_owner":
       return { type, config: { user_id: "" } };
@@ -117,6 +120,7 @@ function CreateOrMoveLeadForm({
 }
 
 const TEMPLATE_VARS = [
+  { token: "{{saudacao}}", label: "Saudação por horário" },
   { token: "{{nome}}", label: "Nome" },
   { token: "{{telefone}}", label: "Telefone" },
   { token: "{{lead.title}}", label: "Título do lead" },
@@ -452,6 +456,13 @@ export function ActionConfigForm({
         />
       );
     case "add_tag":
+      return (
+        <AddTagForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
+    case "remove_tag":
       return (
         <AddTagForm
           config={action.config}
