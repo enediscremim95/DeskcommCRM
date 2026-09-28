@@ -36,7 +36,11 @@ import { NodeConfigPanel } from "../followups/[id]/_components/NodeConfigPanel";
 import { EdgeConfigPanel } from "../followups/[id]/_components/EdgeConfigPanel";
 import { PublishBar } from "../followups/[id]/_components/PublishBar";
 import { createMcpAgentAction, discardMcpDraftAction, publishAgentAction, revertToVersionAction } from "../agents/[id]/_actions";
-import { proposeAttendanceInstructionAction, saveAtendimentoDraftAction } from "./_actions";
+import {
+  auditDisabledGuardrailsAction,
+  proposeAttendanceInstructionAction,
+  saveAtendimentoDraftAction,
+} from "./_actions";
 
 interface AgentSummary {
   id: string;
@@ -186,20 +190,16 @@ export function AtendimentoBuilder(props: Props) {
         const result = await createMcpAgentAction({ name: state.name, description: state.objective, priority: 0, version: payload });
         if (!result.ok) throw new Error(result.message ?? result.error);
         if (!result.data) throw new Error(t("Não foi possível salvar o atendimento."));
-        let createdVersionId = result.data.version_id;
         if (newlyDisabled.length > 0) {
-          const audited = await saveAtendimentoDraftAction(
+          const audited = await auditDisabledGuardrailsAction(
             result.data.agent_id,
-            payload,
-            { name: state.name, description: state.objective },
+            result.data.version_id,
             newlyDisabled,
           );
           if (!audited.ok) throw new Error(audited.message ?? audited.error);
-          if (!audited.data) throw new Error(t("Não foi possível registrar as travas desligadas."));
-          createdVersionId = audited.data.version_id;
         }
-        setAgentId(result.data.agent_id); setVersionId(createdVersionId); setSavedState(state); setNewlyDisabled([]); setMcpChanges([]);
-        toast.success(t("Rascunho criado.")); return { agentId: result.data.agent_id, versionId: createdVersionId };
+        setAgentId(result.data.agent_id); setVersionId(result.data.version_id); setSavedState(state); setNewlyDisabled([]); setMcpChanges([]);
+        toast.success(t("Rascunho criado.")); return { agentId: result.data.agent_id, versionId: result.data.version_id };
       }
       const result = await saveAtendimentoDraftAction(agentId, payload, { name: state.name, description: state.objective }, newlyDisabled);
       if (!result.ok) throw new Error(result.message ?? result.error);
@@ -272,7 +272,7 @@ export function AtendimentoBuilder(props: Props) {
       <PublishBar mode="atendimento" title={state.name} status={version?.status ?? "draft"} dirty={dirty} changes={mcpChanges} actions={<><Button variant="secondary" size="sm" disabled={!ready || pending !== null} onClick={() => void saveDraft()}>{pending === "save" ? t("Salvando…") : t("Salvar rascunho")}</Button><Button size="sm" disabled={!ready || pending !== null} onClick={() => void publish()}>{pending === "publish" ? t("Publicando…") : t("Publicar")}</Button>{mcpChanges.length > 0 && agentId && versionId && <Button variant="outline" size="sm" disabled={pending !== null} onClick={() => void discard()}>{t("Descartar")}</Button>}<Button variant="outline" size="sm" asChild><Link href={agentId ? `/app/ai/agents/${agentId}` : "/app/ai/agents/new"}>{t("Ajuste fino")}</Link></Button></>} />
       <div className="grid gap-3 border-b bg-muted/20 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto]">
         <div className="flex gap-2"><Textarea value={instruction} onChange={(e) => setInstruction(e.target.value)} rows={2} placeholder={t("Descreva em português o que o atendimento deve fazer. A proposta entra como rascunho para você revisar.")} /><Button className="self-stretch" variant="outline" disabled={pending !== null || instruction.trim().length < 10} onClick={() => void propose()}>{pending === "propose" ? t("Montando…") : t("Montar com IA")}</Button></div>
-        {history.length > 0 && <div className="flex items-center gap-2"><Select value={rollbackVersion} onValueChange={setRollbackVersion}><SelectTrigger className="w-44"><SelectValue placeholder={t("Histórico de versões")} /></SelectTrigger><SelectContent>{history.map((item) => <SelectItem key={item.id} value={item.id}>v{item.version_number}</SelectItem>)}</SelectContent></Select><Button variant="outline" disabled={!rollbackVersion || pending !== null} onClick={() => void rollback()}>{t("Voltar")}</Button></div>}
+        {history.length > 0 && <div className="flex items-center gap-2"><Select value={rollbackVersion} onValueChange={setRollbackVersion}><SelectTrigger className="w-44" aria-label={t("Histórico de versões")}><SelectValue placeholder={t("Histórico de versões")} /></SelectTrigger><SelectContent>{history.map((item) => <SelectItem key={item.id} value={item.id}>v{item.version_number}</SelectItem>)}</SelectContent></Select><Button variant="outline" disabled={!rollbackVersion || pending !== null} onClick={() => void rollback()}>{t("Voltar")}</Button></div>}
       </div>
       {!ready && <div className="border-b border-warning bg-warning-bg px-4 py-3 text-sm text-warning-fg">{t("Conecte um número e configure um modelo de IA antes de salvar ou publicar.")}</div>}
       {!agentId && <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3"><span className="text-sm font-medium">{t("Começar pelo modelo do nicho")}</span>{TEMPLATE_SUMMARIES.map((item) => <Button key={item.id} size="sm" variant={state.templateId === item.id ? "default" : "outline"} onClick={() => { const next = novoAtendimentoDoModelo(item.id); setState(next); setSavedState(next); }}>{t(item.label)}</Button>)}</div>}
