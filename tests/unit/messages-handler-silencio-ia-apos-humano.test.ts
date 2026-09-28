@@ -70,7 +70,10 @@ function makeSupabase(botSilencedUntil: string | null, snapshot?: () => Record<s
         const query = {
           select: () => query,
           eq: () => query,
-          maybeSingle: async () => ({ data: { metadata: {} }, error: null }),
+          maybeSingle: async () => ({
+            data: { metadata: {}, automatic_attendance_enabled: true },
+            error: null,
+          }),
         };
         return query;
       }

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 
 /**
  * G1-03 — shared harness for the governance invariants (gov-*.test.ts).
@@ -113,6 +114,85 @@ export function indexExists(index: string): boolean {
   );
 }
 
+type TestChannelOptions = {
+  organizationId: string;
+  id?: string;
+  sessionName?: string;
+  status?: string;
+  provider?: "waha" | "meta_cloud";
+  metaPhoneNumberId?: string;
+  metaWabaId?: string;
+  dailyMessageLimit?: number;
+  automaticAttendanceEnabled?: boolean;
+  ignoreUniqueViolation?: boolean;
+};
+
+function sqlLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+/**
+ * Cria um canal para cenários que exercitam atendimento, despacho ou envio.
+ *
+ * O produto continua criando canais com atendimento DESLIGADO. Aqui o padrão é
+ * ligado porque estes fixtures medem o caminho já autorizado. O invariante que
+ * prova o default de produção usa INSERT cru de propósito e não passa por aqui.
+ */
+export function createTestChannel(options: TestChannelOptions): string {
+  const id = options.id ?? randomUUID();
+  const provider = options.provider ?? "waha";
+  const columns = [
+    "id",
+    "organization_id",
+    "provider",
+    "status",
+    "webhook_secret_encrypted",
+    "automatic_attendance_enabled",
+  ];
+  const values = [
+    sqlLiteral(id),
+    sqlLiteral(options.organizationId),
+    sqlLiteral(provider),
+    sqlLiteral(options.status ?? "WORKING"),
+    "'\\x00'::bytea",
+    options.automaticAttendanceEnabled === false ? "false" : "true",
+  ];
+
+  if (provider === "waha") {
+    columns.push("waha_session_name");
+    values.push(sqlLiteral(options.sessionName ?? id));
+  }
+  if (options.metaPhoneNumberId !== undefined) {
+    columns.push("meta_phone_number_id");
+    values.push(sqlLiteral(options.metaPhoneNumberId));
+  }
+  if (options.metaWabaId !== undefined) {
+    columns.push("meta_waba_id");
+    values.push(sqlLiteral(options.metaWabaId));
+  }
+  if (options.dailyMessageLimit !== undefined) {
+    if (!Number.isInteger(options.dailyMessageLimit)) {
+      throw new Error("dailyMessageLimit must be an integer");
+    }
+    columns.push("daily_message_limit");
+    values.push(String(options.dailyMessageLimit));
+  }
+
+  const insert = `insert into public.channel_sessions (${columns.join(", ")})
+    values (${values.join(", ")})
+    on conflict (id) do nothing`;
+
+  if (options.ignoreUniqueViolation) {
+    sql(`do $test_channel$ begin
+      ${insert};
+    exception when unique_violation then null; end $test_channel$;`);
+  } else {
+    sql(`${insert};`);
+  }
+
+  return id;
+}
+
 // Fixed UUIDs (cccccccc- namespace; rls-isolation uses aaaa/bbbb) make the
 // seed idempotent AND race-safe across parallel test files (on conflict do nothing).
 export const GOV_ORG = "cccccccc-0000-4000-8000-000000000001";
@@ -168,10 +248,14 @@ export function seedGov(): void {
     -- DO + exception (não ON CONFLICT): channel_sessions tem unique DEFERRABLE
     -- (phone_per_org), que ON CONFLICT sem arbiter rejeita, e o arbiter (id)
     -- não cobre a corrida no unique de waha_session_name entre arquivos paralelos.
-    do $gov$ begin
-      insert into public.channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
-        values ('${GOV_SESSION}', '${GOV_ORG}', 'gov-inv', '\\x00'::bytea);
-    exception when unique_violation then null; end $gov$;
+  `);
+  createTestChannel({
+    id: GOV_SESSION,
+    organizationId: GOV_ORG,
+    sessionName: "gov-inv",
+    ignoreUniqueViolation: true,
+  });
+  sql(`
     insert into public.contacts (id, organization_id, display_name)
       values
         ('${GOV_CONTACT_1}', '${GOV_ORG}', 'Gov Invariant Contact 1'),

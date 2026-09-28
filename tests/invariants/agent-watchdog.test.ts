@@ -8,6 +8,7 @@ import {
   type WatchdogConfig,
 } from "@/lib/agent-engine/edge/crm/session-reconciler";
 import { createLogger } from "@/lib/agent-engine/obs/logger";
+import { createTestChannel } from "./gov-helpers";
 
 /**
  * Fase 4A-2 — watchdog de sessão (o incidente real do Carlos, congelado em teste).
@@ -107,11 +108,12 @@ beforeAll(async () => {
     [CONTACT, ORG],
   );
   // A DIVERGÊNCIA do incidente real: espelho STARTING, WAHA (mock) WORKING.
-  await pool.query(
-    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
-     values ($1, $2, $3, 'STARTING', '\\x00'::bytea) on conflict (id) do nothing`,
-    [SESSION, ORG, WAHA_SESSION_NAME],
-  );
+  createTestChannel({
+    id: SESSION,
+    organizationId: ORG,
+    sessionName: WAHA_SESSION_NAME,
+    status: "STARTING",
+  });
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
      values ($1, $2, $3, $4, 'open', false) on conflict (id) do nothing`,
@@ -155,11 +157,12 @@ describe("4A-2 — watchdog reconcilia o espelho e reenvia queued", () => {
 
   it("retoma sessão STOPPED — credencial no disco, sem pedir QR", async () => {
     wahaStatusByName[STOPPED_NAME] = "STOPPED";
-    await pool.query(
-      `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
-       values ($1, $2, $3, 'STOPPED', '\\x00'::bytea) on conflict (id) do nothing`,
-      [STOPPED_SESSION, ORG, STOPPED_NAME],
-    );
+    createTestChannel({
+      id: STOPPED_SESSION,
+      organizationId: ORG,
+      sessionName: STOPPED_NAME,
+      status: "STOPPED",
+    });
     startCalls.length = 0;
 
     const fixed = await reconcileSessions(pool, watchdogCfg(), log);

@@ -5,7 +5,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { seedGov, GOV_AGENT_A, GOV_AGENT_B, GOV_VIEWER } from "./gov-helpers";
+import { createTestChannel, seedGov, GOV_AGENT_A, GOV_AGENT_B, GOV_VIEWER } from "./gov-helpers";
 import { criarOrigemDeFollowup } from "./followup-service-origin";
 import { appointmentSnapshotSchema, expectedAppointment } from "@/lib/agenda/google/sync-store";
 import { assertMeetingDeliveryPg } from "@/lib/agenda/meet-delivery";
@@ -1448,7 +1448,7 @@ it("FIX1 M1: booking não pode forjar recibo humano mesmo com claim válido", as
 it("FIX1 M1: troca de canal não transporta autorização antiga; clique explícito cria intenção nova", async () => {
   const setup = await deliveryFixture("user"), { f, a } = setup;
   const original = (await row(f.id)).meeting_delivery;
-  const channel = (await pool.query("insert into channel_sessions(organization_id,waha_session_name,status,webhook_secret_encrypted) values($1,gen_random_uuid()::text,'WORKING',decode('00','hex')) returning id", [f.org])).rows[0].id;
+  const channel = createTestChannel({ organizationId: f.org });
   await pool.query("update conversations set channel_session_id=$2 where id=$1", [f.boundary.conversation_id, channel]);
   await expect(assertMeetingDeliveryPg(pool, { organizationId:f.org, jobId:setup.job.id, jobClaim:claimOfJob(setup.job)! })).rejects.toThrow();
   expect((await row(f.id)).meeting_delivery).toEqual(original);

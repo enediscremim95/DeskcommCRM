@@ -20,7 +20,7 @@ const input = {
 describe("decidirPreGoLiveDoCanalViaSupabase", () => {
   it("não interfere num canal aberto ou num allowlist legado", async () => {
     for (const metadata of [{}, { ai_gate: "allowlist" }]) {
-      const { client } = adminStub({ data: { metadata }, error: null });
+      const { client } = adminStub({ data: { metadata, automatic_attendance_enabled: true }, error: null });
       await expect(decidirPreGoLiveDoCanalViaSupabase(client, input)).resolves.toMatchObject({
         ativo: false,
         permite: true,
@@ -34,14 +34,14 @@ describe("decidirPreGoLiveDoCanalViaSupabase", () => {
       ai_gate_mode: "pre_go_live",
       ai_test_phone_numbers: [input.contactPhoneNumber],
     };
-    const { client } = adminStub({ data: { metadata }, error: null });
+    const { client } = adminStub({ data: { metadata, automatic_attendance_enabled: true }, error: null });
     await expect(decidirPreGoLiveDoCanalViaSupabase(client, input)).resolves.toMatchObject({
       ativo: true,
       permite: true,
       motivo: "numero_de_teste",
     });
 
-    const segundo = adminStub({ data: { metadata }, error: null }).client;
+    const segundo = adminStub({ data: { metadata, automatic_attendance_enabled: true }, error: null }).client;
     await expect(
       decidirPreGoLiveDoCanalViaSupabase(segundo, {
         ...input,
@@ -51,6 +51,18 @@ describe("decidirPreGoLiveDoCanalViaSupabase", () => {
       ativo: true,
       permite: false,
       motivo: "fora_da_lista_de_teste",
+    });
+  });
+
+  it("barra qualquer envio automático quando a chave mestra está desligada", async () => {
+    const { client } = adminStub({
+      data: { metadata: {}, automatic_attendance_enabled: false },
+      error: null,
+    });
+    await expect(decidirPreGoLiveDoCanalViaSupabase(client, input)).resolves.toEqual({
+      ativo: true,
+      permite: false,
+      motivo: "atendimento_automatico_desligado",
     });
   });
 

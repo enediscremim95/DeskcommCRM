@@ -123,7 +123,12 @@ function bancoFalso(canal: { metadata?: unknown; existe?: boolean; erro?: string
       if (tabela === "organizations") return { data: { settings: {} }, error: null };
       if (tabela !== "channel_sessions") return { data: { id: "contato-1" }, error: null };
       if (canal.erro) return { data: null, error: { message: canal.erro } };
-      return { data: canal.existe === false ? null : { metadata: canal.metadata }, error: null };
+      return {
+        data: canal.existe === false
+          ? null
+          : { metadata: canal.metadata, automatic_attendance_enabled: true },
+        error: null,
+      };
     };
     encadeavel.single = encadeavel.maybeSingle;
     encadeavel.then = (resolve: (value: unknown) => unknown) => {

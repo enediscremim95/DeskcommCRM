@@ -160,6 +160,22 @@ async function processEvent(
   }
   const p = parsed.data;
 
+  // Defesa contra corrida: desligar o canal também barra eventos emitidos antes
+  // da mudança e que ainda estavam na fila. Ausência de canal nunca autoriza fala.
+  const { rows: atendimentoRows } = await pool.query<{ enabled: boolean }>(
+    `select automatic_attendance_enabled as enabled
+       from channel_sessions
+      where organization_id = $1 and id = $2 and archived_at is null`,
+    [event.organization_id, p.channel_session_id],
+  );
+  if (atendimentoRows[0]?.enabled !== true) {
+    log.info('drain: atendimento automático desligado, evento pulado', {
+      event_id: event.id,
+      channel_session_id: p.channel_session_id,
+    });
+    return 'processado';
+  }
+
   // Spec 14: org em modo 'external' tem agente EXTERNO como dono da conversa —
   // o engine não responde por cima. Evento é consumido (done) sem job.
   const { rows: modeRows } = await pool.query<{ mode: string | null }>(

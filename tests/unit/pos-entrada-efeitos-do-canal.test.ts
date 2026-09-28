@@ -49,6 +49,7 @@ let updateErro: { message: string } | null = null;
 let rpcErro: { message: string } | null = null;
 let ultimoUpdate: Record<string, unknown> | null = null;
 let ultimaRpc: Record<string, unknown> | null = null;
+let atendimentoLigado = true;
 
 /** Imita o builder do PostgREST: encadeável, o efeito acontece no `await`. */
 function cadeia(rotulo: string): Record<string, unknown> {
@@ -68,9 +69,25 @@ function cadeia(rotulo: string): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
+function consulta(data: unknown): Record<string, unknown> {
+  return new Proxy({}, {
+    get(_t, prop) {
+      if (prop === "then") {
+        return (resolve: (v: unknown) => void) => Promise.resolve({ data, error: null }).then(resolve);
+      }
+      return () => consulta(data);
+    },
+  }) as Record<string, unknown>;
+}
+
 const admin = {
   from(tabela: string) {
     return {
+      select() {
+        return consulta(tabela === "channel_sessions"
+          ? { automatic_attendance_enabled: atendimentoLigado, metadata: {} }
+          : null);
+      },
       update(payload: Record<string, unknown>) {
         ultimoUpdate = payload;
         return cadeia(`update:${tabela}`);
@@ -107,6 +124,7 @@ beforeEach(() => {
   rpcErro = null;
   ultimoUpdate = null;
   ultimaRpc = null;
+  atendimentoLigado = true;
   audit.mockClear();
   garantirLeadDaConversa.mockClear();
   garantirLeadDaConversa.mockResolvedValue({ criado: true, leadId: "lead-1" } as never);
@@ -220,6 +238,21 @@ describe("opt-out", () => {
 });
 
 describe("despacho do agente", () => {
+  it("atendimento desligado mantém o lead e não envia resposta automática", async () => {
+    atendimentoLigado = false;
+
+    await rodar();
+
+    expect(garantirLeadDaConversa).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        contactId: "contato-1",
+        conversationId: "conversa-1",
+      }),
+    );
+    expect(sequencia).not.toContain("rpc:ai_agent.dispatch_requested");
+  });
+
   it("emite com o payload que o consumidor lê, campo a campo", async () => {
     // O consumidor é UM só. Um payload por canal faria o worker adivinhar de
     // quem veio.

@@ -5,6 +5,7 @@ import type * as InboundTurn from "@/lib/agent-engine/agent/inbound-turn";
 import type * as Providers from "@/lib/agent-engine/edge/llm/providers";
 import type * as Queue from "@/lib/agent-engine/queue/queue";
 import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
+import { createTestChannel } from "./gov-helpers";
 
 /**
  * O TURNO INTEIRO, CONTRA POSTGRES DE VERDADE: quem pede um atendente RECEBE UMA
@@ -208,11 +209,11 @@ beforeAll(async () => {
      values ($1,'handoff-avisa','Handoff Avisa','Handoff Avisa') on conflict (id) do nothing`,
     [ORG],
   );
-  await pool.query(
-    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
-     values ($1,$2,'handoff-avisa-session','WORKING','\\x00'::bytea) on conflict (id) do nothing`,
-    [SESSION, ORG],
-  );
+  createTestChannel({
+    id: SESSION,
+    organizationId: ORG,
+    sessionName: "handoff-avisa-session",
+  });
   // Camada `platform` do playbook: o ritual de abertura recusa o turno sem ela
   // ("publique uma versão platform e aponte antes do primeiro run"). Mesma
   // semente de `limite-de-envios-por-turno.test.ts`.

@@ -4,6 +4,7 @@ import type * as ObsLoggerTypes from "@/lib/agent-engine/obs/logger";
 import type * as CrmMcpClientTypes from "@/lib/agent-engine/edge/crm/mcp-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
+import { createTestChannel } from "./gov-helpers";
 
 /**
  * Fase 4B (robustez BYOK) — turno SEM credencial nenhuma (nem env, nem BYOK).
@@ -69,11 +70,11 @@ beforeAll(async () => {
      values ($1, $2, 'Lead Sem Credencial', '+5511900000042') on conflict (id) do nothing`,
     [CONTACT, ORG],
   );
-  await pool.query(
-    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
-     values ($1, $2, 'nocred-session', 'WORKING', '\\x00'::bytea) on conflict (id) do nothing`,
-    [SESSION, ORG],
-  );
+  createTestChannel({
+    id: SESSION,
+    organizationId: ORG,
+    sessionName: "nocred-session",
+  });
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
      values ($1, $2, $3, $4, 'open', false) on conflict (id) do nothing`,

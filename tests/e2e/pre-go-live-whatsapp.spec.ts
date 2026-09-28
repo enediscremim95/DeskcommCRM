@@ -39,6 +39,22 @@ test("admin configura testes, remove número, confirma abertura e volta a restri
   await page.waitForURL(/\/app/);
   await page.goto("/app/connections");
   await expect(page.getByText("Canal de validação", { exact: true })).toBeVisible();
+  await expect(page.getByText("DESLIGADO", { exact: true })).toBeVisible();
+  await expect(page.getByText(/mensagens entram no CRM, com conversa, contato e lead/i)).toBeVisible();
+  const attendanceSwitch = page.getByRole("switch", { name: "Atendimento automático deste número" });
+  await expect(attendanceSwitch).not.toBeChecked();
+  await attendanceSwitch.click();
+  await expect(attendanceSwitch).toBeChecked();
+  await expect(page.getByText("LIGADO", { exact: true })).toBeVisible();
+  const { data: channelState } = await admin.from("channel_sessions").select("*").eq("id", channelId).single();
+  expect((channelState as { automatic_attendance_enabled?: boolean }).automatic_attendance_enabled).toBe(true);
+  const { data: auditRows } = await admin.from("api_audit_log").select("actor_user_id,created_at,metadata")
+    .eq("organization_id", orgId).eq("resource_id", channelId)
+    .eq("action", "channel.automatic_attendance_updated").order("created_at", { ascending: false }).limit(1);
+  expect(auditRows).toHaveLength(1);
+  expect(auditRows![0]!.actor_user_id).toBeTruthy();
+  expect(auditRows![0]!.created_at).toBeTruthy();
+  expect(auditRows![0]!.metadata).toMatchObject({ previous_enabled: false, enabled: true });
   await expect(page.getByText("IA em modo de teste", { exact: true })).toBeVisible();
   const openPanel = () => page.getByRole("button", { name: "Configurar acesso da IA" }).click();
   const input = page.getByLabel("Números autorizados para teste");

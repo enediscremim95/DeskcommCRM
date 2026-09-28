@@ -48,6 +48,7 @@ import {
 } from "./evolucao";
 import { crmListContactOrders, crmSearchProducts } from "./comercio";
 import { crmListPrivacyRequests } from "./privacidade";
+import { crmSetChannelAutomaticAttendance } from "./channels";
 import {
   crmArchiveStage,
   crmCreateStage,
@@ -150,6 +151,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmAssignConversation,
   crmManageTags,
   crmApplyChannelLabel,
+  crmSetChannelAutomaticAttendance,
   // write — organizar a operação (W4)
   crmCreateStage,
   crmUpdateStage,

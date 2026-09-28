@@ -20,6 +20,7 @@ import { phoneForChannelCard } from "@/lib/channels/phone-variants";
 import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
 import { AntiBanSheet } from "./AntiBanSheet";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { ChannelAutomaticAttendance } from "./ChannelAutomaticAttendance";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -278,7 +279,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       </div>
 
       <p className="text-sm text-muted-foreground">
-        {t("Novos canais começam em modo de teste, sem respostas automáticas até você autorizar números ou liberar o público.")}
+        {t("Números novos recebem mensagens normalmente, mas o atendimento automático começa desligado. Ligue-o no cartão do número quando quiser liberar respostas.")}
       </p>
       {connectionDetail && <details className="rounded-md border p-3 text-sm"><summary>{t("Detalhes para suporte")}</summary><pre className="mt-2 whitespace-pre-wrap break-words">{connectionDetail}</pre><Button variant="outline" size="sm" onClick={async () => {
         if (await copyToClipboard(connectionDetail)) toast.success(t("Copiado!"));
@@ -383,6 +384,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     ? `${t("Verificado")} ${new Date(c.last_health_check_at).toLocaleString(tagDoIdioma)}`
                     : t("Ainda não verificado")}
                 </p>
+                <ChannelAutomaticAttendance channelId={c.id} />
                 <ChannelAiAccess channelId={c.id} />
                 <p className="text-xs text-muted-foreground">{t(!policy ? "Consulte os responsáveis em Atendimento." : policy.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : policy.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>
                 <div className="mt-auto flex flex-wrap gap-2">
