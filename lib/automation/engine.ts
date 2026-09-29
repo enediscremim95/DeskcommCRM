@@ -426,7 +426,15 @@ export async function runAutomationForEvent(
   }
 
   const context = await buildContext(admin, row);
-  const applicable = matched.filter((r) => evaluateConditions(r.conditions ?? [], context));
+  const ruleEmRetomadaId = pacingState?.current.rule_id;
+  // Condições são a porta de entrada da regra, não uma guarda entre suas
+  // próprias ações. Uma ação anterior pode adicionar justamente a tag que
+  // impedia uma segunda entrada; ao acordar do ritmo humano, reavaliá-la
+  // cancelava a sequência antes do envio e deixava run_count em zero.
+  const applicable = matched.filter(
+    (rule) =>
+      rule.id === ruleEmRetomadaId || evaluateConditions(rule.conditions ?? [], context),
+  );
   if (!applicable.length) {
     if (pacingState) await encerrarEstadoRitmoInvalido(admin, row, pacingState, "automation_rule_no_longer_matches");
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_match" };
