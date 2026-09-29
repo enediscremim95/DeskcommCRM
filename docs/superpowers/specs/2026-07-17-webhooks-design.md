@@ -150,7 +150,7 @@ Aplicado ao envio automatizado (`send_whatsapp_message`):
 - Antes da primeira mensagem de cada regra, espera 40–100s.
 - Para cada mensagem fixa, calcula `(20s + 0,6s × caracteres) × variação(0,9–1,2)`. Os primeiros 45% (limitados a 3–15s) usam a capability opcional de presença do canal para mostrar `digitando`; o restante é pausa silenciosa antes da próxima mensagem.
 - A espera não usa `setTimeout` no handler. O cursor fica em `event_log.metadata`, o run aparece como `adiado` e o drain retoma por `next_attempt_at`, continuando os demais eventos enquanto isso.
-- Ações não textuais continuam imediatamente, na ordem declarada. O cursor impede que uma retomada repita ações já concluídas.
+- Ações não textuais continuam imediatamente, na ordem declarada. Exceção: antes de cada retomada ou envio, o motor procura mensagem outbound humana (`sent_via=user|external_device`) com `created_at` posterior ao evento-gatilho. Se encontrar, encerra a regra inteira naquele ponto, sem enviar nem executar as tags restantes. O cursor impede que uma retomada repita ações já concluídas.
 - **Fora da janela/limite: não falha nem perde** — o evento volta a `pending` com `next_attempt_at` = próxima janela válida (o `event_log` é a fila; sem scheduler novo).
 
 ## 9. UI — `/app/webhooks`

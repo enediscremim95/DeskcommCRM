@@ -44,6 +44,12 @@ export interface ActionExecutor {
    *  adiado para essa hora ANTES de qualquer ação executar (all-or-nothing —
    *  evita reexecução parcial no retry). Usada pelo throttle do WhatsApp. */
   postponeUntil?(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null>;
+  /**
+   * Veto que encerra a REGRA inteira antes de qualquer ação restante. Serve
+   * para fatos que tornam a sequência obsoleta, como um humano já ter respondido
+   * depois do evento-gatilho. O resultado entra na execução visível.
+   */
+  interruptRule?(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail | null>;
   /** Capability, não identidade de provider: só ações textuais que a expõem entram no ritmo. */
   humanPacing?: HumanPacingCapability;
   execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail>;

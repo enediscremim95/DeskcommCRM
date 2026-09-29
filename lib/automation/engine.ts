@@ -18,7 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { evaluateConditions, type RuleCondition } from "@/lib/automation/conditions";
 import { getAction } from "@/lib/automation/actions";
-import type { ActionResultDetail } from "@/lib/automation/types";
+import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import {
   RITMO_HUMANO_METADATA_KEY,
   calcularEsperaInicialMs,
@@ -357,6 +357,39 @@ async function registrarAdiamento(
   }
 }
 
+/**
+ * Procura, no trecho ainda não executado, uma ação capaz de invalidar a
+ * sequência inteira. A checagem acontece de novo a cada fronteira de ação:
+ * resposta humana pode chegar durante uma espera durável ou durante outro
+ * efeito anterior da mesma regra.
+ */
+async function interrupcaoDaRegra(
+  rule: RuleRow,
+  startAt: number,
+  ctx: ActionCtx,
+): Promise<ActionResultDetail | null> {
+  for (const action of (rule.actions ?? []).slice(startAt)) {
+    const executor = getAction(action.type);
+    if (!executor?.interruptRule) continue;
+    try {
+      const result = await executor.interruptRule(ctx, action.config ?? {});
+      if (result) return result;
+    } catch (err) {
+      return {
+        type: action.type,
+        status: "failed",
+        error: err instanceof Error ? err.message : String(err),
+        detail: {
+          reason: "rule_interruption_check_failed",
+          explicacao:
+            "Não foi possível confirmar se a regra ainda podia falar com o contato. A sequência foi encerrada sem enviar.",
+        },
+      };
+    }
+  }
+  return null;
+}
+
 export async function runAutomationForEvent(
   admin: SupabaseClient,
   row: EventRow,
@@ -417,11 +450,18 @@ export async function runAutomationForEvent(
     requestId: row.id,
   });
 
+  const interrupcoesPrechecadas = new Map<string, ActionResultDetail>();
+
   // Pré-checagem all-or-nothing só sobre o trecho AINDA não executado. Uma
   // retomada não volta a consultar ações que o cursor durável já concluiu.
   for (const rule of applicable) {
     if (completedRuleIds.has(rule.id)) continue;
     const startAt = pacingState?.current.rule_id === rule.id ? pacingState.current.action_index : 0;
+    const interrupcao = await interrupcaoDaRegra(rule, startAt, actionCtx(rule));
+    if (interrupcao) {
+      interrupcoesPrechecadas.set(rule.id, interrupcao);
+      continue;
+    }
     for (const action of (rule.actions ?? []).slice(startAt)) {
       const executor = getAction(action.type);
       if (!executor?.postponeUntil) continue;
@@ -482,6 +522,18 @@ export async function runAutomationForEvent(
     };
 
     while (current.action_index < (rule.actions ?? []).length) {
+      const interrupcao =
+        interrupcoesPrechecadas.get(rule.id) ??
+        (await interrupcaoDaRegra(rule, current.action_index, actionCtx(rule)));
+      interrupcoesPrechecadas.delete(rule.id);
+      if (interrupcao) {
+        current.results.push(interrupcao);
+        current.action_index = (rule.actions ?? []).length;
+        pacingState = null;
+        retomadaPendente = false;
+        break;
+      }
+
       const action = rule.actions[current.action_index]!;
       const executor = getAction(action.type);
       if (!executor) {

@@ -10,6 +10,50 @@ import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { reportarEnvio, type MensagemEnviada } from "@/lib/automation/desfecho-do-envio";
 import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
 import { sinalizarDigitando } from "@/lib/messaging/presenca";
+import { houveRespostaHumanaDepoisDoEvento } from "@/lib/messaging/resposta-humana";
+
+async function interruptRule(
+  ctx: ActionCtx,
+  config: Record<string, unknown>,
+): Promise<ActionResultDetail | null> {
+  const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
+  const eventCreatedAt = ctx.event.created_at;
+  if (!sessionId) return null;
+  if (!eventCreatedAt) {
+    return {
+      type: "send_whatsapp_message",
+      status: "failed",
+      error: "missing_event_created_at",
+      detail: {
+        reason: "human_reply_check_unavailable",
+        explicacao:
+          "O evento não trouxe o horário necessário para conferir uma resposta humana. A regra foi encerrada sem enviar.",
+      },
+    };
+  }
+
+  const guarda = checarGuardasDeContato(ctx);
+  if (!guarda.ok) return null;
+  const boundary = await serviceForAutomation(ctx, guarda.contact.id, sessionId);
+  const respondeu = await houveRespostaHumanaDepoisDoEvento(ctx.admin, {
+    organizationId: ctx.organizationId,
+    conversationId: boundary.conversation_id,
+    eventCreatedAt,
+  });
+  if (!respondeu) return null;
+
+  return {
+    type: "send_whatsapp_message",
+    status: "skipped",
+    detail: {
+      reason: "human_replied_after_trigger",
+      conversation_id: boundary.conversation_id,
+      event_created_at: eventCreatedAt,
+      explicacao:
+        "Um atendente respondeu nesta conversa depois do evento que disparou a regra. A sequência inteira foi encerrada para não duplicar o contato.",
+    },
+  };
+}
 
 async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
   const contato = checarGuardasDeContato(ctx);
@@ -104,6 +148,7 @@ async function signalTyping(ctx: ActionCtx, config: Record<string, unknown>): Pr
 registerAction({
   type: "send_whatsapp_message",
   postponeUntil,
+  interruptRule,
   humanPacing: { textLength, signalTyping },
   execute,
 });

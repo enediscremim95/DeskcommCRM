@@ -32,6 +32,19 @@ retoma a mesma ação quando o horário vencer.
 5. O cursor inclui regra, índice da ação, resultados acumulados e fase. Uma
    retomada não repete as ações anteriores da mesma execução.
 
+## Interrupção por resposta humana
+
+Antes da espera, de cada retomada e do envio efetivo, o motor consulta a mesma
+classificação de autoria humana usada pela reatividade dos follow-ups. Uma
+mensagem `outbound` com `sent_via=user|external_device` e `created_at` maior que
+o `created_at` do evento torna a sequência obsoleta. A regra inteira termina
+naquele ponto: não envia a mensagem e não executa tags ou outros efeitos
+restantes. Mensagem humana anterior ao evento pertence ao histórico antigo e
+não interfere; saídas `ai`/`automation` não contam como humano.
+
+A consulta falha fechada. Se não for possível provar que a regra ainda pode
+falar, ela termina sem envio e grava o motivo no `automation_rule_run`.
+
 ## Fórmula
 
 ```text
@@ -54,6 +67,7 @@ de fingir que a espera foi agendada.
 - teste puro fixa os extremos da fórmula e os limites do indicador;
 - teste do motor verifica que a primeira espera retorna `retry` sem chamar
   `setTimeout` nem executar o envio;
+- teste do motor cobre resposta humana anterior ao evento, posterior durante a
+  espera e ausente, além de provar que as tags seguintes não rodam no veto;
 - a suíte existente do drain já prova que um evento em `retry` não impede os
   demais eventos do mesmo lote de concluírem.
-
