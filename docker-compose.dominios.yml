@@ -1,0 +1,33 @@
+# Endereços de CRM dos clientes que viraram o CRM Veritas (18/09/2026).
+# O cliente continua usando o endereço que já conhecia; o servidor responde com o CRM Veritas.
+#
+# Este arquivo fica separado de docker-compose.traefik.yml porque contém a configuração
+# operacional dos domínios desta instalação, não a configuração genérica do produto.
+# Esquecê-lo num `up -d` recria o app sem os routers dos clientes: o contêiner segue
+# `healthy`, mas os endereços abaixo respondem 404 no Traefik.
+#
+# Subir SEMPRE pelo porteiro, que aplica os três arquivos:
+#   bash scripts/deploy-producao.sh --session <id-da-sessao> --tag <tag-ou-imagem>
+#
+# Para acrescentar um cliente: somar o Host nas TRÊS regras abaixo, router principal,
+# router HTTP e waha-block, e apontar o DNS (registro A para o IP da VPS, com a
+# nuvem laranja ligada, igual ao crm.agenciaveritasdigital.com).
+services:
+  app:
+    labels:
+      traefik.http.routers.deskcomm-clientes.rule: "Host(`crm.imobiliariaa.com.br`) || Host(`crm.zaparolliimoveis.com`) || Host(`crm.lecote.com.br`) || Host(`crm.alavancagem.site`) || Host(`crm-imobiliariaa.agenciaveritasdigital.com`)"
+      traefik.http.routers.deskcomm-clientes.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
+      traefik.http.routers.deskcomm-clientes.tls.certresolver: "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      traefik.http.routers.deskcomm-clientes.middlewares: "deskcomm-compress"
+      traefik.http.routers.deskcomm-clientes.service: "deskcomm"
+      # Mesma trava do domínio principal: o webhook do WAHA não fica exposto em nenhum endereço.
+      traefik.http.routers.deskcomm-clientes-waha-block.rule: "(Host(`crm.imobiliariaa.com.br`) || Host(`crm.zaparolliimoveis.com`) || Host(`crm.lecote.com.br`) || Host(`crm.alavancagem.site`) || Host(`crm-imobiliariaa.agenciaveritasdigital.com`)) && Path(`/api/v1/webhooks/waha`)"
+      traefik.http.routers.deskcomm-clientes-waha-block.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
+      traefik.http.routers.deskcomm-clientes-waha-block.tls.certresolver: "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      traefik.http.routers.deskcomm-clientes-waha-block.priority: "1000"
+      traefik.http.routers.deskcomm-clientes-waha-block.service: "deskcomm"
+      traefik.http.routers.deskcomm-clientes-waha-block.middlewares: "deskcomm-deny"
+      traefik.http.routers.deskcomm-clientes-http.rule: "Host(`crm.imobiliariaa.com.br`) || Host(`crm.zaparolliimoveis.com`) || Host(`crm.lecote.com.br`) || Host(`crm.alavancagem.site`) || Host(`crm-imobiliariaa.agenciaveritasdigital.com`)"
+      traefik.http.routers.deskcomm-clientes-http.entrypoints: "${TRAEFIK_ENTRYPOINT_HTTP:-web}"
+      traefik.http.routers.deskcomm-clientes-http.middlewares: "deskcomm-https"
+      traefik.http.routers.deskcomm-clientes-http.service: "deskcomm"

@@ -143,13 +143,13 @@ verify, build-and-size, invariants, e2e, imagens-ok
 - **`lib/auth/public-paths.ts`** — adicionar path aqui remove a checagem de auth de borda.
   Só com guard próprio dentro da rota.
 - **`.env*`** — não abra, não copie valor, não logue. Só `.env.example` é template.
-- **`docker-compose.traefik.yml`** — numa VPS que já tem proxy reverso próprio
-  (Hostinger, Coolify, Dokploy…), é o único lugar que dá ao contêiner `app` as labels
-  de roteamento. Todo `up -d` leva os **dois** arquivos de compose:
-  `docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml --env-file .env up -d app`.
-  Esquecer o segundo `-f` recria o contêiner sem labels: o proxy deixa de enxergá-lo e o
-  domínio inteiro responde `404`, com o contêiner `healthy` — o healthcheck é um probe TCP
-  interno e não sabe nada de roteamento. Runbook: `docs/runbooks/deploy.md`.
+- **Deploy da VPS Veritas** — passa exclusivamente por
+  `bash scripts/deploy-producao.sh --session <id> --tag <tag-ou-imagem>`. O porteiro
+  serializa sessões com `mkdir` atômico e sempre aplica `docker-compose.prod.yml`,
+  `docker-compose.traefik.yml` e `docker-compose.dominios.yml`. Esquecer Traefik apaga o
+  domínio principal; esquecer domínios apaga os routers dos clientes. Nos dois casos o
+  proxy responde `404` com o contêiner `healthy`. O script só destranca depois de conferir
+  HTTP 307 em todos os hosts. Runbook: `docs/runbooks/deploy.md`.
 
 ## Arquivos GERADOS — não editar à mão
 
