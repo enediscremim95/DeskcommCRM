@@ -9537,6 +9537,8 @@ export const DICIONARIO: Traducoes = {
   "Confira a mensagem fixa e decida se este contato deve ser retomado.": { es: "Revisa el mensaje fijo y decide si se debe retomar este contacto." },
   "Não foi possível conferir a resposta mais recente do contato.": { es: "No fue posible comprobar la respuesta más reciente del contacto." },
   "Não foi possível registrar os fatos desta decisão.": { es: "No fue posible registrar los hechos de esta decisión." },
+  "Arquivo removido após o prazo de retenção": { es: "Archivo eliminado después del plazo de retención" },
+  "Arquivo não guardado porque o limite de mídia foi atingido": { es: "Archivo no guardado porque se alcanzó el límite de medios" },
 };
 
 /**

@@ -38,3 +38,11 @@ services:
         APP_VERSION: ${APP_VERSION:-local}
     image: ${SCHEDULER_IMAGE:-deskcomm-scheduler:local}
     pull_policy: never
+
+  vigia:
+    image: ${SCHEDULER_IMAGE:-deskcomm-scheduler:local}
+    pull_policy: never
+
+  vigia-watchdog:
+    image: ${SCHEDULER_IMAGE:-deskcomm-scheduler:local}
+    pull_policy: never

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Vigia independente da instalação",
+    "subtitle": "queda, volta, heartbeat e ocupação de mídia sem depender do banco para avisar",
+    "output": "vigia-infraestrutura.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "observa", "label": "Observação" },
+    { "id": "decide", "label": "Decisão" },
+    { "id": "avisa", "label": "Aviso" },
+    { "id": "protege", "label": "Anti-morte" }
+  ],
+  "mainPath": ["health", "vigia", "transporte", "dono"],
+  "nodes": [
+    { "id": "health", "lane": "observa", "col": 1, "type": "api", "label": "/api/v1/health", "sublabel": "Supabase, Redis e WhatsApp separados" },
+    { "id": "probe", "lane": "observa", "col": 1, "type": "cloud", "label": "Sonda direta do Supabase", "sublabel": "12 s; distingue lentidão do timeout de 3 s" },
+    { "id": "usage", "lane": "observa", "col": 1, "type": "database", "label": "fn_total_midia_armazenada_bytes", "sublabel": "bucket real; service role" },
+    { "id": "vigia", "lane": "decide", "col": 2, "type": "service", "label": "vigia", "sublabel": "3 falhas para cair; 2 sucessos para voltar; estado em volume" },
+    { "id": "transporte", "lane": "avisa", "col": 3, "type": "service", "label": "Transporte WhatsApp direto", "sublabel": "não passa pelo app, fila ou banco" },
+    { "id": "dono", "lane": "avisa", "col": 4, "type": "actor", "label": "Dono configurado", "sublabel": "VIGIA_WHATSAPP_TO" },
+    { "id": "heartbeat", "lane": "protege", "col": 2, "type": "database", "label": "vigia-state", "sublabel": "heartbeat persistido fora do banco" },
+    { "id": "watchdog", "lane": "protege", "col": 3, "type": "service", "label": "vigia-watchdog", "sublabel": "avisa heartbeat parado e volta" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "health", "to": "vigia", "label": "diagnóstico por peça" },
+    { "id": "e2", "from": "probe", "to": "vigia", "label": "confirma timeout do banco" },
+    { "id": "e3", "from": "usage", "to": "vigia", "label": "alerta 2,37 GB; teto 3,15 GB" },
+    { "id": "e4", "from": "vigia", "to": "transporte", "label": "mudança de estado" },
+    { "id": "e5", "from": "transporte", "to": "dono", "label": "queda, volta e lembrete 6 h" },
+    { "id": "e6", "from": "vigia", "to": "heartbeat", "label": "a cada checagem" },
+    { "id": "e7", "from": "heartbeat", "to": "watchdog", "label": "expira em 5 min" },
+    { "id": "e8", "from": "watchdog", "to": "transporte", "label": "vigia parou ou voltou" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Living System Checklist",
+      "items": [
+        "entrada: health público, sonda direta e bytes do bucket",
+        "saída: WhatsApp do dono configurado em VIGIA_WHATSAPP_TO",
+        "registro: vigia-state em volume próprio",
+        "anti-morte: processo watchdog separado observa o heartbeat",
+        "laço de retorno: duas respostas saudáveis fecham o incidente e avisam a volta",
+        "limite físico: queda da VPS ou do próprio WhatsApp exige monitor externo"
+      ]
+    }
+  ]
+}

@@ -134,7 +134,18 @@ describe("a fronteira de rede do que o cliente instala", () => {
     // todos os casos abaixo verdes por não terem medido nada — que é a forma
     // mais silenciosa de um gate morrer.
     expect([...SERVICOS.get("docker-compose.prod.yml")!.keys()].sort()).toEqual(
-      ["app", "caddy", "redis", "scheduler", "srh", "wacalls", "waha", "worker"].sort(),
+      [
+        "app",
+        "caddy",
+        "redis",
+        "scheduler",
+        "srh",
+        "vigia",
+        "vigia-watchdog",
+        "wacalls",
+        "waha",
+        "worker",
+      ].sort(),
     );
     // O override do proxy externo declara um subconjunto (só o que ele muda).
     const traefik = [...SERVICOS.get("docker-compose.traefik.yml")!.keys()];

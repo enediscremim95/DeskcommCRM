@@ -26423,6 +26423,49 @@ create unique index if not exists uniq_agent_inbox_followup_suggestion_open
   on public.agent_inbox_items (organization_id, kind, ref_id)
   where kind = 'followup_suggestion' and status = 'open';
 
+-- ---- teto e expurgo da mídia do WhatsApp (migration 0278) ----
+-- Fica antes da varredura final porque cria função em public. A própria função
+-- fecha PUBLIC, anon e authenticated; a varredura abaixo é a rede que preserva
+-- essa propriedade no baseline inteiro.
+create index if not exists idx_messages_media_retention
+  on public.messages (sent_at, id)
+  where media_storage_path is not null;
+
+create or replace function public.fn_total_midia_armazenada_bytes()
+returns bigint
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select greatest(
+    coalesce((
+      select sum(
+        case
+          when o.metadata->>'size' ~ '^[0-9]+$' then (o.metadata->>'size')::bigint
+          else 0
+        end
+      )::bigint
+      from storage.objects o
+      where o.bucket_id = 'whatsapp-media'
+    ), 0::bigint),
+    coalesce((
+      select sum(m.media_size_bytes)::bigint
+      from public.messages m
+      where m.media_storage_path is not null
+    ), 0::bigint)
+  );
+$$;
+
+revoke execute on function public.fn_total_midia_armazenada_bytes() from public, anon, authenticated;
+grant execute on function public.fn_total_midia_armazenada_bytes() to service_role;
+
+comment on function public.fn_total_midia_armazenada_bytes() is
+  'Bytes ocupados pela mídia do WhatsApp na instalação. Só service_role; alimenta o teto e a vigia.';
+
+notify pgrst, 'reload schema';
+-- END MIGRATION 0278 TETO E EXPURGO DA MIDIA DO WHATSAPP
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

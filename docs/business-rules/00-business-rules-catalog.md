@@ -479,7 +479,7 @@ owner: Rafael Melgaço
 ### B-03 — Storage de mídia tem retenção configurável por tenant
 - **Origem**: PRD-Mestre §7.3
 - **Tipo**: Default com override
-- **Regra**: GIVEN mídia em `whatsapp-media` bucket; WHEN `created_at < now() - tenant.media_retention_days` (default 365); THEN cron `prune-old-media` move pra cold storage S3 (ou deleta se `tenant.cold_storage_disabled=true`).
+- **Regra**: GIVEN binário em `whatsapp-media`; WHEN a mensagem completa 21 dias (default de `WHATSAPP_MEDIA_RETENTION_DAYS`); THEN o cron `media-retention` apaga somente o arquivo e marca a mensagem como `not_stored` com motivo `retention_expired`. Não existe camada cold/S3. A mensagem, a legenda, o horário e o texto derivado permanecem. A instalação avisa em 2,37 GB e deixa de guardar novos binários ao alcançar 3,15 GB, sem apagar arquivo ainda dentro do prazo.
 - **Enforcement**: Cron diário.
 - **Override**: Tenant pode aumentar retenção (paga storage extra) ou diminuir (mín 90d em modo BPO; sem mín em modo SaaS futuro).
 
