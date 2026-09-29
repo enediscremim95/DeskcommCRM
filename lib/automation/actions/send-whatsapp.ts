@@ -9,6 +9,7 @@ import { adiarAteAJanelaAbrir, knobsDoCanal } from "@/lib/automation/janela-do-c
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { reportarEnvio, type MensagemEnviada } from "@/lib/automation/desfecho-do-envio";
 import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
+import { sinalizarDigitando } from "@/lib/messaging/presenca";
 
 async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
   const contato = checarGuardasDeContato(ctx);
@@ -47,7 +48,10 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     await assertAgendaEffectSupabase(ctx.admin, { organizationId: ctx.organizationId, contactId: contact.id });
     const boundary = await serviceForAutomation(ctx, contact.id, sessionId);
     const conversationId = boundary.conversation_id;
-    await espacarEnvio(sessionId);
+    // No motor novo, a espera é um estado durável no `event_log`. O fallback
+    // mantém o throttle antigo para chamadas diretas do executor e fixtures
+    // que não passaram pelo orquestrador de ritmo.
+    if (!ctx.humanPacingManaged) await espacarEnvio(sessionId);
     const knobs = await knobsDoCanal(ctx.admin, ctx.organizationId, sessionId);
     const body = renderTemplate(template, ctx.context, { timezone: knobs.timezone });
     const message = await sendMessageHandler(
@@ -74,4 +78,32 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   }
 }
 
-registerAction({ type: "send_whatsapp_message", postponeUntil, execute });
+async function textLength(ctx: ActionCtx, config: Record<string, unknown>): Promise<number | null> {
+  const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
+  const template = typeof config.template === "string" ? config.template : null;
+  if (!sessionId || !template) return null;
+  const guarda = checarGuardasDeContato(ctx);
+  if (!guarda.ok) return null;
+
+  const knobs = await knobsDoCanal(ctx.admin, ctx.organizationId, sessionId);
+  return renderTemplate(template, ctx.context, { timezone: knobs.timezone }).length;
+}
+
+async function signalTyping(ctx: ActionCtx, config: Record<string, unknown>): Promise<void> {
+  const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
+  if (!sessionId) return;
+  const guarda = checarGuardasDeContato(ctx);
+  if (!guarda.ok) return;
+  const boundary = await serviceForAutomation(ctx, guarda.contact.id, sessionId);
+  await sinalizarDigitando(ctx.admin, {
+    organizationId: ctx.organizationId,
+    conversationId: boundary.conversation_id,
+  });
+}
+
+registerAction({
+  type: "send_whatsapp_message",
+  postponeUntil,
+  humanPacing: { textLength, signalTyping },
+  execute,
+});

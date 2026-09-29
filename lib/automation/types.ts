@@ -20,6 +20,22 @@ export interface ActionCtx {
   event: EventRow;
   context: Record<string, unknown>; // mesmo objeto avaliado pelas condições
   requestId: string;
+  /**
+   * O motor já aplicou o ritmo humano durável desta ação. Executores que ainda
+   * mantêm um throttle local não devem somá-lo outra vez.
+   */
+  humanPacingManaged?: boolean;
+}
+
+export interface HumanPacingCapability {
+  /**
+   * Descreve o texto FINAL que seria enviado. `null` significa que a ação não
+   * enviaria agora (config inválida, contato bloqueado etc.) e portanto não
+   * deve atrasar as ações seguintes.
+   */
+  textLength(ctx: ActionCtx, config: Record<string, unknown>): Promise<number | null>;
+  /** Indicador opcional do canal. Falha é engolida pelo motor. */
+  signalTyping?(ctx: ActionCtx, config: Record<string, unknown>): Promise<void>;
 }
 
 export interface ActionExecutor {
@@ -28,5 +44,7 @@ export interface ActionExecutor {
    *  adiado para essa hora ANTES de qualquer ação executar (all-or-nothing —
    *  evita reexecução parcial no retry). Usada pelo throttle do WhatsApp. */
   postponeUntil?(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null>;
+  /** Capability, não identidade de provider: só ações textuais que a expõem entram no ritmo. */
+  humanPacing?: HumanPacingCapability;
   execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail>;
 }

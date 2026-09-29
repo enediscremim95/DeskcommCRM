@@ -124,7 +124,7 @@ Registrado em `lib/event-log/register-handlers.ts`; `events`: os 4 gatilhos. Por
 1. Carrega `automation_rules` ativas do tenant com `trigger_event` igual (admin client, filtro `organization_id` manual — doutrina service-role).
 2. **Anti-loop**: se `event.metadata.caused_by_rule` presente, pula (profundidade 1 no v1; teto documentado — cadeias regra→regra ficam pra v2).
 3. Avalia condições: resolução de campo por path com pontos sobre o payload do evento (`lead.custom_fields.utm_source`); `eq`/`neq` com coerção pra string, `contains`/`not_contains` para string e array (tags). Em strings, a comparação ignora maiúsculas e acentos, sem impor fronteira de palavra. Campo ausente é falso para `eq`/`contains` e verdadeiro para `neq`/`not_contains`.
-4. Executa ações **em ordem**; erro em uma ação registra no `actions_result` e **continua** as demais (status final `partial`). Toda emissão causada por ação carrega `metadata.caused_by_rule = rule_id`.
+4. Executa ações **em ordem**; erro em uma ação registra no `actions_result` e **continua** as demais (status final `partial`). Esperas longas persistem o cursor em `event_log.metadata` e devolvem `retry_at`: a retomada continua da ação exata, sem prender o worker nem repetir as anteriores. Toda emissão causada por ação carrega `metadata.caused_by_rule = rule_id`.
 5. Grava `automation_rule_runs`, atualiza `last_run_at`/`run_count`.
 
 **Emissões a garantir nos fluxos existentes** (adição pontual de `emit_event`, sem refactor):
@@ -143,11 +143,14 @@ Executores em `lib/automation/actions/` (um arquivo por ação, interface comum 
 - **`call_webhook`** — config `{url, secret?}`. POST JSON, envelope `{event, occurred_at, data}` (sem `organization_id` no body p/ fora), header `X-Deskcomm-Signature` (HMAC SHA-256 do body com o secret, se houver) + `X-Deskcomm-Event`. Timeout 10s. 3 tentativas com backoff curto (1s/5s) dentro do worker; falha final → run `partial`/`failed` visível na UI com "Reenviar". URL validada: https obrigatório em produção, bloqueio de IPs privados/loopback (anti-SSRF).
 - **`send_whatsapp_message`** — config `{channel_session_id, template}` com variáveis `{{saudacao}}` (horário local do número), `{{nome}}`, `{{lead.campo}}`, `{{custom_fields.x}}`. Serviço novo `lib/automation/start-conversation.ts`: upsert de contato por telefone E.164 → cria/acha `conversation` (contato + sessão) → envia pelo caminho de produção existente (`sendMessageHandler`). Contato `is_blocked` (STOP) → ação pulada com motivo no run.
 
-### Throttle anti-banimento (novo — hoje inexistente no repo)
+### Ritmo e proteção do envio automatizado
 Aplicado ao envio automatizado (`send_whatsapp_message`):
 - Respeita `channel_sessions.daily_message_limit` (coluna existente) via contagem do dia em `channel_session_warmup`.
-- Janela 7h-22h (horário do servidor; configurável na config da ação em v2).
-- Espaçamento ≥1.2s + jitter ≤800ms entre envios automatizados por sessão dentro de um mesmo lote do drain.
+- Respeita a janela configurada no número, avaliada no fuso do tenant pela mesma régua do agente.
+- Antes da primeira mensagem de cada regra, espera 40–100s.
+- Para cada mensagem fixa, calcula `(20s + 0,6s × caracteres) × variação(0,9–1,2)`. Os primeiros 45% (limitados a 3–15s) usam a capability opcional de presença do canal para mostrar `digitando`; o restante é pausa silenciosa antes da próxima mensagem.
+- A espera não usa `setTimeout` no handler. O cursor fica em `event_log.metadata`, o run aparece como `adiado` e o drain retoma por `next_attempt_at`, continuando os demais eventos enquanto isso.
+- Ações não textuais continuam imediatamente, na ordem declarada. O cursor impede que uma retomada repita ações já concluídas.
 - **Fora da janela/limite: não falha nem perde** — o evento volta a `pending` com `next_attempt_at` = próxima janela válida (o `event_log` é a fila; sem scheduler novo).
 
 ## 9. UI — `/app/webhooks`
