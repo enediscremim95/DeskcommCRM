@@ -11,6 +11,7 @@ import { formatDistanceToNowStrict } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Sheet,
@@ -31,7 +32,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
-import { Copy, Trash, CaretDown } from "@/lib/ui/icons";
+import { Copy, Trash } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { gerarSnippetDaLandingPage } from "@/lib/webhooks/snippet-da-lp";
 import {
@@ -209,94 +210,159 @@ export function SourceDetail({ source, open, onOpenChange, onUpdated }: Props) {
         </SheetHeader>
 
         <div className="mt-6 space-y-6">
-          <section className="space-y-2">
-            <p className="text-sm font-medium text-text">{t("Endereço da fonte")}</p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 truncate rounded-sm border border-border bg-muted px-3 py-2 text-xs">
-                {url}
-              </code>
-              <Button
-                type="button"
-                variant="secondary"
-                size="icon"
-                onClick={() => copy(url, t("Endereço copiado."), t)}
-              >
-                <Copy />
-              </Button>
+          <section className="space-y-3">
+            <div className="space-y-1">
+              <h3 className="text-base font-semibold text-text">{t("Qual é a sua situação?")}</h3>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  "Escolha o caso que combina com o seu site. Vamos mostrar somente o que você precisa usar.",
+                )}
+              </p>
             </div>
-          </section>
 
-          <section className="space-y-2">
-            <p className="text-sm font-medium text-text">
-              {t("Conectar uma landing page direto ao CRM")}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t(
-                "Adicione data-crm-lead ao formulário existente e cole o script depois dele. Ele confirma a entrada, repete uma vez se a conexão falhar e depois libera o fluxo normal da página.",
-              )}
-            </p>
-            <Textarea
-              aria-label={t("Script para landing page")}
-              readOnly
-              rows={10}
-              value={snippetDaLandingPage}
-              className="font-mono text-xs"
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => copy(snippetDaLandingPage, t("Script da landing page copiado."), t)}
-            >
-              <Copy /> {t("Copiar script da landing page")}
-            </Button>
-          </section>
+            <Tabs defaultValue="formulario-existente" className="space-y-3">
+              <TabsList
+                aria-label={t("Qual é a sua situação?")}
+                className="grid h-auto w-full grid-cols-1 gap-2 overflow-visible bg-transparent p-0"
+              >
+                <TabsTrigger
+                  value="formulario-existente"
+                  className="h-auto min-w-0 flex-col items-start whitespace-normal border border-border bg-background p-3 text-left shadow-none data-[state=active]:border-accent data-[state=active]:bg-accent/10"
+                >
+                  <span className="font-semibold text-text">{t("Meu formulário já funciona")}</span>
+                  <span className="mt-1 text-xs font-normal text-muted-foreground">
+                    {t("Quero que os contatos também cheguem no CRM.")}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="formulario-pronto"
+                  className="h-auto min-w-0 flex-col items-start whitespace-normal border border-border bg-background p-3 text-left shadow-none data-[state=active]:border-accent data-[state=active]:bg-accent/10"
+                >
+                  <span className="font-semibold text-text">{t("Ainda não tenho formulário")}</span>
+                  <span className="mt-1 text-xs font-normal text-muted-foreground">
+                    {t("Quero um formulário pronto para colocar no site.")}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="outra-ferramenta"
+                  className="h-auto min-w-0 flex-col items-start whitespace-normal border border-border bg-background p-3 text-left shadow-none data-[state=active]:border-accent data-[state=active]:bg-accent/10"
+                >
+                  <span className="font-semibold text-text">{t("Uso outra ferramenta")}</span>
+                  <span className="mt-1 text-xs font-normal text-muted-foreground">
+                    {t("Elementor, RD Station, Typeform, Zapier ou n8n.")}
+                  </span>
+                </TabsTrigger>
+              </TabsList>
 
-          <section className="space-y-2">
-            <p className="text-sm font-medium text-text">
-              {t("Formulário pronto para colar no seu site")}
-            </p>
-            <Textarea
-              readOnly
-              rows={6}
-              value={formSnippet(url, source.name, t)}
-              className="font-mono text-xs"
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() =>
-                copy(formSnippet(url, source.name, t), t("Formulário copiado."), t)
-              }
-            >
-              <Copy /> {t("Copiar formulário")}
-            </Button>
-          </section>
-
-          <section className="space-y-2 rounded-sm border border-border">
-            <details className="group p-3">
-              <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-text">
-                {t("Como conectar no seu caso")}
-                <CaretDown className="transition-transform group-open:rotate-180" />
-              </summary>
-              <div className="mt-3 space-y-4 text-sm text-muted-foreground">
-                <div>
-                  <p className="font-medium text-text">WordPress / Elementor</p>
-                  <p>
-                    {t(
-                      'Cole o endereço acima no campo "Action" (ou "URL de envio") do seu formulário.',
-                    )}
+              <TabsContent
+                value="formulario-existente"
+                className="space-y-3 rounded-sm border border-border p-4"
+              >
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p className="font-medium text-text">
+                    {t("Use este caminho se a página já recebe contatos normalmente.")}
                   </p>
+                  <ol className="list-decimal space-y-1 pl-5">
+                    <li>
+                      {t(
+                        "Peça a quem cuida do site para adicionar data-crm-lead na primeira linha do formulário.",
+                      )}
+                    </li>
+                    <li>{t("Depois, cole o script abaixo logo após o formulário.")}</li>
+                    <li>{t("Publique a página e faça um envio de teste.")}</li>
+                  </ol>
                 </div>
-                <div>
-                  <p className="font-medium text-text">Zapier / n8n</p>
-                  <p>{t('Use a ação "Webhooks" → POST, apontando para o endereço acima.')}</p>
+                <Textarea
+                  aria-label={t("Script para landing page")}
+                  readOnly
+                  rows={10}
+                  value={snippetDaLandingPage}
+                  className="font-mono text-xs"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() =>
+                    copy(snippetDaLandingPage, t("Script da landing page copiado."), t)
+                  }
+                >
+                  <Copy /> {t("Copiar script da landing page")}
+                </Button>
+              </TabsContent>
+
+              <TabsContent
+                value="formulario-pronto"
+                className="space-y-3 rounded-sm border border-border p-4"
+              >
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p className="font-medium text-text">
+                    {t("Use este caminho se você ainda precisa colocar um formulário na página.")}
+                  </p>
+                  <ol className="list-decimal space-y-1 pl-5">
+                    <li>
+                      {t(
+                        "Copie o formulário abaixo e cole no lugar da página em que ele deve aparecer.",
+                      )}
+                    </li>
+                    <li>{t("Depois, publique a página e envie um contato de teste.")}</li>
+                  </ol>
                 </div>
-                <div>
-                  <p className="font-medium text-text">{t("Formulário próprio")}</p>
-                  <p>{t("Use o HTML pronto logo acima — já aponta para o endereço certo.")}</p>
+                <Textarea
+                  aria-label={t("Formulário pronto para colar no seu site")}
+                  readOnly
+                  rows={6}
+                  value={formSnippet(url, source.name, t)}
+                  className="font-mono text-xs"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() =>
+                    copy(formSnippet(url, source.name, t), t("Formulário copiado."), t)
+                  }
+                >
+                  <Copy /> {t("Copiar formulário")}
+                </Button>
+              </TabsContent>
+
+              <TabsContent
+                value="outra-ferramenta"
+                className="space-y-3 rounded-sm border border-border p-4"
+              >
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p className="font-medium text-text">
+                    {t("Use este caminho com Elementor, RD Station, Typeform, Zapier ou n8n.")}
+                  </p>
+                  <ol className="list-decimal space-y-1 pl-5">
+                    <li>
+                      {t(
+                        "Na ferramenta, abra a configuração que envia as respostas para outro sistema.",
+                      )}
+                    </li>
+                    <li>
+                      {t(
+                        'Cole o endereço abaixo no campo de destino. No Elementor, o campo "Action" é a opção que diz para onde o formulário envia os dados.',
+                      )}
+                    </li>
+                    <li>{t("Salve a configuração e faça um envio de teste.")}</li>
+                  </ol>
                 </div>
-              </div>
-            </details>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 truncate rounded-sm border border-border bg-muted px-3 py-2 text-xs">
+                    {url}
+                  </code>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon"
+                    aria-label={t("Copiar endereço")}
+                    onClick={() => copy(url, t("Endereço copiado."), t)}
+                  >
+                    <Copy />
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
           </section>
 
           <details className="rounded-sm border border-border p-3">

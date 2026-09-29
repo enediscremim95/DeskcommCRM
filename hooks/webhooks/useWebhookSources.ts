@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import type { Pipeline, Stage } from "@/lib/kanban/types";
+import type { Pipeline, PipelineVocabulary, Stage } from "@/lib/kanban/types";
 
 export interface WebhookSourceRow {
   id: string;
@@ -142,6 +142,41 @@ export function usePipelineStages(pipelineId: string | null) {
     queryFn: async () =>
       apiClient.get<{ data: { stages: Stage[] } }>(`/api/v1/pipelines/${pipelineId}/board`),
     enabled: !!pipelineId,
+    staleTime: 60_000,
+  });
+}
+
+export interface EntryStageOption {
+  id: string;
+  name: string;
+  position: number;
+}
+
+export interface EntryPipelineOption {
+  id: string;
+  name: string;
+  position: number;
+  is_default: boolean;
+  vocabulary: PipelineVocabulary | null;
+  stages: EntryStageOption[];
+}
+
+export interface EntryOptionsData {
+  pipelines: EntryPipelineOption[];
+  default_pipeline_id: string | null;
+  default_stage_id: string | null;
+}
+
+/**
+ * Destinos onde um lead pode nascer. A API é dona da regra e nunca devolve
+ * funil arquivado nem etapa arquivada, de ganho ou de perda.
+ */
+export function useEntryOptions(enabled: boolean) {
+  return useQuery({
+    queryKey: ["pipeline-entry-options"],
+    queryFn: async () =>
+      apiClient.get<{ data: EntryOptionsData }>("/api/v1/pipelines/entry-options"),
+    enabled,
     staleTime: 60_000,
   });
 }
