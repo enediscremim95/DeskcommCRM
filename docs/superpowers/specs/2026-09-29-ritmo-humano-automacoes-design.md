@@ -31,6 +31,10 @@ retoma a mesma ação quando o horário vencer.
    como pausa silenciosa antes da próxima mensagem textual da mesma regra.
 5. O cursor inclui regra, índice da ação, resultados acumulados e fase. Uma
    retomada não repete as ações anteriores da mesma execução.
+6. As condições são avaliadas antes de a regra começar. Depois que o cursor
+   existe, a regra atual continua da ação salva sem reavaliar o estado que suas
+   próprias ações podem ter alterado, como uma tag de etapa adicionada antes da
+   primeira mensagem.
 
 ## Interrupção por resposta humana
 
