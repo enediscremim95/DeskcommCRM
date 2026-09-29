@@ -1,6 +1,11 @@
 /**
- * Anti-banimento do envio AUTOMATIZADO: limite diário da sessão e espaçamento
- * 1.2s + jitter.
+ * Anti-banimento do envio AUTOMATIZADO: limite diário da sessão e fallback de
+ * espaçamento 1.2s + jitter.
+ *
+ * `send_whatsapp_message` dentro de `automation_rules` usa o ritmo humano
+ * durável de `ritmo-humano.ts`, sempre maior que este piso. O fallback segue
+ * valendo para envio direto e para `send_ai_message`, que não conhece o texto
+ * final até terminar a geração.
  *
  * ═══ A JANELA DE HORÁRIO NÃO MORA MAIS AQUI ═══
  *
@@ -82,8 +87,9 @@ export function jitterMs(): number {
 }
 
 /**
- * Espaçamento entre envios automatizados do MESMO número, dentro do tique do
- * drain. Intervalo fixo é assinatura de robô, daí o jitter.
+ * Fallback entre envios automatizados do MESMO número, dentro do tique do
+ * drain. A mensagem fixa do motor não passa mais por este relógio: ela
+ * persiste o ritmo humano no `event_log`, sem dormir aqui.
  *
  * O estado é de módulo — suficiente para a instância única do cron, e é o que
  * já valia quando isto morava dentro da ação de WhatsApp. Virou função aqui
