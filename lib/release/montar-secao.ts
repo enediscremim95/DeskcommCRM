@@ -30,6 +30,23 @@ const TITULO_DA_SECAO: Record<Secao, string> = {
 };
 
 /**
+ * O agente já instalado corta o arquivo tagueado em 30.000 bytes crus. A
+ * seção usa no máximo 80% disso; os 20% restantes pertencem ao cabeçalho do
+ * arquivo, ao `[Não lançado]` vazio e ao cabeçalho da versão instalada, que é
+ * a prova de completude para `extractChangelogRange()`.
+ *
+ * Este número NÃO aumenta o contrato do agente. Ele limita o produtor para a
+ * próxima release já caber no agente antigo, sem edição manual na VPS.
+ */
+export const MAX_BYTES_SECAO_RELEASE = 24_000;
+
+const PRIORIDADE_DO_CORPO: Record<Fragmento["impacto"], number> = {
+  exige_acao: 0,
+  capacidade_nova: 1,
+  nada_mudou: 2,
+};
+
+/**
  * Um item vira `- **titulo** corpo`, com as quebras de linha do fragmento
  * PRESERVADAS e a continuação indentada em dois espaços.
  *
@@ -37,7 +54,9 @@ const TITULO_DA_SECAO: Record<Secao, string> = {
  * single-line, então um negrito partido entre duas linhas chega à tela com os
  * asteriscos literais.
  */
-function item(f: Fragmento): string {
+function item(f: Fragmento, comCorpo: boolean): string {
+  if (!comCorpo) return `- **${f.titulo}**`;
+
   const [primeira, ...resto] = f.corpo.split("\n");
   const continuacao = resto.map((l) => (l.trim() === "" ? "" : `  ${l}`));
   return [`- **${f.titulo}** ${primeira ?? ""}`.trimEnd(), ...continuacao].join("\n");
@@ -48,19 +67,12 @@ export interface SecaoMontada {
   texto: string;
 }
 
-/**
- * @param data no formato `YYYY-MM-DD` — vem de fora porque o módulo é puro e
- *   porque um teste que chama `new Date()` mede o relógio, não a montagem.
- */
-export function montarSecao(
+function montarTexto(
   fragmentos: readonly Fragmento[],
   versao: string,
   data: string,
-): SecaoMontada {
-  if (fragmentos.length === 0) {
-    throw new Error("montarSecao sem fragmento: não há seção a escrever");
-  }
-
+  corposDetalhados: ReadonlySet<Fragmento>,
+): string {
   const partes: string[] = [`## [${versao}] — ${data}`, ""];
 
   // TODOS os avisos sob UM heading só. Dois headings de atenção fariam
@@ -82,11 +94,74 @@ export function montarSecao(
     if (daSecao.length === 0) continue;
     partes.push(TITULO_DA_SECAO[secao], "");
     for (const f of daSecao) {
-      partes.push(item(f), "");
+      partes.push(item(f, corposDetalhados.has(f)), "");
     }
   }
 
-  return { versao, texto: partes.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() };
+  return partes
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trimEnd();
+}
+
+function bytes(texto: string): number {
+  return Buffer.byteLength(texto, "utf8");
+}
+
+/**
+ * @param data no formato `YYYY-MM-DD` — vem de fora porque o módulo é puro e
+ *   porque um teste que chama `new Date()` mede o relógio, não a montagem.
+ */
+export function montarSecao(
+  fragmentos: readonly Fragmento[],
+  versao: string,
+  data: string,
+  maxBytes = MAX_BYTES_SECAO_RELEASE,
+): SecaoMontada {
+  if (fragmentos.length === 0) {
+    throw new Error("montarSecao sem fragmento: não há seção a escrever");
+  }
+
+  const todosDetalhados = new Set(fragmentos);
+  const textoCompleto = montarTexto(fragmentos, versao, data, todosDetalhados);
+  if (bytes(textoCompleto) <= maxBytes) {
+    return { versao, texto: textoCompleto };
+  }
+
+  // O piso nunca é podado: aviso de ação inteiro + título de TODO fragmento.
+  // Se ele não couber, não existe saída segura; falhar a release é melhor que
+  // publicar um aviso decapitado ou esconder uma mudança do operador.
+  const detalhados = new Set<Fragmento>();
+  let texto = montarTexto(fragmentos, versao, data, detalhados);
+  if (bytes(texto) > maxBytes) {
+    throw new Error(
+      `A seção mínima da release tem ${bytes(texto)} bytes para um teto de ${maxBytes}. ` +
+        "Os avisos de `exige_acao` e os títulos nunca são podados; corte a release em mais de uma versão.",
+    );
+  }
+
+  // A folga vira explicação detalhada, de modo determinístico: ações primeiro,
+  // capacidades depois, consertos por último. A ordem VISÍVEL das seções e dos
+  // itens não muda; a prioridade decide apenas quais corpos cabem.
+  const porPrioridade = fragmentos
+    .map((fragmento, indice) => ({ fragmento, indice }))
+    .sort(
+      (a, b) =>
+        PRIORIDADE_DO_CORPO[a.fragmento.impacto] - PRIORIDADE_DO_CORPO[b.fragmento.impacto] ||
+        a.indice - b.indice,
+    );
+
+  for (const { fragmento } of porPrioridade) {
+    detalhados.add(fragmento);
+    const candidato = montarTexto(fragmentos, versao, data, detalhados);
+    if (bytes(candidato) <= maxBytes) {
+      texto = candidato;
+    } else {
+      detalhados.delete(fragmento);
+    }
+  }
+
+  return { versao, texto };
 }
 
 /** `## [Não lançado]` — a âncora que a seção nova nasce logo abaixo. */
