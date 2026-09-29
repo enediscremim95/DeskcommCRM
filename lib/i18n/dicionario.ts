@@ -3683,7 +3683,17 @@ export const DICIONARIO: Traducoes = {
   "Ninguém preencheu seus formulários ainda. Assim que o primeiro envio chegar, ele aparece aqui — com os dados, o horário e a origem.": {
     es: "Todavía nadie completó tus formularios. En cuanto llegue el primer envío, aparece aquí — con los datos, el horario y el origen.",
   },
-  "Escolha o funil e o estágio de entrada.": { es: "Elige el embudo y la etapa de entrada." },
+  "Escolha o funil e a etapa de entrada.": { es: "Elige el embudo y la etapa de entrada." },
+  "Passo 2 de 2: destino para": { es: "Paso 2 de 2: destino para" },
+  "Não há funil ativo disponível. Crie ou reative um funil antes de conectar a página.": {
+    es: "No hay un embudo activo disponible. Crea o reactiva un embudo antes de conectar la página.",
+  },
+  "Não há etapa de entrada disponível para": {
+    es: "No hay una etapa de entrada disponible para",
+  },
+  "Crie ou reabra uma etapa em Etapas do funil.": {
+    es: "Crea o reabre una etapa en Etapas del embudo.",
+  },
   "Fonte criada. Agora é só conectar seu site.": {
     es: "Fuente creada. Ahora solo falta conectar tu sitio.",
   },
