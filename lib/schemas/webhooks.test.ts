@@ -121,13 +121,22 @@ describe("createAutomationRuleSchema", () => {
 });
 
 describe("conditionSchema", () => {
-  it("rejects op outside eq/neq/contains", () => {
+  it("rejects op outside eq/neq/contains/not_contains", () => {
     const r = conditionSchema.safeParse({ field: "status", op: "gt", value: "won" });
     expect(r.success).toBe(false);
   });
 
   it("accepts a valid condition", () => {
     const r = conditionSchema.safeParse({ field: "status", op: "eq", value: "won" });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts not_contains for mutually exclusive tag states", () => {
+    const r = conditionSchema.safeParse({
+      field: "contact.tags",
+      op: "not_contains",
+      value: "fluxo_padrinhos_orcamento",
+    });
     expect(r.success).toBe(true);
   });
 });

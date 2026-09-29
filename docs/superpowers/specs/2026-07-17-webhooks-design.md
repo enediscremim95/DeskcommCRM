@@ -17,7 +17,7 @@ O DeskcommCRM é um sistema fechado: leads só nascem por ação interna (atende
 - **Direção v1**: Inbound + Outbound.
 - **Gatilhos v1**: `lead.created` (via webhook), `lead.stage_changed`, `message.received`, tag adicionada (`lead.tag_added` / `contact.tag_added`).
 - **Ações v1**: `create_or_move_lead`, `send_whatsapp_message` (template com variáveis, anti-banimento), `add_tag`, `remove_tag`, `assign_owner`, `call_webhook` (outbound).
-- **Condições**: filtros simples — `[{field, op: eq|neq|contains, value}]` combinados com E. Sem OU/grupos no v1.
+- **Condições**: filtros simples — `[{field, op: eq|neq|contains|not_contains, value}]` combinados com E. `not_contains` permite excluir tags de estado e montar regras mutuamente exclusivas sem alterar o comportamento das regras existentes. Sem OU/grupos no v1.
 - **Captação combinada**: mesma URL aceita `application/json` e `application/x-www-form-urlencoded` (form HTML puro, zero JS). Formulário hospedado pelo Deskcomm fica para v2.
 - **Naming/local**: "Webhooks" no sidebar (universal, não só captação).
 
@@ -123,7 +123,7 @@ Registrado em `lib/event-log/register-handlers.ts`; `events`: os 4 gatilhos. Por
 
 1. Carrega `automation_rules` ativas do tenant com `trigger_event` igual (admin client, filtro `organization_id` manual — doutrina service-role).
 2. **Anti-loop**: se `event.metadata.caused_by_rule` presente, pula (profundidade 1 no v1; teto documentado — cadeias regra→regra ficam pra v2).
-3. Avalia condições: resolução de campo por path com pontos sobre o payload do evento (`lead.custom_fields.utm_source`); `eq`/`neq` com coerção pra string, `contains` para string e array (tags). Condição referenciando campo ausente = falsa (não erro).
+3. Avalia condições: resolução de campo por path com pontos sobre o payload do evento (`lead.custom_fields.utm_source`); `eq`/`neq` com coerção pra string, `contains`/`not_contains` para string e array (tags). Em strings, a comparação ignora maiúsculas e acentos, sem impor fronteira de palavra. Campo ausente é falso para `eq`/`contains` e verdadeiro para `neq`/`not_contains`.
 4. Executa ações **em ordem**; erro em uma ação registra no `actions_result` e **continua** as demais (status final `partial`). Toda emissão causada por ação carrega `metadata.caused_by_rule = rule_id`.
 5. Grava `automation_rule_runs`, atualiza `last_run_at`/`run_count`.
 
@@ -181,7 +181,7 @@ Aplicado ao envio automatizado (`send_whatsapp_message`):
 ## 11. Testes
 
 - **Invariantes** (`tests/invariants/`): isolamento RLS das 3 tabelas; token de fonte do tenant A não cria lead no tenant B; anti-loop (evento `caused_by_rule` não reprocessa); throttle adia (`next_attempt_at` futuro) em vez de perder/falhar.
-- **Unit** (Vitest): avaliador de condições (eq/neq/contains, campo ausente, path aninhado); `field_map` com payloads sujos (form-urlencoded, aliases de campo, telefone BR em formatos variados → E.164); template de variáveis; validador anti-SSRF.
+- **Unit** (Vitest): avaliador de condições (eq/neq/contains/not_contains, campo ausente, path aninhado); `field_map` com payloads sujos (form-urlencoded, aliases de campo, telefone BR em formatos variados → E.164); template de variáveis; validador anti-SSRF.
 - **E2E** (Playwright): criar fonte na UI → POST no webhook → lead no Kanban → regra (pausada→ativa) roda no drain → run verde na aba Atividade; botão "lead de teste".
 
 ## 12. Fora de escopo v1 (explícito)

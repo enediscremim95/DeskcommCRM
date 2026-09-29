@@ -38,7 +38,7 @@ interface Props {
   rule: AutomationRuleRow | null;
 }
 
-type Op = "eq" | "neq" | "contains";
+type Op = "eq" | "neq" | "contains" | "not_contains";
 
 interface ConditionRow {
   field: string;
@@ -87,7 +87,12 @@ const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   "contact.tag_added": [TAG_ADDED_FIELD],
 };
 
-const OP_LABELS: Record<Op, string> = { eq: "é", neq: "não é", contains: "contém" };
+const OP_LABELS: Record<Op, string> = {
+  eq: "é",
+  neq: "não é",
+  contains: "contém",
+  not_contains: "não contém",
+};
 
 function emptyCondition(): ConditionRow {
   return { field: "", op: "eq", value: "" };
