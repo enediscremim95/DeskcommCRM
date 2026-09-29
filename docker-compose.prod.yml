@@ -236,6 +236,82 @@ services:
     logging: *default-logging
     networks: [internal]
 
+  # Vigia FORA do app e do banco. Lê /api/v1/health, confirma a queda em três
+  # rodadas e envia direto pelo transporte do WhatsApp. Não usa fila, Supabase
+  # nem rota de envio do CRM, então a queda do banco não derruba o aviso junto.
+  vigia:
+    image: ${SCHEDULER_IMAGE:-ghcr.io/enediscremim95/deskcomm-scheduler:stable}
+    pull_policy: ${SCHEDULER_PULL_POLICY:-always}
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    restart: unless-stopped
+    command: ["node", "/opt/vigia/vigia-independente.mjs", "monitor"]
+    depends_on:
+      app:
+        condition: service_started
+      waha:
+        condition: service_started
+    environment:
+      APP_NAME: ${APP_NAME:-CRM}
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
+      VIGIA_HEALTH_URL: http://app:3000/api/v1/health?verbose=1
+      VIGIA_WHATSAPP_TO: ${VIGIA_WHATSAPP_TO:-}
+      VIGIA_WHATSAPP_SESSION: ${VIGIA_WHATSAPP_SESSION:-default}
+      WAHA_API_BASE_URL: http://waha:3000
+      WAHA_API_KEY: ${WAHA_API_KEY}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      WHATSAPP_MEDIA_RETENTION_DAYS: ${WHATSAPP_MEDIA_RETENTION_DAYS:-21}
+      WHATSAPP_MEDIA_STORAGE_CAP_BYTES: ${WHATSAPP_MEDIA_STORAGE_CAP_BYTES:-3150000000}
+      WHATSAPP_MEDIA_STORAGE_ALERT_BYTES: ${WHATSAPP_MEDIA_STORAGE_ALERT_BYTES:-2370000000}
+      VIGIA_STATE_PATH: /state/vigia.json
+    volumes:
+      - vigia-state:/state
+    healthcheck:
+      test: ["CMD", "node", "/opt/vigia/vigia-independente.mjs", "healthcheck", "monitor"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 3m
+    logging: *default-logging
+    networks: [internal]
+
+  # Segundo processo, mesmo artefato, estado próprio. Se a vigia travar ou
+  # parar de gravar heartbeat, ele avisa direto no WhatsApp e avisa a volta.
+  # O limite físico permanece explícito: se a VPS inteira ou o próprio WAHA
+  # cair, nenhum processo local consegue entregar uma mensagem externa.
+  vigia-watchdog:
+    image: ${SCHEDULER_IMAGE:-ghcr.io/enediscremim95/deskcomm-scheduler:stable}
+    pull_policy: ${SCHEDULER_PULL_POLICY:-always}
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    restart: unless-stopped
+    command: ["node", "/opt/vigia/vigia-independente.mjs", "watchdog"]
+    depends_on:
+      waha:
+        condition: service_started
+    environment:
+      APP_NAME: ${APP_NAME:-CRM}
+      VIGIA_WHATSAPP_TO: ${VIGIA_WHATSAPP_TO:-}
+      VIGIA_WHATSAPP_SESSION: ${VIGIA_WHATSAPP_SESSION:-default}
+      WAHA_API_BASE_URL: http://waha:3000
+      WAHA_API_KEY: ${WAHA_API_KEY}
+      VIGIA_STATE_PATH: /state/vigia.json
+      VIGIA_WATCHDOG_STATE_PATH: /state/watchdog.json
+    volumes:
+      - vigia-state:/state
+    healthcheck:
+      test: ["CMD", "node", "/opt/vigia/vigia-independente.mjs", "healthcheck", "watchdog"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 6m
+    logging: *default-logging
+    networks: [internal]
+
   # ── Chamada de voz WhatsApp (spec 18) — DESLIGADA POR PADRÃO ──────────────
   #
   # ═══ POR QUE ELA VIVE NUM PROFILE ═══
@@ -348,6 +424,7 @@ volumes:
   wacalls-data:
   caddy-data:
   caddy-config:
+  vigia-state:
 
 networks:
   internal:

@@ -90,6 +90,9 @@ CRONS="
 # comporta o bulk de 90 dias e os fallbacks das contas que o Windsor omitir.
 13 */3 * * *|600|api/v1/cron/windsor-dashboard-sync
 40 4 * * *|120|api/v1/cron/data-retention
+# Depois da poda de banco: remove binários com mais de 21 dias, em lotes. A
+# mensagem e o texto derivado permanecem; só o arquivo ocupa o disco.
+10 5 * * *|180|api/v1/cron/media-retention
 "
 
 # CRONTAB_PATH é ponto de injeção do teste (tests/shell/scheduler-entrypoint.test.sh).

@@ -22,7 +22,8 @@
     { "id": "ingest", "lane": "entrada", "col": 1, "type": "service", "label": "ingestão dos canais", "sublabel": "grava legenda, tipo, MIME, nome e ponteiro temporário" },
     { "id": "event", "lane": "entrada", "col": 2, "type": "messagebus", "label": "media.persist_requested", "sublabel": "uma mensagem, uma decisão de retenção" },
     { "id": "persist", "lane": "processa", "col": 2, "type": "service", "label": "media-persist-worker", "sublabel": "grava por padrão; erro repete e não vira done" },
-    { "id": "storage", "lane": "dados", "col": 3, "type": "cloud", "label": "whatsapp-media", "sublabel": "cópia durável; opt-out explícito não envia" },
+    { "id": "storage", "lane": "dados", "col": 3, "type": "cloud", "label": "whatsapp-media", "sublabel": "cópia por 21 dias; teto global 3,15 GB" },
+    { "id": "retention", "lane": "processa", "col": 4, "type": "service", "label": "media-retention", "sublabel": "apaga só o binário vencido; preserva mensagem e texto" },
     { "id": "derive", "lane": "processa", "col": 3, "type": "service", "label": "media-derive-worker", "sublabel": "Storage ou download transitório pelo adapter" },
     { "id": "messages", "lane": "dados", "col": 4, "type": "database", "label": "messages", "sublabel": "media_derived_text + metadata.media_status; ponteiro transitório limpo" },
     { "id": "mediaRoute", "lane": "tela", "col": 4, "type": "api", "label": "GET messages/[id]/media", "sublabel": "not_stored nunca alcança fallback do provider" },
@@ -45,7 +46,9 @@
     { "id": "e11", "from": "messages", "to": "bubble", "label": "media_status decide aviso ou renderer" },
     { "id": "e12", "from": "messages", "to": "mediaRoute", "label": "not_stored fecha o acesso" },
     { "id": "e13", "from": "messages", "to": "agent", "label": "texto derivado alimenta o turno" },
-    { "id": "e14", "from": "persist", "to": "central", "label": "5 falhas: aviso crítico com conversa" }
+    { "id": "e14", "from": "persist", "to": "central", "label": "5 falhas: aviso crítico com conversa" },
+    { "id": "e15", "from": "storage", "to": "retention", "label": "arquivo com mais de 21 dias" },
+    { "id": "e16", "from": "retention", "to": "messages", "label": "not_stored + retention_expired" }
   ],
   "cards": [
     {

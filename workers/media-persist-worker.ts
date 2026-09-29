@@ -22,9 +22,15 @@ import {
 import { storagePathFor } from "@/lib/messaging/media/types";
 import { TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
 import {
+  cabeNoTetoDeMidia,
   deveGuardarMidiaRecebida,
+  interpretarInteiroPositivo,
+  MEDIA_DISCARD_REASON_CAP,
+  MEDIA_DISCARD_REASON_KEY,
   MEDIA_STATUS_NOT_STORED,
+  WHATSAPP_MEDIA_STORAGE_CAP_BYTES_DEFAULT,
 } from "@/lib/messaging/media/retention";
+import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -247,6 +253,59 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return falhar(detail);
+  }
+
+  // O teto é da INSTALAÇÃO, não do tenant: todos os arquivos competem pelo
+  // mesmo disco. A função lê o bucket real, não soma só mensagens de uma org.
+  // Falhar fechado aqui é intencional: sem saber a ocupação, subir mais bytes
+  // seria exatamente o caminho que transforma uma indisponibilidade do banco
+  // em disco cheio da VPS.
+  const tetoBytes = interpretarInteiroPositivo(
+    env.WHATSAPP_MEDIA_STORAGE_CAP_BYTES,
+    WHATSAPP_MEDIA_STORAGE_CAP_BYTES_DEFAULT,
+  );
+  const { data: ocupacaoBruta, error: ocupacaoError } = await admin.rpc(
+    "fn_total_midia_armazenada_bytes" as never,
+    {} as never,
+  );
+  if (ocupacaoError) return falhar(`falha ao medir teto da mídia: ${ocupacaoError.message}`);
+  const ocupacaoBytes = Number(ocupacaoBruta ?? 0);
+  if (!Number.isSafeInteger(ocupacaoBytes) || ocupacaoBytes < 0) {
+    return falhar("falha ao medir teto da mídia: resposta inválida");
+  }
+
+  if (!cabeNoTetoDeMidia(ocupacaoBytes, media.buffer.byteLength, tetoBytes)) {
+    const derivable = TIPOS_DERIVAVEIS.has(msg.type);
+    const { error: discardError } = await admin
+      .from("messages")
+      .update({
+        metadata: {
+          ...(msg.metadata ?? {}),
+          media_status: MEDIA_STATUS_NOT_STORED,
+          [MEDIA_DISCARD_REASON_KEY]: MEDIA_DISCARD_REASON_CAP,
+          media_storage_cap_bytes: tetoBytes,
+        },
+        media_storage_path: null,
+        media_size_bytes: null,
+        ...(!derivable ? { media_url: null } : {}),
+      })
+      .eq("id", msg.id)
+      .eq("organization_id", msg.organization_id);
+    if (discardError) return { consumer_key, status: "error", detail: discardError.message };
+
+    if (derivable) {
+      const { error: emitErr } = await admin.rpc("emit_event" as never, {
+        p_event_type: "media.derive_requested",
+        p_entity_kind: "message",
+        p_entity_id: msg.id,
+        p_payload: { message_id: msg.id },
+        p_metadata: { source: "media_persist", transient: true, storage_cap_reached: true },
+        p_organization_id: msg.organization_id,
+      } as never);
+      if (emitErr) return { consumer_key, status: "error", detail: emitErr.message };
+    }
+
+    return { consumer_key, status: "ok", detail: "storage cap reached; binary discarded" };
   }
 
   const path = storagePathFor(msg.organization_id, msg.conversation_id, msg.id, media.mime);

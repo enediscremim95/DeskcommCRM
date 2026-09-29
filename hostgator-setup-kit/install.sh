@@ -1600,6 +1600,13 @@ esac
   printf '# Endereço de suporte que o CLIENTE FINAL vê (conta suspensa, cobrança).\n'
   printf '# Vazio = a tela não mostra endereço nenhum.\n'
   envq SUPPORT_EMAIL "${SUPPORT_EMAIL:-}"
+  printf '# Alertas independentes de queda/volta. Vazio mantém a vigia ativa, mas sem destino.\n'
+  envq VIGIA_WHATSAPP_TO "${VIGIA_WHATSAPP_TO:-}"
+  envq VIGIA_WHATSAPP_SESSION "${VIGIA_WHATSAPP_SESSION:-default}"
+  printf '# Mídia: 21 dias; aviso em 2,37 GB; teto em 3,15 GB.\n'
+  envq WHATSAPP_MEDIA_RETENTION_DAYS "${WHATSAPP_MEDIA_RETENTION_DAYS:-21}"
+  envq WHATSAPP_MEDIA_STORAGE_ALERT_BYTES "${WHATSAPP_MEDIA_STORAGE_ALERT_BYTES:-2370000000}"
+  envq WHATSAPP_MEDIA_STORAGE_CAP_BYTES "${WHATSAPP_MEDIA_STORAGE_CAP_BYTES:-3150000000}"
   # AGENDA · GOOGLE CALENDAR — gravadas VAZIAS, e de propósito NÃO perguntadas.
   #
   # Sem as duas a Agenda funciona inteira: some o botão "Conectar Google" e a

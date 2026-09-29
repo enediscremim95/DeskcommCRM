@@ -93,7 +93,11 @@ describe("persistMessageMedia", () => {
   beforeEach(() => {
     uploadMock.mockReset().mockResolvedValue({ error: null });
     updateEqMock.mockReset();
-    rpcMock.mockReset().mockResolvedValue({ error: null });
+    rpcMock.mockReset().mockImplementation(async (nome: string) =>
+      nome === "fn_total_midia_armazenada_bytes"
+        ? { data: 0, error: null }
+        : { data: null, error: null },
+    );
     inboxInsertMock.mockReset().mockResolvedValue({ error: null });
     messageRow.media_storage_path = null;
     messageRow.media_url = "http://localhost:3030/api/files/abc.jpg";
@@ -239,6 +243,31 @@ describe("persistMessageMedia", () => {
     expect(result.status).toBe("error");
     expect(updateEqMock).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: expect.objectContaining({ media_status: "failed" }) }),
+    );
+  });
+
+  it("não sobe binário novo quando o teto da instalação foi alcançado", async () => {
+    rpcMock.mockImplementation(async (nome: string) =>
+      nome === "fn_total_midia_armazenada_bytes"
+        ? { data: 3_150_000_000, error: null }
+        : { data: null, error: null },
+    );
+
+    const result = await persistMessageMedia(eventRow());
+
+    expect(result).toEqual(
+      expect.objectContaining({ status: "ok", detail: "storage cap reached; binary discarded" }),
+    );
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        media_storage_path: null,
+        media_size_bytes: null,
+        metadata: expect.objectContaining({
+          media_status: "not_stored",
+          media_discard_reason: "storage_cap_reached",
+        }),
+      }),
     );
   });
 });
