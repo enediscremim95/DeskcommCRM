@@ -27,6 +27,7 @@
     { "id": "fichacontato", "lane": "humano", "col": 5, "type": "frontend", "label": "Ficha 360 do contato", "sublabel": "todos os negócios · campos · origem · datas" },
 
     { "id": "atividades", "lane": "barramento", "col": 2, "type": "database", "label": "crm_lead_activities", "sublabel": "actor_kind · reason · evidence" },
+    { "id": "mensagens", "lane": "barramento", "col": 4, "type": "database", "label": "messages", "sublabel": "outbound humano · sent_via · created_at" },
     { "id": "emissor", "lane": "barramento", "col": 1, "type": "service", "label": "emitLeadActivity", "sublabel": "estado e obrigação, não trabalho de máquina" },
     { "id": "vocab", "lane": "barramento", "col": 3, "type": "service", "label": "activity-vocabulary", "sublabel": "forma = gente/agente/máquina · texto = o resto" },
     { "id": "timelineapi", "lane": "barramento", "col": 3, "type": "api", "label": "GET /leads/:id/timeline", "sublabel": "por NEGÓCIO — lead sem contato existe" },
@@ -50,7 +51,7 @@
     { "id": "fila", "lane": "fila", "col": 4, "type": "service", "label": "job_queue · followup_turn", "sublabel": "o envio passa pelos portões" },
     { "id": "risco", "lane": "fila", "col": 5, "type": "service", "label": "classifyRisk + resolveStageWindow", "sublabel": "fonte ÚNICA de esfriamento" },
     { "id": "reativacoes", "lane": "fila", "col": 4, "type": "database", "label": "crm_lead_reactivations", "sublabel": "decisão + fotografia dos fatos + prazo longo" },
-    { "id": "automacao", "lane": "fila", "col": 3, "type": "service", "label": "automation_rules", "sublabel": "etapa de destino → mensagem fixa + guardas" },
+    { "id": "automacao", "lane": "fila", "col": 3, "type": "service", "label": "automation_rules", "sublabel": "mensagem fixa · resposta humana vence · cursor durável" },
 
     { "id": "inbox", "lane": "fora", "col": 4, "type": "frontend", "label": "agent_inbox_items", "sublabel": "demanda sem dono não mora no Kanban" }
   ],
@@ -116,11 +117,14 @@
     { "id": "e59", "from": "inbox", "to": "leads", "label": "aprovar move para a etapa configurada", "route": "highlight" },
     { "id": "e60", "from": "leads", "to": "eventlog", "label": "lead.stage_changed" },
     { "id": "e61", "from": "eventlog", "to": "automacao", "label": "regra fixa selecionada" },
-    { "id": "e62", "from": "automacao", "to": "fila", "label": "janela · limite · espaçamento · bloqueio · consentimento" },
+    { "id": "e62", "from": "automacao", "to": "fila", "label": "janela · limite · ritmo humano · bloqueio · consentimento" },
     { "id": "e63", "from": "reativacoes", "to": "risco", "label": "recusa só volta com fato novo ou prazo", "route": "drop" },
-    { "id": "e64", "from": "reenvio", "to": "leads", "label": "fonte marcada ou canal alimenta · demais criam" },
-    { "id": "e65", "from": "leads", "to": "reenvio", "label": "índice parcial decide a corrida" },
-    { "id": "e66", "from": "reenvio", "to": "atividades", "label": "lead_merged visível na timeline" }
+    { "id": "e64", "from": "automacao", "to": "eventlog", "label": "espera persiste cursor + retry_at; worker segue livre", "route": "highlight" },
+    { "id": "e65", "from": "chat", "to": "mensagens", "label": "atendente responde no painel ou celular" },
+    { "id": "e66", "from": "mensagens", "to": "automacao", "label": "outbound humano posterior ao gatilho encerra a regra", "route": "highlight" },
+    { "id": "e67", "from": "reenvio", "to": "leads", "label": "fonte marcada ou canal alimenta · demais criam" },
+    { "id": "e68", "from": "leads", "to": "reenvio", "label": "fonte opta pela janela · prazo vencido cria novo card" },
+    { "id": "e69", "from": "reenvio", "to": "atividades", "label": "lead_merged visível na timeline" }
   ],
   "cards": [
     {

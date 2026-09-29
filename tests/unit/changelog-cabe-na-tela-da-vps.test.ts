@@ -62,12 +62,12 @@ import { extractChangelogRange, extractChangelogSection } from "@/lib/system/cha
  * instalado na VPS do cliente —, então subir o número para calar o CI é trocar
  * um vermelho honesto por um cliente sem aviso.)
  *
- * CONSERTOS POSSÍVEIS quando este teste ficar vermelho, em ordem de preferência:
- *   1. enxugar a seção (quase sempre certo — item de changelog longo costuma ser
- *      explicação que só interessa a quem escreveu o código);
- *   2. mover `### ⚠️ Requer atenção` para logo depois do parágrafo de abertura —
- *      `findAttentionRange()` acha o bloco em qualquer posição da seção, então o
- *      aviso passa a sobreviver ao corte mesmo se o corpo for truncado.
+ * O conserto estrutural vive no PRODUTOR (`montarSecao`): a seção tem orçamento
+ * próprio, preserva o bloco inteiro de `exige_acao` no início, mantém o título
+ * de todos os fragmentos e compacta apenas corpos explicativos. Se o piso
+ * obrigatório não couber, o corte da release falha fechado. Este teste continua
+ * sendo a prova ponta a ponta contra o agente real, inclusive para se o contrato
+ * de transporte mudar sem o produtor acompanhar.
  */
 
 const RAIZ = process.cwd();
@@ -300,8 +300,8 @@ const CANDIDATAS: Array<{ nome: string; versao: string; texto: string; conserto:
       versao: "9.9.9",
       texto: comSecaoMontada(RAW, fragmentos),
       conserto:
-        "Enxugue o corpo dos fragmentos em `.changes/` — item de changelog longo costuma ser " +
-        "explicação que só interessa a quem escreveu o código.",
+        "O orçamento de `montarSecao` deixou de proteger o contrato do agente; corrija o " +
+        "produtor sem podar avisos de `exige_acao` nem apagar fragmentos.",
     });
   }
 }
