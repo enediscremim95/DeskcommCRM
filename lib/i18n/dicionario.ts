@@ -3768,6 +3768,55 @@ export const DICIONARIO: Traducoes = {
   },
   "Endereço da fonte": { es: "Dirección de la fuente" },
   "Endereço copiado.": { es: "Dirección copiada." },
+  "Qual é a sua situação?": { es: "¿Cuál es tu situación?" },
+  "Escolha o caso que combina com o seu site. Vamos mostrar somente o que você precisa usar.": {
+    es: "Elige el caso que coincide con tu sitio. Mostraremos solamente lo que necesitas usar.",
+  },
+  "Meu formulário já funciona": { es: "Mi formulario ya funciona" },
+  "Quero que os contatos também cheguem no CRM.": {
+    es: "Quiero que los contactos también lleguen al CRM.",
+  },
+  "Ainda não tenho formulário": { es: "Todavía no tengo formulario" },
+  "Quero um formulário pronto para colocar no site.": {
+    es: "Quiero un formulario listo para colocar en el sitio.",
+  },
+  "Uso outra ferramenta": { es: "Uso otra herramienta" },
+  "Elementor, RD Station, Typeform, Zapier ou n8n.": {
+    es: "Elementor, RD Station, Typeform, Zapier o n8n.",
+  },
+  "Use este caminho se a página já recebe contatos normalmente.": {
+    es: "Usa este camino si la página ya recibe contactos normalmente.",
+  },
+  "Peça a quem cuida do site para adicionar data-crm-lead na primeira linha do formulário.": {
+    es: "Pide a quien cuida el sitio que agregue data-crm-lead en la primera línea del formulario.",
+  },
+  "Depois, cole o script abaixo logo após o formulário.": {
+    es: "Después, pega el script de abajo justo después del formulario.",
+  },
+  "Publique a página e faça um envio de teste.": {
+    es: "Publica la página y haz un envío de prueba.",
+  },
+  "Use este caminho se você ainda precisa colocar um formulário na página.": {
+    es: "Usa este camino si todavía necesitas colocar un formulario en la página.",
+  },
+  "Copie o formulário abaixo e cole no lugar da página em que ele deve aparecer.": {
+    es: "Copia el formulario de abajo y pégalo en el lugar de la página donde debe aparecer.",
+  },
+  "Depois, publique a página e envie um contato de teste.": {
+    es: "Después, publica la página y envía un contacto de prueba.",
+  },
+  "Use este caminho com Elementor, RD Station, Typeform, Zapier ou n8n.": {
+    es: "Usa este camino con Elementor, RD Station, Typeform, Zapier o n8n.",
+  },
+  "Na ferramenta, abra a configuração que envia as respostas para outro sistema.": {
+    es: "En la herramienta, abre la configuración que envía las respuestas a otro sistema.",
+  },
+  "Cole o endereço abaixo no campo de destino. No Elementor, o campo \"Action\" é a opção que diz para onde o formulário envia os dados.": {
+    es: "Pega la dirección de abajo en el campo de destino. En Elementor, el campo \"Action\" es la opción que indica adónde envía los datos el formulario.",
+  },
+  "Salve a configuração e faça um envio de teste.": {
+    es: "Guarda la configuración y haz un envío de prueba.",
+  },
   "Formulário pronto para colar no seu site": { es: "Formulario listo para pegar en tu sitio" },
   "Formulário copiado.": { es: "Formulario copiado." },
   "Copiar formulário": { es: "Copiar formulario" },
