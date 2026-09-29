@@ -66,6 +66,7 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
   const nextSettings = {
     ...currentSettings,
     lost_reasons_extra: parsed.data.lost_reasons_extra,
+    lead_reentry_window_minutes: parsed.data.lead_reentry_window_minutes,
     ...(parsed.data.business_profile ? { business_profile: parsed.data.business_profile } : {}),
   };
 

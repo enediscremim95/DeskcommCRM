@@ -850,6 +850,12 @@ export const DICIONARIO: Traducoes = {
   "DPO email": { es: "Email del DPO" },
   "Retenção de mídia (dias)": { es: "Retención de medios (días)" },
   "URL política de privacidade": { es: "URL de la política de privacidad" },
+  "Janela para juntar reenvios (minutos)": {
+    es: "Ventana para unir reenvíos (minutos)",
+  },
+  "Uma nova entrada da mesma pessoa dentro deste prazo alimenta o card aberto mais recente. Depois dele, nasce outro card.": {
+    es: "Una nueva entrada de la misma persona dentro de este plazo alimenta la tarjeta abierta más reciente. Después, se crea otra tarjeta.",
+  },
   "Motivos de perda extras (separados por vírgula)": {
     es: "Motivos de pérdida adicionales (separados por coma)",
   },

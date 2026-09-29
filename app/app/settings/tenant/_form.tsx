@@ -202,6 +202,21 @@ export function TenantForm({ initial }: Props) {
         </fieldset>
 
         <div className="space-y-2">
+          <Label htmlFor="lead_reentry_window_minutes">{t("Janela para juntar reenvios (minutos)")}</Label>
+          <Input
+            id="lead_reentry_window_minutes"
+            type="number"
+            min={1}
+            max={10080}
+            value={form.lead_reentry_window_minutes}
+            onChange={(e) => set("lead_reentry_window_minutes", Number(e.target.value))}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("Uma nova entrada da mesma pessoa dentro deste prazo alimenta o card aberto mais recente. Depois dele, nasce outro card.")}
+          </p>
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="lost_reasons">{t("Motivos de perda extras (separados por vírgula)")}</Label>
           <Input
             id="lost_reasons"

@@ -34,6 +34,9 @@ PUBLICACAO="127.0.0.1::5432"
 # dos de outra. Os labels fazem "só os meus" ser uma query:
 #   docker ps --filter label=deskcomm.worktree=$PWD
 DONO_WORKTREE="$ROOT"
+# Docker via WSL recebe argumentos com espaço como palavras separadas. O label é
+# diagnóstico, não caminho executável; forma sem espaços preserva a identidade.
+DONO_WORKTREE_LABEL="${DONO_WORKTREE// /_}"
 DONO_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo desconhecida)"
 CONTAINER="deskcomm-test-db-$$"
 # pg15 e não pg17: o piso real do baseline é pg15 (`security_invoker` em view,
@@ -55,6 +58,7 @@ IMAGE="pgvector/pgvector:pg15"
 # arquivos, não por defeito do produto. Gate que sorteia não prova o isolamento
 # multi-tenant que ele carrega.
 TEMPLATE="inv_baseline"
+UPGRADE_DB="inv_upgrade_0275"
 
 [ -f "$BASELINE" ] || { echo "FATAL: $BASELINE não encontrado" >&2; exit 1; }
 
@@ -77,7 +81,9 @@ TEMPLATE="inv_baseline"
 # Esta forma é idêntica nos dois: caminho completo, seis X, sem depender de como
 # cada `mktemp` interpreta `-t`.
 CARIMBO="$(mktemp "${TMPDIR:-/tmp}/deskcomm-test-db-carimbo.XXXXXX")"
-MEDIDOS=("$BASELINE" "$ROOT/tests/invariants" "$ROOT/scripts/test-db.sh" "$ROOT/vitest.db.config.ts")
+BASELINE_ANTERIOR="$(mktemp "${TMPDIR:-/tmp}/deskcomm-baseline-anterior.XXXXXX")"
+MIGRATION_0275="$ROOT/supabase/migrations/20260928230000_0275_janela_curta_de_reenvio.sql"
+MEDIDOS=("$BASELINE" "$MIGRATION_0275" "$ROOT/tests/invariants" "$ROOT/scripts/test-db.sh" "$ROOT/vitest.db.config.ts")
 
 arvore_mexeu() {
   find "${MEDIDOS[@]}" -type f -newer "$CARIMBO" 2>/dev/null | head -20
@@ -103,7 +109,7 @@ cleanup() {
   # O sintoma não aponta para cá: o disco enche horas depois, e quem paga é a
   # próxima sessão a rodar qualquer coisa.
   docker rm -fv "$CONTAINER" >/dev/null 2>&1 || true
-  rm -f "$CARIMBO"
+  rm -f "$CARIMBO" "$BASELINE_ANTERIOR"
 }
 trap cleanup EXIT
 
@@ -111,7 +117,7 @@ echo "==> subindo $IMAGE como $CONTAINER (worktree $DONO_WORKTREE, branch $DONO_
 docker run -d --rm --name "$CONTAINER" \
   -p "$PUBLICACAO" \
   --label "deskcomm.harness=test-db" \
-  --label "deskcomm.worktree=$DONO_WORKTREE" \
+  --label "deskcomm.worktree=$DONO_WORKTREE_LABEL" \
   --label "deskcomm.branch=$DONO_BRANCH" \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=postgres \
@@ -144,6 +150,12 @@ docker exec "$CONTAINER" psql -U postgres -d postgres -q -c "create database $TE
 
 psql_install() {
   docker exec -i "$CONTAINER" psql -U postgres -d "$TEMPLATE" -v ON_ERROR_STOP=1 -q -f - "$@"
+}
+
+psql_db() {
+  local banco="$1"
+  shift
+  docker exec -i "$CONTAINER" psql -U postgres -d "$banco" -v ON_ERROR_STOP=1 -q -f - "$@"
 }
 
 echo "==> prelude: stubs mínimos do Supabase (roles, auth.uid(), extensions)"
@@ -336,6 +348,128 @@ if [ "$fidelidade" != "t" ]; then
   exit 1
 fi
 echo "    ✓ definer nova nasce com grant direto a anon (armadilha do produto reproduzida)"
+
+echo "==> upgrade REAL 0275: schema anterior, gêmeos legados, aplica e reaplica sem escrita"
+sed '/^-- BEGIN MIGRATION 0275 JANELA CURTA DE REENVIO$/,/^-- END MIGRATION 0275 JANELA CURTA DE REENVIO$/d' \
+  "$BASELINE" > "$BASELINE_ANTERIOR"
+docker exec -i "$CONTAINER" psql -U postgres -d template1 -q -v ON_ERROR_STOP=1 -f - <<SQL
+drop database if exists $UPGRADE_DB with (force);
+create database $UPGRADE_DB template $TEMPLATE;
+SQL
+psql_db "$UPGRADE_DB" < "$BASELINE_ANTERIOR"
+
+psql_db "$UPGRADE_DB" <<'SQL'
+insert into public.organizations (
+  id, slug, legal_name, display_name, settings
+) values (
+  '02750000-0000-4000-8000-000000000001', 'upgrade-0275',
+  'Upgrade 0275 LTDA', 'Upgrade 0275', '{"lead_reentry_window_minutes":60}'::jsonb
+);
+insert into public.contacts (id, organization_id, display_name, source)
+values ('02750000-0000-4000-8000-00000000c275',
+        '02750000-0000-4000-8000-000000000001', 'Contato Legado', 'webhook');
+
+do $seed$
+declare
+  p uuid;
+  s uuid;
+begin
+  select id into p from public.crm_pipelines
+   where organization_id = '02750000-0000-4000-8000-000000000001' and is_default limit 1;
+  select id into s from public.crm_stages
+   where pipeline_id = p and not is_won and not is_lost order by position limit 1;
+
+  insert into public.crm_leads (
+    id, organization_id, pipeline_id, stage_id, contact_id, title, source,
+    external_id, custom_fields, created_at
+  ) values
+    ('02750000-0000-4000-8000-00000000a001', '02750000-0000-4000-8000-000000000001', p, s,
+     '02750000-0000-4000-8000-00000000c275', 'Primeiro', 'webhook', 'legado-a',
+     '{"primeiro":true}'::jsonb, now() - interval '3 hours'),
+    ('02750000-0000-4000-8000-00000000a002', '02750000-0000-4000-8000-000000000001', p, s,
+     '02750000-0000-4000-8000-00000000c275', 'Gêmeo', 'webhook', 'legado-b',
+     '{"segundo":true}'::jsonb, now() - interval '150 minutes'),
+    ('02750000-0000-4000-8000-00000000a003', '02750000-0000-4000-8000-000000000001', p, s,
+     '02750000-0000-4000-8000-00000000c275', 'Demanda legítima', 'webhook', 'legado-c',
+     '{"terceiro":true}'::jsonb, now() - interval '30 minutes');
+end
+$seed$;
+
+insert into public.crm_lead_activities (
+  organization_id, lead_id, contact_id, source_module, type
+) values (
+  '02750000-0000-4000-8000-000000000001', '02750000-0000-4000-8000-00000000a002',
+  '02750000-0000-4000-8000-00000000c275', 'upgrade.fixture', 'lead_created'
+);
+insert into public.webhook_lead_captures (
+  organization_id, source_name, lead_id, contact_id, outcome
+) values (
+  '02750000-0000-4000-8000-000000000001', 'Fixture upgrade',
+  '02750000-0000-4000-8000-00000000a002', '02750000-0000-4000-8000-00000000c275', 'criado'
+);
+insert into public.event_log (
+  organization_id, event_type, entity_kind, entity_id, status
+) values (
+  '02750000-0000-4000-8000-000000000001', 'lead.created', 'crm_lead',
+  '02750000-0000-4000-8000-00000000a002', 'pending'
+);
+SQL
+
+psql_db "$UPGRADE_DB" < "$BASELINE"
+psql_db "$UPGRADE_DB" <<'SQL'
+do $assert$
+begin
+  if (select count(*) from public.crm_leads
+       where organization_id = '02750000-0000-4000-8000-000000000001' and status = 'open') <> 2 then
+    raise exception 'upgrade 0275: esperava 2 cards abertos (gêmeo unido + demanda legítima)';
+  end if;
+  if exists (select 1 from public.crm_leads where id = '02750000-0000-4000-8000-00000000a002') then
+    raise exception 'upgrade 0275: o card gêmeo sobreviveu';
+  end if;
+  if not exists (
+    select 1 from public.crm_leads
+     where id = '02750000-0000-4000-8000-00000000a001'
+       and custom_fields @> '{"primeiro":true,"segundo":true}'::jsonb
+  ) then
+    raise exception 'upgrade 0275: dados do gêmeo não alimentaram o sobrevivente';
+  end if;
+  if (select lead_id from public.webhook_lead_captures
+       where source_name = 'Fixture upgrade') <> '02750000-0000-4000-8000-00000000a001'::uuid then
+    raise exception 'upgrade 0275: captura não foi reapontada';
+  end if;
+  if exists (select 1 from public.crm_leads
+              where organization_id = '02750000-0000-4000-8000-000000000001' and status = 'lost') then
+    raise exception 'upgrade 0275: limpeza fabricou perda comercial';
+  end if;
+  if exists (select 1 from public.event_log
+              where organization_id = '02750000-0000-4000-8000-000000000001'
+                and event_type = 'lead.lost') then
+    raise exception 'upgrade 0275: limpeza emitiu lead.lost';
+  end if;
+  if (select count(*) from public.crm_lead_activities
+       where organization_id = '02750000-0000-4000-8000-000000000001'
+         and type = 'lead_merged') <> 1 then
+    raise exception 'upgrade 0275: atividade lead_merged ausente ou duplicada';
+  end if;
+  if exists (select 1 from public.event_log
+              where entity_id = '02750000-0000-4000-8000-00000000a002' and status <> 'done') then
+    raise exception 'upgrade 0275: lead.created pendente do gêmeo não foi neutralizado';
+  end if;
+  if to_regclass('public.uniq_crm_leads_reentry_guard') is null then
+    raise exception 'upgrade 0275: índice da corrida não nasceu';
+  end if;
+end
+$assert$;
+SQL
+
+estado_antes="$(docker exec "$CONTAINER" psql -U postgres -d "$UPGRADE_DB" -q -tA -c "select concat_ws('|', (select xmin::text from public.crm_leads where id='02750000-0000-4000-8000-00000000a001'), (select count(*) from public.crm_leads where organization_id='02750000-0000-4000-8000-000000000001'), (select count(*) from public.crm_lead_activities where organization_id='02750000-0000-4000-8000-000000000001' and type='lead_merged'))")"
+psql_db "$UPGRADE_DB" < "$MIGRATION_0275"
+estado_depois="$(docker exec "$CONTAINER" psql -U postgres -d "$UPGRADE_DB" -q -tA -c "select concat_ws('|', (select xmin::text from public.crm_leads where id='02750000-0000-4000-8000-00000000a001'), (select count(*) from public.crm_leads where organization_id='02750000-0000-4000-8000-000000000001'), (select count(*) from public.crm_lead_activities where organization_id='02750000-0000-4000-8000-000000000001' and type='lead_merged'))")"
+[ "$estado_antes" = "$estado_depois" ] || {
+  echo "FATAL: reaplicar a 0275 escreveu de novo: $estado_antes -> $estado_depois" >&2
+  exit 1
+}
+echo "    ✓ upgrade limpou gêmeo sem perda; reaplicação fez zero escrita nos dados medidos"
 
 echo "==> modo INSTALL: aplicando baseline.sql com ON_ERROR_STOP=1"
 psql_install < "$BASELINE"
