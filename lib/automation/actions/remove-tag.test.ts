@@ -8,13 +8,14 @@ vi.mock("@/lib/atendimento/origem-automacao", () => ({
 import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
 import { getAction } from "@/lib/automation/actions";
 import type { ActionCtx } from "@/lib/automation/types";
+import "@/lib/automation/actions/add-tag";
 import "@/lib/automation/actions/remove-tag";
 
 function harness() {
-  let updatePayload: Record<string, unknown> | null = null;
+  const updatePayloads: Record<string, unknown>[] = [];
   const query = {
     update: vi.fn((payload: Record<string, unknown>) => {
-      updatePayload = payload;
+      updatePayloads.push(payload);
       return query;
     }),
     eq: vi.fn(() => query),
@@ -30,7 +31,8 @@ function harness() {
     from,
     query,
     rpc,
-    updatePayload: () => updatePayload,
+    updatePayload: () => updatePayloads.at(-1) ?? null,
+    updatePayloads,
   };
 }
 
@@ -83,5 +85,36 @@ describe("remove_tag", () => {
     expect(h.from).not.toHaveBeenCalled();
     expect(h.rpc).not.toHaveBeenCalled();
     expect(originFromAutomationEvent).not.toHaveBeenCalled();
+  });
+
+  it("remove e adiciona tags em sequência usando o estado atualizado do contato", async () => {
+    const h = harness();
+    const context = {
+      contact: {
+        id: "55555555-5555-4555-8555-555555555555",
+        tags: ["fluxo_padrinhos_orcamento"],
+      },
+    };
+    const actionCtx: ActionCtx = {
+      admin: h.admin,
+      organizationId: "11111111-1111-4111-8111-111111111111",
+      ruleId: "22222222-2222-4222-8222-222222222222",
+      ruleName: "Avança fluxo de padrinhos",
+      event: { id: "33333333-3333-4333-8333-333333333333" } as ActionCtx["event"],
+      context,
+      requestId: "teste-troca-tag",
+    };
+
+    await getAction("remove_tag")!.execute(actionCtx, {
+      tags: ["fluxo_padrinhos_orcamento"],
+    });
+    await getAction("add_tag")!.execute(actionCtx, {
+      tags: ["fluxo_padrinhos_aprovacao"],
+    });
+
+    expect(h.updatePayloads).toHaveLength(2);
+    expect(h.updatePayloads[0]).toMatchObject({ tags: [] });
+    expect(h.updatePayloads[1]).toMatchObject({ tags: ["fluxo_padrinhos_aprovacao"] });
+    expect(context.contact.tags).toEqual(["fluxo_padrinhos_aprovacao"]);
   });
 });

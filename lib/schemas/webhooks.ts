@@ -15,7 +15,7 @@ export const TRIGGER_EVENTS = [
 
 export const conditionSchema = z.object({
   field: z.string().min(1).max(200),
-  op: z.enum(["eq", "neq", "contains"]),
+  op: z.enum(["eq", "neq", "contains", "not_contains"]),
   value: z.string().max(500),
 });
 
