@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { extractChangelogSection, markdownParaTextoSimples } from "../system/changelog";
 import { parseFragmento } from "./fragmento";
-import { aplicarNoChangelog, montarSecao } from "./montar-secao";
+import { aplicarNoChangelog, MAX_BYTES_SECAO_RELEASE, montarSecao } from "./montar-secao";
 
 /** URL sintética: este arquivo é varrido pela catraca de marca e não nomeia o repo. */
 const comparar = (de: string, para: string) => `https://exemplo.test/compare/${de}...${para}`;
@@ -81,6 +81,57 @@ describe("montarSecao — o que a TELA da VPS vai mostrar", () => {
     expect(secao.texto).toContain("segunda linha que continua a frase.");
     const s = extractChangelogSection(aplicarNoChangelog(CABECALHO, secao, "1.6.0", comparar), "1.6.1")!;
     expect(markdownParaTextoSimples(s.body)).toContain("segunda linha que continua a frase.");
+  });
+
+  it("compacta só os corpos quando a seção cresce, mantendo todo título dentro do teto", () => {
+    const fragmentos = Array.from({ length: 200 }, (_, i) =>
+      frag({
+        impacto: i % 3 === 0 ? "capacidade_nova" : "nada_mudou",
+        secao: i % 2 === 0 ? "adicionado" : "corrigido",
+        titulo: `Mudança visível ${i}`,
+        corpo: `Explicação ${i}: ${"detalhe operacional ".repeat(30)}`,
+      }),
+    );
+
+    const secao = montarSecao(fragmentos, "1.7.0", "2026-09-29");
+    expect(Buffer.byteLength(secao.texto, "utf8")).toBeLessThanOrEqual(MAX_BYTES_SECAO_RELEASE);
+    for (let i = 0; i < fragmentos.length; i++) {
+      expect(secao.texto).toContain(`Mudança visível ${i}`);
+    }
+    expect(secao.texto).not.toContain("Explicação 199:");
+  });
+
+  it("preserva inteiro e no início todo `exige_acao` mesmo quando compacta o restante", () => {
+    const acao = frag({
+      impacto: "exige_acao",
+      secao: "alterado",
+      titulo: "Ação obrigatória",
+      corpo: "A mudança que exige o procedimento.",
+      atencao: "Primeiro rode o comando A.\nDepois confirme o resultado B.",
+    });
+    const ruido = Array.from({ length: 40 }, (_, i) =>
+      frag({ titulo: `Conserto ${i}`, corpo: `Detalhe ${"longo ".repeat(40)}` }),
+    );
+
+    const secao = montarSecao([acao, ...ruido], "2.0.0", "2026-09-29", 2_000);
+    const aviso = secao.texto.indexOf("### ⚠️ Requer atenção");
+    const primeiraSecaoComum = secao.texto.indexOf("### Alterado");
+    expect(aviso).toBeGreaterThanOrEqual(0);
+    expect(aviso).toBeLessThan(primeiraSecaoComum);
+    expect(secao.texto).toContain("Primeiro rode o comando A.\n  Depois confirme o resultado B.");
+    expect(Buffer.byteLength(secao.texto, "utf8")).toBeLessThanOrEqual(2_000);
+  });
+
+  it("falha fechada se avisos e títulos sozinhos não couberem", () => {
+    const acao = frag({
+      impacto: "exige_acao",
+      titulo: "Ação que não pode sumir",
+      atencao: "Faça isto antes de atualizar. ".repeat(30),
+    });
+
+    expect(() => montarSecao([acao], "2.0.0", "2026-09-29", 200)).toThrow(
+      /avisos de `exige_acao` e os títulos nunca são podados/,
+    );
   });
 
   it("a seção anterior continua inteira e alcançável", () => {
