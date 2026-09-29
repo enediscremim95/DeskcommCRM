@@ -8923,8 +8923,8 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível salvar a configuração de mídia": { es: "No se pudo guardar la configuración de medios" },
   "Mídia do WhatsApp": { es: "Medios de WhatsApp" },
   "Guardar arquivos de mídia recebidos": { es: "Guardar los archivos de medios recibidos" },
-  "Padrão desligado. Arquivos já guardados não são apagados por esta opção.": {
-    es: "Desactivado por defecto. Los archivos ya guardados no se eliminan con esta opción.",
+  "Padrão ligado. Desligar afeta apenas os próximos arquivos; os já guardados permanecem.": {
+    es: "Activado por defecto. Desactivarlo afecta solo a los próximos archivos; los ya guardados permanecen.",
   },
   "Buscar organização…": { es: "Buscar organización…" },
   "Buscar organização": { es: "Buscar organización" },
