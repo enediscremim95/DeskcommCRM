@@ -202,6 +202,21 @@ export function TenantForm({ initial }: Props) {
         </fieldset>
 
         <div className="space-y-2">
+          <Label htmlFor="lead_reentry_window_minutes">{t("Tempo para juntar envios repetidos (minutos)")}</Label>
+          <Input
+            id="lead_reentry_window_minutes"
+            type="number"
+            min={1}
+            max={10080}
+            value={form.lead_reentry_window_minutes}
+            onChange={(e) => set("lead_reentry_window_minutes", Number(e.target.value))}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("Vale para o WhatsApp e para as fontes marcadas como capazes de repetir o mesmo envio.")}
+          </p>
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="lost_reasons">{t("Motivos de perda extras (separados por vírgula)")}</Label>
           <Input
             id="lost_reasons"

@@ -15,6 +15,13 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
+import {
+  alimentarLeadExistente,
+  buscarVencedorDaJanela,
+  chaveDaJanelaDaFonte,
+  ehColisaoDaJanela,
+  prepararEntradaNaJanela,
+} from "@/lib/leads/janela-de-reenvio";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { classificarLeadInicial, type ResultadoClassificacaoInicial } from "@/lib/leads/classificacao-inicial";
 import type { CreateLeadInput } from "@/lib/schemas";
@@ -104,7 +111,7 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
   const admin = createAdminClient();
   const { data: source, error: srcErr } = await admin
     .from("webhook_sources")
-    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, default_owner_user_id, field_map, redirect_to, is_active")
+    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, default_owner_user_id, field_map, redirect_to, is_active, merge_repeated_submissions")
     .eq("path_token", token)
     .maybeSingle();
   if (srcErr) return fail("internal_error", srcErr.message, 500, { requestId });
@@ -526,6 +533,8 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
     custom_fields?: Record<string, unknown>;
     source_metadata?: Record<string, unknown>;
     external_id?: string;
+    reentry_guard_until?: string;
+    reentry_guard_key?: string;
   } = {
     pipeline_id: source.default_pipeline_id,
     stage_id: source.default_stage_id,
@@ -543,18 +552,88 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
   };
 
   let lead: Record<string, unknown>;
+  let juntadoNaJanela = false;
+  const chaveDaJanela = chaveDaJanelaDaFonte(
+    source.id as string,
+    source.merge_repeated_submissions === true,
+  );
   try {
-    lead = await createLeadHandler(
-      admin,
-      {
-        organization_id: source.organization_id,
+    const entrada = contactId && chaveDaJanela
+      ? await prepararEntradaNaJanela(admin, {
+          organizationId: source.organization_id,
+          contactId,
+          guardKey: chaveDaJanela,
+        })
+      : null;
+
+    if (entrada?.existente && contactId) {
+      lead = await alimentarLeadExistente(admin, {
+        organizationId: source.organization_id,
+        leadId: entrada.leadId,
+        contactId,
+        sourceModule: "webhook",
+        sourceId: source.id,
         actor: { type: "webhook_source", id: source.id },
-        requestId,
-      },
-      leadInput,
-    );
+        reason: "Nova captação recebida dentro da janela de reenvio.",
+        customFields: leadInput.custom_fields,
+        sourceMetadata: leadInput.source_metadata,
+        tags: leadInput.tags,
+        payload: {
+          webhook_source_id: source.id,
+          external_id: externalId,
+          collision_recovered: false,
+        },
+      });
+      juntadoNaJanela = true;
+    } else {
+      lead = await createLeadHandler(
+        admin,
+        {
+          organization_id: source.organization_id,
+          actor: { type: "webhook_source", id: source.id },
+          requestId,
+        },
+        {
+          ...leadInput,
+          ...(entrada && !entrada.existente
+            ? {
+                reentry_guard_until: entrada.guardUntil,
+                reentry_guard_key: entrada.guardKey,
+              }
+            : {}),
+        },
+      );
+    }
   } catch (err) {
-    if (err instanceof ApiError) {
+    if (contactId && chaveDaJanela && ehColisaoDaJanela(err)) {
+      const vencedor = await buscarVencedorDaJanela(admin, {
+        organizationId: source.organization_id,
+        contactId,
+        guardKey: chaveDaJanela,
+      });
+      if (vencedor) {
+        lead = await alimentarLeadExistente(admin, {
+          organizationId: source.organization_id,
+          leadId: vencedor,
+          contactId,
+          sourceModule: "webhook",
+          sourceId: source.id,
+          actor: { type: "webhook_source", id: source.id },
+          reason: "Captação simultânea juntada ao card que venceu a corrida.",
+          customFields: leadInput.custom_fields,
+          sourceMetadata: leadInput.source_metadata,
+          tags: leadInput.tags,
+          payload: {
+            webhook_source_id: source.id,
+            external_id: externalId,
+            collision_recovered: true,
+          },
+        });
+        juntadoNaJanela = true;
+      } else {
+        throw err;
+      }
+    } else if (err instanceof ApiError) {
       // Corrida do retry: dois POSTs simultâneos com o mesmo external_id
       // passam ambos pelo fast-path; o índice único derruba o segundo INSERT
       // (23505) — re-seleciona o vencedor e responde idempotente.
@@ -584,8 +663,9 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
         rejectReason: "erro_ao_criar_lead",
       });
       return fail(err.code, err.message ?? "erro", err.status, { requestId });
+    } else {
+      throw err;
     }
-    throw err;
   }
 
   await admin
@@ -669,7 +749,7 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
     ...dadosDaCaptacao,
     leadId: String(lead.id),
     contactId: contactId ?? null,
-    outcome: "criado",
+    outcome: juntadoNaJanela ? "duplicado" : "criado",
   });
 
   // ELEGIBILIDADE DA IA (caso 1): uma submissão do Respondi é uma origem

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +43,7 @@ export function CreateSourceDialog({ open, onOpenChange, onCreated }: Props) {
   const [stageId, setStageId] = React.useState<string>("");
   const [redirectTo, setRedirectTo] = React.useState("");
   const [ownerId, setOwnerId] = React.useState("");
+  const [mergeRepeatedSubmissions, setMergeRepeatedSubmissions] = React.useState(false);
   const [step, setStep] = React.useState<1 | 2>(1);
 
   const { data: entryOptionsRes, isLoading: destinationsLoading } = useEntryOptions(open);
@@ -76,6 +78,7 @@ export function CreateSourceDialog({ open, onOpenChange, onCreated }: Props) {
       setStageId("");
       setRedirectTo("");
       setOwnerId("");
+      setMergeRepeatedSubmissions(false);
       setStep(1);
     }
     onOpenChange(nextOpen);
@@ -101,6 +104,7 @@ export function CreateSourceDialog({ open, onOpenChange, onCreated }: Props) {
         default_pipeline_id: pipelineId,
         default_stage_id: stageId,
         default_owner_user_id: ownerId,
+        merge_repeated_submissions: mergeRepeatedSubmissions,
         redirect_to: redirectTo.trim() || undefined,
       });
       toast.success(t("Fonte criada. Agora é só conectar seu site."));
@@ -215,6 +219,23 @@ export function CreateSourceDialog({ open, onOpenChange, onCreated }: Props) {
               <div className="space-y-2">
                 <Label htmlFor="src-redirect">{t("URL de obrigado (opcional)")}</Label>
                 <Input id="src-redirect" type="url" value={redirectTo} onChange={(e) => setRedirectTo(e.target.value)} placeholder="https://tusitio.com/gracias" />
+              </div>
+              <div className="flex items-start justify-between gap-4 rounded-sm border border-border p-3">
+                <div className="space-y-1">
+                  <Label htmlFor="src-merge-repeated">
+                    {t("Esta origem pode repetir o mesmo envio")}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "Ative se a ferramenta às vezes manda a mesma pessoa mais de uma vez. Os envios próximos ficam no mesmo card.",
+                    )}
+                  </p>
+                </div>
+                <Switch
+                  id="src-merge-repeated"
+                  checked={mergeRepeatedSubmissions}
+                  onCheckedChange={setMergeRepeatedSubmissions}
+                />
               </div>
             </>
           )}

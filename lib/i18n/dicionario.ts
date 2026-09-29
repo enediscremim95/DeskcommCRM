@@ -850,6 +850,12 @@ export const DICIONARIO: Traducoes = {
   "DPO email": { es: "Email del DPO" },
   "Retenção de mídia (dias)": { es: "Retención de medios (días)" },
   "URL política de privacidade": { es: "URL de la política de privacidad" },
+  "Tempo para juntar envios repetidos (minutos)": {
+    es: "Tiempo para unir envíos repetidos (minutos)",
+  },
+  "Vale para o WhatsApp e para as fontes marcadas como capazes de repetir o mesmo envio.": {
+    es: "Se aplica a WhatsApp y a las fuentes marcadas como capaces de repetir el mismo envío.",
+  },
   "Motivos de perda extras (separados por vírgula)": {
     es: "Motivos de pérdida adicionales (separados por coma)",
   },
@@ -3844,6 +3850,18 @@ export const DICIONARIO: Traducoes = {
   "Pausada, ela para de aceitar novos envios.": { es: "Pausada, deja de aceptar nuevos envíos." },
   "Fonte ativada.": { es: "Fuente activada." },
   "Fonte pausada.": { es: "Fuente pausada." },
+  "Esta origem pode repetir o mesmo envio": {
+    es: "Esta fuente puede repetir el mismo envío",
+  },
+  "Ative se a ferramenta às vezes manda a mesma pessoa mais de uma vez. Os envios próximos ficam no mesmo card.": {
+    es: "Actívalo si la herramienta a veces envía a la misma persona más de una vez. Los envíos cercanos quedan en la misma tarjeta.",
+  },
+  "Envios repetidos serão mantidos no mesmo card.": {
+    es: "Los envíos repetidos se mantendrán en la misma tarjeta.",
+  },
+  "Cada novo envio voltará a criar um card.": {
+    es: "Cada nuevo envío volverá a crear una tarjeta.",
+  },
   "Excluir fonte": { es: "Eliminar fuente" },
   "Excluir esta fonte?": { es: "¿Eliminar esta fuente?" },
   "O endereço para de funcionar imediatamente. Leads já recebidos continuam no seu funil — só a captação futura é interrompida. Essa ação não pode ser desfeita.": {

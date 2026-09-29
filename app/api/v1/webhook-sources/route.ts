@@ -106,6 +106,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       default_pipeline_id: parsed.data.default_pipeline_id,
       default_stage_id: parsed.data.default_stage_id,
       default_owner_user_id: parsed.data.default_owner_user_id ?? null,
+      merge_repeated_submissions: parsed.data.merge_repeated_submissions ?? false,
       redirect_to: parsed.data.redirect_to ?? null,
       field_map: parsed.data.field_map,
       secret_encrypted: secretEncrypted,

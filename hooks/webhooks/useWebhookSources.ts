@@ -15,6 +15,7 @@ export interface WebhookSourceRow {
   default_pipeline_id: string;
   default_stage_id: string;
   default_owner_user_id: string | null;
+  merge_repeated_submissions: boolean;
   redirect_to: string | null;
   field_map: Record<string, unknown>;
   has_secret: boolean;
@@ -38,6 +39,7 @@ export interface CreateWebhookSourceInput {
   default_pipeline_id: string;
   default_stage_id: string;
   default_owner_user_id: string;
+  merge_repeated_submissions: boolean;
   redirect_to?: string | null;
 }
 
@@ -79,8 +81,11 @@ export function useCreateWebhookSource() {
 export function useUpdateWebhookSource() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) =>
-      apiClient.patch<{ data: WebhookSourceRow }>(`/api/v1/webhook-sources/${id}`, { is_active }),
+    mutationFn: async ({ id, ...patch }: {
+      id: string;
+      is_active?: boolean;
+      merge_repeated_submissions?: boolean;
+    }) => apiClient.patch<{ data: WebhookSourceRow }>(`/api/v1/webhook-sources/${id}`, patch),
     onError: showApiError,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: SOURCES_KEY });

@@ -87,6 +87,19 @@ describe("criar entrada automática de contatos — tenancy sob service-role", (
     expect(criada.name).toBe("Formulário do site");
     expect(criada.path_token).toEqual(expect.any(String));
     expect(db.escritas.filter((e) => e.table === "webhook_sources")).toHaveLength(1);
+    expect(db.escritas.find((e) => e.table === "webhook_sources")?.patch)
+      .toMatchObject({ merge_repeated_submissions: false });
+  });
+
+  it("grava o opt-in somente quando quem configura declara que a fonte repete envios", async () => {
+    const db = makeDb({ stages: [etapa({ id: "e1", name: "Novo" })] });
+    await criarEntradaAutomatica(deps(db), {
+      ...ENTRADA,
+      merge_repeated_submissions: true,
+    });
+
+    expect(db.escritas.find((e) => e.table === "webhook_sources")?.patch)
+      .toMatchObject({ merge_repeated_submissions: true });
   });
 
   it("grava como responsável somente membro ativo da mesma organização", async () => {
