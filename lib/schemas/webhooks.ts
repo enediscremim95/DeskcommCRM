@@ -60,6 +60,7 @@ export const createWebhookSourceSchema = z.object({
   default_pipeline_id: z.string().uuid(),
   default_stage_id: z.string().uuid(),
   default_owner_user_id: z.string().uuid().nullable().optional(),
+  merge_repeated_submissions: z.boolean().optional(),
   redirect_to: z.string().url().max(2000).nullish(),
   field_map: z
     .object({

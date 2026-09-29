@@ -46,6 +46,7 @@ export interface FonteVisivel {
   default_pipeline_id: string;
   default_stage_id: string;
   default_owner_user_id: string | null;
+  merge_repeated_submissions: boolean;
   redirect_to: string | null;
   field_map: Record<string, unknown>;
   last_received_at: string | null;
@@ -65,7 +66,7 @@ export interface FonteVisivel {
  */
 const COLUNAS =
   "id, organization_id, name, is_active, kind, path_token, default_pipeline_id, default_stage_id, " +
-  "default_owner_user_id, redirect_to, field_map, last_received_at, secret_encrypted, created_at, updated_at, " +
+  "default_owner_user_id, merge_repeated_submissions, redirect_to, field_map, last_received_at, secret_encrypted, created_at, updated_at, " +
   "last_change_actor_kind, last_change_at";
 
 function semSegredo(linha: Record<string, unknown>): FonteVisivel {
@@ -201,6 +202,7 @@ export interface NovaEntradaAutomatica {
   default_pipeline_id: string;
   default_stage_id: string;
   default_owner_user_id?: string | null;
+  merge_repeated_submissions?: boolean;
   redirect_to?: string | null;
   field_map?: Record<string, string[]>;
   /** Já CIFRADO pelo chamador. A operação nunca vê plaintext de segredo. */
@@ -234,6 +236,7 @@ export async function criarEntradaAutomatica(
       default_pipeline_id: input.default_pipeline_id,
       default_stage_id: input.default_stage_id,
       default_owner_user_id: input.default_owner_user_id ?? null,
+      merge_repeated_submissions: input.merge_repeated_submissions ?? false,
       field_map: input.field_map ?? {},
       redirect_to: input.redirect_to ?? null,
       ...autoriaDaMudanca(deps.actor),

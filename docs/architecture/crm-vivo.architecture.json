@@ -32,9 +32,10 @@
     { "id": "vocab", "lane": "barramento", "col": 3, "type": "service", "label": "activity-vocabulary", "sublabel": "forma = gente/agente/máquina · texto = o resto" },
     { "id": "timelineapi", "lane": "barramento", "col": 3, "type": "api", "label": "GET /leads/:id/timeline", "sublabel": "por NEGÓCIO — lead sem contato existe" },
     { "id": "resolver", "lane": "barramento", "col": 1, "type": "service", "label": "resolveActiveLeadForContact", "sublabel": "ambíguo ⇒ não adivinha" },
+    { "id": "reenvio", "lane": "barramento", "col": 4, "type": "service", "label": "Janela curta de reenvio", "sublabel": "opt-in por fonte · canal protegido · corrida no banco" },
     { "id": "contactleadsapi", "lane": "barramento", "col": 4, "type": "api", "label": "GET /contacts/:id/leads", "sublabel": "org ativa · todos os funis · sem lista fixa de campos" },
 
-    { "id": "leads", "lane": "negocio", "col": 4, "type": "database", "label": "crm_leads", "sublabel": "owner_kind · stage_id · last_activity_at" },
+    { "id": "leads", "lane": "negocio", "col": 4, "type": "database", "label": "crm_leads", "sublabel": "N negócios abertos · trava só na janela curta" },
     { "id": "stages", "lane": "negocio", "col": 5, "type": "database", "label": "crm_stages", "sublabel": "expected_duration_hours · agent_stage_hint" },
     { "id": "scores", "lane": "negocio", "col": 3, "type": "database", "label": "crm_lead_scores", "sublabel": "tabela à parte, FORA do realtime" },
     { "id": "tarefas", "lane": "negocio", "col": 5, "type": "database", "label": "crm_tasks", "sublabel": "prazo · lead/contato opcionais" },
@@ -120,7 +121,10 @@
     { "id": "e63", "from": "reativacoes", "to": "risco", "label": "recusa só volta com fato novo ou prazo", "route": "drop" },
     { "id": "e64", "from": "automacao", "to": "eventlog", "label": "espera persiste cursor + retry_at; worker segue livre", "route": "highlight" },
     { "id": "e65", "from": "chat", "to": "mensagens", "label": "atendente responde no painel ou celular" },
-    { "id": "e66", "from": "mensagens", "to": "automacao", "label": "outbound humano posterior ao gatilho encerra a regra", "route": "highlight" }
+    { "id": "e66", "from": "mensagens", "to": "automacao", "label": "outbound humano posterior ao gatilho encerra a regra", "route": "highlight" },
+    { "id": "e67", "from": "reenvio", "to": "leads", "label": "fonte marcada ou canal alimenta · demais criam" },
+    { "id": "e68", "from": "leads", "to": "reenvio", "label": "fonte opta pela janela · prazo vencido cria novo card" },
+    { "id": "e69", "from": "reenvio", "to": "atividades", "label": "lead_merged visível na timeline" }
   ],
   "cards": [
     {

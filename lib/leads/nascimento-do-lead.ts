@@ -50,6 +50,13 @@ import {
 } from "@/lib/contacts/rotulo-do-contato";
 
 import { emitLeadActivity } from "./activity-emitter";
+import {
+  alimentarLeadExistente,
+  buscarVencedorDaJanela,
+  CHAVE_REENVIO_CANAL_INBOUND,
+  ehColisaoDaJanela,
+  prepararEntradaNaJanela,
+} from "./janela-de-reenvio";
 
 /**
  * O rótulo que aparece no card do funil quando o lead nasceu de um clique em
@@ -69,7 +76,7 @@ const ROTULO_DE_ANUNCIO: Record<string, string> = {
  * "não devia nascer" de "falhou ao nascer", e a segunda é a que custa caro.
  */
 export type MotivoSemLead =
-  | "ja_existe" // o contato já tem lead aberto: um por demanda, não um por mensagem
+  | "janela_reenvio" // a entrada curta alimentou o card recém-criado
   | "contato_bloqueado" // pediu para sair; criar oportunidade seria desrespeito registrado
   | "sem_funil_de_entrada" // a organização não tem funil padrão — falha de configuração, visível
   | "sem_etapa" // o funil existe e não tem etapa utilizável
@@ -77,7 +84,13 @@ export type MotivoSemLead =
 
 export type NascimentoDoLead =
   | { criado: true; leadId: string; pipelineId: string; stageId: string }
-  | { criado: false; motivo: MotivoSemLead; detalhe?: string };
+  | {
+      criado: false;
+      motivo: MotivoSemLead;
+      detalhe?: string;
+      leadId?: string;
+      colisao?: boolean;
+    };
 
 export interface DadosDoNascimento {
   organizationId: string;
@@ -86,6 +99,10 @@ export interface DadosDoNascimento {
   conversationId: string;
   /** nome do contato, para o título do card. */
   nomeDoContato: string | null;
+  /** Ponto de teste para provar que todas as leituras terminaram antes dos INSERTs. */
+  depoisDaLeituraDaJanela?: () => Promise<void>;
+  /** Contador de teste: chamado imediatamente antes de cada tentativa de INSERT. */
+  aoTentarInsert?: () => void;
 }
 
 /**
@@ -130,13 +147,11 @@ export async function funilDeEntrada(
 }
 
 /**
- * Garante que a conversa tenha um lead. Idempotente por contato: chamar de novo
- * não cria um segundo card.
+ * Garante que a conversa tenha um lead. Uma nova entrada dentro da janela curta
+ * alimenta o card recém-criado; depois dela um novo card aberto é permitido.
  *
- * **Um lead por DEMANDA, não por mensagem.** Enquanto houver lead aberto para o
- * contato, novas mensagens alimentam o que já existe. Quando ele fecha (ganho ou
- * perdido) e a pessoa volta a escrever, nasce outro — que é o comportamento
- * certo: é uma demanda nova.
+ * **Um lead por DEMANDA, não por mensagem.** O tempo separa o reenvio técnico da
+ * nova demanda. Fechar o card também libera imediatamente uma nova demanda.
  */
 export async function garantirLeadDaConversa(
   db: SupabaseClient,
@@ -156,17 +171,37 @@ export async function garantirLeadDaConversa(
 
   if (contato?.is_blocked === true) return { criado: false, motivo: "contato_bloqueado" };
 
-  // 2 · já existe demanda aberta?
-  const { data: existente } = await db
-    .from("crm_leads")
-    .select("id")
-    .eq("organization_id", organizationId)
-    .eq("contact_id", contactId)
-    .eq("status", "open")
-    .limit(1)
-    .maybeSingle();
+  const juntar = async (leadId: string, colisao: boolean): Promise<NascimentoDoLead> => {
+    await alimentarLeadExistente(db, {
+      organizationId,
+      leadId,
+      contactId,
+      sourceModule: "canal.ingest",
+      sourceId: conversationId,
+      actor: { type: "webhook_source", id: "canal-inbound" },
+      reason: "Nova mensagem recebida dentro da janela de reenvio.",
+      payload: { conversation_id: conversationId, collision_recovered: colisao },
+    });
+    return { criado: false, motivo: "janela_reenvio", leadId, colisao };
+  };
 
-  if (existente) return { criado: false, motivo: "ja_existe" };
+  // 2 · existe card aberto criado dentro da janela curta?
+  let entrada;
+  try {
+    entrada = await prepararEntradaNaJanela(db, {
+      organizationId,
+      contactId,
+      guardKey: CHAVE_REENVIO_CANAL_INBOUND,
+      depoisDaLeitura: dados.depoisDaLeituraDaJanela,
+    });
+    if (entrada.existente) return await juntar(entrada.leadId, false);
+  } catch (error) {
+    return {
+      criado: false,
+      motivo: "erro",
+      detalhe: (error instanceof Error ? error.message : String(error)).slice(0, 120),
+    };
+  }
 
   // 3 · onde entra
   const destino = await funilDeEntrada(db, organizationId);
@@ -208,6 +243,7 @@ export async function garantirLeadDaConversa(
   // isso reescreva a origem deste.
   const rotuloDeAnuncio = contato?.source ? ROTULO_DE_ANUNCIO[contato.source] : undefined;
 
+  dados.aoTentarInsert?.();
   const { data: lead, error } = await db
     .from("crm_leads")
     .insert({
@@ -222,10 +258,28 @@ export async function garantirLeadDaConversa(
       // rótulo em `crm_pipelines.settings.canonical_tags` (Configurações do
       // funil) — a tag sempre entra; o destaque visual é opt-in do operador.
       tags: rotuloDeAnuncio ? [rotuloDeAnuncio] : [],
+      reentry_guard_until: entrada.guardUntil,
+      reentry_guard_key: entrada.guardKey,
     })
     .select("id")
     .single();
 
+  if (error && ehColisaoDaJanela(error)) {
+    try {
+      const vencedor = await buscarVencedorDaJanela(db, {
+        organizationId,
+        contactId,
+        guardKey: CHAVE_REENVIO_CANAL_INBOUND,
+      });
+      if (vencedor) return await juntar(vencedor, true);
+    } catch (collisionError) {
+      return {
+        criado: false,
+        motivo: "erro",
+        detalhe: (collisionError instanceof Error ? collisionError.message : String(collisionError)).slice(0, 120),
+      };
+    }
+  }
   if (error || !lead) {
     return { criado: false, motivo: "erro", detalhe: error?.message.slice(0, 120) };
   }

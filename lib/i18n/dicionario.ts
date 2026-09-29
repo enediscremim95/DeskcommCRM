@@ -850,6 +850,12 @@ export const DICIONARIO: Traducoes = {
   "DPO email": { es: "Email del DPO" },
   "Retenção de mídia (dias)": { es: "Retención de medios (días)" },
   "URL política de privacidade": { es: "URL de la política de privacidad" },
+  "Tempo para juntar envios repetidos (minutos)": {
+    es: "Tiempo para unir envíos repetidos (minutos)",
+  },
+  "Vale para o WhatsApp e para as fontes marcadas como capazes de repetir o mesmo envio.": {
+    es: "Se aplica a WhatsApp y a las fuentes marcadas como capaces de repetir el mismo envío.",
+  },
   "Motivos de perda extras (separados por vírgula)": {
     es: "Motivos de pérdida adicionales (separados por coma)",
   },
@@ -3683,7 +3689,17 @@ export const DICIONARIO: Traducoes = {
   "Ninguém preencheu seus formulários ainda. Assim que o primeiro envio chegar, ele aparece aqui — com os dados, o horário e a origem.": {
     es: "Todavía nadie completó tus formularios. En cuanto llegue el primer envío, aparece aquí — con los datos, el horario y el origen.",
   },
-  "Escolha o funil e o estágio de entrada.": { es: "Elige el embudo y la etapa de entrada." },
+  "Escolha o funil e a etapa de entrada.": { es: "Elige el embudo y la etapa de entrada." },
+  "Passo 2 de 2: destino para": { es: "Paso 2 de 2: destino para" },
+  "Não há funil ativo disponível. Crie ou reative um funil antes de conectar a página.": {
+    es: "No hay un embudo activo disponible. Crea o reactiva un embudo antes de conectar la página.",
+  },
+  "Não há etapa de entrada disponível para": {
+    es: "No hay una etapa de entrada disponible para",
+  },
+  "Crie ou reabra uma etapa em Etapas do funil.": {
+    es: "Crea o reabre una etapa en Etapas del embudo.",
+  },
   "Fonte criada. Agora é só conectar seu site.": {
     es: "Fuente creada. Ahora solo falta conectar tu sitio.",
   },
@@ -3758,6 +3774,55 @@ export const DICIONARIO: Traducoes = {
   },
   "Endereço da fonte": { es: "Dirección de la fuente" },
   "Endereço copiado.": { es: "Dirección copiada." },
+  "Qual é a sua situação?": { es: "¿Cuál es tu situación?" },
+  "Escolha o caso que combina com o seu site. Vamos mostrar somente o que você precisa usar.": {
+    es: "Elige el caso que coincide con tu sitio. Mostraremos solamente lo que necesitas usar.",
+  },
+  "Meu formulário já funciona": { es: "Mi formulario ya funciona" },
+  "Quero que os contatos também cheguem no CRM.": {
+    es: "Quiero que los contactos también lleguen al CRM.",
+  },
+  "Ainda não tenho formulário": { es: "Todavía no tengo formulario" },
+  "Quero um formulário pronto para colocar no site.": {
+    es: "Quiero un formulario listo para colocar en el sitio.",
+  },
+  "Uso outra ferramenta": { es: "Uso otra herramienta" },
+  "Elementor, RD Station, Typeform, Zapier ou n8n.": {
+    es: "Elementor, RD Station, Typeform, Zapier o n8n.",
+  },
+  "Use este caminho se a página já recebe contatos normalmente.": {
+    es: "Usa este camino si la página ya recibe contactos normalmente.",
+  },
+  "Peça a quem cuida do site para adicionar data-crm-lead na primeira linha do formulário.": {
+    es: "Pide a quien cuida el sitio que agregue data-crm-lead en la primera línea del formulario.",
+  },
+  "Depois, cole o script abaixo logo após o formulário.": {
+    es: "Después, pega el script de abajo justo después del formulario.",
+  },
+  "Publique a página e faça um envio de teste.": {
+    es: "Publica la página y haz un envío de prueba.",
+  },
+  "Use este caminho se você ainda precisa colocar um formulário na página.": {
+    es: "Usa este camino si todavía necesitas colocar un formulario en la página.",
+  },
+  "Copie o formulário abaixo e cole no lugar da página em que ele deve aparecer.": {
+    es: "Copia el formulario de abajo y pégalo en el lugar de la página donde debe aparecer.",
+  },
+  "Depois, publique a página e envie um contato de teste.": {
+    es: "Después, publica la página y envía un contacto de prueba.",
+  },
+  "Use este caminho com Elementor, RD Station, Typeform, Zapier ou n8n.": {
+    es: "Usa este camino con Elementor, RD Station, Typeform, Zapier o n8n.",
+  },
+  "Na ferramenta, abra a configuração que envia as respostas para outro sistema.": {
+    es: "En la herramienta, abre la configuración que envía las respuestas a otro sistema.",
+  },
+  "Cole o endereço abaixo no campo de destino. No Elementor, o campo \"Action\" é a opção que diz para onde o formulário envia os dados.": {
+    es: "Pega la dirección de abajo en el campo de destino. En Elementor, el campo \"Action\" es la opción que indica adónde envía los datos el formulario.",
+  },
+  "Salve a configuração e faça um envio de teste.": {
+    es: "Guarda la configuración y haz un envío de prueba.",
+  },
   "Formulário pronto para colar no seu site": { es: "Formulario listo para pegar en tu sitio" },
   "Formulário copiado.": { es: "Formulario copiado." },
   "Copiar formulário": { es: "Copiar formulario" },
@@ -3785,6 +3850,18 @@ export const DICIONARIO: Traducoes = {
   "Pausada, ela para de aceitar novos envios.": { es: "Pausada, deja de aceptar nuevos envíos." },
   "Fonte ativada.": { es: "Fuente activada." },
   "Fonte pausada.": { es: "Fuente pausada." },
+  "Esta origem pode repetir o mesmo envio": {
+    es: "Esta fuente puede repetir el mismo envío",
+  },
+  "Ative se a ferramenta às vezes manda a mesma pessoa mais de uma vez. Os envios próximos ficam no mesmo card.": {
+    es: "Actívalo si la herramienta a veces envía a la misma persona más de una vez. Los envíos cercanos quedan en la misma tarjeta.",
+  },
+  "Envios repetidos serão mantidos no mesmo card.": {
+    es: "Los envíos repetidos se mantendrán en la misma tarjeta.",
+  },
+  "Cada novo envio voltará a criar um card.": {
+    es: "Cada nuevo envío volverá a crear una tarjeta.",
+  },
   "Excluir fonte": { es: "Eliminar fuente" },
   "Excluir esta fonte?": { es: "¿Eliminar esta fuente?" },
   "O endereço para de funcionar imediatamente. Leads já recebidos continuam no seu funil — só a captação futura é interrompida. Essa ação não pode ser desfeita.": {
@@ -8923,8 +9000,8 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível salvar a configuração de mídia": { es: "No se pudo guardar la configuración de medios" },
   "Mídia do WhatsApp": { es: "Medios de WhatsApp" },
   "Guardar arquivos de mídia recebidos": { es: "Guardar los archivos de medios recibidos" },
-  "Padrão desligado. Arquivos já guardados não são apagados por esta opção.": {
-    es: "Desactivado por defecto. Los archivos ya guardados no se eliminan con esta opción.",
+  "Padrão ligado. Desligar afeta apenas os próximos arquivos; os já guardados permanecem.": {
+    es: "Activado por defecto. Desactivarlo afecta solo a los próximos archivos; los ya guardados permanecen.",
   },
   "Buscar organização…": { es: "Buscar organización…" },
   "Buscar organização": { es: "Buscar organización" },

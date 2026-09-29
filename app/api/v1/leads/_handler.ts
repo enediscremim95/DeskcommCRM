@@ -242,6 +242,10 @@ export async function createLeadHandler(
     source_metadata?: Record<string, unknown>;
     /** Interno (webhook inbound) — idempotência via uniq_crm_leads_org_source_external. */
     external_id?: string;
+    /** Interno: trava apenas a janela curta de reenvio, nunca todos os cards abertos. */
+    reentry_guard_until?: string;
+    /** Escopo da trava: canal inbound ou a fonte de webhook que declarou reenvio. */
+    reentry_guard_key?: string;
   },
 ): Promise<Record<string, unknown>> {
   // Validate stage belongs to pipeline within active org.
@@ -313,6 +317,8 @@ export async function createLeadHandler(
       source: input.source,
       source_metadata: input.source_metadata ?? {},
       external_id: input.external_id ?? null,
+      reentry_guard_until: input.reentry_guard_until ?? null,
+      reentry_guard_key: input.reentry_guard_key ?? null,
       custom_fields: input.custom_fields ?? {},
       status: "open",
       position_in_stage: nextPos,

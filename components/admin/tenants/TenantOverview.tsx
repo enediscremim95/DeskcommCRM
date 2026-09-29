@@ -255,7 +255,7 @@ function MediaStorageSetting({
         />
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
-        {t("Padrão desligado. Arquivos já guardados não são apagados por esta opção.")}
+        {t("Padrão ligado. Desligar afeta apenas os próximos arquivos; os já guardados permanecem.")}
       </p>
     </div>
   );

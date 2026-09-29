@@ -44,4 +44,20 @@ describe("WAHA engine config (self-host)", () => {
       );
     });
   }
+
+  it("produção anuncia a mídia na rede interna e usa o volume temporário por 6 horas", () => {
+    const content = readFileSync(
+      path.resolve(__dirname, "../../docker-compose.prod.yml"),
+      "utf8",
+    );
+
+    expect(content).toMatch(/WAHA_BASE_URL:\s*\$\{WAHA_BASE_URL:-http:\/\/waha:3000\}/);
+    expect(content).toMatch(
+      /WHATSAPP_FILES_FOLDER:\s*\$\{WHATSAPP_FILES_FOLDER:-\/app\/\.media\}/,
+    );
+    expect(content).toMatch(
+      /WHATSAPP_FILES_LIFETIME:\s*"\$\{WHATSAPP_FILES_LIFETIME:-21600\}"/,
+    );
+    expect(content).toMatch(/- waha-media:\/app\/\.media/);
+  });
 });

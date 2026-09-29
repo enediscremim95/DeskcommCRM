@@ -1,7 +1,7 @@
 ---
 impacto: capacidade_nova
 secao: alterado
-titulo: Arquivos recebidos pelo WhatsApp deixam de ocupar o Storage por padrão
+titulo: Cada organização pode desligar o armazenamento da mídia recebida
 ---
 
-Fotos, áudios, vídeos e documentos recebidos passam a ter o arquivo descartado por padrão, sem apagar o texto da conversa.
+Quando a organização desliga explicitamente essa opção, fotos, áudios, vídeos e documentos recebidos têm o arquivo descartado sem apagar o texto da conversa.

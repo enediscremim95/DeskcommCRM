@@ -5,6 +5,7 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { businessProfileSchema } from "@/lib/schemas/business-profile";
 import { moedaServidaOu } from "@/lib/money";
+import { minutosDaJanelaDeReenvio } from "@/lib/leads/janela-de-reenvio-config";
 import { createClient } from "@/lib/supabase/server";
 import { ZonaDePerigoDaOrganizacao } from "./_danger-zone";
 import { TenantForm } from "./_form";
@@ -74,6 +75,7 @@ export default async function TenantSettingsPage() {
             dpo_email: row.dpo_email,
             privacy_policy_url: row.privacy_policy_url,
             lost_reasons_extra: lostReasonsExtra,
+            lead_reentry_window_minutes: minutosDaJanelaDeReenvio(row.settings),
           }}
         />
       )}

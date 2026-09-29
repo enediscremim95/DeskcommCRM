@@ -196,21 +196,24 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 
 ## Deploy em produção (NÃO NEGOCIÁVEL)
 
-**Numa VPS que já tem proxy reverso próprio (Hostinger, Coolify, Dokploy…), todo
-`up -d` leva os DOIS arquivos de compose:**
+**Na VPS Veritas, todo deploy passa pelo porteiro. Não rode `up -d` diretamente:**
 
 ```bash
-docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml --env-file .env up -d app
+bash scripts/deploy-producao.sh --session <id-da-sessao> --tag <tag-ou-imagem>
 ```
 
-Omitir `-f docker-compose.traefik.yml` recria o contêiner sem as labels de
-roteamento; o Traefik da hospedagem deixa de enxergá-lo e **o domínio inteiro
-responde `404 page not found`** — com o contêiner `healthy`, porque o
-healthcheck é um probe TCP interno e não sabe nada de roteamento.
+O script é a única porta para o `up -d` e sempre leva os TRÊS arquivos:
+`docker-compose.prod.yml`, `docker-compose.traefik.yml` e
+`docker-compose.dominios.yml`. Omitir o segundo apaga o roteamento principal;
+omitir o terceiro apaga os routers dos clientes. Nos dois casos o Traefik
+responde **404 com o contêiner `healthy`**, porque o healthcheck interno não
+mede o caminho público.
 
-Depois de qualquer deploy, confirme que o domínio responde **307** (redireciona
-pro login) e não 404. Verificações e o caso de build local em
-`docs/runbooks/deploy.md`.
+O porteiro usa `mkdir` atômico em `/var/lock`, registra sessão, PID, entrada e
+tag, atualiza heartbeat a cada 5 segundos, espera enquanto houver vida e só
+arromba após 120 segundos de silêncio com PID morto. Antes de soltar a tranca,
+confere HTTP 307 no domínio principal e em cada host declarado no compose de
+domínios. O procedimento e o livro de registro estão em `docs/runbooks/deploy.md`.
 
 O caminho normal **não constrói nada na VPS**: commit → push → PR → merge na
 `main` → o CI publica no GHCR → a VPS puxa. Imagem construída na VPS é exceção

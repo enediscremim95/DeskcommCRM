@@ -150,6 +150,25 @@ Para conferir o que os fragmentos de agora produziriam, sem escrever nada:
 pnpm release:conferir
 ```
 
+### O orçamento da seção
+
+O agente já instalado manda no máximo 30.000 bytes crus do `CHANGELOG.md`. A seção gerada
+usa no máximo 24.000 bytes, reservando 20% do transporte para o cabeçalho do arquivo, o
+`[Não lançado]` vazio e o cabeçalho da versão instalada, que prova ao app que o histórico
+chegou inteiro.
+
+Quando todos os corpos não cabem, o montador preserva obrigatoriamente:
+
+1. o bloco completo de cada `exige_acao`, no início da seção;
+2. o título de todos os fragmentos;
+3. os corpos que couberem na folga, priorizando `exige_acao`, `capacidade_nova` e
+   `nada_mudou`, nessa ordem.
+
+Se avisos e títulos sozinhos excederem o orçamento, o corte da release falha. O gerador
+nunca publica uma seção que esconda ou decapite uma ação obrigatória. Como o limite está
+no produtor, a próxima release já cabe no `agent.sh` antigo que roda no parque instalado;
+ninguém precisa editar arquivo na VPS para receber o conserto.
+
 Três propriedades, e cada uma resolve um defeito medido:
 
 - **Um arquivo por PR, nome único.** Dois PRs paralelos criam dois arquivos diferentes, e o

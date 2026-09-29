@@ -67,7 +67,12 @@ export function SourcesTab() {
           onCreated={setSelected}
         />
         {selected ? (
-          <SourceDetail source={selected} open={!!selected} onOpenChange={() => setSelected(null)} />
+          <SourceDetail
+            source={selected}
+            open={!!selected}
+            onOpenChange={() => setSelected(null)}
+            onUpdated={setSelected}
+          />
         ) : null}
       </div>
     );
@@ -111,7 +116,12 @@ export function SourcesTab() {
 
       <CreateSourceDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={setSelected} />
       {selected ? (
-        <SourceDetail source={selected} open={!!selected} onOpenChange={() => setSelected(null)} />
+        <SourceDetail
+          source={selected}
+          open={!!selected}
+          onOpenChange={() => setSelected(null)}
+          onUpdated={setSelected}
+        />
       ) : null}
     </div>
   );

@@ -6,19 +6,34 @@ está documentado no fim.
 
 ---
 
-## 1. O comando
+## 1. A única porta de entrada
 
 ```bash
-cd /var/www/crm
-docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml --env-file .env up -d app
+cd /opt/DeskcommCRM
+bash scripts/deploy-producao.sh --session <id-da-sessao> --tag <tag-ou-imagem>
 ```
 
-### Os DOIS `-f` são obrigatórios. Sempre.
+Para outro serviço, repita `--service`, por exemplo `--service worker`. Sem a
+opção, o alvo é `app`. A sessão e a tag/imagem são obrigatórias porque ficam no
+livro de registro e respondem quem subiu o quê.
+
+**Não rode `docker compose up -d` diretamente.** O porteiro é o único caminho e
+executa, sem alternativa com menos arquivos:
+
+```bash
+docker compose \
+  -f docker-compose.prod.yml \
+  -f docker-compose.traefik.yml \
+  -f docker-compose.dominios.yml \
+  --env-file .env up -d app
+```
+
+### Os TRÊS `-f` são obrigatórios. Sempre.
 
 Esta é a pegadinha que já derrubou o site inteiro em produção (2026-08-05).
 
 A VPS (Hostinger) vem com um **Traefik próprio** ocupando as portas 80/443.
-`docker-compose.traefik.yml` é o ÚNICO lugar que:
+`docker-compose.traefik.yml` contém a infraestrutura comum do Traefik e:
 
 - coloca no contêiner `app` as labels de roteamento
   (`traefik.http.routers.deskcomm.rule=Host(...)`);
@@ -26,33 +41,67 @@ A VPS (Hostinger) vem com um **Traefik próprio** ocupando as portas 80/443.
 - desliga o `caddy` do compose base por profile (senão dois processos brigam
   pela mesma porta).
 
-Rodar só com `-f docker-compose.prod.yml` recria o contêiner **sem labels
-nenhuma**. O Traefik deixa de enxergá-lo e o domínio inteiro passa a responder
-`404 page not found` — não é erro do Next, é o 404 genérico do Traefik. A app
-está no ar, saudável, e inalcançável.
+`docker-compose.dominios.yml` fica separado porque contém os hosts operacionais
+desta instalação. Cada host novo entra nas três regras do arquivo: router
+principal, router HTTP e `waha-block`.
+
+Rodar sem o Traefik recria o contêiner sem o roteamento principal. Rodar sem o
+arquivo de domínios preserva o domínio principal, mas apaga silenciosamente os
+routers dos clientes. Em ambos os casos o Traefik responde `404 page not found`:
+a app está no ar, saudável e inalcançável pelo endereço esquecido.
+
+### Como funciona a tranca
+
+O script escolhe `mkdir /var/lock/deskcommcrm-deploy.lock` como primitivo de
+exclusão. A criação do diretório é atômica no filesystem; não existe intervalo
+entre “vi que está livre” e “tranquei”. O caminho é global à VPS, então worktrees
+diferentes disputando o mesmo Docker enxergam a mesma porta.
+
+Dentro da tranca, `owner` informa sessão, hora de entrada, tag/imagem, PID, host
+e token. `heartbeat` é atualizado a cada 5 segundos. Quem encontra a porta
+ocupada mostra esses dados e espera, reavaliando a cada 5 segundos.
+
+O limite de silêncio é **120 segundos**, equivalente a 24 heartbeats perdidos.
+Ele tolera atraso de disco e de scheduler sem tratar um deploy legítimo de 10
+minutos como morto. Mesmo depois do limite, o script confere o PID e não
+arromba se o processo continua vivo. Com heartbeat parado e PID morto, move a
+tranca atomicamente, registra o arrombamento e só então tenta entrar.
+
+O livro fica em `/var/log/deskcommcrm/deploy.log`. Cada linha registra horário,
+sessão, PID, tag/imagem, duração, resultado e eventual arrombamento. Para ler
+quem está dentro e o histórico:
+
+```bash
+cat /var/lock/deskcommcrm-deploy.lock/owner
+cat /var/lock/deskcommcrm-deploy.lock/heartbeat
+tail -n 50 /var/log/deskcommcrm/deploy.log
+```
 
 ---
 
 ## 2. Verificação pós-deploy (não pule)
 
-`healthy` no `docker ps` **não prova que o site está acessível** — o healthcheck
-é um probe TCP interno e passa mesmo com o roteamento quebrado. Verifique as
-duas coisas:
+`healthy` no `docker ps` **não prova que o site está acessível**. O porteiro
+consulta o domínio principal e todos os hosts extraídos de
+`docker-compose.dominios.yml`, repete durante até 2 minutos e exige HTTP 307 em
+todos. Qualquer falha mantém o deploy vermelho, imprime a lista completa de
+domínios quebrados e só então libera a tranca.
+
+Para diagnóstico manual, sem subir nada:
 
 ```bash
 # 1) as labels do Traefik existem?
-#    O nome do contêiner é <pasta-do-projeto>-app-1, então pergunte ao compose
-#    em vez de chutar. Aqui um -f só basta: o `ps -q` resolve pelo nome do
-#    projeto + serviço, não pelo conteúdo do arquivo (medido: com um -f ou com
-#    os dois, devolve o MESMO contêiner). Quem precisa dos dois é o `up -d`.
-docker inspect "$(docker compose -f docker-compose.prod.yml ps -q app)" \
+#    O nome do contêiner é <pasta-do-projeto>-app-1, então pergunte ao compose.
+docker inspect "$(docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml -f docker-compose.dominios.yml ps -q app)" \
   --format '{{.Config.Labels}}' | grep -o 'traefik.enable:[^ ]*'
 # esperado: traefik.enable:true   (vazio = roteamento quebrado)
 
-# 2) o domínio responde?
+# 2) quais hosts o porteiro confere?
+grep -oE 'Host\(`[^`]+`\)' docker-compose.dominios.yml | sort -u
+
+# 3) um domínio responde?
 curl -s -o /dev/null -w "%{http_code}\n" https://<DOMAIN>/
-# esperado: 307 (redireciona pro login)
-# 404      = labels perdidas, refaça o deploy com os dois -f
+# esperado: 307. 404 = labels perdidas; o próximo deploy deve ser pelo porteiro.
 ```
 
 ---
@@ -90,8 +139,8 @@ existir (ex.: CI ainda rodando e um bug bloqueando o usuário).
 APP_IMAGE=deskcomm-app:local docker compose \
   -f docker-compose.prod.yml -f docker-compose.build.yml --env-file .env build app
 
-APP_IMAGE=deskcomm-app:local APP_PULL_POLICY=never docker compose \
-  -f docker-compose.prod.yml -f docker-compose.traefik.yml --env-file .env up -d app
+APP_IMAGE=deskcomm-app:local APP_PULL_POLICY=never bash scripts/deploy-producao.sh \
+  --session <id-da-sessao> --tag deskcomm-app:local
 ```
 
 O `docker-compose.build.yml` também cobre `worker` e `scheduler` — troque
