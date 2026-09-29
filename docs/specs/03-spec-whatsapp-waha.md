@@ -1242,13 +1242,14 @@ Mensagens `revoked`/`edited` atualizam o registro original via `external_id` em 
 
 ### 6.5 Retenção do arquivo recebido
 
-O binário recebido é **opt-in por organização**. A fonte é
+O binário recebido é guardado por padrão. A fonte é
 `organizations.settings.whatsapp_media_storage_enabled`: somente o booleano
-`true` autoriza upload no bucket `whatsapp-media`. Campo ausente, `false` ou
-forma inválida significam desligado, inclusive para organizações criadas antes
-desta política.
+`false` desliga o upload no bucket `whatsapp-media`. Campo ausente ou forma
+inválida preserva o arquivo, inclusive para organizações criadas antes desta
+política; isso evita que uma atualização transforme foto, áudio e vídeo em
+"arquivo não guardado" sem uma escolha explícita.
 
-Com a retenção desligada, o evento continua passando pelo worker para preservar
+Com o opt-out explícito, o evento continua passando pelo worker para preservar
 informação escrita. Tipos deriváveis são baixados pelo adapter em memória,
 transformados em `messages.media_derived_text` e descartados; os demais perdem
 o ponteiro do provider imediatamente. A mensagem conserva legenda, tipo, nome
@@ -1258,6 +1259,11 @@ do arquivo, horário e mostra no Inbox que o arquivo não foi guardado. A rota
 Arquivos já existentes no Storage não são removidos por essa configuração.
 Mídia outbound anexada no composer também não entra nesta política, porque o
 upload é parte necessária do envio.
+
+Quando a retenção está ligada, `media.persist_requested` só termina com sucesso
+depois de `media_storage_path` apontar para o objeto no Storage. Falha esgota as
+cinco tentativas como `error`, marca `metadata.media_status = failed` e abre um
+aviso `event_dead` na Central, ligado à conversa afetada.
 
 ---
 

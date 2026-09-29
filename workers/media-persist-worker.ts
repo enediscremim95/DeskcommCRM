@@ -6,9 +6,9 @@
  * deste handler: aqui só retornamos `status:"error"` em falha. O drain conta
  * `attempts` e dead-letra a partir do próprio `MAX_ATTEMPTS`; espelhamos esse
  * valor localmente (`DRAIN_MAX_ATTEMPTS`) só para saber quando é a ÚLTIMA
- * tentativa que o drain vai permitir e marcar `metadata.media_status =
- * "failed"` na própria mensagem antes do dead-letter (Onda 3 poderá
- * reprocessar).
+ * tentativa que o drain vai permitir. Nesse ponto marca
+ * `metadata.media_status = "failed"` e abre um aviso visível na Central;
+ * evento `done` sem arquivo não pode ser a evidência final de uma persistência.
  */
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import {
@@ -68,8 +68,99 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
   if (error) return { consumer_key, status: "error", detail: error.message };
 
   const msg = data as MessageMediaRow | null;
-  if (!msg?.media_url) return { consumer_key, status: "skipped", detail: "no media_url" };
+  // A mensagem pode ter sido removida por LGPD entre emissão e consumo. Não há
+  // mais entidade nem arquivo a persistir, então este é um skip legítimo.
+  if (!msg) return { consumer_key, status: "skipped", detail: "message not found" };
   if (msg.media_storage_path) return { consumer_key, status: "skipped", detail: "already stored" };
+
+  const isLastAttempt = row.attempts >= DRAIN_MAX_ATTEMPTS - 1;
+
+  const markStatus = async (media_status: "stored" | "failed", patch: Record<string, unknown> = {}) => {
+    const { error: updErr } = await admin
+      .from("messages")
+      .update({ metadata: { ...(msg.metadata ?? {}), media_status }, ...patch })
+      .eq("id", msg.id)
+      .eq("organization_id", msg.organization_id);
+    if (updErr) throw new Error(`message update failed: ${updErr.message}`);
+  };
+
+  const avisarFalhaDefinitiva = async (): Promise<void> => {
+    try {
+      const { data: jaAberto, error: buscaError } = await admin
+        .from("agent_inbox_items")
+        .select("id")
+        .eq("organization_id", msg.organization_id)
+        .eq("kind", "event_dead")
+        .eq("ref_kind", "conversation")
+        .eq("ref_id", msg.conversation_id)
+        .eq("status", "open")
+        .limit(1)
+        .maybeSingle();
+      if (buscaError) {
+        logger.warn("[media-persist] não consegui conferir aviso existente", {
+          organization_id: msg.organization_id,
+          message_id: msg.id,
+          detail: buscaError.message,
+        });
+      }
+      if (jaAberto) return;
+
+      const tipo = ({
+        image: "foto",
+        audio: "áudio",
+        video: "vídeo",
+        sticker: "figurinha",
+        document: "documento",
+      } as Record<string, string>)[msg.type] ?? "mídia";
+      const { error: inboxError } = await admin.from("agent_inbox_items").insert({
+        organization_id: msg.organization_id,
+        kind: "event_dead",
+        severity: "critical",
+        title: "Um arquivo recebido não ficou disponível na conversa",
+        body: `O arquivo de ${tipo} não pôde ser guardado após ${DRAIN_MAX_ATTEMPTS} tentativas. Abra a conversa e confira a conexão do WhatsApp e o Storage antes de pedir ao cliente que envie novamente.`,
+        ref_kind: "conversation",
+        ref_id: msg.conversation_id,
+      });
+      if (inboxError) {
+        logger.error("[media-persist] aviso na Central falhou", {
+          organization_id: msg.organization_id,
+          message_id: msg.id,
+          detail: inboxError.message,
+        });
+      }
+    } catch (err) {
+      logger.error("[media-persist] não consegui abrir o aviso de falha definitiva", {
+        organization_id: msg.organization_id,
+        message_id: msg.id,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const falhar = async (detail: string): Promise<HandlerResult> => {
+    if (isLastAttempt) {
+      logger.error("[media-persist] persistência falhou definitivamente", {
+        message_id: msg.id,
+        detail,
+      });
+      try {
+        await markStatus("failed");
+      } catch (statusError) {
+        logger.error("[media-persist] não consegui marcar a mídia como failed", {
+          organization_id: msg.organization_id,
+          message_id: msg.id,
+          detail: statusError instanceof Error ? statusError.message : String(statusError),
+        });
+      }
+      await avisarFalhaDefinitiva();
+    }
+    return { consumer_key, status: "error", detail };
+  };
+
+  // `media.persist_requested` afirma que existe um arquivo para guardar. URL
+  // ausente não é decisão benignamente pulada: sem erro o drain gravava `done`
+  // e produzia exatamente a falsa evidência observada em produção.
+  if (!msg.media_url) return falhar("media_url ausente");
 
   const { data: organization, error: organizationError } = await admin
     .from("organizations")
@@ -77,18 +168,11 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     .eq("id", msg.organization_id)
     .maybeSingle();
 
-  // Falha fechada: não conseguir ler a política nunca autoriza consumir
-  // Storage. A mídia ainda segue pelo caminho transitório, que preserva o
-  // texto sem reter o arquivo.
   if (organizationError) {
-    logger.warn("[media-persist] não consegui ler a política; mídia não será guardada", {
-      organization_id: msg.organization_id,
-      message_id: msg.id,
-      detail: organizationError.message,
-    });
+    return falhar(`falha ao ler política de mídia: ${organizationError.message}`);
   }
 
-  const storageEnabled = !organizationError && deveGuardarMidiaRecebida(organization?.settings);
+  const storageEnabled = deveGuardarMidiaRecebida(organization?.settings);
 
   if (!storageEnabled) {
     const derivable = TIPOS_DERIVAVEIS.has(msg.type);
@@ -123,17 +207,6 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     return { consumer_key, status: "ok", detail: "storage disabled; transient derivation requested" };
   }
 
-  const markStatus = async (media_status: "stored" | "failed", patch: Record<string, unknown> = {}) => {
-    const { error: updErr } = await admin
-      .from("messages")
-      .update({ metadata: { ...(msg.metadata ?? {}), media_status }, ...patch })
-      .eq("id", msg.id)
-      .eq("organization_id", msg.organization_id);
-    if (updErr) throw new Error(`message update failed: ${updErr.message}`);
-  };
-
-  const isLastAttempt = row.attempts >= DRAIN_MAX_ATTEMPTS - 1;
-
   let media;
   try {
     // Pelo ADAPTER, não por uma função fixa. Antes esta linha era
@@ -155,7 +228,10 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
       ((sessao?.provider as string) ?? DEFAULT_CHANNEL_PROVIDER) as ChannelProvider,
     );
     const sessionRef = sessao ? resolveSessionRef(sessao as unknown as ChannelSessionRef) : null;
-    if (!adapter.fetchInboundMedia || !sessionRef) {
+    if (!sessionRef) {
+      return falhar("sessão do canal indisponível para baixar a mídia");
+    }
+    if (!adapter.fetchInboundMedia) {
       // Canal que não sabe baixar não é erro: é o estado normal de um canal sem
       // mídia de entrada. Marcar `failed` faria a Central acusar um defeito que
       // não existe.
@@ -170,11 +246,7 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    if (isLastAttempt) {
-      logger.error("[media-persist] download failed permanently", { message_id: msg.id, detail });
-      await markStatus("failed");
-    }
-    return { consumer_key, status: "error", detail };
+    return falhar(detail);
   }
 
   const path = storagePathFor(msg.organization_id, msg.conversation_id, msg.id, media.mime);
@@ -182,21 +254,18 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     .from("whatsapp-media")
     .upload(path, media.buffer, { contentType: media.mime, upsert: true });
   if (uploadErr) {
-    if (isLastAttempt) {
-      logger.error("[media-persist] upload failed permanently", {
-        message_id: msg.id,
-        detail: uploadErr.message,
-      });
-      await markStatus("failed");
-    }
-    return { consumer_key, status: "error", detail: uploadErr.message };
+    return falhar(uploadErr.message);
   }
 
-  await markStatus("stored", {
-    media_storage_path: path,
-    media_size_bytes: media.buffer.byteLength,
-    media_mime: media.mime,
-  });
+  try {
+    await markStatus("stored", {
+      media_storage_path: path,
+      media_size_bytes: media.buffer.byteLength,
+      media_mime: media.mime,
+    });
+  } catch (err) {
+    return falhar(err instanceof Error ? err.message : String(err));
+  }
 
   // Dispara a derivação textual (Onda 3) — fire-and-forget, mesmo padrão do
   // resto do repo: falha de emit não reverte a persistência já concluída.
