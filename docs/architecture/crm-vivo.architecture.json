@@ -31,7 +31,7 @@
     { "id": "vocab", "lane": "barramento", "col": 3, "type": "service", "label": "activity-vocabulary", "sublabel": "forma = gente/agente/máquina · texto = o resto" },
     { "id": "timelineapi", "lane": "barramento", "col": 3, "type": "api", "label": "GET /leads/:id/timeline", "sublabel": "por NEGÓCIO — lead sem contato existe" },
     { "id": "resolver", "lane": "barramento", "col": 1, "type": "service", "label": "resolveActiveLeadForContact", "sublabel": "ambíguo ⇒ não adivinha" },
-    { "id": "reenvio", "lane": "barramento", "col": 4, "type": "service", "label": "Janela curta de reenvio", "sublabel": "60 min padrão · knob da organização · corrida no banco" },
+    { "id": "reenvio", "lane": "barramento", "col": 4, "type": "service", "label": "Janela curta de reenvio", "sublabel": "opt-in por fonte · canal protegido · corrida no banco" },
     { "id": "contactleadsapi", "lane": "barramento", "col": 4, "type": "api", "label": "GET /contacts/:id/leads", "sublabel": "org ativa · todos os funis · sem lista fixa de campos" },
 
     { "id": "leads", "lane": "negocio", "col": 4, "type": "database", "label": "crm_leads", "sublabel": "N negócios abertos · trava só na janela curta" },
@@ -118,7 +118,7 @@
     { "id": "e61", "from": "eventlog", "to": "automacao", "label": "regra fixa selecionada" },
     { "id": "e62", "from": "automacao", "to": "fila", "label": "janela · limite · espaçamento · bloqueio · consentimento" },
     { "id": "e63", "from": "reativacoes", "to": "risco", "label": "recusa só volta com fato novo ou prazo", "route": "drop" },
-    { "id": "e64", "from": "reenvio", "to": "leads", "label": "na janela alimenta · depois cria outro" },
+    { "id": "e64", "from": "reenvio", "to": "leads", "label": "fonte marcada ou canal alimenta · demais criam" },
     { "id": "e65", "from": "leads", "to": "reenvio", "label": "índice parcial decide a corrida" },
     { "id": "e66", "from": "reenvio", "to": "atividades", "label": "lead_merged visível na timeline" }
   ],

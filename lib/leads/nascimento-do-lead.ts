@@ -53,6 +53,7 @@ import { emitLeadActivity } from "./activity-emitter";
 import {
   alimentarLeadExistente,
   buscarVencedorDaJanela,
+  CHAVE_REENVIO_CANAL_INBOUND,
   ehColisaoDaJanela,
   prepararEntradaNaJanela,
 } from "./janela-de-reenvio";
@@ -190,6 +191,7 @@ export async function garantirLeadDaConversa(
     entrada = await prepararEntradaNaJanela(db, {
       organizationId,
       contactId,
+      guardKey: CHAVE_REENVIO_CANAL_INBOUND,
       depoisDaLeitura: dados.depoisDaLeituraDaJanela,
     });
     if (entrada.existente) return await juntar(entrada.leadId, false);
@@ -257,13 +259,18 @@ export async function garantirLeadDaConversa(
       // funil) — a tag sempre entra; o destaque visual é opt-in do operador.
       tags: rotuloDeAnuncio ? [rotuloDeAnuncio] : [],
       reentry_guard_until: entrada.guardUntil,
+      reentry_guard_key: entrada.guardKey,
     })
     .select("id")
     .single();
 
   if (error && ehColisaoDaJanela(error)) {
     try {
-      const vencedor = await buscarVencedorDaJanela(db, { organizationId, contactId });
+      const vencedor = await buscarVencedorDaJanela(db, {
+        organizationId,
+        contactId,
+        guardKey: CHAVE_REENVIO_CANAL_INBOUND,
+      });
       if (vencedor) return await juntar(vencedor, true);
     } catch (collisionError) {
       return {

@@ -367,7 +367,9 @@ insert into public.organizations (
 );
 insert into public.contacts (id, organization_id, display_name, source)
 values ('02750000-0000-4000-8000-00000000c275',
-        '02750000-0000-4000-8000-000000000001', 'Contato Legado', 'webhook');
+        '02750000-0000-4000-8000-000000000001', 'Contato Legado', 'whatsapp'),
+       ('02750000-0000-4000-8000-00000000c276',
+        '02750000-0000-4000-8000-000000000001', 'Contato de Fonte', 'webhook');
 
 do $seed$
 declare
@@ -379,19 +381,33 @@ begin
   select id into s from public.crm_stages
    where pipeline_id = p and not is_won and not is_lost order by position limit 1;
 
+  insert into public.webhook_sources (
+    id, organization_id, name, path_token, default_pipeline_id, default_stage_id
+  ) values (
+    '02750000-0000-4000-8000-00000000f275',
+    '02750000-0000-4000-8000-000000000001', 'Fonte existente',
+    'upgrade-0275-fonte-existente', p, s
+  );
+
   insert into public.crm_leads (
     id, organization_id, pipeline_id, stage_id, contact_id, title, source,
     external_id, custom_fields, created_at
   ) values
     ('02750000-0000-4000-8000-00000000a001', '02750000-0000-4000-8000-000000000001', p, s,
-     '02750000-0000-4000-8000-00000000c275', 'Primeiro', 'webhook', 'legado-a',
+     '02750000-0000-4000-8000-00000000c275', 'Primeiro', 'whatsapp', 'legado-a',
      '{"primeiro":true}'::jsonb, now() - interval '3 hours'),
     ('02750000-0000-4000-8000-00000000a002', '02750000-0000-4000-8000-000000000001', p, s,
-     '02750000-0000-4000-8000-00000000c275', 'Gêmeo', 'webhook', 'legado-b',
+     '02750000-0000-4000-8000-00000000c275', 'Gêmeo', 'whatsapp', 'legado-b',
      '{"segundo":true}'::jsonb, now() - interval '150 minutes'),
     ('02750000-0000-4000-8000-00000000a003', '02750000-0000-4000-8000-000000000001', p, s,
-     '02750000-0000-4000-8000-00000000c275', 'Demanda legítima', 'webhook', 'legado-c',
-     '{"terceiro":true}'::jsonb, now() - interval '30 minutes');
+     '02750000-0000-4000-8000-00000000c275', 'Demanda legítima', 'whatsapp', 'legado-c',
+     '{"terceiro":true}'::jsonb, now() - interval '30 minutes'),
+    ('02750000-0000-4000-8000-00000000a004', '02750000-0000-4000-8000-000000000001', p, s,
+     '02750000-0000-4000-8000-00000000c276', 'Evento da fonte 1', 'webhook', 'fonte-a',
+     '{}'::jsonb, now() - interval '20 minutes'),
+    ('02750000-0000-4000-8000-00000000a005', '02750000-0000-4000-8000-000000000001', p, s,
+     '02750000-0000-4000-8000-00000000c276', 'Evento da fonte 2', 'webhook', 'fonte-b',
+     '{}'::jsonb, now() - interval '19 minutes');
 end
 $seed$;
 
@@ -420,8 +436,8 @@ psql_db "$UPGRADE_DB" <<'SQL'
 do $assert$
 begin
   if (select count(*) from public.crm_leads
-       where organization_id = '02750000-0000-4000-8000-000000000001' and status = 'open') <> 2 then
-    raise exception 'upgrade 0275: esperava 2 cards abertos (gêmeo unido + demanda legítima)';
+       where organization_id = '02750000-0000-4000-8000-000000000001' and status = 'open') <> 4 then
+    raise exception 'upgrade 0275: esperava 2 cards do canal e 2 eventos preservados da fonte';
   end if;
   if exists (select 1 from public.crm_leads where id = '02750000-0000-4000-8000-00000000a002') then
     raise exception 'upgrade 0275: o card gêmeo sobreviveu';
@@ -457,6 +473,13 @@ begin
   end if;
   if to_regclass('public.uniq_crm_leads_reentry_guard') is null then
     raise exception 'upgrade 0275: índice da corrida não nasceu';
+  end if;
+  if (select count(*) from public.crm_leads
+       where id in ('02750000-0000-4000-8000-00000000a004', '02750000-0000-4000-8000-00000000a005')) <> 2 then
+    raise exception 'upgrade 0275: fonte existente perdeu evento sem opt-in';
+  end if;
+  if (select merge_repeated_submissions from public.webhook_sources limit 1) is distinct from false then
+    raise exception 'upgrade 0275: default da fonte existente não é false';
   end if;
 end
 $assert$;

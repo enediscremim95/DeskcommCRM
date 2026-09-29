@@ -14,10 +14,19 @@ import {
  * organização em Configurações da empresa.
  */
 export const INDICE_JANELA_REENVIO = "uniq_crm_leads_reentry_guard";
+export const CHAVE_REENVIO_CANAL_INBOUND = "canal:inbound";
+
+export function chaveDaJanelaDaFonte(
+  sourceId: string,
+  mergeRepeatedSubmissions: boolean,
+): string | null {
+  return mergeRepeatedSubmissions ? `fonte:${sourceId}` : null;
+}
 
 interface PrepararEntradaArgs {
   organizationId: string;
   contactId: string;
+  guardKey: string;
   agora?: Date;
   /** Ponto de sincronização usado pelo invariante de concorrência real. */
   depoisDaLeitura?: () => Promise<void>;
@@ -25,7 +34,7 @@ interface PrepararEntradaArgs {
 
 export type EntradaNaJanela =
   | { existente: true; leadId: string; minutos: number }
-  | { existente: false; guardUntil: string; minutos: number };
+  | { existente: false; guardUntil: string; guardKey: string; minutos: number };
 
 async function configuracaoDaJanela(db: SupabaseClient, organizationId: string): Promise<number> {
   const { data, error } = await db
@@ -57,6 +66,7 @@ export async function prepararEntradaNaJanela(
     .update({ reentry_guard_until: null })
     .eq("organization_id", args.organizationId)
     .eq("contact_id", args.contactId)
+    .eq("reentry_guard_key", args.guardKey)
     .eq("status", "open")
     .lte("reentry_guard_until", agora.toISOString());
   if (liberarErro) throw new Error(`janela_reenvio_liberar: ${liberarErro.message}`);
@@ -66,6 +76,7 @@ export async function prepararEntradaNaJanela(
     .select("id")
     .eq("organization_id", args.organizationId)
     .eq("contact_id", args.contactId)
+    .eq("reentry_guard_key", args.guardKey)
     .eq("status", "open")
     .gte("created_at", corte)
     .order("created_at", { ascending: false })
@@ -78,13 +89,14 @@ export async function prepararEntradaNaJanela(
   return {
     existente: false,
     guardUntil: new Date(agora.getTime() + minutos * 60_000).toISOString(),
+    guardKey: args.guardKey,
     minutos,
   };
 }
 
 export async function buscarVencedorDaJanela(
   db: SupabaseClient,
-  args: Pick<PrepararEntradaArgs, "organizationId" | "contactId">,
+  args: Pick<PrepararEntradaArgs, "organizationId" | "contactId" | "guardKey">,
 ): Promise<string | null> {
   const minutos = await configuracaoDaJanela(db, args.organizationId);
   const corte = new Date(Date.now() - minutos * 60_000).toISOString();
@@ -93,6 +105,7 @@ export async function buscarVencedorDaJanela(
     .select("id")
     .eq("organization_id", args.organizationId)
     .eq("contact_id", args.contactId)
+    .eq("reentry_guard_key", args.guardKey)
     .eq("status", "open")
     .gte("created_at", corte)
     .order("created_at", { ascending: false })

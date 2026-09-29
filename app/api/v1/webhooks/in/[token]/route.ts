@@ -18,6 +18,7 @@ import { createLeadHandler } from "@/app/api/v1/leads/_handler";
 import {
   alimentarLeadExistente,
   buscarVencedorDaJanela,
+  chaveDaJanelaDaFonte,
   ehColisaoDaJanela,
   prepararEntradaNaJanela,
 } from "@/lib/leads/janela-de-reenvio";
@@ -110,7 +111,7 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
   const admin = createAdminClient();
   const { data: source, error: srcErr } = await admin
     .from("webhook_sources")
-    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, default_owner_user_id, field_map, redirect_to, is_active")
+    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, default_owner_user_id, field_map, redirect_to, is_active, merge_repeated_submissions")
     .eq("path_token", token)
     .maybeSingle();
   if (srcErr) return fail("internal_error", srcErr.message, 500, { requestId });
@@ -533,6 +534,7 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
     source_metadata?: Record<string, unknown>;
     external_id?: string;
     reentry_guard_until?: string;
+    reentry_guard_key?: string;
   } = {
     pipeline_id: source.default_pipeline_id,
     stage_id: source.default_stage_id,
@@ -551,11 +553,16 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
 
   let lead: Record<string, unknown>;
   let juntadoNaJanela = false;
+  const chaveDaJanela = chaveDaJanelaDaFonte(
+    source.id as string,
+    source.merge_repeated_submissions === true,
+  );
   try {
-    const entrada = contactId
+    const entrada = contactId && chaveDaJanela
       ? await prepararEntradaNaJanela(admin, {
           organizationId: source.organization_id,
           contactId,
+          guardKey: chaveDaJanela,
         })
       : null;
 
@@ -589,16 +596,20 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
         {
           ...leadInput,
           ...(entrada && !entrada.existente
-            ? { reentry_guard_until: entrada.guardUntil }
+            ? {
+                reentry_guard_until: entrada.guardUntil,
+                reentry_guard_key: entrada.guardKey,
+              }
             : {}),
         },
       );
     }
   } catch (err) {
-    if (contactId && ehColisaoDaJanela(err)) {
+    if (contactId && chaveDaJanela && ehColisaoDaJanela(err)) {
       const vencedor = await buscarVencedorDaJanela(admin, {
         organizationId: source.organization_id,
         contactId,
+        guardKey: chaveDaJanela,
       });
       if (vencedor) {
         lead = await alimentarLeadExistente(admin, {

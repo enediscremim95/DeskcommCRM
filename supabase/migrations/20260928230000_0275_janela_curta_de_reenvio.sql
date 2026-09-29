@@ -1,8 +1,8 @@
--- Janela curta de reenvio por organização.
+-- Janela curta de reenvio por fonte de webhook e para o canal inbound.
 --
--- Não existe unicidade global de card aberto por contato. A trava cobre apenas
--- o card automático mais recente enquanto `reentry_guard_until` está presente.
--- Depois do prazo o app libera a trava e outro negócio aberto pode nascer.
+-- Fontes existentes mantêm o comportamento anterior: cada evento cria um card.
+-- Quem configura uma fonte opta por juntar reenvios; o canal inbound, que não
+-- tem `webhook_source`, permanece protegido pela chave `canal:inbound`.
 --
 -- A limpeza NÃO fecha card como lost: isso acionaria validação de motivo,
 -- notificação de perda e relatório comercial falso. O gêmeo é absorvido pelo
@@ -19,6 +19,9 @@ begin
   -- fim deste DO, que é uma única transação no psql do install/update.
   lock table public.crm_leads in share row exclusive mode;
 
+  alter table public.webhook_sources
+    add column if not exists merge_repeated_submissions boolean not null default false;
+
   if not exists (
     select 1 from information_schema.columns
      where table_schema = 'public'
@@ -27,6 +30,7 @@ begin
   ) then
     execute 'alter table public.crm_leads add column reentry_guard_until timestamptz';
   end if;
+  alter table public.crm_leads add column if not exists reentry_guard_key text;
 
   -- Índice presente é o marcador de que a migração inteira concluiu. Na
   -- reaplicação não há UPDATE, INSERT nem DELETE de dados.
@@ -34,7 +38,9 @@ begin
     for grupo in
       select organization_id, contact_id
         from public.crm_leads
-       where status = 'open' and contact_id is not null
+       where status = 'open'
+         and contact_id is not null
+         and source = 'whatsapp'
        group by organization_id, contact_id
       having count(*) > 1
     loop
@@ -59,6 +65,7 @@ begin
          where organization_id = grupo.organization_id
            and contact_id = grupo.contact_id
            and status = 'open'
+           and source = 'whatsapp'
          order by created_at, id
       loop
         if manter_id is null
@@ -179,20 +186,24 @@ begin
                ))) as minutos
         from public.crm_leads l
         join public.organizations o on o.id = l.organization_id
-       where l.status = 'open' and l.contact_id is not null
+       where l.status = 'open'
+         and l.contact_id is not null
+         and l.source = 'whatsapp'
        order by l.organization_id, l.contact_id, l.created_at desc, l.id desc
     )
     update public.crm_leads l
-       set reentry_guard_until = l.created_at + make_interval(mins => r.minutos)
+       set reentry_guard_until = l.created_at + make_interval(mins => r.minutos),
+           reentry_guard_key = 'canal:inbound'
       from mais_recente r
      where l.id = r.id;
 
     execute $index$
       create unique index uniq_crm_leads_reentry_guard
-        on public.crm_leads (organization_id, contact_id)
+        on public.crm_leads (organization_id, contact_id, reentry_guard_key)
        where status = 'open'
          and contact_id is not null
          and reentry_guard_until is not null
+         and reentry_guard_key is not null
     $index$;
   end if;
 end
@@ -200,5 +211,9 @@ $$;
 
 comment on column public.crm_leads.reentry_guard_until is
   'Trava interna da janela curta de reenvio. Não limita a quantidade global de negócios abertos por contato.';
+comment on column public.crm_leads.reentry_guard_key is
+  'Escopo da janela curta: canal inbound ou fonte de webhook que declarou reenvio.';
+comment on column public.webhook_sources.merge_repeated_submissions is
+  'Opt-in por fonte. False preserva um card por evento para fontes existentes.';
 
 notify pgrst, 'reload schema';

@@ -51,6 +51,7 @@ interface Props {
   source: WebhookSourceRow;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onUpdated: (source: WebhookSourceRow) => void;
 }
 
 function publicUrl(pathToken: string): string {
@@ -127,7 +128,7 @@ function LinhasDoResumo({
   );
 }
 
-export function SourceDetail({ source, open, onOpenChange }: Props) {
+export function SourceDetail({ source, open, onOpenChange, onUpdated }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const update = useUpdateWebhookSource();
@@ -383,8 +384,43 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
                 update.mutate(
                   { id: source.id, is_active: checked },
                   {
-                    onSuccess: () =>
-                      toast.success(checked ? t("Fonte ativada.") : t("Fonte pausada.")),
+                    onSuccess: (res) => {
+                      onUpdated(res.data);
+                      toast.success(checked ? t("Fonte ativada.") : t("Fonte pausada."));
+                    },
+                  },
+                )
+              }
+            />
+          </section>
+
+          <section className="flex items-start justify-between gap-4 rounded-sm border border-border p-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-text">
+                {t("Esta origem pode repetir o mesmo envio")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Ative se a ferramenta às vezes manda a mesma pessoa mais de uma vez. Os envios próximos ficam no mesmo card.",
+                )}
+              </p>
+            </div>
+            <Switch
+              aria-label={t("Esta origem pode repetir o mesmo envio")}
+              checked={source.merge_repeated_submissions}
+              disabled={update.isPending}
+              onCheckedChange={(checked) =>
+                update.mutate(
+                  { id: source.id, merge_repeated_submissions: checked },
+                  {
+                    onSuccess: (res) => {
+                      onUpdated(res.data);
+                      toast.success(
+                        checked
+                          ? t("Envios repetidos serão mantidos no mesmo card.")
+                          : t("Cada novo envio voltará a criar um card."),
+                      );
+                    },
                   },
                 )
               }
