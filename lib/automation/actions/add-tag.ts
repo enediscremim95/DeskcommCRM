@@ -37,6 +37,11 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     .eq("organization_id", ctx.organizationId);
   if (error) return { type: "add_tag", status: "failed", error: error.message };
 
+  // As ações seguintes da mesma regra compartilham este objeto. Mantém o
+  // contexto alinhado ao banco para que uma troca remove_tag -> add_tag não
+  // recoloque a tag que acabou de ser removida.
+  target.row.tags = merged;
+
   await ctx.admin.rpc("emit_event", {
     p_event_type: target.event,
     p_entity_kind: target.kind,
