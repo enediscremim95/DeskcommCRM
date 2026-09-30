@@ -267,7 +267,7 @@ const schema = z.object({
    * `EMAIL_PROVIDER` ausente mantém Resend. Remetente vazio em qualquer
    * provedor NÃO cai num domínio nosso: ver `fromAddress()`.
    */
-  EMAIL_PROVIDER: z.enum(["resend", "ses"]).optional().default("resend"),
+  EMAIL_PROVIDER: z.enum(["resend", "ses", "e2e"]).optional().default("resend"),
   RESEND_API_KEY: z.string().optional().default(""),
   RESEND_FROM_EMAIL: z.string().optional().default(""),
   AWS_SES_REGION: z.string().optional().default(""),

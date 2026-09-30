@@ -101,6 +101,11 @@ SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
 # Precisa bater com o baseURL real do Playwright (ver comentário acima).
 NEXT_PUBLIC_APP_URL=http://localhost:$E2E_PORT
 
+# Transporte local e determinístico: convites são escritos numa caixa de saída
+# ignorada pelo Git, e as specs provam destinatário + conteúdo sem chamar um
+# provedor externo. O adaptador recusa funcionar se app ou banco não forem local.
+EMAIL_PROVIDER=e2e
+
 # Placeholders: 'next start' roda em NODE_ENV=production, e lib/env.ts exige
 # estas vars em produção. As specs não exercitam os serviços por trás delas.
 # Local e CI falham pelos mesmos motivos porque leem ESTE arquivo: o workflow
@@ -137,6 +142,8 @@ NEXT_TELEMETRY_DISABLED=1
 # \`tests/unit/sentry-comunidade-so-erro.test.ts\`.
 SENTRY_DSN=off
 EOF
+
+rm -f .e2e-email-outbox.jsonl
 
 echo "==> .env.e2e gerado, apontando para $API_URL"
 echo "==> Próximo: pnpm e2e:build && pnpm test:e2e"
