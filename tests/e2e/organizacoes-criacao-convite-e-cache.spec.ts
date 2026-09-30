@@ -194,8 +194,12 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
 test("uma tela prepara o CRM e mantém a falha de envio recuperável", async ({ page }) => {
   test.setTimeout(180_000);
   const suffix = randomUUID().slice(0, 8);
+  const failurePrefix = process.env.E2E_EMAIL_FAIL_TO_PREFIX;
+  if (!failurePrefix) {
+    throw new Error("E2E_EMAIL_FAIL_TO_PREFIX ausente: a spec não consegue pedir a falha de envio");
+  }
   const adminEmail = `admin-ready-${suffix}@invariant.test`;
-  const clientEmail = `client-ready-${suffix}@invariant.test`;
+  const clientEmail = `${failurePrefix}${suffix}@invariant.test`;
   const users: string[] = [];
   const orgs: string[] = [];
   try {
@@ -225,7 +229,8 @@ test("uma tela prepara o CRM e mantém a falha de envio recuperável", async ({ 
     expect(createdResponse.status()).toBe(201);
     const created = (await createdResponse.json()).data;
     orgs.push(created.id);
-    // Ambiente E2E sem SMTP: falha real, nunca simular entrega de e-mail.
+    // A outbox local entrega por padrão. Este destinatário pede uma falha real
+    // do adaptador para provar que a recuperação continua existindo.
     expect(created.owner_access.status).toBe("failed");
     await expect(page.getByText(/O CRM foi criado, mas o envio do acesso falhou/)).toBeVisible();
     const org = await db.from("organizations").select("onboarded_at,settings,timezone").eq("id", created.id).single();

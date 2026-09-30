@@ -1,4 +1,4 @@
-import { appendFile } from "node:fs/promises";
+import { appendFile, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 
@@ -8,6 +8,13 @@ import type { EmailAdapter } from "../types";
 
 export const E2E_EMAIL_OUTBOX = ".e2e-email-outbox.jsonl";
 
+interface E2EOutboxMessage {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+}
+
 function isLocalUrl(value: string): boolean {
   try {
     const hostname = new URL(value).hostname;
@@ -15,6 +22,45 @@ function isLocalUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function destinatarios(to: string | string[]): string[] {
+  return Array.isArray(to) ? to : [to];
+}
+
+function falhaPedida(to: string | string[]): boolean {
+  const prefixo = env.E2E_EMAIL_FAIL_TO_PREFIX.trim();
+  return prefixo.length > 0 && destinatarios(to).some((email) => email.startsWith(prefixo));
+}
+
+/** Lê a entrega sintética sem depender do Mailpit do GoTrue. */
+export async function findE2EOutboxEmail(
+  to: string,
+  subjectPart: string,
+): Promise<string | null> {
+  let raw: string;
+  try {
+    raw = await readFile(path.join(process.cwd(), E2E_EMAIL_OUTBOX), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+
+  for (const line of raw.trim().split("\n").reverse()) {
+    if (line.length === 0) continue;
+    try {
+      const message = JSON.parse(line) as E2EOutboxMessage;
+      if (
+        destinatarios(message.to).includes(to) &&
+        message.subject.includes(subjectPart)
+      ) {
+        return message.html || message.text || null;
+      }
+    } catch {
+      // Uma leitura pode coincidir com o append. A próxima sondagem relê a linha completa.
+    }
+  }
+  return null;
 }
 
 /**
@@ -34,6 +80,7 @@ export const e2eOutboxAdapter: EmailAdapter = {
 
   async send(args, from) {
     if (!this.isConfigured()) return { ok: false, error: "not_configured" };
+    if (falhaPedida(args.to)) return { ok: false, error: "send_failed" };
 
     try {
       const id = `e2e-${randomUUID()}`;

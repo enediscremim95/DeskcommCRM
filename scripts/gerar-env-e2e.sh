@@ -105,6 +105,10 @@ NEXT_PUBLIC_APP_URL=http://localhost:$E2E_PORT
 # ignorada pelo Git, e as specs provam destinatário + conteúdo sem chamar um
 # provedor externo. O adaptador recusa funcionar se app ou banco não forem local.
 EMAIL_PROVIDER=e2e
+# Cada spec pode pedir uma falha real do adaptador usando um destinatário com
+# este prefixo. O sufixo continua único, então execuções interrompidas não
+# deixam uma conta fixa que contamine a próxima rodada.
+E2E_EMAIL_FAIL_TO_PREFIX=e2e-falha-
 
 # Placeholders: 'next start' roda em NODE_ENV=production, e lib/env.ts exige
 # estas vars em produção. As specs não exercitam os serviços por trás delas.

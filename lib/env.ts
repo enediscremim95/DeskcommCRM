@@ -268,6 +268,11 @@ const schema = z.object({
    * provedor NÃO cai num domínio nosso: ver `fromAddress()`.
    */
   EMAIL_PROVIDER: z.enum(["resend", "ses", "e2e"]).optional().default("resend"),
+  /**
+   * Injeção de falha determinística do transporte E2E. Só o adaptador local
+   * lê esta chave; prefixo vazio mantém todas as entregas bem-sucedidas.
+   */
+  E2E_EMAIL_FAIL_TO_PREFIX: z.string().optional().default(""),
   RESEND_API_KEY: z.string().optional().default(""),
   RESEND_FROM_EMAIL: z.string().optional().default(""),
   AWS_SES_REGION: z.string().optional().default(""),
