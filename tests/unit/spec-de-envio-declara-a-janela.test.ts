@@ -117,6 +117,9 @@ describe("spec que depende de envio não herda a hora de parede", () => {
     // Domingo é avaliado ANTES da faixa horária: sem isto o buraco volta um dia
     // por semana, e volta o dia inteiro.
     expect(fonte).toMatch(/allow_sunday:\s*true/);
+    // Desde a migration 0274 todo canal novo nasce sem autorização para a IA
+    // falar. Este seed existe justamente para cenários que exercitam o envio.
+    expect(fonte).toMatch(/automatic_attendance_enabled:\s*true/);
   });
 
   it("a janela é aberta para TODAS as sessões da org, não só para a deste seed", () => {

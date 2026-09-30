@@ -90,7 +90,7 @@ test("um leigo monta, publica, confirma o gravado e volta à versão anterior", 
 
   const medidas = await page.evaluate(() => {
     const canvas = document.querySelector<HTMLElement>("[data-testid='atendimento-flow-canvas']");
-    const painel = document.querySelector<HTMLElement>("aside");
+    const painel = document.querySelector<HTMLElement>("[data-testid='atendimento-config-panel']");
     if (!canvas || !painel) throw new Error("canvas ou painel de configuração não apareceu");
     const c = canvas.getBoundingClientRect();
     const p = painel.getBoundingClientRect();

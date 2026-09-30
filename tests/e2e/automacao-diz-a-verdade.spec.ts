@@ -169,7 +169,7 @@ test.describe("a automação conta o que aconteceu de verdade", () => {
       const seletorDeNumero = editor.getByRole("combobox").filter({ hasText: /Escolha o número/ });
       await seletorDeNumero.click();
 
-      // O primeiro número HABILITADO, não o primeiro da lista.
+      // O número DESTE cenário, não o primeiro da lista.
       //
       // A tela desabilita quem não está `WORKING` (correto — mandar por número
       // desconectado é o defeito que aquele `disabled` evita), e o banco do CI é
@@ -177,14 +177,17 @@ test.describe("a automação conta o que aconteceu de verdade", () => {
       // em `STARTING`/`FAILED`, e a ordem não é garantida. `.first()` pegava uma
       // dessas e o clique expirava em `aria-disabled="true"` — medido no CI.
       //
-      // Escolher o primeiro habilitado é o que uma pessoa faria, e não depende
-      // de quem mais semeou número neste banco.
-      const numeros = page.locator('[role="option"]:not([aria-disabled="true"])');
+      // Escolher qualquer WORKING deixava a asserção depender dos knobs de uma
+      // sessão criada por outra spec. O seed abre e autoriza este número pelo
+      // nome idempotente, portanto é ele que torna a entrada determinística.
+      const numeroDoCenario = page.getByRole("option", {
+        name: /Número conectado \(E2E\)/,
+      });
       await expect(
-        numeros.first(),
-        "nenhum número de WhatsApp WORKING — rode scripts/seed-e2e-numero-conectado.ts",
+        numeroDoCenario,
+        "o número de WhatsApp do cenário não está WORKING — rode scripts/seed-e2e-numero-conectado.ts",
       ).toBeVisible({ timeout: 10_000 });
-      await numeros.first().click();
+      await numeroDoCenario.click();
 
       await editor.getByRole("textbox").last().fill(`Olá {{nome}}, vi que você se cadastrou.`);
 
