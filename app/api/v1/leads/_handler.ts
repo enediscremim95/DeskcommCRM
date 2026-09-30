@@ -592,6 +592,7 @@ export async function moveLeadHandler(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (selErr) {
@@ -611,6 +612,7 @@ export async function moveLeadHandler(
     .from("crm_stages")
     .select("id, pipeline_id, organization_id, name")
     .eq("id", input.to_stage_id)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   if (stageErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, stageErr.message);

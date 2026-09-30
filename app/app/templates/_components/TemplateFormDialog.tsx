@@ -45,6 +45,22 @@ interface UpdateInput {
   shortcut: string | null;
 }
 
+async function enviarAudio(templateId: string, file: File): Promise<void> {
+  const form = new FormData();
+  form.set("file", file);
+  const response = await fetch(`/api/v1/message-templates/${templateId}/audio`, {
+    method: "POST",
+    body: form,
+    credentials: "same-origin",
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    throw new Error(body?.error?.message ?? "Erro ao enviar o áudio.");
+  }
+}
+
 export function TemplateFormDialog({ open, onOpenChange, canShare, template }: Props) {
   const t = useT();
   const isEdit = !!template;
@@ -52,6 +68,15 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
   const [body, setBody] = React.useState("");
   const [shortcut, setShortcut] = React.useState("");
   const [shared, setShared] = React.useState(false);
+  const [audio, setAudio] = React.useState<File | null>(null);
+  const [removeAudio, setRemoveAudio] = React.useState(false);
+  const audioPreview = React.useMemo(() => (audio ? URL.createObjectURL(audio) : null), [audio]);
+
+  React.useEffect(() => {
+    return () => {
+      if (audioPreview) URL.revokeObjectURL(audioPreview);
+    };
+  }, [audioPreview]);
 
   const qc = useQueryClient();
   const create = useMutation({
@@ -74,31 +99,52 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
     setBody(template?.body ?? "");
     setShortcut(template?.shortcut ?? "");
     setShared(template ? template.owner_user_id === null : false);
+    setAudio(null);
+    setRemoveAudio(false);
   }, [open, template]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    let conteudoFoiSalvo = false;
     try {
       if (isEdit) {
-        await update.mutateAsync({
+        const saved = await update.mutateAsync({
           id: template.id,
           title,
           body,
           shortcut: shortcut.trim() || null,
         });
+        conteudoFoiSalvo = true;
+        if (removeAudio && template.audio_storage_path) {
+          const response = await fetch(`/api/v1/message-templates/${template.id}/audio`, {
+            method: "DELETE",
+            credentials: "same-origin",
+          });
+          if (!response.ok) throw new Error(t("Erro ao remover o áudio."));
+        }
+        if (audio) await enviarAudio(saved.data.id, audio);
         toast.success(t("Template atualizado."));
       } else {
-        await create.mutateAsync({
+        const saved = await create.mutateAsync({
           title,
           body,
           shortcut: shortcut.trim() || undefined,
           shared: canShare ? shared : false,
         });
+        conteudoFoiSalvo = true;
+        if (audio) await enviarAudio(saved.data.id, audio);
         toast.success(t("Template criado."));
       }
       onOpenChange(false);
-    } catch {
-      /* erro já mostrado pelo showApiError */
+    } catch (error) {
+      if (conteudoFoiSalvo) {
+        toast.error(
+          error instanceof Error ? error.message : t("O texto foi salvo, mas o áudio não."),
+        );
+        await qc.invalidateQueries({ queryKey: TEMPLATES_KEY });
+        onOpenChange(false);
+      }
+      /* Falhas da primeira mutação já são mostradas pelo showApiError. */
     }
   };
 
@@ -161,6 +207,43 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
               <Label htmlFor="tpl-shared">{t("Compartilhar com a equipe")}</Label>
             </div>
           )}
+          {canShare && (shared || (isEdit && template.owner_user_id === null)) ? (
+            <div className="space-y-2 rounded-md border p-3">
+              <Label htmlFor="tpl-audio">{t("Áudio da equipe (opcional)")}</Label>
+              <Input
+                id="tpl-audio"
+                type="file"
+                accept="audio/*"
+                onChange={(event) => {
+                  setAudio(event.target.files?.[0] ?? null);
+                  setRemoveAudio(false);
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("O servidor converte para OGG/Opus para chegar como mensagem de voz.")}
+              </p>
+              {audioPreview ? (
+                <audio controls className="h-9 max-w-full" src={audioPreview} />
+              ) : null}
+              {!audioPreview && template?.audio_storage_path && !removeAudio ? (
+                <div className="space-y-2">
+                  <audio
+                    controls
+                    className="h-9 max-w-full"
+                    src={`/api/v1/message-templates/${template.id}/audio`}
+                  />
+                  <Button type="button" variant="ghost" onClick={() => setRemoveAudio(true)}>
+                    {t("Remover áudio")}
+                  </Button>
+                </div>
+              ) : null}
+              {removeAudio ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("O áudio será removido ao salvar.")}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               {t("Cancelar")}

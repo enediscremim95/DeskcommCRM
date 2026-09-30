@@ -49,6 +49,10 @@ export const PUBLIC_PATHS: RegExp[] = [
   // `GET` da listagem, não `/api/v1/contacts/[id]` nem `/import`, que ainda
   // não têm suporte a Bearer.
   /^\/api\/v1\/contacts$/,
+  // A sessão da extensão é validada DENTRO de cada rota. Os endpoints de
+  // emissão/heartbeat usam cookie + getUser; os demais usam Bearer mínimo,
+  // presença recente da aba do CRM e CORS preso ao ID conhecido da extensão.
+  /^\/api\/v1\/browser-extension(?:\/.*)?$/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —

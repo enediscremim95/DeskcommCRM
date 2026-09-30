@@ -607,6 +607,16 @@ export const NAV_CATALOG = [
   },
 
   // ---- Organização — conta, empresa, acesso ----
+  {
+    href: "/app/settings/browser-extension",
+    label: "Apoio no WhatsApp Web",
+    description:
+      "Instale o painel lateral com ficha do contato, respostas rápidas, áudios e ações do CRM.",
+    icon: "PuzzlePiece",
+    group: "organizacao",
+    section: "Sua conta",
+    minRole: "agent",
+  },
   { href: "/app/settings/aparencia", label: "Aparência", description: "Escolha entre Veritas, azul, claro e escuro para este navegador.", icon: "Palette", group: "organizacao", section: "Sua conta" },
   {
     href: "/app/settings/profile",

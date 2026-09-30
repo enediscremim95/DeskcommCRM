@@ -21,6 +21,7 @@ import { listarConexoesCaidas, type ConexaoCaida } from "@/lib/channels/health";
 import { VoiceCallProvider } from "@/components/voice/VoiceCallContext";
 import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
 import { integrationAccessForOrganization } from "@/lib/integrations/access";
+import { BrowserExtensionHeartbeat } from "./_components/BrowserExtensionHeartbeat";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await loadAuthUser();
@@ -169,6 +170,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <IdiomaProvider locale={user.idioma}>
     <AuthProvider user={user} activeOrg={activeOrg}>
       <InterfaceRefresh userId={user.id} org={activeOrg} support={!!user.support} />
+      <BrowserExtensionHeartbeat />
       {/*
         O MARCADOR da marca da organização — o elemento cuja existência define o
         escopo `body:has([data-marca-org])` (lib/branding/css.ts).
