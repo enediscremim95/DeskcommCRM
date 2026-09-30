@@ -71,12 +71,20 @@ function cardOf(locator: Locator): Locator {
   );
 }
 
-async function login(page: Page, email: string): Promise<void> {
-  await page.goto(`${APP_URL}/login`);
+async function login(
+  page: Page,
+  email: string,
+  destino = "/app/kanban?lista=1",
+): Promise<void> {
+  await page.goto(`${APP_URL}/login?next=${encodeURIComponent(destino)}`);
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
   await aguardarSessaoCompleta(page, "aal1");
+  const esperado = new URL(destino, APP_URL);
+  await page.waitForURL(
+    (url) => url.pathname === esperado.pathname && url.search === esperado.search,
+  );
 }
 
 async function selectFirstOption(page: Page, combobox: Locator): Promise<void> {
@@ -214,6 +222,7 @@ test.describe("webhooks & automações — fluxo completo", () => {
       await sheet.getByRole("button", { name: "Testar agora" }).click();
       await expectToast(page, "Funcionou! Um lead de teste entrou no seu funil.");
       await page.keyboard.press("Escape");
+      await expect(sheet).toBeHidden();
 
       // --- Step 4: aba Automações — criar regra + ligar ---
       await page.getByRole("tab", { name: "Automações" }).click();

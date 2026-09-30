@@ -28,6 +28,7 @@ import { createClient } from "@supabase/supabase-js";
 import { signInviteToken } from "../../lib/auth/invite-token";
 import { E2E_EMAIL_OUTBOX } from "../../lib/email/adapters/e2e-outbox";
 import { aguardarSessaoCompleta, loginComoMembro } from "./helpers/aguardar-sessao";
+import { semearConversaDoInbox, type ConversaDoInbox } from "./helpers/conversa-do-inbox";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
 // ---- creds do seed base (.e2e-creds.json) + do convite (.e2e-invite.json) ----
@@ -57,6 +58,7 @@ function load(): { base: BaseCreds; inv: InviteCreds } {
 }
 
 const { base, inv } = load();
+let conversa: ConversaDoInbox;
 
 // service-role client (mesmo env do dev) — pra provar estado no banco e resetar
 const svc = createClient(
@@ -90,8 +92,8 @@ async function resetInvitee(): Promise<void> {
   await svc.from("user_organizations").delete().eq("user_id", inv.invitee_id).eq("organization_id", inv.org_id);
 }
 
-async function login(page: Page, email: string): Promise<void> {
-  await loginComoMembro(page, email, base.password);
+async function login(page: Page, email: string, destino?: string): Promise<void> {
+  await loginComoMembro(page, email, base.password, destino);
 }
 
 async function loginAdminTotp(page: Page): Promise<void> {
@@ -160,6 +162,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     test.setTimeout(600_000);
     await resetInvitee(); // convidado começa SEM acesso
     fs.rmSync(OUTBOX_PATH, { force: true });
+    conversa = await semearConversaDoInbox(inv.org_id);
 
     // (a) telas autenticadas de /app + endpoints — como agent (membro, sem MFA)
     const ctx = await browser.newContext();
@@ -169,7 +172,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await page.locator("#password").fill(base.password);
     await page.getByRole("button", { name: /entrar/i }).click();
     await page.waitForURL(/\/app\//, { timeout: 150_000 }).catch(() => {});
-    for (const r of ["/app/inbox", "/app/kanban?lista=1", "/app/contacts", "/app/settings/billing", "/app/settings/api-tokens"]) {
+    for (const r of [`/app/inbox?conversation=${conversa.conversationId}`, "/app/kanban?lista=1", "/app/contacts", "/app/settings/billing", "/app/settings/api-tokens"]) {
       await page.goto(r).catch(() => {});
     }
     // compila o endpoint de convite (agent → 403, mas compila a rota)
@@ -189,6 +192,10 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await mp.getByRole("button", { name: /entrar/i }).click();
     await mp.waitForURL(/\/login\/mfa/, { timeout: 150_000 }).catch(() => {});
     await mctx.close();
+  });
+
+  test.afterAll(async () => {
+    await conversa.limpar();
   });
 
   test("1. ciclo feliz: convidar → aceitar → vira agent → cai no inbox", async ({ browser }) => {
@@ -237,7 +244,14 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
   });
 
   test("2. escopo pós-aceite: agent vê inbox/kanban, bloqueado em billing/api-tokens", async ({ page }) => {
-    await login(page, inv.invitee_email);
+    await login(
+      page,
+      inv.invitee_email,
+      `/app/inbox?conversation=${conversa.conversationId}`,
+    );
+
+    await expect(page.getByRole("tab", { name: /Minhas/ })).toBeVisible();
+    await expect(page.getByText(conversa.contactName).first()).toBeVisible();
 
     await page.goto("/app/settings/billing");
     await page.waitForURL(/\/403/);
@@ -245,9 +259,6 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
 
     await page.goto("/app/settings/api-tokens");
     await page.waitForURL(/\/403/);
-
-    await page.goto("/app/inbox");
-    await expect(page.getByText("Selecione uma conversa", { exact: true })).toBeVisible();
 
     // /app/kanban abre o quadro padrão desde b8124bc3; a lista é explícita.
     await page.goto("/app/kanban?lista=1");

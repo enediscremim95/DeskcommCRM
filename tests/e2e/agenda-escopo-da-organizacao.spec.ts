@@ -5,7 +5,7 @@ import * as path from "node:path";
 
 import { test, expect } from "@playwright/test";
 
-import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
+import { loginComoMembro } from "./helpers/aguardar-sessao";
 
 /**
  * A AGENDA MOSTRA A ORGANIZAÇÃO ATIVA — e só ela.
@@ -67,11 +67,7 @@ async function entrar(page: PlaywrightTestTypes.Page, creds: Creds) {
   // tela de 2FA não é o assunto aqui.
   const usuario = creds.users.manager;
   if (!usuario) throw new Error(".e2e-creds.json sem o usuário `manager`");
-  await page.goto("/login");
-  await page.getByLabel(/e-?mail/i).fill(usuario.email);
-  await page.getByLabel(/senha/i).fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await aguardarSessaoCompleta(page, "aal1");
+  await loginComoMembro(page, usuario.email, creds.password, "/app/agenda");
 }
 
 /** Os nomes dos chips de tipo, como quem olha a tela os leria. */
@@ -98,7 +94,7 @@ async function trocarPara(page: PlaywrightTestTypes.Page, orgId: string, nome: s
   if (ativa?.value === orgId) return;
 
   await page.getByTestId("tenant-switcher").click();
-  const documentoNovo = page.waitForURL(/\/app\/kanban$/, {
+  const documentoNovo = page.waitForURL((url) => url.pathname.startsWith("/app/pipelines/"), {
     waitUntil: "load",
     timeout: 60_000,
   });

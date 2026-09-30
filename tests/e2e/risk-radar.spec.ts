@@ -37,12 +37,10 @@ function loadCreds(): Creds {
 const creds = loadCreds();
 
 async function login(page: Page, email: string): Promise<void> {
-  await loginComoMembro(page, email, creds.password);
+  await loginComoMembro(page, email, creds.password, "/app/radar");
 }
 
 async function gotoRadar(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Radar" }).click();
-  await page.waitForURL(/\/app\/radar/);
   await expect(page.getByRole("heading", { name: "Radar de risco" })).toBeVisible();
 }
 

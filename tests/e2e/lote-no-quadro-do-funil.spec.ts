@@ -66,7 +66,7 @@ let etapaOrigemId = "";
 let etapaDestinoId = "";
 
 async function login(page: Page, email: string, senha: string): Promise<void> {
-  await loginComoMembro(page, email, senha);
+  await loginComoMembro(page, email, senha, `/app/pipelines/${pipelineId}`);
 }
 
 async function captura(page: Page, nome: string): Promise<void> {

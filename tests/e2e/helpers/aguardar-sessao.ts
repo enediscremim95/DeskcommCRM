@@ -60,10 +60,20 @@ export async function loginComoMembro(
   page: Page,
   email: string,
   senha: string,
+  destino?: string,
 ): Promise<void> {
-  await page.goto("/login");
+  const login = destino ? `/login?next=${encodeURIComponent(destino)}` : "/login";
+  await page.goto(login);
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(senha);
   await page.getByRole("button", { name: /entrar/i }).click();
   await aguardarSessaoCompleta(page, "aal1");
+  if (destino) {
+    const esperado = new URL(destino, "http://e2e.local");
+    await page.waitForURL(
+      (url) => url.pathname === esperado.pathname && url.search === esperado.search,
+      { timeout: 60_000 },
+    );
+    await page.waitForLoadState("load");
+  }
 }

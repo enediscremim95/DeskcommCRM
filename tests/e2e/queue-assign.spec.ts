@@ -45,8 +45,8 @@ const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.SUPABASE_SERVICE_R
 
 let creds: Creds;
 
-async function login(page: Page, email: string, password: string): Promise<void> {
-  await loginComoMembro(page, email, password);
+async function login(page: Page, email: string, password: string, destino: string): Promise<void> {
+  await loginComoMembro(page, email, password, destino);
 }
 
 test.describe("G5-03 — fila com posição + atribuição", () => {
@@ -82,8 +82,8 @@ test.describe("G5-03 — fila com posição + atribuição", () => {
     page,
   }) => {
     const q = creds.queue!;
-    await login(page, creds.users.agent!.email, creds.password);
-    await page.goto("/app/inbox?filter=unassigned");
+    const inboxDaFila = `/app/inbox?conversation=${q.conversation_id}&filter=unassigned`;
+    await login(page, creds.users.agent!.email, creds.password, inboxDaFila);
 
     // (1) Na Fila: a conversa aparece com posição (Nº) + "Aguardando há X".
     const queueItem = page.getByRole("button").filter({ hasText: q.contact_name });
@@ -108,7 +108,7 @@ test.describe("G5-03 — fila com posição + atribuição", () => {
 
     // (3) Some da Fila.
     await page.reload();
-    await page.goto("/app/inbox?filter=unassigned");
+    await page.goto(inboxDaFila);
     await expect(
       page.getByRole("button").filter({ hasText: q.contact_name }),
     ).toHaveCount(0, { timeout: 15_000 });

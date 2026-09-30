@@ -89,7 +89,7 @@ test.beforeAll(async () => {
 });
 
 test.beforeEach(async ({ page }) => {
-  await loginComoMembro(page, EMAIL, SENHA);
+  await loginComoMembro(page, EMAIL, SENHA, "/app/ai/atendimento");
 });
 
 test.afterAll(async () => {
@@ -141,7 +141,6 @@ async function conferirConfiguracao(
 test("um leigo monta, publica, confirma o gravado e volta à versão anterior", async ({
   page,
 }) => {
-  await page.goto("/app/ai/atendimento");
   await expect(page.getByText("Começar pelo modelo do nicho", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Clínica e agenda", exact: true }).click();
 

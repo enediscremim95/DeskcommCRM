@@ -43,12 +43,16 @@ function loadCreds(): Creds {
 const creds = loadCreds();
 
 async function login(page: Page, email: string): Promise<void> {
-  await loginComoMembro(page, email, creds.password);
+  await loginComoMembro(
+    page,
+    email,
+    creds.password,
+    `/app/pipelines/${creds.kanban!.pipeline_id}`,
+  );
 }
 
 test("filtro por responsável reflete na URL e esconde leads com dono", async ({ page }) => {
   await login(page, creds.users.manager!.email);
-  await page.goto(`/app/pipelines/${creds.kanban!.pipeline_id}`);
 
   const owned = page.getByRole("heading", { name: "Pedido E2E com responsavel" });
   const unowned = page.getByRole("heading", { name: "Pedido E2E sem responsavel" });
