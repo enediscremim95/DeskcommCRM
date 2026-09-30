@@ -35,6 +35,7 @@ import {
 afterEach(() => {
   cleanup();
   window.sessionStorage.clear();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -130,15 +131,40 @@ describe("extensão de apoio no WhatsApp Web", () => {
     expect(heartbeat).not.toContain("accessToken");
   });
 
+  it("não agenda o pulso sem pareamento", () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(createElement(BrowserExtensionHeartbeat));
+
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("não derruba o shell quando o sessionStorage está indisponível", () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("storage bloqueado", "SecurityError");
+    });
+
+    expect(() => render(createElement(BrowserExtensionHeartbeat))).not.toThrow();
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+  });
+
   it("desfaz o pareamento quando o pulso responde 401", async () => {
     window.sessionStorage.setItem(BROWSER_EXTENSION_PAIRING_KEY, "pairing-401");
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    const clearIntervalSpy = vi.spyOn(window, "clearInterval");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
 
     render(createElement(BrowserExtensionHeartbeat));
+    const heartbeatInterval = setIntervalSpy.mock.results[0]?.value;
 
     await waitFor(() => {
       expect(window.sessionStorage.getItem(BROWSER_EXTENSION_PAIRING_KEY)).toBeNull();
     });
+    expect(clearIntervalSpy).toHaveBeenCalledWith(heartbeatInterval);
   });
 
   it("mantém o pareamento quando o pulso responde 500", async () => {
