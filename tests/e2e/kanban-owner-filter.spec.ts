@@ -58,8 +58,9 @@ test("filtro por responsável reflete na URL e esconde leads com dono", async ({
   const unowned = page.getByRole("heading", { name: "Pedido E2E sem responsavel" });
   await expect(owned).toBeVisible();
   await expect(unowned).toBeVisible();
-  // A badge de ausência de dono está presente em ao menos um card.
-  await expect(page.getByText("Sem responsável").first()).toBeVisible();
+  // No card compacto, a ausência de dono é um disco tracejado com rótulo
+  // acessível. A frase deixou de ocupar uma linha visível em cada card.
+  await expect(page.getByLabel("Sem responsável").first()).toBeVisible();
 
   // Abre o filtro de responsável e escolhe "Sem responsável".
   await page.getByRole("button", { name: /^Responsável:/ }).click();

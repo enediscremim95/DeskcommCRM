@@ -84,6 +84,11 @@ test.beforeAll(async () => {
     waha_session_name: `atendimento-${randomUUID().slice(0, 8)}`,
     display_name: "Número Atendimento E2E",
     webhook_secret_encrypted: "\\x00",
+    provider: "waha",
+    // Publicar uma versão exige um canal realmente conectado. O fixture antigo
+    // deixava o default STARTING e a RPC recusava com channel_session_offline;
+    // a tela, corretamente, nunca emitia o toast de publicação concluída.
+    status: "WORKING",
   } as never);
   if (erroCanal) throw erroCanal;
 });

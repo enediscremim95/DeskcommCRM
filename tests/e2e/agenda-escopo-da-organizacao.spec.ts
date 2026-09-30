@@ -74,19 +74,31 @@ async function entrar(page: PlaywrightTestTypes.Page, creds: Creds) {
 async function tiposOferecidos(page: PlaywrightTestTypes.Page): Promise<string[]> {
   await page.goto("/app/agenda");
   await page.getByRole("button", { name: /Novo agendamento/i }).click();
-  const lista = page.getByTestId("tipos-de-agendamento");
-  await expect(lista, "o painel de marcação não ofereceu tipo nenhum").toBeVisible({ timeout: 20_000 });
-  const textos = await lista.getByRole("button").allInnerTexts();
+  const painel = page.getByRole("dialog", { name: /Novo agendamento/i });
+  await expect(painel, "o painel de marcação não abriu").toBeVisible({ timeout: 20_000 });
+  const lista = painel.getByTestId("tipos-de-agendamento");
+  let nomes: string[];
+  if ((await lista.count()) > 0) {
+    const textos = await lista.getByRole("button").allInnerTexts();
+    // O chip é "Nome" + a duração colada ("Consulta E2E 30min"). O nome é a
+    // primeira linha; o `replace` tira o sufixo quando não há quebra.
+    nomes = textos.map((t) => t.split("\n")[0]!.replace(/\d+\s*min$/i, "").trim());
+  } else {
+    // Com UM tipo não existe escolha a fazer, por isso o seletor some. O tipo
+    // oferecido continua visível no contexto da marcação e é dali que um
+    // usuário confirma o que está prestes a marcar.
+    const contexto = painel.getByTestId("contexto-da-marcacao");
+    await expect(contexto, "o único tipo não apareceu no contexto").toBeVisible();
+    nomes = [(await contexto.locator("h3").innerText()).trim()];
+  }
   // FECHA O PAINEL antes de devolver. Ele é um `Sheet` com overlay
   // `fixed inset-0`, e deixá-lo aberto faz o próximo clique — o do seletor de
   // organização — bater no overlay em vez de no botão. Medido: a spec falhava
   // com "intercepts pointer events" por 150s, num ponto que não tinha nada a ver
   // com o que ela mede.
   await page.keyboard.press("Escape");
-  await expect(lista).toBeHidden({ timeout: 10_000 });
-  // O chip é "Nome" + a duração colada ("Consulta E2E 30min"). O nome é a
-  // primeira linha; o `replace` tira o sufixo de duração quando não há quebra.
-  return textos.map((t) => t.split("\n")[0]!.replace(/\d+\s*min$/i, "").trim());
+  await expect(painel).toBeHidden({ timeout: 10_000 });
+  return nomes;
 }
 
 async function trocarPara(page: PlaywrightTestTypes.Page, orgId: string, nome: string) {

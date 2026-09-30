@@ -175,12 +175,20 @@ test.describe("webhooks & automações — fluxo completo", () => {
 
       // --- Step 3: sheet da fonte abre sozinho; URL visível + lead de teste ---
       const sheet = page.getByRole("dialog").filter({ hasText: SOURCE_NAME });
-      await expect(sheet.locator("code", { hasText: "/api/v1/webhooks/in/" }).first()).toBeVisible();
       const snippetField = sheet.getByLabel("Script para landing page");
       await expect(snippetField).toBeVisible();
       const snippet = await snippetField.inputValue();
       expect(snippet).toContain(sourceUrl);
       expect(snippet).toContain(SOURCE_NAME);
+
+      // O <code> com o endereço puro vive na aba "Uso outra ferramenta".
+      // Encontrá-lo sem ativar a aba media apenas que o Radix o manteve montado
+      // e oculto. Ativamos a situação, provamos o endereço visível e voltamos
+      // ao script que a continuação do fluxo usa.
+      await sheet.getByRole("tab", { name: "Uso outra ferramenta" }).click();
+      await expect(sheet.locator("code", { hasText: sourceUrl })).toBeVisible();
+      await sheet.getByRole("tab", { name: "Meu formulário já funciona" }).click();
+      await expect(snippetField).toBeVisible();
 
       // Página estática, em outra origem, cola o snippet e lê o retorno real.
       // O segundo listener representa o fluxo que a LP já tinha e que precisa

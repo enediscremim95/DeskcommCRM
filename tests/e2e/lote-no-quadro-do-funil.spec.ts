@@ -342,8 +342,11 @@ test.describe("Quadro do funil — agir em vários cards de uma vez", () => {
     await expect(page.getByText(TITULO(1), { exact: true })).toBeVisible({ timeout: 30_000 });
 
     const colunaOrigem = coluna(page, etapaOrigemId);
-    // Sem seleção: o crachá mostra só o total.
-    await expect(colunaOrigem.getByText(String(QUANTOS), { exact: true }).first()).toBeVisible();
+    // Sem seleção: o cabeçalho mostra o total junto da unidade ("9 leads").
+    // O número isolado era o desenho anterior do cabeçalho.
+    await expect(
+      colunaOrigem.getByText(`${QUANTOS} leads`, { exact: true }),
+    ).toBeVisible();
 
     await caixaDoCard(page, TITULO(1)).click();
     await page.getByText(TITULO(4), { exact: true }).click({ modifiers: ["Shift"] });
