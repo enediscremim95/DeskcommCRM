@@ -40,7 +40,7 @@ export const POLITICAS_DE_AVISO = {
   routing_unassigned: { refs: ["conversation"], orientacao: "Confira os responsáveis em Configurações → Atendimento." },
   qr_rescan: { refs: ["channel_session"], orientacao: "Peça a quem administra para revisar a conexão do WhatsApp." },
   job_dead: { refs: ["conversation", "job_queue", "cron_jobs"], orientacao: "Confira o motivo deste aviso com quem administra antes de tentar a operação novamente." },
-  event_dead: { refs: [], orientacao: "Peça a quem administra para conferir o processamento descrito neste aviso." },
+  event_dead: { refs: ["conversation"], orientacao: "Peça a quem administra para conferir o processamento descrito neste aviso." },
   budget_exceeded: { refs: ["ai_budget"], orientacao: "Peça ao gestor para revisar o limite e o uso de IA." },
   budget_warning: { refs: ["ai_budget"], orientacao: "Peça ao gestor para revisar o limite e o uso de IA." },
   handoff: { refs: ["contact", "conversation"], orientacao: "Confira o atendimento descrito e combine quem assume o próximo passo." },

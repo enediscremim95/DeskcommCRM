@@ -46,6 +46,25 @@ describe("createWebhookSourceSchema", () => {
     });
     expect(r.success).toBe(false);
   });
+
+  it("aceita a decisão explícita da fonte e não inventa valor quando ela não veio", () => {
+    const habilitada = createWebhookSourceSchema.safeParse({
+      name: "Landing que reenvia",
+      default_pipeline_id: UUID,
+      default_stage_id: UUID2,
+      merge_repeated_submissions: true,
+    });
+    expect(habilitada.success).toBe(true);
+    if (habilitada.success) expect(habilitada.data.merge_repeated_submissions).toBe(true);
+
+    const legada = createWebhookSourceSchema.safeParse({
+      name: "Fonte existente",
+      default_pipeline_id: UUID,
+      default_stage_id: UUID2,
+    });
+    expect(legada.success).toBe(true);
+    if (legada.success) expect(legada.data.merge_repeated_submissions).toBeUndefined();
+  });
 });
 
 describe("createAutomationRuleSchema", () => {
@@ -121,13 +140,22 @@ describe("createAutomationRuleSchema", () => {
 });
 
 describe("conditionSchema", () => {
-  it("rejects op outside eq/neq/contains", () => {
+  it("rejects op outside eq/neq/contains/not_contains", () => {
     const r = conditionSchema.safeParse({ field: "status", op: "gt", value: "won" });
     expect(r.success).toBe(false);
   });
 
   it("accepts a valid condition", () => {
     const r = conditionSchema.safeParse({ field: "status", op: "eq", value: "won" });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts not_contains for mutually exclusive tag states", () => {
+    const r = conditionSchema.safeParse({
+      field: "contact.tags",
+      op: "not_contains",
+      value: "fluxo_padrinhos_orcamento",
+    });
     expect(r.success).toBe(true);
   });
 });

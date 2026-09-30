@@ -94,7 +94,7 @@ function classeDaVariante(
 }
 
 describe("TenantOverview — status da Nuvemshop", () => {
-  it("mostra a retenção de mídia desligada quando a organização não fez opt-in", () => {
+  it("mostra a retenção de mídia ligada para organizações antigas sem configuração", () => {
     render(
       <TenantOverview
         organization={ORG}
@@ -103,8 +103,8 @@ describe("TenantOverview — status da Nuvemshop", () => {
       />,
     );
     expect(screen.getByRole("switch", { name: "Guardar arquivos de mídia recebidos" }))
-      .not.toBeChecked();
-    expect(screen.getByText(/O CRM guarda apenas legenda, tipo, nome, horário e texto extraído/))
+      .toBeChecked();
+    expect(screen.getByText(/Fotos, áudios, vídeos e documentos recebidos são guardados/))
       .toBeInTheDocument();
   });
 

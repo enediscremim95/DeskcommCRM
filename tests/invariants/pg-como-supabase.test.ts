@@ -291,6 +291,29 @@ describe("UPDATE — implementado depois, e por pressão do próprio adaptador",
     expect(error).toBeNull();
     expect(data).toBeNull();
   });
+
+  it("`.lte` no UPDATE restringe pela data em vez de liberar todas as linhas", async () => {
+    const { rows } = await pool.query<{ id: string }>(
+      `insert into crm_pipelines (organization_id, name, slug, position, updated_at) values
+         ($1, 'Antigo', 'update-lte-antigo', 7, now() - interval '2 hours'),
+         ($1, 'Novo', 'update-lte-novo', 8, now() + interval '2 hours')
+       returning id`,
+      [ORG],
+    );
+    const { error } = await db
+      .from("crm_pipelines")
+      .update({ name: "Liberado" })
+      .eq("organization_id", ORG)
+      .lte("updated_at", new Date().toISOString());
+    expect(error).toBeNull();
+
+    const conferidos = await pool.query<{ id: string; name: string }>(
+      "select id, name from crm_pipelines where id = any($1::uuid[]) order by id",
+      [rows.map((r) => r.id)],
+    );
+    expect(conferidos.rows.find((r) => r.id === rows[0]!.id)?.name).toBe("Liberado");
+    expect(conferidos.rows.find((r) => r.id === rows[1]!.id)?.name).toBe("Novo");
+  });
 });
 
 describe("rpc — argumentos NOMEADOS, como o PostgREST", () => {

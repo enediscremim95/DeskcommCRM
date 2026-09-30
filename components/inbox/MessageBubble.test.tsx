@@ -127,3 +127,48 @@ describe("MessageBubble — rótulo de origem", () => {
     }
   });
 });
+
+describe("MessageBubble — mídia recebida guardada", () => {
+  it.each([
+    ["image", "img"],
+    ["audio", "audio"],
+    ["video", "video"],
+  ] as const)("renderiza %s pelo endpoint protegido quando existe storage path", (type, tag) => {
+    const { container } = render(
+      <MessageBubble
+        message={msg({
+          direction: "inbound",
+          type,
+          body: null,
+          media_mime: `${type}/teste`,
+          media_storage_path: `org1/c1/m1.${type}`,
+        })}
+      />,
+    );
+
+    expect(container.querySelector(tag)).toHaveAttribute("src", "/api/v1/messages/m1/media");
+    expect(screen.queryByTestId("media-not-stored")).not.toBeInTheDocument();
+  });
+
+  it("mantém a mensagem e explica quando o arquivo saiu por idade", () => {
+    const { container } = render(
+      <MessageBubble
+        message={msg({
+          direction: "inbound",
+          type: "video",
+          body: "Legenda que continua na conversa",
+          media_storage_path: null,
+          metadata: {
+            media_status: "not_stored",
+            media_discard_reason: "retention_expired",
+            media_filename: "visita.mp4",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Arquivo removido após o prazo de retenção: visita.mp4")).toBeInTheDocument();
+    expect(screen.getByText("Legenda que continua na conversa")).toBeInTheDocument();
+    expect(container.querySelector("video")).toBeNull();
+  });
+});

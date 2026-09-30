@@ -32,7 +32,7 @@ if (!container) {
 const PORT = Number(process.env.TEST_DB_PORT ?? 54329);
 const pool = new pg.Pool({
   connectionString: `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`,
-  max: 3,
+  max: 8,
 });
 const db = pgComoSupabase(pool);
 
@@ -257,7 +257,7 @@ describe("o lead NASCE", () => {
   });
 });
 
-describe("UM lead por DEMANDA, não um por mensagem", () => {
+describe("janela curta separa reenvio de demanda nova", () => {
   it("a segunda mensagem não abre um segundo card", async () => {
     const contato = await criarContato(ORG_VIVA, "Repetido Souza");
     const dados = {
@@ -273,13 +273,94 @@ describe("UM lead por DEMANDA, não um por mensagem", () => {
     expect(primeira.criado).toBe(true);
     expect(segunda.criado).toBe(false);
     if (segunda.criado) return;
-    expect(segunda.motivo).toBe("ja_existe");
+    expect(segunda.motivo).toBe("janela_reenvio");
+    expect(segunda.leadId).toBe(primeira.criado ? primeira.leadId : undefined);
 
     const { rows } = await pool.query<{ n: string }>(
       "select count(*) as n from crm_leads where contact_id = $1",
       [contato],
     );
-    expect(rows[0]!.n, "um contato, um card").toBe("1");
+    expect(rows[0]!.n, "um contato, um card dentro da janela").toBe("1");
+    const atividades = await pool.query<{ n: string }>(
+      "select count(*) as n from crm_lead_activities where lead_id = $1 and type = 'lead_merged'",
+      [segunda.leadId],
+    );
+    expect(atividades.rows[0]!.n).toBe("1");
+  });
+
+  it("seis leituras liberadas juntas fazem seis INSERTs, uma criação e cinco colisões", async () => {
+    const contato = await criarContato(ORG_VIVA, "Corrida Determinística");
+    let leituras = 0;
+    let tentativas = 0;
+    let liberar!: () => void;
+    const liberado = new Promise<void>((resolve) => {
+      liberar = resolve;
+    });
+    const barreira = async () => {
+      leituras += 1;
+      if (leituras === 6) liberar();
+      await liberado;
+    };
+
+    const resultados = await Promise.all(
+      Array.from({ length: 6 }, (_, indice) =>
+        garantirLeadDaConversa(db, {
+          organizationId: ORG_VIVA,
+          contactId: contato,
+          conversationId: `1ead7e00-0000-4000-8000-${String(indice + 1).padStart(12, "0")}`,
+          nomeDoContato: "Corrida Determinística",
+          depoisDaLeituraDaJanela: barreira,
+          aoTentarInsert: () => {
+            tentativas += 1;
+          },
+        }),
+      ),
+    );
+
+    expect(leituras, "todas concluíram a leitura antes da liberação").toBe(6);
+    expect(tentativas, "todas chegaram ao INSERT depois da mesma leitura vazia").toBe(6);
+    expect(resultados.filter((r) => r.criado)).toHaveLength(1);
+    const colisoes = resultados.filter((r) => !r.criado && r.colisao === true);
+    expect(colisoes).toHaveLength(5);
+
+    const ids = new Set(resultados.map((r) => r.leadId));
+    expect(ids.size).toBe(1);
+    const cards = await pool.query<{ n: string }>(
+      "select count(*) as n from crm_leads where contact_id = $1 and status = 'open'",
+      [contato],
+    );
+    expect(cards.rows[0]!.n).toBe("1");
+    const atividades = await pool.query<{ n: string }>(
+      "select count(*) as n from crm_lead_activities where contact_id = $1 and type = 'lead_merged'",
+      [contato],
+    );
+    expect(atividades.rows[0]!.n).toBe("5");
+  });
+
+  it("passada a janela, cria outro negócio mesmo com o primeiro ainda aberto", async () => {
+    const contato = await criarContato(ORG_VIVA, "Nova Demanda Oliveira");
+    const dados = {
+      organizationId: ORG_VIVA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Nova Demanda Oliveira",
+    };
+    const primeira = await garantirLeadDaConversa(db, dados);
+    expect(primeira.criado).toBe(true);
+    if (!primeira.criado) return;
+
+    await pool.query(
+      "update crm_leads set created_at = now() - interval '61 minutes', reentry_guard_until = now() - interval '1 minute' where id = $1",
+      [primeira.leadId],
+    );
+    const segunda = await garantirLeadDaConversa(db, dados);
+    expect(segunda.criado, "card aberto antigo não bloqueia uma demanda nova").toBe(true);
+
+    const cards = await pool.query<{ n: string }>(
+      "select count(*) as n from crm_leads where contact_id = $1 and status = 'open'",
+      [contato],
+    );
+    expect(cards.rows[0]!.n).toBe("2");
   });
 
   it("depois de FECHADO, quem volta a escrever abre demanda nova", async () => {

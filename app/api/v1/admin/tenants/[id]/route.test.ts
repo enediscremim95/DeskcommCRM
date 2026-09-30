@@ -122,7 +122,7 @@ describe("GET /api/v1/admin/tenants/[id]", () => {
     expect(body.data.counts.lgpd_requests_pending).toBe(2);
   });
 
-  it("mescla o opt-in de mídia sem apagar outras configurações do tenant", async () => {
+  it("mescla a configuração de mídia sem apagar outras configurações do tenant", async () => {
     const { mesclarConfiguracaoDeMidia } = await import("./route");
     expect(
       mesclarConfiguracaoDeMidia(

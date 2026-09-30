@@ -52,6 +52,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
+import { ehRespostaHumana } from "@/lib/messaging/resposta-humana";
 import type { EnrollmentPatch } from "./engine";
 import { triggerConfigSchema } from "./api-schemas";
 import type { EnrollmentOutcome, EnrollmentStatus } from "./node-handlers";
@@ -243,7 +244,7 @@ async function reactToHumanReply(
     const messageId = row.entity_kind === 'message' ? row.entity_id : null;
     if (!messageId || !db.loadMessageSentVia) return { matched: false, reacted: 0 };
     const sentVia = await db.loadMessageSentVia(row.organization_id, messageId);
-    if (sentVia !== 'user' && sentVia !== 'external_device') {
+    if (!ehRespostaHumana(sentVia)) {
       return { matched: false, reacted: 0 };
     }
   }

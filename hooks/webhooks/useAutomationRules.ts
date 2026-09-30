@@ -12,7 +12,11 @@ export interface AutomationRuleRow {
   organization_id: string;
   name: string;
   trigger_event: string;
-  conditions: Array<{ field: string; op: "eq" | "neq" | "contains"; value: string }>;
+  conditions: Array<{
+    field: string;
+    op: "eq" | "neq" | "contains" | "not_contains";
+    value: string;
+  }>;
   actions: Array<{ type: string; config: Record<string, unknown> }>;
   is_active: boolean;
   last_run_at: string | null;

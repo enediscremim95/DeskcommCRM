@@ -104,7 +104,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 - Engine NOWEB default; WEBJS apenas se precisar stickers animados / botões
 - Auth: env do WAHA recebe **hash SHA512 hex** da api key; cliente envia plaintext em `X-Api-Key`
 - Webhooks: HMAC SHA512 com `crypto.timingSafeEqual`
-- Anti-banimento: throttle 1 msg/1.2s + jitter ≤800ms. Campanha 1 msg/5s. Warm-up 7-14d. Spinning de copy. Janela 7h-22h (domingo LIBERADO por default desde 2026-08-20; a janela é knob por canal)
+- Anti-banimento: piso de throttle 1 msg/1.2s + jitter ≤800ms. Em `automation_rules`, mensagens fixas usam ritmo humano durável: 40–100s antes da primeira e `(20s + 0,6s/caractere) × 0,9–1,2` por mensagem, via `event_log.retry_at`, sem prender o worker. Antes de cada retomada/envio, uma resposta humana outbound posterior ao evento encerra a regra inteira, inclusive as tags restantes. Campanha 1 msg/5s. Warm-up 7-14d. Spinning de copy. Janela 7h-22h (domingo LIBERADO por default desde 2026-08-20; a janela é knob por canal)
 - STOP detection: a regra mora em `lib/opt-out/deteccao.ts` e é a MESMA nos dois lados —
   a ingestão (que grava `is_blocked=true`) e o runtime do agente. **Não é mais a palavra
   solta:** só bloqueia palavra ISOLADA (mensagem inteira = a palavra) ou verbo de cessação
@@ -117,7 +117,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
   em vigor sem confiar nesta linha:
   `grep -n 'PALAVRAS_DE_OPT_OUT' -A20 lib/opt-out/deteccao.ts`, e as frases de controle em
   `tests/unit/opt-out-deteccao.test.ts`.
-- Mídia: subir pro Supabase Storage primeiro, passar URL ao WAHA (não inline base64)
+- Mídia: subir pro Supabase Storage primeiro, passar URL ao WAHA (não inline base64). Binário durável expira em 21 dias por padrão; a mensagem e o texto derivado permanecem com `metadata.media_status='not_stored'` e motivo explícito. Teto global padrão de 3,15 GB, com aviso em 2,37 GB; os números e a razão vivem em `lib/messaging/media/retention.ts`
 - Multi-device: assinar `message.any` (não só `message`); tratar `fromMe=true` sem duplicar
 - Grupos: SKIP CRM binding se `chatId.endsWith('@g.us')`. Sender é `p.author`, não `p.from`
 - Cron `recover-stuck-messages` (`app/api/v1/cron/recover-stuck-messages/route.ts`, agendado no `scheduler` do `docker-compose.prod.yml`): marca `status='sending'` há >5min como `failed` **e abre aviso na Central** (`agent_inbox_items` kind `message_send_stuck`). Não toca em `queued`: esse estado tem dono (o agent-engine reagenda por `SEND_QUEUED_RETRY_MS`), e falhá-lo perderia mensagem que ia sair. Não reenvia — envio em dobro é pior que não-envio
@@ -196,21 +196,24 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 
 ## Deploy em produção (NÃO NEGOCIÁVEL)
 
-**Numa VPS que já tem proxy reverso próprio (Hostinger, Coolify, Dokploy…), todo
-`up -d` leva os DOIS arquivos de compose:**
+**Na VPS Veritas, todo deploy passa pelo porteiro. Não rode `up -d` diretamente:**
 
 ```bash
-docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml --env-file .env up -d app
+bash scripts/deploy-producao.sh --session <id-da-sessao> --tag <tag-ou-imagem>
 ```
 
-Omitir `-f docker-compose.traefik.yml` recria o contêiner sem as labels de
-roteamento; o Traefik da hospedagem deixa de enxergá-lo e **o domínio inteiro
-responde `404 page not found`** — com o contêiner `healthy`, porque o
-healthcheck é um probe TCP interno e não sabe nada de roteamento.
+O script é a única porta para o `up -d` e sempre leva os TRÊS arquivos:
+`docker-compose.prod.yml`, `docker-compose.traefik.yml` e
+`docker-compose.dominios.yml`. Omitir o segundo apaga o roteamento principal;
+omitir o terceiro apaga os routers dos clientes. Nos dois casos o Traefik
+responde **404 com o contêiner `healthy`**, porque o healthcheck interno não
+mede o caminho público.
 
-Depois de qualquer deploy, confirme que o domínio responde **307** (redireciona
-pro login) e não 404. Verificações e o caso de build local em
-`docs/runbooks/deploy.md`.
+O porteiro usa `mkdir` atômico em `/var/lock`, registra sessão, PID, entrada e
+tag, atualiza heartbeat a cada 5 segundos, espera enquanto houver vida e só
+arromba após 120 segundos de silêncio com PID morto. Antes de soltar a tranca,
+confere HTTP 307 no domínio principal e em cada host declarado no compose de
+domínios. O procedimento e o livro de registro estão em `docs/runbooks/deploy.md`.
 
 O caminho normal **não constrói nada na VPS**: commit → push → PR → merge na
 `main` → o CI publica no GHCR → a VPS puxa. Imagem construída na VPS é exceção

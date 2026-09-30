@@ -306,6 +306,13 @@ const schema = z.object({
    */
   JOB_QUEUE_RETENTION_DAYS: z.string().optional().default(""),
   AUDIT_LOG_RETENTION_DAYS: z.string().optional().default(""),
+  /**
+   * Binário de mídia do WhatsApp. Strings de propósito: lixo no `.env` cai nos
+   * defaults seguros da política em vez de derrubar o app no primeiro request.
+   */
+  WHATSAPP_MEDIA_RETENTION_DAYS: z.string().optional().default(""),
+  WHATSAPP_MEDIA_STORAGE_CAP_BYTES: z.string().optional().default(""),
+  WHATSAPP_MEDIA_STORAGE_ALERT_BYTES: z.string().optional().default(""),
 
   // LGPD export (S-08.04)
   LGPD_SIGNING_KEY: z.string().optional().default(""),

@@ -36,6 +36,10 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     .eq("organization_id", ctx.organizationId);
   if (error) return { type: "remove_tag", status: "failed", error: error.message };
 
+  // O mesmo contexto alimenta a próxima ação da regra. Atualizá-lo depois
+  // da escrita evita que add_tag reconstrua a lista a partir do estado antigo.
+  target.row.tags = remaining;
+
   await ctx.admin.rpc("emit_event", {
     p_event_type: target.event,
     p_entity_kind: target.kind,

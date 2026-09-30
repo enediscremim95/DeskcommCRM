@@ -15,7 +15,7 @@ export const TRIGGER_EVENTS = [
 
 export const conditionSchema = z.object({
   field: z.string().min(1).max(200),
-  op: z.enum(["eq", "neq", "contains"]),
+  op: z.enum(["eq", "neq", "contains", "not_contains"]),
   value: z.string().max(500),
 });
 
@@ -60,6 +60,7 @@ export const createWebhookSourceSchema = z.object({
   default_pipeline_id: z.string().uuid(),
   default_stage_id: z.string().uuid(),
   default_owner_user_id: z.string().uuid().nullable().optional(),
+  merge_repeated_submissions: z.boolean().optional(),
   redirect_to: z.string().url().max(2000).nullish(),
   field_map: z
     .object({

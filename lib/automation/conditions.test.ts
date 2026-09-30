@@ -4,6 +4,7 @@ import { evaluateConditions, resolveField } from "@/lib/automation/conditions";
 const ctx = {
   event: { to_stage_id: "s2", added_tags: ["vip", "novo"] },
   lead: { title: "Ana", custom_fields: { utm_source: "instagram" }, value_cents: 5000 },
+  contact: { tags: ["cliente", "fluxo_padrinhos_orcamento"] },
 };
 
 describe("resolveField", () => {
@@ -24,6 +25,53 @@ describe("evaluateConditions", () => {
     expect(evaluateConditions([{ field: "event.added_tags", op: "contains", value: "vip" }], ctx)).toBe(true));
   it("contains em string (case-insensitive)", () =>
     expect(evaluateConditions([{ field: "lead.custom_fields.utm_source", op: "contains", value: "INSTA" }], ctx)).toBe(true));
+  it("contains em string ignora acentos", () =>
+    expect(
+      evaluateConditions(
+        [{ field: "lead.title", op: "contains", value: "ana" }],
+        { ...ctx, lead: { ...ctx.lead, title: "Anália" } },
+      ),
+    ).toBe(true));
+  it("not_contains distingue tag presente, ausente e campo sem tags", () => {
+    expect(
+      evaluateConditions(
+        [{ field: "contact.tags", op: "not_contains", value: "fluxo_padrinhos_orcamento" }],
+        ctx,
+      ),
+    ).toBe(false);
+    expect(
+      evaluateConditions(
+        [{ field: "contact.tags", op: "not_contains", value: "fluxo_padrinhos_abertura" }],
+        ctx,
+      ),
+    ).toBe(true);
+    expect(
+      evaluateConditions(
+        [{ field: "contact.tags", op: "not_contains", value: "fluxo_padrinhos_abertura" }],
+        { ...ctx, contact: {} },
+      ),
+    ).toBe(true);
+  });
+  it("trava a regra de abertura quando o contato já está em um estado do fluxo", () => {
+    const abertura = [
+      { field: "event.body_preview", op: "contains" as const, value: "convite para padrinhos" },
+      { field: "contact.tags", op: "not_contains" as const, value: "fluxo_padrinhos_orcamento" },
+      { field: "contact.tags", op: "not_contains" as const, value: "fluxo_padrinhos_aprovacao" },
+    ];
+
+    expect(
+      evaluateConditions(abertura, {
+        event: { body_preview: "Quero encomendar convite para padrinhos de bebê" },
+        contact: { tags: [] },
+      }),
+    ).toBe(true);
+    expect(
+      evaluateConditions(abertura, {
+        event: { body_preview: "Quero encomendar convite para padrinhos de bebê" },
+        contact: { tags: ["fluxo_padrinhos_orcamento"] },
+      }),
+    ).toBe(false);
+  });
   it("E entre múltiplas: uma falsa derruba", () =>
     expect(
       evaluateConditions(

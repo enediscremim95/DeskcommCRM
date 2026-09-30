@@ -5,7 +5,7 @@
 # porque instalar pacote em todo start amarra a recuperação do cron do cliente à
 # internet da VPS e ao mirror do Alpine — dependência de rede num caminho que
 # deveria ser offline. Doutrina: docs/doctrine/packaging.md, invariante 1.
-FROM alpine:3.20
+FROM node:22-alpine
 
 LABEL org.opencontainers.image.source="https://github.com/enediscremim95/DeskcommCRM" \
       org.opencontainers.image.licenses="MIT" \
@@ -18,6 +18,7 @@ ENV APP_VERSION=$APP_VERSION \
 RUN apk add --no-cache curl tzdata
 
 COPY docker/scheduler/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY lib/channels/vigia-independente.mjs /opt/vigia/vigia-independente.mjs
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Prova de vida: se o crond morrer, o contêiner cai e o `restart: unless-stopped`

@@ -107,6 +107,7 @@ function resolverModulo(especificador: string, deArquivo: string, fontes: Map<st
 }
 
 type Indice = {
+  arquivos: Map<string, ts.SourceFile>;
   funcoes: Map<string, Map<string, ts.Node>>;
   imports: Map<string, Map<string, string>>;
 };
@@ -118,10 +119,14 @@ type Indice = {
  * quebrada, que é o pior resultado possível para uma guarda.
  */
 type Busca = {
+  arquivo: ts.SourceFile;
   funcoes: (arquivo: string) => Map<string, ts.Node> | undefined;
   imports: (arquivo: string) => Map<string, string> | undefined;
 };
 
+// O cache vive só nesta execução do Vitest e é associado ao mapa de fontes
+// lido do disco. Uma nova rodada cria outro mapa, portanto arquivo novo nunca
+// fica escondido por estado persistido de uma execução anterior.
 const cacheDeIndice = new WeakMap<Map<string, string>, Indice>();
 
 function funcoesDoArquivo(sf: ts.SourceFile): Map<string, ts.Node> {
@@ -162,16 +167,18 @@ function importsDoArquivo(sf: ts.SourceFile, fontes: Map<string, string>): Map<s
 function indice(fontes: Map<string, string>): Indice {
   const existente = cacheDeIndice.get(fontes);
   if (existente) return existente;
+  const arquivos = new Map<string, ts.SourceFile>();
   const fns = new Map<string, Map<string, ts.Node>>();
   const imp = new Map<string, Map<string, string>>();
   for (const [rel, fonte] of fontes) {
     // `fileName` é o caminho relativo POSIX de propósito: é a chave de
     // resolução de `./x` e `@/x`, e mantém a sonda igual em Windows e Linux.
     const arquivo = ts.createSourceFile(rel, fonte, ts.ScriptTarget.Latest, true);
+    arquivos.set(rel, arquivo);
     fns.set(rel, funcoesDoArquivo(arquivo));
     imp.set(rel, importsDoArquivo(arquivo, fontes));
   }
-  const novo = { funcoes: fns, imports: imp };
+  const novo = { arquivos, funcoes: fns, imports: imp };
   cacheDeIndice.set(fontes, novo);
   return novo;
 }
@@ -179,10 +186,13 @@ function indice(fontes: Map<string, string>): Indice {
 /** O índice do repositório, com o arquivo sob varredura por cima. */
 function buscaCom(fontes: Map<string, string>, nomeDoArquivo: string, fonte: string): Busca {
   const idx = indice(fontes);
-  const arquivo = ts.createSourceFile(nomeDoArquivo, fonte, ts.ScriptTarget.Latest, true);
-  const fns = funcoesDoArquivo(arquivo);
-  const imp = importsDoArquivo(arquivo, fontes);
+  const arquivoDoIndice =
+    fontes.get(nomeDoArquivo) === fonte ? idx.arquivos.get(nomeDoArquivo) : undefined;
+  const arquivo = arquivoDoIndice ?? ts.createSourceFile(nomeDoArquivo, fonte, ts.ScriptTarget.Latest, true);
+  const fns = arquivoDoIndice ? idx.funcoes.get(nomeDoArquivo)! : funcoesDoArquivo(arquivo);
+  const imp = arquivoDoIndice ? idx.imports.get(nomeDoArquivo)! : importsDoArquivo(arquivo, fontes);
   return {
+    arquivo,
     funcoes: (rel) => (rel === nomeDoArquivo ? fns : idx.funcoes.get(rel)),
     imports: (rel) => (rel === nomeDoArquivo ? imp : idx.imports.get(rel)),
   };
@@ -240,7 +250,7 @@ export function inicializadoresQueLeemONavegador(
   fontes: Map<string, string>,
 ): number[] {
   const busca = buscaCom(fontes, nomeDoArquivo, fonte);
-  const arquivo = ts.createSourceFile(nomeDoArquivo, fonte, ts.ScriptTarget.Latest, true);
+  const arquivo = busca.arquivo;
   const infratoras: number[] = [];
 
   const visita = (n: ts.Node): void => {

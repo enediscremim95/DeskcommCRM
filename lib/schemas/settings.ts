@@ -12,6 +12,11 @@ import { ehHexValido } from "@/lib/branding/rampa";
 import { ESTILOS_DE_ICONE_DA_ABA } from "@/lib/branding/icone-da-aba";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
+import {
+  JANELA_REENVIO_MAX_MINUTOS,
+  JANELA_REENVIO_MIN_MINUTOS,
+  JANELA_REENVIO_PADRAO_MINUTOS,
+} from "@/lib/leads/janela-de-reenvio-config";
 
 import { businessProfileSchema } from "./business-profile";
 import { conversationTagSchema } from "./messaging";
@@ -85,6 +90,12 @@ const MOEDAS = MOEDAS_SERVIDAS;
 
 export const tenantSchema = z.object({
   business_profile: businessProfileSchema.optional(),
+  lead_reentry_window_minutes: z.coerce
+    .number()
+    .int()
+    .min(JANELA_REENVIO_MIN_MINUTOS)
+    .max(JANELA_REENVIO_MAX_MINUTOS)
+    .default(JANELA_REENVIO_PADRAO_MINUTOS),
   display_name: z.string().min(1).max(120),
   legal_name: z.string().min(1).max(200),
   cnpj: z

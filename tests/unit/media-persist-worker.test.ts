@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const uploadMock = vi.fn();
 const updateEqMock = vi.fn();
 const rpcMock = vi.fn();
+const inboxInsertMock = vi.fn();
 const messageRow = {
   id: "msg1",
   organization_id: "org1",
@@ -31,14 +32,21 @@ vi.mock("@/lib/supabase/admin", () => ({
           ? sessionRow
           : tabela === "organizations"
             ? organizationRow
-            : messageRow;
-        const resolvido = { maybeSingle: async () => ({ data: linha, error: null }) };
-        return { eq: () => ({ ...resolvido, eq: () => resolvido }) };
+            : tabela === "agent_inbox_items"
+              ? null
+              : messageRow;
+        const chain = {
+          eq: () => chain,
+          limit: () => chain,
+          maybeSingle: async () => ({ data: linha, error: null }),
+        };
+        return chain;
       },
       update: (patch: Record<string, unknown>) => {
         updateEqMock(patch);
         return { eq: () => ({ eq: async () => ({ error: null }) }) };
       },
+      insert: inboxInsertMock,
     }),
     storage: { from: () => ({ upload: uploadMock }) },
     rpc: rpcMock,
@@ -85,7 +93,12 @@ describe("persistMessageMedia", () => {
   beforeEach(() => {
     uploadMock.mockReset().mockResolvedValue({ error: null });
     updateEqMock.mockReset();
-    rpcMock.mockReset().mockResolvedValue({ error: null });
+    rpcMock.mockReset().mockImplementation(async (nome: string) =>
+      nome === "fn_total_midia_armazenada_bytes"
+        ? { data: 0, error: null }
+        : { data: null, error: null },
+    );
+    inboxInsertMock.mockReset().mockResolvedValue({ error: null });
     messageRow.media_storage_path = null;
     messageRow.media_url = "http://localhost:3030/api/files/abc.jpg";
     messageRow.type = "image";
@@ -96,8 +109,29 @@ describe("persistMessageMedia", () => {
     });
   });
 
-  it("por padrão não sobe o binário e pede somente a derivação transitória", async () => {
+  it("por padrão sobe o binário para organizações antigas sem a configuração", async () => {
     organizationRow.settings = {};
+    const result = await persistMessageMedia(eventRow());
+
+    expect(result.status).toBe("ok");
+    expect(uploadMock).toHaveBeenCalled();
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        media_storage_path: "org1/conv1/msg1.jpg",
+        media_size_bytes: 3,
+        metadata: expect.objectContaining({ media_status: "stored" }),
+      }),
+    );
+    expect(rpcMock).toHaveBeenCalledWith(
+      "emit_event",
+      expect.objectContaining({
+        p_event_type: "media.derive_requested",
+      }),
+    );
+  });
+
+  it("respeita o opt-out explícito e pede somente a derivação transitória", async () => {
+    organizationRow.settings = { whatsapp_media_storage_enabled: false };
     const result = await persistMessageMedia(eventRow());
 
     expect(result.status).toBe("ok");
@@ -157,6 +191,36 @@ describe("persistMessageMedia", () => {
     expect(uploadMock).not.toHaveBeenCalled();
   });
 
+  it("não transforma media_url ausente em sucesso", async () => {
+    messageRow.media_url = null;
+
+    const result = await persistMessageMedia(eventRow());
+
+    expect(result).toEqual(
+      expect.objectContaining({ status: "error", detail: "media_url ausente" }),
+    );
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it("marca failed e abre aviso na Central na última tentativa sem arquivo", async () => {
+    messageRow.media_url = null;
+
+    const result = await persistMessageMedia(eventRow(4));
+
+    expect(result.status).toBe("error");
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ media_status: "failed" }) }),
+    );
+    expect(inboxInsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "event_dead",
+        severity: "critical",
+        ref_kind: "conversation",
+        ref_id: "conv1",
+      }),
+    );
+  });
+
   it("retorna error em falha de download com poucas tentativas, sem marcar failed", async () => {
     vi.mocked(fetchWahaMedia).mockRejectedValue(new Error("waha_media_503"));
     const result = await persistMessageMedia(eventRow(1));
@@ -179,6 +243,31 @@ describe("persistMessageMedia", () => {
     expect(result.status).toBe("error");
     expect(updateEqMock).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: expect.objectContaining({ media_status: "failed" }) }),
+    );
+  });
+
+  it("não sobe binário novo quando o teto da instalação foi alcançado", async () => {
+    rpcMock.mockImplementation(async (nome: string) =>
+      nome === "fn_total_midia_armazenada_bytes"
+        ? { data: 3_150_000_000, error: null }
+        : { data: null, error: null },
+    );
+
+    const result = await persistMessageMedia(eventRow());
+
+    expect(result).toEqual(
+      expect.objectContaining({ status: "ok", detail: "storage cap reached; binary discarded" }),
+    );
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        media_storage_path: null,
+        media_size_bytes: null,
+        metadata: expect.objectContaining({
+          media_status: "not_stored",
+          media_discard_reason: "storage_cap_reached",
+        }),
+      }),
     );
   });
 });

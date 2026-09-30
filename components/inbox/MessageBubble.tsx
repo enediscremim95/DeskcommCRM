@@ -8,7 +8,10 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import {
+  MEDIA_DISCARD_REASON_CAP,
+  MEDIA_DISCARD_REASON_RETENTION,
   midiaFoiDescartada,
+  motivoDoDescarteDaMidia,
   nomeDoArquivoDeMidia,
 } from "@/lib/messaging/media/retention";
 import { CitationButton } from "@/components/ai/CitationButton";
@@ -65,6 +68,7 @@ export function MessageBubble({
   const time = format(new Date(message.sent_at), "HH:mm", { locale: localeDaData });
   const isFailed = message.status === "failed";
   const mediaDiscarded = midiaFoiDescartada(message.metadata);
+  const mediaDiscardReason = motivoDoDescarteDaMidia(message.metadata);
   const hasMedia = !mediaDiscarded && Boolean(message.media_url || message.media_storage_path);
   const mediaFilename = nomeDoArquivoDeMidia(message.metadata);
   const isContact = message.type === "contact";
@@ -226,7 +230,7 @@ export function MessageBubble({
                 className={cn("italic leading-snug opacity-70", message.body && "mb-1")}
                 data-testid="media-not-stored"
               >
-                {t(rotuloDeMidiaNaoGuardada(message.type))}
+                {t(rotuloDeMidiaNaoGuardada(message.type, mediaDiscardReason))}
                 {mediaFilename ? `: ${mediaFilename}` : ""}
               </p>
             )}
@@ -314,7 +318,13 @@ export function MessageBubble({
   );
 }
 
-function rotuloDeMidiaNaoGuardada(type: string): string {
+function rotuloDeMidiaNaoGuardada(type: string, motivo: string | null): string {
+  if (motivo === MEDIA_DISCARD_REASON_RETENTION) {
+    return "Arquivo removido após o prazo de retenção";
+  }
+  if (motivo === MEDIA_DISCARD_REASON_CAP) {
+    return "Arquivo não guardado porque o limite de mídia foi atingido";
+  }
   const labels: Record<string, string> = {
     image: "Foto recebida, arquivo não guardado",
     audio: "Áudio recebido, arquivo não guardado",
