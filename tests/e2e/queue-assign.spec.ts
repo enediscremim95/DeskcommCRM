@@ -16,6 +16,7 @@ import * as path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "@playwright/test";
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { loginComoMembro } from "./helpers/aguardar-sessao";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const EVIDENCE = path.join(process.cwd(), "loop/checkpoints/evidence/G5");
@@ -45,11 +46,7 @@ const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.SUPABASE_SERVICE_R
 let creds: Creds;
 
 async function login(page: Page, email: string, password: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//, { timeout: 60_000 });
+  await loginComoMembro(page, email, password);
 }
 
 test.describe("G5-03 — fila com posição + atribuição", () => {

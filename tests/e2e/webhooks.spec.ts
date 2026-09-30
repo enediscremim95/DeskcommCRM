@@ -218,7 +218,9 @@ test.describe("webhooks & automações — fluxo completo", () => {
       // --- Step 4: aba Automações — criar regra + ligar ---
       await page.getByRole("tab", { name: "Automações" }).click();
       await page.getByRole("button", { name: /Nova automação|Criar primeira automação/ }).click();
-      const ruleSheet = page.getByRole("dialog");
+      // O sheet da fonte ainda pode estar montado durante a animação de saída.
+      // O nome acessível impede que o teste escolha esse diálogo já escondido.
+      const ruleSheet = page.getByRole("dialog", { name: "Nova automação" });
       await expect(ruleSheet).toBeVisible();
       await ruleSheet.locator("#rule-name").fill(RULE_NAME);
 

@@ -11,6 +11,8 @@ import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
 
+import { loginComoMembro } from "./helpers/aguardar-sessao";
+
 interface E2ECreds {
   password: string;
   users: Record<string, { id: string; email: string; role: string }>;
@@ -21,11 +23,7 @@ const creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as E2ECreds;
 const EVIDENCE = path.join(process.cwd(), "loop/checkpoints/evidence/G4");
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await loginComoMembro(page, email, creds.password);
 }
 
 test.describe("G4-02 — inbox com escopo", () => {

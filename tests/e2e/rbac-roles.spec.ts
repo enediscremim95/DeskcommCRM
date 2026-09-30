@@ -15,6 +15,7 @@ import * as path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+import { aguardarSessaoCompleta, loginComoMembro } from "./helpers/aguardar-sessao";
 import { afirmarAdminDeTenantPuro } from "./utils/precondicao";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
@@ -56,11 +57,7 @@ test.beforeAll(async () => {
 });
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await loginComoMembro(page, email, creds.password);
 }
 
 async function loginWithTotp(page: Page, email: string, secret: string): Promise<void> {
@@ -81,6 +78,7 @@ async function loginWithTotp(page: Page, email: string, secret: string): Promise
     await page.keyboard.type(code, { delay: 40 });
     try {
       await page.waitForURL(/\/app\//, { timeout: 8_000 });
+      await aguardarSessaoCompleta(page, "aal2");
       return;
     } catch {
       // código rejeitado — espera a próxima janela e tenta de novo

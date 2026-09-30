@@ -202,7 +202,14 @@ test.describe("navegação agrupada", () => {
     await expect(busca).toBeVisible();
 
     await busca.fill("conhec");
-    await expect(page.getByRole("option", { name: /Conhecimento/ })).toBeVisible();
+    const conhecimento = page.locator('[role="option"][data-href="/app/ai/knowledge/sources"]');
+    await expect(conhecimento).toBeVisible();
+
+    // "conhec" também aparece na descrição de Atendimento, que é o primeiro
+    // resultado e começa selecionado. Escolhe explicitamente Conhecimento para
+    // que a URL esperada e o item acionado sejam o mesmo fato.
+    await page.keyboard.press("ArrowDown");
+    await expect(conhecimento).toHaveAttribute("aria-selected", "true");
 
     await page.screenshot({ path: path.join(EVIDENCE, "nav-command-palette.png") });
 

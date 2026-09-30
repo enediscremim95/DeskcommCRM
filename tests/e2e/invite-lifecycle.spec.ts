@@ -27,6 +27,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { signInviteToken } from "../../lib/auth/invite-token";
 import { E2E_EMAIL_OUTBOX } from "../../lib/email/adapters/e2e-outbox";
+import { aguardarSessaoCompleta, loginComoMembro } from "./helpers/aguardar-sessao";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
 // ---- creds do seed base (.e2e-creds.json) + do convite (.e2e-invite.json) ----
@@ -90,11 +91,7 @@ async function resetInvitee(): Promise<void> {
 }
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(base.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await loginComoMembro(page, email, base.password);
 }
 
 async function loginAdminTotp(page: Page): Promise<void> {
@@ -112,9 +109,13 @@ async function loginAdminTotp(page: Page): Promise<void> {
     try {
       // 1ª compilação de /app no dev pode ser lenta → timeout generoso
       await page.waitForURL(/\/app\//, { timeout: 30_000 });
+      await aguardarSessaoCompleta(page, "aal2");
       return;
     } catch {
-      if (/\/app\//.test(page.url())) return; // navegou; só passou do timeout
+      if (/\/app\//.test(page.url())) {
+        await aguardarSessaoCompleta(page, "aal2");
+        return;
+      }
       if (!/\/login\/mfa/.test(page.url())) throw new Error(`MFA em estado inesperado: ${page.url()}`);
       await page.waitForTimeout(msUntilNextTotpWindow() + 300); // código recusado → nova janela
     }

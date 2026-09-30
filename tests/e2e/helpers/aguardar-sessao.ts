@@ -54,3 +54,16 @@ export async function aguardarSessaoCompleta(
   // antes que o teste escolha a tela que realmente quer exercitar.
   await page.waitForLoadState("load");
 }
+
+/** Login sem MFA que só retorna depois que o servidor reconhece a sessão. */
+export async function loginComoMembro(
+  page: Page,
+  email: string,
+  senha: string,
+): Promise<void> {
+  await page.goto("/login");
+  await page.locator("#email").fill(email);
+  await page.locator("#password").fill(senha);
+  await page.getByRole("button", { name: /entrar/i }).click();
+  await aguardarSessaoCompleta(page, "aal1");
+}

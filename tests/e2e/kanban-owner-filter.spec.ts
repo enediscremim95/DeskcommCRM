@@ -13,6 +13,8 @@ import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
 
+import { loginComoMembro } from "./helpers/aguardar-sessao";
+
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 
 interface Creds {
@@ -41,11 +43,7 @@ function loadCreds(): Creds {
 const creds = loadCreds();
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await loginComoMembro(page, email, creds.password);
 }
 
 test("filtro por responsável reflete na URL e esconde leads com dono", async ({ page }) => {
