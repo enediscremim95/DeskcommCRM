@@ -371,6 +371,8 @@ export function LeadPageClient({
             <ProximasTarefasDoLead
               leadId={leadAtual.id}
               contactId={leadAtual.contact_id}
+              conversationId={conversationId}
+              nomeDoLead={nome}
               canEdit={podeEditar}
             />
             <DadosCompletosDoLead

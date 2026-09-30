@@ -330,6 +330,11 @@ export const DICIONARIO: Traducoes = {
   "Configurar suas agendas": { es: "Configurar tus calendarios" },
   "Ocupação do Google ainda não verificada neste período.": { es: "La ocupación de Google aún no se ha verificado en este período." },
   "Marcar compromisso": {es:"Programar cita"},
+  "Carregando agenda…": { es: "Cargando agenda…" },
+  "Este contato não pertence ao lead aberto.": { es: "Este contacto no pertenece al lead abierto." },
+  "Este horário acabou de ser ocupado. Escolha outro horário.": {
+    es: "Este horario acaba de ser ocupado. Elige otro horario.",
+  },
   "Recuperação encerrada. Revise o próximo passo.": {es:"Recuperación finalizada. Revise el siguiente paso."},
   "Acompanhamento encerrado sem novo envio": {es:"Seguimiento finalizado sin nuevo envío"},
   "Só começa após falta confirmada pela equipe. Remarcação, cancelamento ou nova resposta interrompem a recuperação. Outro acompanhamento ativo impede o início.": {es:"Solo comienza tras una ausencia confirmada por el equipo. Reprogramar, cancelar o una nueva respuesta interrumpen la recuperación. Otro seguimiento activo impide el inicio."},

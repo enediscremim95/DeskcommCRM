@@ -13,6 +13,8 @@ export interface NovoAgendamento {
   owner_user_id?: string;
   contact_id?: string;
   conversation_id?: string;
+  /** Lead exato quando a marcação nasce dentro da ficha do negócio. */
+  lead_id?: string;
   title?: string;
   notes?: string;
   /**
@@ -41,11 +43,17 @@ export function useMarcarAgendamento() {
     mutationFn: async (novo: NovoAgendamento) => {
       return apiClient.post<{ data: { id: string } }>("/api/v1/agenda/agendamentos", novo);
     },
-    onSuccess: () => {
+    onSuccess: (_data, novo) => {
       // Sem exclamação e sem emoji — anti-pattern declarado do design system.
       toast.success("Agendamento criado.");
       void qc.invalidateQueries({ queryKey: ["agenda"] });
+      if (novo.lead_id) void qc.invalidateQueries({ queryKey: ["timeline", novo.lead_id] });
     },
-    onError: (err) => showApiError(err),
+    onError: (err) => {
+      // Na colisão, a lista precisa perder imediatamente o horário que o outro
+      // comercial acabou de ocupar, além de explicar por que esta tentativa não entrou.
+      void qc.invalidateQueries({ queryKey: ["agenda", "horarios-livres"] });
+      showApiError(err);
+    },
   });
 }

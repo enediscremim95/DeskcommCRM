@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { ALVO_DE_VINCULO_DO_AGENDAMENTO, VINCULO_DE_AGENDAMENTO } from "@/lib/agenda/tipos";
+import {
+  ALVO_DE_VINCULO_DO_AGENDAMENTO,
+  ATIVIDADE_AGENDAMENTO_MARCADO,
+  VINCULO_DE_AGENDAMENTO,
+} from "@/lib/agenda/tipos";
 import type { ResultadoDaConsulta } from "@/lib/agenda/consulta";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 
@@ -115,7 +119,7 @@ interface Banco {
   agendamento: Linha | null;
   negocios: Linha[];
   criado: Linha | null;
-  erroAoGravar: Record<string, string>;
+  erroAoGravar: Record<string, string | { code: string; message: string }>;
   inserido: Record<string, Linha[]>;
   rpc: Array<{ fn: string; args: Linha }>;
 }
@@ -128,6 +132,7 @@ function negocioAberto(): Linha {
   return {
     id: NEGOCIO,
     organization_id: ORG,
+    contact_id: CONTATO,
     pipeline_id: "11111111-0000-4000-8000-000000000011",
     status: "open",
     last_activity_at: "2026-08-30T10:00:00.000Z",
@@ -149,7 +154,7 @@ function coletaOk(): ResultadoDaConsulta {
   };
 }
 
-function dadoDaTabela(tabela: string): unknown {
+function dadoDaTabela(tabela: string, filtros: Record<string, unknown> = {}): unknown {
   switch (tabela) {
     case "calendar_event_types":
       return banco.tipo;
@@ -158,7 +163,11 @@ function dadoDaTabela(tabela: string): unknown {
     case "calendar_appointments":
       return banco.agendamento;
     case "crm_leads":
-      return banco.negocios;
+      return filtros.id
+        ? banco.negocios.find((negocio) => negocio.id === filtros.id) ?? null
+        : banco.negocios.filter(
+            (negocio) => !filtros.contact_id || negocio.contact_id === filtros.contact_id,
+          );
     case "crm_pipelines":
       return null;
     default:
@@ -169,10 +178,15 @@ function dadoDaTabela(tabela: string): unknown {
 function cliente(): SupabaseClient {
   const leitura = (tabela: string) => {
     const cadeia: Record<string, unknown> = {};
-    for (const m of ["eq", "neq", "in", "is", "not", "or", "gte", "lte", "order", "limit"]) {
+    const filtros: Record<string, unknown> = {};
+    cadeia.eq = (campo: string, valor: unknown) => {
+      filtros[campo] = valor;
+      return cadeia;
+    };
+    for (const m of ["neq", "in", "is", "not", "or", "gte", "lte", "order", "limit"]) {
       cadeia[m] = () => cadeia;
     }
-    const resposta = () => ({ data: dadoDaTabela(tabela), error: null });
+    const resposta = () => ({ data: dadoDaTabela(tabela, filtros), error: null });
     cadeia.maybeSingle = async () => resposta();
     cadeia.single = async () => resposta();
     cadeia.then = (r: (v: unknown) => unknown) => r(resposta());
@@ -185,9 +199,10 @@ function cliente(): SupabaseClient {
       insert: (linha: Linha) => {
         const erro = banco.erroAoGravar[tabela];
         if (!erro) (banco.inserido[tabela] ??= []).push(linha);
+        const detalhe = typeof erro === "string" ? { message: erro } : erro;
         const resposta = {
           data: erro ? null : (banco.criado ?? linha),
-          error: erro ? { message: erro } : null,
+          error: detalhe ?? null,
         };
         return {
           select: () => ({ single: async () => resposta, maybeSingle: async () => resposta }),
@@ -289,7 +304,7 @@ describe("a agenda grava na timeline", () => {
     expect(
       linha.type,
       "a atividade nasceu com outro tipo: a timeline mostra uma frase errada sobre o que aconteceu, e ninguém desconfia de uma linha que existe",
-    ).toBe("appointment_scheduled");
+    ).toBe(ATIVIDADE_AGENDAMENTO_MARCADO);
     expect(
       linha.lead_id,
       "a atividade foi ancorada no negócio errado (ou no id do contato): o rastro da consulta aparece no dossiê de outra pessoa",
@@ -306,6 +321,63 @@ describe("a agenda grava na timeline", () => {
       linha.organization_id,
       "a atividade nasceu carimbada com outra organização: a consulta aparece na timeline de um cliente de OUTRA empresa e some da do dono — a RLS não pega, porque a linha saiu de dentro já com o id errado",
     ).toBe(ORG);
+  });
+
+  it("a ficha ancora a atividade no lead exato, sem resolver outro negócio do mesmo contato", async () => {
+    const OUTRO_NEGOCIO = "eeeeeeee-1111-4000-8000-00000000000e";
+    banco.negocios = [
+      { ...negocioAberto(), contact_id: CONTATO },
+      {
+        ...negocioAberto(),
+        id: OUTRO_NEGOCIO,
+        contact_id: CONTATO,
+        last_activity_at: "2026-09-01T10:00:00.000Z",
+      },
+    ];
+
+    await marcarAgendamentoHandler(cliente(), ctx, {
+      event_type_id: TIPO,
+      starts_at: HORARIO,
+      lead_id: OUTRO_NEGOCIO,
+      contact_id: CONTATO,
+    });
+
+    expect(atividades()).toHaveLength(1);
+    expect(atividades()[0]?.lead_id).toBe(OUTRO_NEGOCIO);
+    expect((banco.inserido["crm_lead_links"] ?? [])[0]?.lead_id).toBe(OUTRO_NEGOCIO);
+  });
+
+  it("marca no CRM mesmo sem existir conexão do Google", async () => {
+    const criado = await marcarAgendamentoHandler(cliente(), ctx, {
+      event_type_id: TIPO,
+      starts_at: HORARIO,
+      lead_id: NEGOCIO,
+      contact_id: CONTATO,
+    });
+
+    expect(criado.id).toBe(AGENDAMENTO);
+    expect(banco.inserido["calendar_appointments"]).toHaveLength(1);
+    expect(atividades()[0]?.type).toBe(ATIVIDADE_AGENDAMENTO_MARCADO);
+  });
+
+  it("traduz a colisão atômica do banco em recusa clara, sem vazar o erro cru", async () => {
+    banco.erroAoGravar["calendar_appointments"] = {
+      code: "23505",
+      message: "duplicate key value violates unique constraint calendar_appointments_sem_duplicata_idx",
+    };
+
+    await expect(
+      marcarAgendamentoHandler(cliente(), ctx, {
+        event_type_id: TIPO,
+        starts_at: HORARIO,
+        lead_id: NEGOCIO,
+        contact_id: CONTATO,
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "agenda_horario_indisponivel",
+      message: "Este horário acabou de ser ocupado. Escolha outro horário.",
+    });
   });
 
   it("o compromisso PERTENCE ao negócio — sem o vínculo o dossiê não acha o que foi marcado", async () => {
