@@ -186,13 +186,19 @@ test.describe("conta confirmada e sem organização", () => {
 });
 
 test.describe("CONTROLE — quem já tem organização não é mandado para a saída", () => {
-  test("⭐ digitar /get-started com organização ativa devolve ao app", async ({ page }) => {
+  test("⭐ digitar /get-started com organização ativa devolve ao funil inicial", async ({
+    page,
+  }) => {
     // Sem este caso, "redirecione todo mundo para /get-started" ficaria verde e
     // quebraria a entrada de TODA a base — e a tela viraria um "abra outra
-    // empresa" para quem já tem a sua.
+    // empresa" para quem já tem a sua. Desde 19/09/2026 a entrada do CRM é o
+    // quadro dos Funis; o Inbox só abre por link direto para uma conversa.
     await entrar(page, emailComOrg);
     await page.goto("/get-started");
-    await expect(page).toHaveURL(/\/app\/inbox/, { timeout: 20_000 });
+    await expect(page).toHaveURL(
+      /\/app\/pipelines\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      { timeout: 20_000 },
+    );
     await expect(page.getByRole("heading", { name: /Configure sua organização/i })).toHaveCount(0);
   });
 
