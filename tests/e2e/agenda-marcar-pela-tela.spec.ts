@@ -1,11 +1,17 @@
-import type * as PlaywrightTestTypes from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { addDays } from "date-fns";
 
 import { test, expect } from "@playwright/test";
+import { ATIVIDADE_AGENDAMENTO_MARCADO } from "@/lib/agenda/tipos";
 
-import { escolherDiaDesenhado, irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
+import {
+  escolherDiaDesenhado,
+  escolherPrimeiroDiaCheio,
+  irParaASemanaDoCompromisso,
+  irParaASemanaSeguinte,
+} from "./helpers/agenda-semana-integra";
 
 /**
  * A PROVA EM TELA DA FRENTE 1 (API + motor) — agora ESCRITA, e o caminho até aqui
@@ -71,8 +77,12 @@ const RAIZ = path.resolve(__dirname, "../..");
 
 interface Creds {
   password: string;
-  users: Record<string, { email: string } | undefined>;
-  agenda?: { tipo_nome: string; tipo_slug: string };
+  users: Record<string, { id: string; email: string } | undefined>;
+  agenda?: { tipo_id: string; tipo_nome: string; tipo_slug: string };
+}
+
+interface ApiOk<T> {
+  data: T;
 }
 
 function lerCreds(): Creds {
@@ -94,11 +104,6 @@ function lerCreds(): Creds {
   }
   if (!c.agenda) throw new Error("seed-e2e-agenda não gravou o bloco `agenda`");
   return c;
-}
-
-/** Compromissos desenhados na grade — o `aria-label` traz "HH:mm às HH:mm". */
-function cartoesDaGrade(page: PlaywrightTestTypes.Page) {
-  return page.getByTestId("grade-da-agenda").getByRole("button", { name: /\d{2}:\d{2} às \d{2}:\d{2}/ });
 }
 
 test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar", async ({ page }) => {
@@ -147,8 +152,6 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
   // Navegando primeiro, alvo e grade passam a sair da MESMA fonte: os dias que
   // a tela desenhou. Tabela medida em `helpers/agenda-semana-integra`.
   const diasDaSemana = await irParaASemanaSeguinte(page);
-
-  const antes = await cartoesDaGrade(page).count();
 
   // ── marcar, pela tela, como um humano faria ────────────────────────────
   await page.getByRole("button", { name: /novo agendamento/i }).click();
@@ -282,4 +285,124 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
     apagou.ok(),
     `a spec não conseguiu cancelar o que criou (${apagou.status()}): a agenda vai encher a cada corrida`,
   ).toBe(true);
+});
+
+test("marcar pela ficha grava no lead exato e retira o horário livre", async ({ page }) => {
+  const creds = lerCreds();
+  const usuario = creds.users.manager;
+  if (!usuario || !creds.agenda) throw new Error("credenciais E2E sem manager ou agenda");
+
+  await page.goto("/login");
+  await page.getByLabel(/e-?mail/i).fill(usuario.email);
+  await page.getByLabel(/senha/i).fill(creds.password);
+  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
+
+  const disponibilidade = await page.request.patch(
+    `/api/v1/attendants/availability/${usuario.id}`,
+    {
+      data: {
+        is_available: true,
+        schedule: {
+          timezone: "America/Sao_Paulo",
+          windows: [1, 2, 3, 4, 5].map((dow) => ({ dow, start: "09:00", end: "18:00" })),
+        },
+      },
+    },
+  );
+  expect(disponibilidade.ok(), "não foi possível publicar a jornada de quem está marcando").toBe(true);
+
+  const nome = `Lead agenda ficha ${Date.now()}`;
+  const contatoRes = await page.request.post("/api/v1/contacts", { data: { display_name: nome } });
+  expect(contatoRes.status()).toBe(201);
+  const contato = (await contatoRes.json()) as ApiOk<{ contact: { id: string } }>;
+  const contactId = contato.data.contact.id;
+
+  const funilRes = await page.request.get("/api/v1/pipelines/default");
+  expect(funilRes.ok()).toBe(true);
+  const funil = (await funilRes.json()) as ApiOk<{
+    pipeline: { id: string };
+    stages: Array<{ id: string }>;
+  }>;
+  const stageId = funil.data.stages[0]?.id;
+  if (!stageId) throw new Error("funil padrão sem etapa para criar o lead da spec");
+
+  const leadRes = await page.request.post("/api/v1/leads", {
+    data: {
+      pipeline_id: funil.data.pipeline.id,
+      stage_id: stageId,
+      title: nome,
+      contact_id: contactId,
+    },
+  });
+  expect(leadRes.status()).toBe(201);
+  const lead = (await leadRes.json()) as ApiOk<{ id: string }>;
+
+  await page.goto(`/app/leads/${lead.data.id}`);
+  await expect(page.getByTestId("next-lead-tasks")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Marcar compromisso" }).click();
+  await expect(page.getByTestId("painel-de-marcacao")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: new RegExp(`^${creds.agenda.tipo_nome}`) }).click();
+  await escolherPrimeiroDiaCheio(page);
+
+  const horario = page.locator('[data-testid^="horario-"]').first();
+  await expect(horario).toBeVisible({ timeout: 15_000 });
+  await horario.click();
+
+  const respostaDaMarcacao = page.waitForResponse(
+    (resposta) =>
+      resposta.url().includes("/api/v1/agenda/agendamentos") &&
+      resposta.request().method() === "POST",
+  );
+  await page.getByTestId("confirmar-marcacao").click();
+  const resposta = await respostaDaMarcacao;
+  expect(resposta.status()).toBe(201);
+  const corpo = (await resposta.json()) as ApiOk<{
+    id: string;
+    starts_at: string;
+  }>;
+  const enviado = resposta.request().postDataJSON() as {
+    lead_id?: string;
+    owner_user_id?: string;
+    starts_at?: string;
+  };
+  expect(enviado).toMatchObject({
+    lead_id: lead.data.id,
+    owner_user_id: usuario.id,
+  });
+  await expect(page.getByText("Marcado.", { exact: true })).toBeVisible({ timeout: 15_000 });
+
+  const timelineRes = await page.request.get(`/api/v1/leads/${lead.data.id}/timeline`);
+  expect(timelineRes.ok()).toBe(true);
+  const timeline = (await timelineRes.json()) as ApiOk<Array<{ type: string; source_id: string | null }>>;
+  expect(timeline.data).toContainEqual(
+    expect.objectContaining({ type: ATIVIDADE_AGENDAMENTO_MARCADO, source_id: corpo.data.id }),
+  );
+
+  const de = new Date().toISOString();
+  const ate = addDays(new Date(), 30).toISOString();
+  const livresRes = await page.request.get(
+    `/api/v1/agenda/horarios-livres?${new URLSearchParams({
+      event_type_id: creds.agenda.tipo_id,
+      owner_user_id: usuario.id,
+      de,
+      ate,
+    })}`,
+  );
+  expect(livresRes.ok()).toBe(true);
+  const livres = (await livresRes.json()) as ApiOk<{ slots: Array<{ inicio: string }> }>;
+  expect(livres.data.slots.map((slot) => slot.inicio)).not.toContain(corpo.data.starts_at);
+
+  await page.goto("/app/agenda");
+  await irParaASemanaDoCompromisso(page, corpo.data.starts_at);
+  await expect(page.getByTestId(`faixa-${corpo.data.id}`)).toBeAttached({ timeout: 20_000 });
+
+  const cancelou = await page.request.delete("/api/v1/agenda/agendamentos", {
+    data: { id: corpo.data.id, reason: "limpeza da spec da ficha do lead" },
+  });
+  expect(cancelou.ok()).toBe(true);
+  const excluiuLead = await page.request.post("/api/v1/leads/bulk", {
+    data: { action: "delete", lead_ids: [lead.data.id], params: {} },
+  });
+  expect(excluiuLead.ok()).toBe(true);
 });

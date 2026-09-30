@@ -8,18 +8,28 @@ import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useTasks } from "@/hooks/tasks/useTasks";
 import { CalendarPlus } from "@/lib/ui/icons";
+import { MarcacaoDoLead } from "./MarcacaoDoLead";
 
 interface Props {
   leadId: string;
   contactId: string | null;
+  conversationId: string | null;
+  nomeDoLead: string;
   canEdit: boolean;
 }
 
-export function ProximasTarefasDoLead({ leadId, contactId, canEdit }: Props) {
+export function ProximasTarefasDoLead({
+  leadId,
+  contactId,
+  conversationId,
+  nomeDoLead,
+  canEdit,
+}: Props) {
   const t = useT();
   const locale = useTagDeIdioma();
   const tasks = useTasks({ lead_id: leadId, aberto: true });
   const [open, setOpen] = useState(false);
+  const [agendaOpen, setAgendaOpen] = useState(false);
   const next = useMemo(
     () =>
       [...tasks.tarefas]
@@ -41,7 +51,18 @@ export function ProximasTarefasDoLead({ leadId, contactId, canEdit }: Props) {
         <h2 className="text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
           {t("Próximas tarefas")}
         </h2>
-        {canEdit && (
+      </div>
+      {canEdit && (
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="min-h-11 sm:min-h-8"
+            onClick={() => setAgendaOpen(true)}
+          >
+            <CalendarPlus size={15} aria-hidden /> {t("Marcar compromisso")}
+          </Button>
           <Button
             type="button"
             size="sm"
@@ -51,8 +72,8 @@ export function ProximasTarefasDoLead({ leadId, contactId, canEdit }: Props) {
           >
             <CalendarPlus size={15} aria-hidden /> {t("Criar tarefa")}
           </Button>
-        )}
-      </div>
+        </div>
+      )}
       {tasks.carregando ? (
         <p className="mt-2 text-xs text-text-muted">{t("Carregando…")}</p>
       ) : next.length === 0 ? (
@@ -84,6 +105,15 @@ export function ProximasTarefasDoLead({ leadId, contactId, canEdit }: Props) {
         leadId={leadId}
         contactId={contactId}
         tituloDaCriacao={t("Nova tarefa")}
+      />
+      <MarcacaoDoLead
+        key={agendaOpen ? `agenda-${leadId}` : `agenda-fechada-${leadId}`}
+        aberto={agendaOpen}
+        aoMudarAbertura={setAgendaOpen}
+        leadId={leadId}
+        contactId={contactId}
+        conversationId={conversationId}
+        nomeDoLead={nomeDoLead}
       />
     </section>
   );

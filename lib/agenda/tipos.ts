@@ -300,6 +300,9 @@ export const ATIVIDADES_DA_AGENDA = [
 ] as const satisfies readonly ActivityType[];
 export type AtividadeDaAgenda = (typeof ATIVIDADES_DA_AGENDA)[number];
 
+/** A notícia que nasce quando um compromisso entra na timeline do lead. */
+export const ATIVIDADE_AGENDAMENTO_MARCADO = ATIVIDADES_DA_AGENDA[0];
+
 /**
  * ⚠️ O `satisfies` ACIMA É A AMARRA — não é decoração de tipo.
  *

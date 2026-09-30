@@ -15,7 +15,7 @@
  * existe, a timeline mostra uma frase, e ninguém nota que a frase está errada.
  * Decisão que se pode testar sem banco tem que ficar onde se testa sem banco.
  */
-import type { AtividadeDaAgenda } from "./tipos";
+import { ATIVIDADE_AGENDAMENTO_MARCADO, type AtividadeDaAgenda } from "./tipos";
 
 /** O que o compromisso era antes; `null` quando ele está nascendo. */
 export type SituacaoAnterior = "pending" | "confirmed" | null;
@@ -50,7 +50,7 @@ export function atividadeDaTransicao(
   if (de === null) {
     // Nascer pendente ou confirmado é a MESMA notícia para quem lê: foi
     // marcado. A distinção é de operação, não de história.
-    return para === "pending" || para === "confirmed" ? "appointment_scheduled" : null;
+    return para === "pending" || para === "confirmed" ? ATIVIDADE_AGENDAMENTO_MARCADO : null;
   }
 
   switch (para) {

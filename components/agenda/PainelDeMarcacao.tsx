@@ -9,6 +9,7 @@ import Link from "next/link";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
+import { partesNoFuso } from "@/lib/agenda/fuso";
 import { CaretLeft, CaretRight, CheckCircle, Clock, MapPin, Warning } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,14 @@ import type { HorarioLivre, Pessoa } from "./tipos";
  * escolhido, e então entra pela direita enquanto o painel cresce.
  */
 export type TempoDaMarcacao = "escolhendo-dia" | "escolhendo-horario" | "confirmando" | "marcado";
+
+/** Instante convertido para a hora de parede que o painel anuncia. */
+function dataNaParede(instante: string, fuso?: string): Date {
+  const data = new Date(instante);
+  if (!fuso) return data;
+  const p = partesNoFuso(data, fuso);
+  return new Date(p.ano, p.mes - 1, p.dia, p.hora, p.minuto, p.segundo);
+}
 
 export function PainelDeMarcacao({
   ancora,
@@ -267,7 +276,7 @@ export function PainelDeMarcacao({
               também. */}
           <h3 className="mt-3 text-base font-semibold">{t("Marcado.")}</h3>
           <p className="mt-1 text-sm text-text-muted">
-            {format(new Date(marcado.instante), t("EEEE, d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}
+            {format(dataNaParede(marcado.instante, fuso), t("EEEE, d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}
           </p>
           <p className="mt-0.5 text-xs text-text-subtle">
             {t(tipo)} · {duracaoMin} {t("min · com")} {responsavel.nome}
@@ -573,7 +582,7 @@ export function PainelDeMarcacao({
             <p className="text-sm">
               <span className="text-text-muted">{t("Confirmar")} </span>
               <span className="font-semibold">
-                {format(new Date(horario.instante), t("EEEE, d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}
+                {format(dataNaParede(horario.instante, fuso), t("EEEE, d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}
               </span>
             </p>
 

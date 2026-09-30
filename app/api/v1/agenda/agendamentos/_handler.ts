@@ -58,6 +58,8 @@ export interface MarcarInput {
   owner_user_id?: string;
   contact_id?: string;
   conversation_id?: string;
+  /** Negócio exato quando a ação parte da ficha do lead. */
+  lead_id?: string;
   title?: string;
   notes?: string;
   /**
@@ -122,6 +124,32 @@ export async function marcarAgendamentoHandler(
     );
   }
 
+  // A ficha já sabe QUAL negócio está aberto. Resolver de novo pelo contato
+  // ficaria ambíguo quando a mesma pessoa tem dois negócios em andamento.
+  let contatoId = input.contact_id ?? null;
+  if (input.lead_id) {
+    const { data: lead, error: erroLead } = await supabase
+      .from("crm_leads")
+      .select("id, contact_id")
+      .eq("id", input.lead_id)
+      .eq("organization_id", ctx.organization_id)
+      .maybeSingle();
+    if (erroLead) throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroLead.message);
+    if (!lead) {
+      throw new ApiError(404, "not_found", undefined, ctx.requestId, "Lead não encontrado.");
+    }
+    if (input.contact_id && lead.contact_id !== input.contact_id) {
+      throw new ApiError(
+        422,
+        "validation_failed",
+        undefined,
+        ctx.requestId,
+        "Este contato não pertence ao lead aberto.",
+      );
+    }
+    contatoId = lead.contact_id ?? null;
+  }
+
   // O `contact_id` É INPUT EXTERNO E PRECISA SER RESOLVIDO, não repassado.
   //
   // ⚠️ Ele atravessava a borda cru: `lib/mcp/tools/agendamento.ts:259` aceita
@@ -140,11 +168,11 @@ export async function marcarAgendamentoHandler(
   //
   // O molde é o de `app/api/v1/messages/_handler.ts:333` — resolver contra a org
   // e recusar com 404, sem dizer se o id existe noutro lugar.
-  if (input.contact_id) {
+  if (contatoId) {
     const { data: contato, error: erroContato } = await supabase
       .from("contacts")
       .select("id")
-      .eq("id", input.contact_id)
+      .eq("id", contatoId)
       .eq("organization_id", ctx.organization_id)
       .maybeSingle();
     if (erroContato) {
@@ -164,7 +192,7 @@ export async function marcarAgendamentoHandler(
   });
 
   const booking = tipo.location_kind === "google_meet" ? ctx.meetingBooking : undefined;
-  if (booking && (booking.boundary.organization_id !== ctx.organization_id || booking.boundary.contact_id !== input.contact_id || ctx.actor.type !== "ai_agent")) {
+  if (booking && (booking.boundary.organization_id !== ctx.organization_id || booking.boundary.contact_id !== contatoId || ctx.actor.type !== "ai_agent")) {
     throw new ApiError(403,"forbidden",undefined,ctx.requestId,"A conversa deste atendimento mudou.");
   }
   const delivery = booking ? { state:"waiting_for_link",generation:randomUUID(),service_boundary:booking.boundary,source_operation_id:booking.sourceJobId,
@@ -182,7 +210,7 @@ export async function marcarAgendamentoHandler(
       time_zone: consulta.fusoDaRegra,
       status: tipo.requires_confirmation ? "pending" : "confirmed",
       owner_user_id: donoId,
-      contact_id: input.contact_id ?? null,
+      contact_id: contatoId,
       conversation_id: booking?.boundary.conversation_id ?? input.conversation_id ?? null,
       meeting_delivery: delivery as unknown as Json,
       location_kind: tipo.location_kind,
@@ -199,13 +227,23 @@ export async function marcarAgendamentoHandler(
     .select("id, starts_at, ends_at, status, time_zone, revision, meeting_state, meeting_url")
     .single();
   if (erroInsert) {
+    if (erroInsert.code === "23505") {
+      throw new ApiError(
+        409,
+        "agenda_horario_indisponivel",
+        undefined,
+        ctx.requestId,
+        "Este horário acabou de ser ocupado. Escolha outro horário.",
+      );
+    }
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroInsert.message);
   }
 
   const transicao: Transicao = criado.status === "pending" ? "pending" : "confirmed";
   await fecharOLaco(supabase, ctx, {
     appointmentId: criado.id,
-    contactId: input.contact_id ?? null,
+    contactId: contatoId,
+    leadId: input.lead_id ?? null,
     atividade: atividadeDaTransicao(null, transicao),
     transicao,
     fusoDoCompromisso: criado.time_zone,
@@ -525,6 +563,7 @@ async function fecharOLaco(
   args: {
     appointmentId: string;
     contactId: string | null;
+    leadId?: string | null;
     atividade: string | null;
     transicao: Transicao;
     fusoDoCompromisso: string;
@@ -534,7 +573,7 @@ async function fecharOLaco(
 ): Promise<void> {
   // Pendência Google é derivada da revisão publicável; não emite evento sem consumer.
 
-  const leadId = args.contactId ? await leadAtivoDoContato(supabase, ctx, args.contactId) : null;
+  const leadId = args.leadId ?? (args.contactId ? await leadAtivoDoContato(supabase, ctx, args.contactId) : null);
 
   // ⚠️ ANTES do early-return de `!args.atividade`. Confirmar um agendamento
   // pendente é `atividade: null` (nada novo pra timeline — `atividadeDaTransicao`

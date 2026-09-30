@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
+import pg from "pg";
 
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
  * DOIS CLIQUES NÃO MARCAM DUAS VEZES — E O ENCAIXE CONTINUA PERMITIDO.
@@ -36,6 +37,12 @@ if (!container) {
   );
 }
 const containerName: string = container;
+const pool = new pg.Pool({
+  connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
+  max: 2,
+});
+
+afterAll(() => pool.end());
 
 function sql(script: string): string {
   return execFileSync(
@@ -80,6 +87,37 @@ beforeAll(() => {
 });
 
 describe("a guarda barra o duplo clique", () => {
+  it("dois pedidos simultâneos no mesmo horário produzem um único compromisso", async () => {
+    const instante = "2026-11-10 20:00:00+00";
+    const comando = `
+      insert into public.calendar_appointments
+        (organization_id, owner_user_id, title, starts_at, ends_at, status)
+      values ($1, $2, 'corrida', $3, '2026-11-10 21:00:00+00', 'confirmed')
+      returning id
+    `;
+
+    const resultados = await Promise.allSettled([
+      pool.query(comando, [ORG, DONO, instante]),
+      pool.query(comando, [ORG, DONO, instante]),
+    ]);
+    const entraram = resultados.filter((resultado) => resultado.status === "fulfilled");
+    const recusados = resultados.filter((resultado) => resultado.status === "rejected");
+
+    expect(entraram).toHaveLength(1);
+    expect(recusados).toHaveLength(1);
+    expect((recusados[0] as PromiseRejectedResult).reason).toMatchObject({ code: "23505" });
+    expect(
+      Number(
+        (
+          await pool.query(
+            "select count(*) n from public.calendar_appointments where organization_id=$1 and owner_user_id=$2 and starts_at=$3",
+            [ORG, DONO, instante],
+          )
+        ).rows[0]?.n,
+      ),
+    ).toBe(1);
+  });
+
   it("o primeiro compromisso entra (controle positivo)", () => {
     expect(marca(base(DONO, QUANDO, "2026-11-10 15:00:00+00"))).toBe(true);
   });
