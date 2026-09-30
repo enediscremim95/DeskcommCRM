@@ -45,6 +45,13 @@ export const VOICE_MIME = "audio/ogg";
 /** Teto de segurança: nota de voz é curta, e acima disto é outra coisa. */
 const MAX_BYTES = 16 * 1024 * 1024;
 
+export class ConversaoDeVozFalhou extends Error {
+  constructor() {
+    super("Não foi possível converter o áudio para OGG/Opus.");
+    this.name = "ConversaoDeVozFalhou";
+  }
+}
+
 /**
  * Precisa converter? Só `webm` com opus — o resto ou já serve, ou não é nosso
  * problema resolver aqui.
@@ -109,6 +116,64 @@ export async function transcodificarNotaDeVoz(
     return { buffer, mime: VOICE_MIME, convertido: true };
   } catch {
     return { buffer: input.buffer, mime: input.mime, convertido: false };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Conversão estrita para áudios reutilizáveis de resposta rápida.
+ *
+ * Diferente do upload da conversa, aqui não existe fallback: guardar WebM,
+ * MP3 ou OGG/Vorbis faria a extensão enviar um anexo comum, quando o contrato
+ * é uma mensagem de voz. Todo input é reencodado para Opus dentro de OGG.
+ */
+export async function converterAudioParaVozOpus(
+  input: { buffer: Buffer; mime: string },
+  deps: { run?: typeof runFfmpeg } = {},
+): Promise<{ buffer: Buffer; mime: "audio/ogg; codecs=opus" }> {
+  const mimeBase = input.mime.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (
+    !mimeBase.startsWith("audio/") ||
+    input.buffer.length === 0 ||
+    input.buffer.length > MAX_BYTES
+  ) {
+    throw new ConversaoDeVozFalhou();
+  }
+
+  const executar = deps.run ?? runFfmpeg;
+  const dir = await mkdtemp(join(tmpdir(), "voz-template-"));
+  try {
+    const entrada = join(dir, "entrada");
+    const saida = join(dir, "voz.ogg");
+    await writeFile(entrada, input.buffer);
+    await executar(
+      [
+        "-i",
+        entrada,
+        "-vn",
+        "-map_metadata",
+        "-1",
+        "-ac",
+        "1",
+        "-ar",
+        "48000",
+        "-c:a",
+        "libopus",
+        "-b:a",
+        "48k",
+        "-f",
+        "ogg",
+        saida,
+      ],
+      dir,
+    );
+    const buffer = await readFile(saida);
+    if (buffer.length === 0) throw new ConversaoDeVozFalhou();
+    return { buffer, mime: "audio/ogg; codecs=opus" };
+  } catch (error) {
+    if (error instanceof ConversaoDeVozFalhou) throw error;
+    throw new ConversaoDeVozFalhou();
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }

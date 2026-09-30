@@ -95,6 +95,16 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                     </Badge>
                   </div>
                   <p className="line-clamp-2 text-sm text-muted-foreground">{template.body}</p>
+                  {template.audio_storage_path ? (
+                    <audio
+                      controls
+                      preload="none"
+                      className="mt-2 h-9 max-w-full"
+                      src={`/api/v1/message-templates/${template.id}/audio`}
+                    >
+                      {t("Seu navegador não consegue reproduzir este áudio.")}
+                    </audio>
+                  ) : null}
                 </div>
                 {canModify && (
                   <div className="flex shrink-0 gap-1">

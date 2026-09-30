@@ -114,6 +114,9 @@ importers:
       '@upstash/redis':
         specifier: ^1.38.3
         version: 1.38.3
+      '@wppconnect/wa-js':
+        specifier: 4.6.0
+        version: 4.6.0
       '@xyflow/react':
         specifier: ^12.11.6
         version: 12.11.6(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(immer@11.1.15)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -2679,6 +2682,10 @@ packages:
 
   '@workflow/serde@4.1.0':
     resolution: {integrity: sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ==}
+
+  '@wppconnect/wa-js@4.6.0':
+    resolution: {integrity: sha512-epf+ucZO9c25dCaGraslVNHB1mRjid7rfijZhKbalXed/gbDzi6u69wdHCgPbcZW9McVpKmVW+3AzffI39p2SQ==}
+    engines: {whatsapp-web: '>=2.3000.1038792969-alpha'}
 
   '@xtuc/ieee754@1.2.0':
     resolution: {integrity: sha512-DX8nKgqcGwsc0eJSqYt5lwP4DH5FlHnmuWWBRy7X0NcaGR0ZtuyeESgMwTYVEtxmsNGY+qit4QYT/MIYTOTPeA==}
@@ -7840,6 +7847,8 @@ snapshots:
       '@xtuc/long': 4.2.2
 
   '@workflow/serde@4.1.0': {}
+
+  '@wppconnect/wa-js@4.6.0': {}
 
   '@xtuc/ieee754@1.2.0': {}
 

@@ -91,6 +91,11 @@ beforeAll(() => {
   sql(seedOrg(ORG_A, USER_A, SESS_A, "a") + seedOrg(ORG_B, USER_B, SESS_B, "b"));
   // Contact → conversation → message + pipeline → stage → lead, per org.
   sql(`
+    -- A tabela de pareamentos é server-side e o baseline revoga acesso direto
+    -- de authenticated. Este grant existe apenas no banco descartável deste
+    -- arquivo para a consulta alcançar a policy e provar seu comportamento.
+    grant select on public.browser_extension_pairings to authenticated;
+
     do $seed$
     declare
       v_org uuid;
@@ -105,6 +110,26 @@ beforeAll(() => {
     begin
       foreach v_org in array array['${ORG_A}'::uuid, '${ORG_B}'::uuid] loop
         select id into v_sess from public.channel_sessions where organization_id = v_org limit 1;
+
+        if not exists (
+          select 1 from public.browser_extension_pairings where organization_id = v_org
+        ) then
+          insert into public.browser_extension_pairings (
+            organization_id, user_id, crm_origin, extension_id,
+            pairing_code_hash, pairing_code_expires_at, expires_at
+          ) values (
+            v_org,
+            case when v_org = '${ORG_A}'::uuid then '${USER_A}'::uuid else '${USER_B}'::uuid end,
+            case when v_org = '${ORG_A}'::uuid
+              then 'https://rls-a.example.test'
+              else 'https://rls-b.example.test'
+            end,
+            'rls-invariant-extension',
+            'rls-invariant-pairing-' || v_org::text,
+            now() + interval '5 minutes',
+            now() + interval '1 hour'
+          );
+        end if;
 
         select id into v_contact from public.contacts
           where organization_id = v_org and display_name = 'RLS Invariant Contact';
@@ -349,6 +374,10 @@ export const TABLES = [
   "traffic_dashboard_column_presets",
   "traffic_report_cost_thresholds",
   "notification_email_preferences",
+  // migration 0260. O produto revoga acesso direto de authenticated, mas o
+  // seed deste arquivo concede SELECT apenas no banco descartável para medir a
+  // policy com JWT real: a organização lê seu pareamento e não lê o vizinho.
+  "browser_extension_pairings",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"
