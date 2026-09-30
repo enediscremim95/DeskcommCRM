@@ -26,6 +26,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { signInviteToken } from "../../lib/auth/invite-token";
+import { E2E_EMAIL_OUTBOX } from "../../lib/email/adapters/e2e-outbox";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
 // ---- creds do seed base (.e2e-creds.json) + do convite (.e2e-invite.json) ----
@@ -42,6 +43,7 @@ interface InviteCreds {
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const INVITE_PATH = path.join(process.cwd(), ".e2e-invite.json");
+const OUTBOX_PATH = path.join(process.cwd(), E2E_EMAIL_OUTBOX);
 
 function load(): { base: BaseCreds; inv: InviteCreds } {
   if (!fs.existsSync(INVITE_PATH) || !fs.existsSync(CREDS_PATH)) {
@@ -121,13 +123,26 @@ async function loginAdminTotp(page: Page): Promise<void> {
 }
 
 // admin convida o convidado como agent → devolve o accept_url (token stateless)
-async function issueInvite(page: Page, email: string, role: string): Promise<{ acceptUrl: string; failed: Array<{ email: string; reason: string }> }> {
+async function issueInvite(page: Page, email: string, role: string): Promise<{ acceptUrl: string; emailDispatched: boolean; failed: Array<{ email: string; reason: string }> }> {
   const res = await page.request.post("/api/v1/team/invite", {
     data: { invitations: [{ email, role }] },
   });
   expect(res.status(), await res.text()).toBe(201);
-  const json = (await res.json()) as { data: { sent: Array<{ email: string; accept_url: string }>; failed: Array<{ email: string; reason: string }> } };
-  return { acceptUrl: json.data.sent[0]?.accept_url ?? "", failed: json.data.failed };
+  const json = (await res.json()) as { data: { sent: Array<{ email: string; accept_url: string; email_dispatched: boolean }>; failed: Array<{ email: string; reason: string }> } };
+  return {
+    acceptUrl: json.data.sent[0]?.accept_url ?? "",
+    emailDispatched: json.data.sent[0]?.email_dispatched === true,
+    failed: json.data.failed,
+  };
+}
+
+function deliveredInvite(email: string, acceptUrl: string): boolean {
+  if (!fs.existsSync(OUTBOX_PATH)) return false;
+  return fs.readFileSync(OUTBOX_PATH, "utf8").trim().split("\n").filter(Boolean).some((line) => {
+    const message = JSON.parse(line) as { to?: string | string[]; html?: string; text?: string };
+    const recipients = Array.isArray(message.to) ? message.to : [message.to];
+    return recipients.includes(email) && `${message.html ?? ""}\n${message.text ?? ""}`.includes(acceptUrl);
+  });
 }
 
 function tokenOf(acceptUrl: string): string {
@@ -143,6 +158,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     // persistente, os testes depois rodam rápido.
     test.setTimeout(600_000);
     await resetInvitee(); // convidado começa SEM acesso
+    fs.rmSync(OUTBOX_PATH, { force: true });
 
     // (a) telas autenticadas de /app + endpoints — como agent (membro, sem MFA)
     const ctx = await browser.newContext();
@@ -179,9 +195,15 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     const adminCtx = await browser.newContext();
     const adminPage = await adminCtx.newPage();
     await loginAdminTotp(adminPage);
-    const { acceptUrl, failed } = await issueInvite(adminPage, inv.invitee_email, "agent");
+    const { acceptUrl, emailDispatched, failed } = await issueInvite(adminPage, inv.invitee_email, "agent");
     expect(failed).toEqual([]);
     expect(acceptUrl).toContain("/team/accept-invite/");
+    expect(emailDispatched).toBe(true);
+    await expect
+      .poll(() => deliveredInvite(inv.invitee_email, acceptUrl), {
+        message: "o convite precisa chegar à caixa de saída local com o link de aceite",
+      })
+      .toBe(true);
     await adminCtx.close();
 
     // antes do aceite: convidado NÃO tem acesso

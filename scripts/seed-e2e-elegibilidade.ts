@@ -98,6 +98,7 @@ async function ensureChannelSession(orgId: string): Promise<{ id: string; token:
       .from("channel_sessions")
       .update({
         status: "WORKING",
+        automatic_attendance_enabled: true,
         metadata: { ...(row.metadata ?? {}), ai_gate: "allowlist" },
       })
       .eq("id", row.id);
@@ -111,6 +112,7 @@ async function ensureChannelSession(orgId: string): Promise<{ id: string; token:
       waha_session_name: SESSION_NAME,
       display_name: "Número Elegibilidade E2E",
       status: "WORKING",
+      automatic_attendance_enabled: true,
       warmup_completed_at: new Date().toISOString(),
       webhook_secret_encrypted: "\\x00",
       metadata: { ai_gate: "allowlist" },
