@@ -5,6 +5,8 @@ import * as path from "node:path";
 
 import { test, expect } from "@playwright/test";
 
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
+
 /**
  * A AGENDA MOSTRA A ORGANIZAÇÃO ATIVA — e só ela.
  *
@@ -69,7 +71,7 @@ async function entrar(page: PlaywrightTestTypes.Page, creds: Creds) {
   await page.getByLabel(/e-?mail/i).fill(usuario.email);
   await page.getByLabel(/senha/i).fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
+  await aguardarSessaoCompleta(page, "aal1");
 }
 
 /** Os nomes dos chips de tipo, como quem olha a tela os leria. */
@@ -92,8 +94,23 @@ async function tiposOferecidos(page: PlaywrightTestTypes.Page): Promise<string[]
 }
 
 async function trocarPara(page: PlaywrightTestTypes.Page, orgId: string, nome: string) {
+  const ativa = (await page.context().cookies()).find((cookie) => cookie.name === "active_org");
+  if (ativa?.value === orgId) return;
+
   await page.getByTestId("tenant-switcher").click();
-  await page.getByTestId(`tenant-switcher-item-${orgId}`).click();
+  const documentoNovo = page.waitForURL(/\/app\/kanban$/, {
+    waitUntil: "load",
+    timeout: 60_000,
+  });
+  await page.getByTestId(`tenant-switcher-item-${orgId}`).click({ noWaitAfter: true });
+  await documentoNovo;
+  await expect
+    .poll(
+      async () =>
+        (await page.context().cookies()).find((cookie) => cookie.name === "active_org")?.value,
+      { message: `o cookie não confirmou a troca para ${orgId}` },
+    )
+    .toBe(orgId);
   if (nome) {
     const seletor = page.getByTestId("tenant-switcher");
     // ESPERAR A TRANSIÇÃO TERMINAR ANTES DE LER O TEXTO. A troca é uma server

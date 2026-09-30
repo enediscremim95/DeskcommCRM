@@ -58,7 +58,10 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
   return result;
 }
 
-export function isEmailConfigured(): boolean {
+export function isEmailConfigured(options?: { includeTestTransport?: boolean }): boolean {
   const selected = provider();
+  // A outbox prova efeitos no E2E, mas não é uma configuração que existe na
+  // instalação. Telas que descrevem capacidade operacional excluem esse dublê.
+  if (options?.includeTestTransport === false && selected.name === "e2e") return false;
   return selected.adapter.isConfigured() && fromAddress() !== null;
 }
