@@ -7,7 +7,7 @@
  * via event_log). Aceita JSON e form-urlencoded na mesma URL.
  */
 import { randomUUID } from "node:crypto";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -23,7 +23,10 @@ import {
   prepararEntradaNaJanela,
 } from "@/lib/leads/janela-de-reenvio";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
-import { classificarLeadInicial, type ResultadoClassificacaoInicial } from "@/lib/leads/classificacao-inicial";
+import {
+  classificarLeadInicial,
+  type ResultadoClassificacaoInicial,
+} from "@/lib/leads/classificacao-inicial";
 import type { CreateLeadInput } from "@/lib/schemas";
 import { mapInboundPayload, verifyInboundSignature, type FieldMap } from "@/lib/webhooks/inbound";
 import { encontrarContatoPorTelefoneComNome } from "@/lib/channels/contato-por-telefone";
@@ -46,12 +49,28 @@ import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { ApiError } from "@/lib/api/types";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { kickLocalPipeline } from "@/lib/dev/kick-local-pipeline";
+import {
+  cacheDeFontesEstaCompleto,
+  enfileirarWebhook,
+  erroEhIndisponibilidadeDoBanco,
+  guardarFonteWebhookEmCache,
+  lerFonteWebhookDoCache,
+  novoItemDaReserva,
+  type WebhookReserveItem,
+  type WebhookSourceSnapshot,
+} from "@/lib/webhooks/lead-reserve";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 interface RouteCtx {
   params: Promise<{ token: string }>;
+}
+
+interface ProcessingOptions {
+  allowReserve?: boolean;
+  forcedExternalId?: string;
+  skipRateLimit?: boolean;
 }
 
 const RATE_LIMIT_PER_MIN = 60;
@@ -78,9 +97,19 @@ export function OPTIONS(): NextResponse {
 // duplicated (not exported there) only so the route can flag a phone-looking
 // field that failed normalizePhoneBR, for observability. Keep in sync if that
 // list changes.
-const PHONE_ALIASES_FOR_LOGGING = ["phone", "telefone", "whatsapp", "celular", "phone_number", "tel"];
+const PHONE_ALIASES_FOR_LOGGING = [
+  "phone",
+  "telefone",
+  "whatsapp",
+  "celular",
+  "phone_number",
+  "tel",
+];
 
-function findRawPhoneIfUnnormalized(payload: Record<string, unknown>, fieldMap: FieldMap): string | null {
+function findRawPhoneIfUnnormalized(
+  payload: Record<string, unknown>,
+  fieldMap: FieldMap,
+): string | null {
   const aliases = [...(fieldMap.phone ?? []), ...PHONE_ALIASES_FOR_LOGGING];
   const lowered = new Map(Object.keys(payload).map((k) => [k.toLowerCase(), k]));
   for (const alias of aliases) {
@@ -94,27 +123,65 @@ function findRawPhoneIfUnnormalized(payload: Record<string, unknown>, fieldMap: 
 }
 
 async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
+  return processInbound(req, ctx, {});
+}
+
+async function processInbound(
+  req: NextRequest,
+  ctx: RouteCtx,
+  options: ProcessingOptions,
+): Promise<NextResponse> {
   const requestId = randomUUID();
   const { token } = await ctx.params;
   if (!token || token.length < 8) {
     return fail("not_found", "unknown webhook token", 404, { requestId });
   }
 
-  const rl = await checkRateLimit(`webhook_in:${token}`, RATE_LIMIT_PER_MIN, 60);
-  if (!rl.allowed) {
-    return fail("rate_limited", "Too many requests.", 429, {
-      requestId,
-      headers: { "Retry-After": "60" },
-    });
+  if (!options.skipRateLimit) {
+    const rl = await checkRateLimit(`webhook_in:${token}`, RATE_LIMIT_PER_MIN, 60);
+    if (!rl.allowed) {
+      return fail("rate_limited", "Too many requests.", 429, {
+        requestId,
+        headers: { "Retry-After": "60" },
+      });
+    }
   }
 
   const admin = createAdminClient();
-  const { data: source, error: srcErr } = await admin
-    .from("webhook_sources")
-    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, default_owner_user_id, field_map, redirect_to, is_active, merge_repeated_submissions")
-    .eq("path_token", token)
-    .maybeSingle();
-  if (srcErr) return fail("internal_error", srcErr.message, 500, { requestId });
+  let source: WebhookSourceSnapshot | null = null;
+  let sourceVeioDoCache = false;
+  let srcErr: unknown = null;
+  try {
+    const result = await admin
+      .from("webhook_sources")
+      .select(
+        "id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, default_owner_user_id, field_map, redirect_to, is_active, merge_repeated_submissions",
+      )
+      .eq("path_token", token)
+      .maybeSingle();
+    source = result.data as WebhookSourceSnapshot | null;
+    srcErr = result.error;
+  } catch (error) {
+    srcErr = error;
+  }
+  if (srcErr) {
+    if (!erroEhIndisponibilidadeDoBanco(srcErr)) {
+      const message = srcErr instanceof Error ? srcErr.message : "source_lookup_failed";
+      return fail("internal_error", message, 500, { requestId });
+    }
+    try {
+      source = await lerFonteWebhookDoCache(token);
+      sourceVeioDoCache = source !== null;
+      if (!source && (await cacheDeFontesEstaCompleto())) {
+        return fail("not_found", "unknown webhook token", 404, { requestId });
+      }
+    } catch {
+      return fail("service_unavailable", "webhook_source_cache_unavailable", 503, { requestId });
+    }
+    if (!source) {
+      return fail("service_unavailable", "webhook_source_cache_incomplete", 503, { requestId });
+    }
+  }
   if (!source || !source.is_active) {
     return fail("not_found", "unknown webhook token", 404, { requestId });
   }
@@ -153,27 +220,42 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
   // secret cifrado at-rest (migration 0041). Decrypt falhou (chave da GUC
   // ausente/trocada)? Precedente WAHA: pula a validação em vez de derrubar a
   // captação — secret aqui é defesa opcional, não gate de disponibilidade.
-  let sourceSecret: string | null = null;
+  let sourceSecret: string | null = sourceVeioDoCache ? source.source_secret : null;
   let hmacSkipped = false;
-  if (source.secret_encrypted) {
+  if (!sourceVeioDoCache && source.secret_encrypted) {
     sourceSecret = await decryptWebhookSecret(admin, source.secret_encrypted as unknown as string);
     if (sourceSecret === null) hmacSkipped = true;
   }
-  const validSignature = sourceSecret ? verifyInboundSignature(rawBody, sigHeader, sourceSecret) : null;
+  if (!sourceVeioDoCache) {
+    void guardarFonteWebhookEmCache(token, { ...source, source_secret: sourceSecret }).catch(
+      (error: unknown) => {
+        logger.warn("[webhooks.inbound] source cache refresh failed", {
+          webhookSourceId: source?.id,
+          organizationId: source?.organization_id,
+          error: error instanceof Error ? error.message : "unknown_error",
+        });
+      },
+    );
+  }
+  const validSignature = sourceSecret
+    ? verifyInboundSignature(rawBody, sigHeader, sourceSecret)
+    : null;
   if (sourceSecret && !validSignature) {
-    await audit({
-      action: "webhook.inbound_invalid_signature",
-      organizationId: source.organization_id,
-      resourceType: "webhook_source",
-      resourceId: source.id,
-      requestId,
-    });
-    await registrarCaptacao(admin, {
-      ...fonteDaCaptacao,
-      ...origemDaCaptacao,
-      outcome: "recusado",
-      rejectReason: "assinatura_invalida",
-    });
+    if (!sourceVeioDoCache) {
+      await audit({
+        action: "webhook.inbound_invalid_signature",
+        organizationId: source.organization_id,
+        resourceType: "webhook_source",
+        resourceId: source.id,
+        requestId,
+      });
+      await registrarCaptacao(admin, {
+        ...fonteDaCaptacao,
+        ...origemDaCaptacao,
+        outcome: "recusado",
+        rejectReason: "assinatura_invalida",
+      });
+    }
     return fail("unauthenticated", "invalid_signature", 401, { requestId });
   }
 
@@ -183,23 +265,24 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
     if (k.startsWith("authorization") || k === "cookie") return;
     headersJson[key] = value;
   });
-  await admin.from("webhook_events_log").insert({
-    organization_id: source.organization_id,
-    provider: "generic",
-    webhook_path_token: token,
-    http_method: "POST",
-    headers: headersJson,
-    raw_body: rawBody,
-    payload_parsed: payload,
-    signature_header: sigHeader ?? null,
-    // hmacSkipped (decrypt indisponível) conta como "não validado mas aceito",
-    // igual ao webhook WAHA — o feed da UI não pinta de vermelho.
-    valid_signature: validSignature ?? true,
-    event_type: hmacSkipped ? "lead_capture.received_hmac_skipped" : "lead_capture.received",
-    external_id: null,
-    status: "received",
-    attempts: 0,
-  });
+  if (!sourceVeioDoCache)
+    await admin.from("webhook_events_log").insert({
+      organization_id: source.organization_id,
+      provider: "generic",
+      webhook_path_token: token,
+      http_method: "POST",
+      headers: headersJson,
+      raw_body: rawBody,
+      payload_parsed: payload,
+      signature_header: sigHeader ?? null,
+      // hmacSkipped (decrypt indisponível) conta como "não validado mas aceito",
+      // igual ao webhook WAHA — o feed da UI não pinta de vermelho.
+      valid_signature: validSignature ?? true,
+      event_type: hmacSkipped ? "lead_capture.received_hmac_skipped" : "lead_capture.received",
+      external_id: null,
+      status: "received",
+      attempts: 0,
+    });
 
   // Respondi manda `{ form: {...}, respondent: { answers: {...} } }` — dois
   // níveis aninhados que o mapeador genérico descarta por desenho (ele só lê
@@ -214,9 +297,7 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
   // o idempotency key e o mapeamento de campos abaixo. Respondi tem
   // precedência: um payload nunca é dos dois.
   const rdStationMapped: RdStationMapped | null =
-    respondiMapped === null && isRdStationPayload(payload)
-      ? mapRdStationPayload(payload)
-      : null;
+    respondiMapped === null && isRdStationPayload(payload) ? mapRdStationPayload(payload) : null;
 
   // Idempotência (spec §5): `external_id` é campo reservado do envio — quem
   // integra via sistema (Zapier/n8n/loja) manda o ID único do disparo e o
@@ -227,22 +308,23 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
   // criaria um segundo lead para a mesma resposta de formulário.
   const externalIdRaw = payload["external_id"];
   const externalId =
-    typeof externalIdRaw === "string" && externalIdRaw.trim()
+    options.forcedExternalId ??
+    (typeof externalIdRaw === "string" && externalIdRaw.trim()
       ? externalIdRaw.trim().slice(0, 255)
-      // O MESMO corte do ramo acima. A assimetria era de uma linha e o desfecho
-      // não: `uniq_crm_leads_org_source_external` é btree, e btree recusa chave
-      // que não caiba em ~2.704 bytes. Medido em Postgres 17 real, com conteúdo
-      // INCOMPRESSÍVEL (o pglz comprime `repeat('a')` e mascara o limite): a
-      // partir de ~2.669 bytes o INSERT sai com sqlstate 54000, o handler
-      // devolve 500 e NENHUM lead entra.
-      //
-      // Não é alcançável pelo Respondi real — o `respondent_id` do formulário é
-      // uuid de 36 chars, ~60× abaixo do limiar. É higiene de simetria: dois
-      // ramos do mesmo `?:` produzindo a mesma coluna com regras diferentes é o
-      // tipo de coisa que só aparece quando alguém manda um corpo fabricado.
-      : (respondiMapped?.externalId?.slice(0, 255) ??
+      : // O MESMO corte do ramo acima. A assimetria era de uma linha e o desfecho
+        // não: `uniq_crm_leads_org_source_external` é btree, e btree recusa chave
+        // que não caiba em ~2.704 bytes. Medido em Postgres 17 real, com conteúdo
+        // INCOMPRESSÍVEL (o pglz comprime `repeat('a')` e mascara o limite): a
+        // partir de ~2.669 bytes o INSERT sai com sqlstate 54000, o handler
+        // devolve 500 e NENHUM lead entra.
+        //
+        // Não é alcançável pelo Respondi real — o `respondent_id` do formulário é
+        // uuid de 36 chars, ~60× abaixo do limiar. É higiene de simetria: dois
+        // ramos do mesmo `?:` produzindo a mesma coluna com regras diferentes é o
+        // tipo de coisa que só aparece quando alguém manda um corpo fabricado.
+        (respondiMapped?.externalId?.slice(0, 255) ??
         rdStationMapped?.externalId?.slice(0, 255) ??
-        null);
+        null));
 
   const respondWithLead = (leadId: string): NextResponse => {
     if (isForm && source.redirect_to) {
@@ -256,7 +338,10 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
   // `contact_id` — uma captação `duplicado` gravada sem ele guarda nome,
   // telefone e o formulário inteiro de alguém que pediu anonimização, por 365
   // dias, enquanto o produto afirma que a pessoa foi anonimizada.
-  const findLeadByExternalId = async (): Promise<{ id: string; contactId: string | null } | null> => {
+  const findLeadByExternalId = async (): Promise<{
+    id: string;
+    contactId: string | null;
+  } | null> => {
     if (!externalId) return null;
     const { data } = await admin
       .from("crm_leads")
@@ -321,17 +406,74 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
     // formulário com nomes de campo que não reconhecemos recebe 400 e, até
     // aqui, NENHUM rastro na tela. A pessoa só sabia que "não chegou nada" —
     // sem saber que a batida chegou, nem com que campos.
-    await registrarCaptacao(admin, {
-      ...fonteDaCaptacao,
-      ...origemDaCaptacao,
-      // O payload CRU, e não `mapped.custom_fields`: o que quem depura precisa
-      // ver é exatamente com que nomes os campos chegaram.
-      fields: payload,
-      outcome: "recusado",
-      rejectReason: "sem_campo_mapeavel",
+    if (!sourceVeioDoCache) {
+      await registrarCaptacao(admin, {
+        ...fonteDaCaptacao,
+        ...origemDaCaptacao,
+        // O payload CRU, e não `mapped.custom_fields`: o que quem depura precisa
+        // ver é exatamente com que nomes os campos chegaram.
+        fields: payload,
+        outcome: "recusado",
+        rejectReason: "sem_campo_mapeavel",
+      });
+    }
+    return fail("invalid_request", "Nenhum campo mapeável (nome/telefone/email).", 400, {
+      requestId,
     });
-    return fail("invalid_request", "Nenhum campo mapeável (nome/telefone/email).", 400, { requestId });
   }
+
+  const aceitarNaReserva = async (): Promise<NextResponse> => {
+    if (options.allowReserve === false) {
+      return fail("service_unavailable", "database_unavailable_during_replay", 503, { requestId });
+    }
+    const item = novoItemDaReserva({
+      id: requestId,
+      token,
+      organizationId: source.organization_id,
+      sourceId: source.id,
+      rawBody,
+      contentType,
+      signature: sigHeader,
+      origin: req.headers.get("origin"),
+      referer: req.headers.get("referer"),
+      userAgent: req.headers.get("user-agent"),
+      forwardedFor: req.headers.get("x-forwarded-for"),
+      externalId,
+    });
+    try {
+      const queued = await enfileirarWebhook(item);
+      if (queued.status === "cheia") {
+        return fail("service_unavailable", "webhook_reserve_full", 503, { requestId });
+      }
+      if (queued.status === "corpo_grande") {
+        return fail("invalid_request", "webhook_body_too_large_for_reserve", 413, { requestId });
+      }
+      logger.warn("[webhooks.inbound] lead accepted into database-outage reserve", {
+        requestId,
+        webhookSourceId: source.id,
+        organizationId: source.organization_id,
+        reserveCount: queued.count,
+      });
+      if (isForm && source.redirect_to) {
+        const response = NextResponse.redirect(source.redirect_to, 303);
+        response.headers.set("X-Webhook-Reserve", "accepted");
+        return response;
+      }
+      return ok({ accepted: true, queued: true, reserve_id: item.id }, { requestId, status: 202 });
+    } catch (error) {
+      logger.error("[webhooks.inbound] reserve write failed", {
+        requestId,
+        webhookSourceId: source.id,
+        organizationId: source.organization_id,
+        error: error instanceof Error ? error.message : "unknown_error",
+      });
+      return fail("service_unavailable", "webhook_reserve_unavailable", 503, { requestId });
+    }
+  };
+
+  // Token, assinatura e corpo já foram validados pelo snapshot. Como a leitura
+  // da fonte falhou, não fazemos outras chamadas ao banco nesta requisição.
+  if (sourceVeioDoCache) return aceitarNaReserva();
 
   // Contato: upsert por telefone (se houver) — reusa a coluna E.164 canônica.
   // is_merged_into null: contato mesclado não deve ser reaproveitado (o índice
@@ -380,11 +522,7 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
     // no cadastro errado, o follow-up não a reconhecia, e a mesma pergunta saía
     // de novo.
     const selectActiveByPhone = async (): Promise<ContatoAchado> => ({
-      data: await encontrarContatoPorTelefoneComNome(
-        admin,
-        source.organization_id,
-        mapped.phone!,
-      ),
+      data: await encontrarContatoPorTelefoneComNome(admin, source.organization_id, mapped.phone!),
     });
 
     // uniq_contacts_org_email (baseline.sql) é um SEGUNDO índice único parcial,
@@ -558,13 +696,14 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
     source.merge_repeated_submissions === true,
   );
   try {
-    const entrada = contactId && chaveDaJanela
-      ? await prepararEntradaNaJanela(admin, {
-          organizationId: source.organization_id,
-          contactId,
-          guardKey: chaveDaJanela,
-        })
-      : null;
+    const entrada =
+      contactId && chaveDaJanela
+        ? await prepararEntradaNaJanela(admin, {
+            organizationId: source.organization_id,
+            contactId,
+            guardKey: chaveDaJanela,
+          })
+        : null;
 
     if (entrada?.existente && contactId) {
       lead = await alimentarLeadExistente(admin, {
@@ -634,6 +773,9 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
         throw err;
       }
     } else if (err instanceof ApiError) {
+      if (erroEhIndisponibilidadeDoBanco(err)) {
+        return aceitarNaReserva();
+      }
       // Corrida do retry: dois POSTs simultâneos com o mesmo external_id
       // passam ambos pelo fast-path; o índice único derruba o segundo INSERT
       // (23505) — re-seleciona o vencedor e responde idempotente.
@@ -719,7 +861,8 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
   // atividade própria: o valor já fica visível em custom_fields, e uma
   // classificação normal não é um evento que precisa de linha na timeline.
   if (classificacaoInicial && classificacaoInicial.status !== "classificado") {
-    const tipo = classificacaoInicial.status === "desqualificado" ? "lead_disqualified" : "lead_needs_review";
+    const tipo =
+      classificacaoInicial.status === "desqualificado" ? "lead_disqualified" : "lead_needs_review";
     const atividadeClassificacao = await emitLeadActivity(admin, {
       organizationId: source.organization_id,
       leadId: String(lead.id),
@@ -775,12 +918,31 @@ async function postWithoutCors(req: NextRequest, ctx: RouteCtx): Promise<NextRes
   // Sem isto, em prod (Vercel Hobby sem cron de 1 min) o gatilho fica pending.
   await kickLocalPipeline(
     admin,
-    contactId
-      ? { organizationId: source.organization_id, contactId }
-      : undefined,
+    contactId ? { organizationId: source.organization_id, contactId } : undefined,
   );
 
   return respondWithLead(String(lead.id));
+}
+
+/** Reprocessa pela mesma transformação/criação da entrada pública. */
+export async function processarWebhookReservado(item: WebhookReserveItem): Promise<boolean> {
+  const headers = new Headers({ "content-type": item.contentType || "application/json" });
+  if (item.signature) headers.set(SIGNATURE_HEADER, item.signature);
+  if (item.origin) headers.set("origin", item.origin);
+  if (item.referer) headers.set("referer", item.referer);
+  if (item.userAgent) headers.set("user-agent", item.userAgent);
+  if (item.forwardedFor) headers.set("x-forwarded-for", item.forwardedFor);
+  const req = new NextRequest(`http://localhost/api/v1/webhooks/in/${item.token}`, {
+    method: "POST",
+    headers,
+    body: item.rawBody,
+  });
+  const response = await processInbound(
+    req,
+    { params: Promise.resolve({ token: item.token }) },
+    { allowReserve: false, forcedExternalId: item.externalId, skipRateLimit: true },
+  );
+  return response.status >= 200 && response.status < 400;
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {

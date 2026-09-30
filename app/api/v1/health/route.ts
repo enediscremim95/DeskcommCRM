@@ -27,6 +27,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { alvoDe, classificarFalhaDeAlcance, type FalhaDeAlcance } from "@/lib/net/alcance";
 import { validarConfigRedisRest } from "@/lib/redis-config";
+import { statusReservaWebhook } from "@/lib/webhooks/lead-reserve";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,7 +40,8 @@ type MotivoDeFalha =
   | "credencial_recusada"
   | "resposta_inesperada"
   | "nao_configurado"
-  | "configuracao_invalida";
+  | "configuracao_invalida"
+  | "itens_pendentes";
 
 type Check = {
   status: CheckStatus;
@@ -48,6 +50,10 @@ type Check = {
   reason?: MotivoDeFalha;
   /** Protocolo + host + porta que tentamos. Só com `?verbose=1` autenticado. */
   target?: string;
+  count?: number;
+  capacity?: number;
+  oldest_received_at?: string | null;
+  oldest_age_seconds?: number;
 };
 
 const TIMEOUT_MS = 3_000;
@@ -55,9 +61,7 @@ const TIMEOUT_MS = 3_000;
 async function withTimeout<T>(p: Promise<T>, ms = TIMEOUT_MS): Promise<T> {
   return Promise.race([
     p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms),
-    ),
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms)),
   ]);
 }
 
@@ -126,7 +130,12 @@ async function checkRedis(): Promise<Check> {
   const config = validarConfigRedisRest(url, token);
   if (!config.ok) {
     if (config.reason === "nao_configurado") {
-      return { status: "degraded", latency_ms: 0, error: "not_configured", reason: "nao_configurado" };
+      return {
+        status: "degraded",
+        latency_ms: 0,
+        error: "not_configured",
+        reason: "nao_configurado",
+      };
     }
     return {
       status: "down",
@@ -168,11 +177,39 @@ async function checkRedis(): Promise<Check> {
   }
 }
 
+async function checkWebhookReserve(): Promise<Check> {
+  const t0 = Date.now();
+  try {
+    const reserve = await withTimeout(statusReservaWebhook());
+    return {
+      status: reserve.count > 0 ? "degraded" : "ok",
+      latency_ms: Date.now() - t0,
+      ...(reserve.count > 0 ? { reason: "itens_pendentes" as const } : {}),
+      count: reserve.count,
+      capacity: reserve.capacity,
+      oldest_received_at: reserve.oldest_received_at,
+      oldest_age_seconds: reserve.oldest_age_seconds,
+    };
+  } catch (error) {
+    return {
+      status: "down",
+      latency_ms: Date.now() - t0,
+      error: error instanceof Error ? error.message : "reserve_check_failed",
+      reason: classificarFalhaDeAlcance(error),
+    };
+  }
+}
+
 async function checkWaha(): Promise<Check> {
   const t0 = Date.now();
   const base = env.WAHA_API_BASE_URL;
   if (!base) {
-    return { status: "degraded", latency_ms: 0, error: "not_configured", reason: "nao_configurado" };
+    return {
+      status: "degraded",
+      latency_ms: 0,
+      error: "not_configured",
+      reason: "nao_configurado",
+    };
   }
   try {
     // /api/sessions valida conectividade E autenticação num tiro só. O WAHA Core não
@@ -262,15 +299,21 @@ function semAlvo(check: Check): Check {
 }
 
 export async function GET(req: NextRequest) {
-  const [supabase, redis, waha] = await Promise.all([
+  const [supabase, redis, waha, webhookReserve] = await Promise.all([
     checkSupabase(),
     checkRedis(),
     checkWaha(),
+    checkWebhookReserve(),
   ]);
 
   const verboso = req.nextUrl.searchParams.get("verbose") === "1" && segredoInternoConfere(req);
   const filtrar = verboso ? (c: Check) => c : semAlvo;
-  const checks = { supabase: filtrar(supabase), redis: filtrar(redis), waha: filtrar(waha) };
+  const checks = {
+    supabase: filtrar(supabase),
+    redis: filtrar(redis),
+    waha: filtrar(waha),
+    webhook_reserve: filtrar(webhookReserve),
+  };
 
   const anyDown = Object.values(checks).some((c) => c.status === "down");
   const anyDegraded = Object.values(checks).some((c) => c.status === "degraded");
