@@ -23,6 +23,7 @@ import * as path from "node:path";
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 // Segue o dev server do harness (playwright.config webServer) — nunca hardcodar
 // porta: o config usa E2E_PORT (default 3001).
@@ -75,7 +76,7 @@ async function login(page: Page, email: string): Promise<void> {
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await aguardarSessaoCompleta(page, "aal1");
 }
 
 async function selectFirstOption(page: Page, combobox: Locator): Promise<void> {
