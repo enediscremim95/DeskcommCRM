@@ -6,7 +6,10 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { findManagedConnector } from "@/lib/channels/managed-qr";
-import { integrationAccessForOrganization } from "@/lib/integrations/access";
+import {
+  integrationAccessForOrganization,
+  invalidarCacheDeAcessoAsIntegracoes,
+} from "@/lib/integrations/access";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { listN8nWorkflows, N8nReadError, n8nIsConfigured } from "@/lib/n8n/client";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -125,6 +128,7 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       { requestId },
     );
   }
+  await invalidarCacheDeAcessoAsIntegracoes(id);
   await audit({
     action: "integrations.configuration_updated",
     actorUserId: adminContext.user.id,
