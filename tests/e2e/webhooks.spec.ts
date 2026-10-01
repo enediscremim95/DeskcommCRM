@@ -186,7 +186,8 @@ test.describe("webhooks & automações — fluxo completo", () => {
       // e oculto. Ativamos a situação, provamos o endereço visível e voltamos
       // ao script que a continuação do fluxo usa.
       await sheet.getByRole("tab", { name: "Uso outra ferramenta" }).click();
-      await expect(sheet.locator("code", { hasText: sourceUrl })).toBeVisible();
+      const outraFerramenta = sheet.getByRole("tabpanel", { name: /Uso outra ferramenta/ });
+      await expect(outraFerramenta.getByText(sourceUrl, { exact: true })).toBeVisible();
       await sheet.getByRole("tab", { name: "Meu formulário já funciona" }).click();
       await expect(snippetField).toBeVisible();
 

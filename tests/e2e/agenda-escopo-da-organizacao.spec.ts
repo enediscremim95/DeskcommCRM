@@ -5,7 +5,7 @@ import { test, expect } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
-import { loginComoMembro } from "./helpers/aguardar-sessao";
+import { aguardarSessaoCompleta, loginComoMembro } from "./helpers/aguardar-sessao";
 
 /**
  * A AGENDA MOSTRA A ORGANIZAÇÃO ATIVA — e só ela.
@@ -48,6 +48,7 @@ let duasOrgs: DuasOrgs | null = null;
 
 interface DuasOrgs {
   org_a_id: string;
+  org_a_nome: string;
   org_b_id: string;
   org_b_nome: string;
   tipo_a: { slug: string; nome: string; id: string };
@@ -132,6 +133,7 @@ test.beforeAll(async () => {
 
   duasOrgs = {
     org_a_id: orgAId,
+    org_a_nome: "Agenda Escopo E2E A",
     org_b_id: orgBId,
     org_b_nome: "Agenda Escopo E2E B",
     tipo_a: { ...tipoA, id: tipoAId },
@@ -191,16 +193,16 @@ async function tiposOferecidos(page: PlaywrightTestTypes.Page): Promise<string[]
 }
 
 async function trocarPara(page: PlaywrightTestTypes.Page, orgId: string, nome: string) {
-  const ativa = (await page.context().cookies()).find((cookie) => cookie.name === "active_org");
-  if (ativa?.value === orgId) return;
+  const seletor = page.getByTestId("tenant-switcher");
+  await expect(seletor).toBeVisible();
 
-  await page.getByTestId("tenant-switcher").click();
-  const documentoNovo = page.waitForURL((url) => url.pathname.startsWith("/app/pipelines/"), {
-    waitUntil: "load",
-    timeout: 60_000,
-  });
+  // Sem cookie, o servidor elege a primeira organização como ativa. A tela é a
+  // fonte confiável desse estado: clicar na organização já ativa é um no-op e,
+  // portanto, nunca produziria a navegação que o teste antigo esperava.
+  if ((await seletor.getByText(nome, { exact: true }).count()) > 0) return;
+
+  await seletor.click();
   await page.getByTestId(`tenant-switcher-item-${orgId}`).click({ noWaitAfter: true });
-  await documentoNovo;
   await expect
     .poll(
       async () =>
@@ -208,26 +210,14 @@ async function trocarPara(page: PlaywrightTestTypes.Page, orgId: string, nome: s
       { message: `o cookie não confirmou a troca para ${orgId}` },
     )
     .toBe(orgId);
-  if (nome) {
-    const seletor = page.getByTestId("tenant-switcher");
-    // ESPERAR A TRANSIÇÃO TERMINAR ANTES DE LER O TEXTO. A troca é uma server
-    // action dentro de `useTransition`, e enquanto ela roda o botão fica
-    // `disabled` mostrando o nome ANTIGO. Ler o texto nesse meio-tempo mede a
-    // velocidade da máquina, não a troca — e reprova com a acusação errada,
-    // "a troca não pegou", quando o certo seria "a troca ainda não terminou".
-    //
-    // Medido no CI: esta parte da suíte levou 16,9 min numa rodada contra 8,6
-    // min em outra, no mesmo repositório. O teto de 20s era do tamanho dessa
-    // variação, então o resultado dependia de quão carregado o runner estava.
-    //
-    // A propriedade medida NÃO afrouxa: depois que o botão volta a ficar
-    // habilitado, o nome TEM de ser o da organização nova. Troca que não
-    // acontece continua reprovando — só deixa de reprovar troca que demora.
-    await expect(seletor, `a troca para "${nome}" não terminou`).toBeEnabled({ timeout: 60_000 });
-    await expect(seletor, `a troca para "${nome}" não pegou`).toContainText(nome, {
-      timeout: 20_000,
-    });
-  }
+  // A troca substitui o documento inteiro. A sessão reconhecida pelo servidor
+  // e o seletor reidratado provam o novo documento sem depender do evento
+  // frágil de `load` da página anterior.
+  await aguardarSessaoCompleta(page, "aal1");
+  await expect(seletor, `a troca para "${nome}" não terminou`).toBeEnabled({ timeout: 60_000 });
+  await expect(seletor, `a troca para "${nome}" não pegou`).toContainText(nome, {
+    timeout: 20_000,
+  });
 }
 
 test("membro de duas organizações vê na Agenda só os tipos da organização ativa", async ({
@@ -240,7 +230,7 @@ test("membro de duas organizações vê na Agenda só os tipos da organização 
   // Começa pela org A EXPLICITAMENTE: sem isto a spec dependeria de qual org o
   // cookie ou a ordem da lista elegeu, e passaria a medir outra coisa no dia em
   // que essa ordem mudasse.
-  await trocarPara(page, d.org_a_id, "");
+  await trocarPara(page, d.org_a_id, d.org_a_nome);
   const naOrgA = await tiposOferecidos(page);
   expect(naOrgA, `a Agenda da org A não ofereceu "${d.tipo_a.nome}"`).toContain(d.tipo_a.nome);
   expect(
