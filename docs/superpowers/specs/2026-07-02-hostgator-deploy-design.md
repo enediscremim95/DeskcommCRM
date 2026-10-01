@@ -172,7 +172,7 @@ O build do Next leva ~6min numa máquina forte e **estoura 2GB de RAM** — o VP
 
 ## 16. Healthcheck & ordering (gap crítico)
 
-`/api/v1/health` retorna **503** se WAHA ou Redis caem. Se for o healthcheck do container `app` com `Caddy depends_on: app service_healthy`, uma falha do WAHA deixaria o app "unhealthy" para sempre → **Caddy nunca sobe → nem a tela de login abre**. Portanto: healthcheck do container `app` = probe TCP barato (`:3000`); `/api/v1/health` fica reservado para monitoração humana.
+`/api/v1/health` retorna **503** se WAHA ou Redis caem, mas o healthcheck do container lê somente `checks.supabase.status`. Assim uma dependência secundária não bloqueia a entrada do CRM, enquanto o banco deixa de poder falhar em verde. Três respostas consecutivas com `PGRST003` encerram apenas o processo do app para `restart: unless-stopped` recuperá-lo. Falha de alcance do banco não encerra o processo, e o teto persistente de três reinícios por hora impede laço infinito. O worker e o scheduler não recebem essa regra, pois interrompê-los no meio de efeitos tem custo próprio.
 
 ## 17. Riscos e validações abertas
 

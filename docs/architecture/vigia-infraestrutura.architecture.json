@@ -22,7 +22,9 @@
     { "id": "transporte", "lane": "avisa", "col": 3, "type": "service", "label": "Transporte WhatsApp direto", "sublabel": "não passa pelo app, fila ou banco" },
     { "id": "dono", "lane": "avisa", "col": 4, "type": "actor", "label": "Dono configurado", "sublabel": "VIGIA_WHATSAPP_TO" },
     { "id": "heartbeat", "lane": "protege", "col": 2, "type": "database", "label": "vigia-state", "sublabel": "heartbeat persistido fora do banco" },
-    { "id": "watchdog", "lane": "protege", "col": 3, "type": "service", "label": "vigia-watchdog", "sublabel": "avisa heartbeat parado e volta" }
+    { "id": "watchdog", "lane": "protege", "col": 3, "type": "service", "label": "vigia-watchdog", "sublabel": "avisa heartbeat parado e volta" },
+    { "id": "autocura", "lane": "decide", "col": 3, "type": "service", "label": "Auto-cura do app", "sublabel": "3 PGRST003; máximo 3 reinícios por hora" },
+    { "id": "docker", "lane": "protege", "col": 4, "type": "service", "label": "Docker restart", "sublabel": "unless-stopped recria o processo encerrado" }
   ],
   "edges": [
     { "id": "e1", "from": "health", "to": "vigia", "label": "diagnóstico por peça" },
@@ -32,7 +34,10 @@
     { "id": "e5", "from": "transporte", "to": "dono", "label": "queda, volta e lembrete 6 h" },
     { "id": "e6", "from": "vigia", "to": "heartbeat", "label": "a cada checagem" },
     { "id": "e7", "from": "heartbeat", "to": "watchdog", "label": "expira em 5 min" },
-    { "id": "e8", "from": "watchdog", "to": "transporte", "label": "vigia parou ou voltou" }
+    { "id": "e8", "from": "watchdog", "to": "transporte", "label": "vigia parou ou voltou" },
+    { "id": "e9", "from": "health", "to": "autocura", "label": "PGRST003 autenticado pelo probe" },
+    { "id": "e10", "from": "autocura", "to": "docker", "label": "process.exit(1) após tolerância" },
+    { "id": "e11", "from": "docker", "to": "health", "label": "novo processo volta a ser sondado" }
   ],
   "cards": [
     {
@@ -44,7 +49,9 @@
         "registro: vigia-state em volume próprio",
         "anti-morte: processo watchdog separado observa o heartbeat",
         "laço de retorno: duas respostas saudáveis fecham o incidente e avisam a volta",
-        "limite físico: queda da VPS ou do próprio WhatsApp exige monitor externo"
+        "limite físico: queda da VPS ou do próprio WhatsApp exige monitor externo",
+        "auto-cura: só PGRST003 reinicia; banco fora continua servindo e aparece na saúde",
+        "laço de segurança: no máximo 3 reinícios por hora, persistidos no container"
       ]
     }
   ]
