@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Pool } from "pg";
 
 /**
  * G1-02 — RLS isolation invariant.
@@ -19,6 +20,14 @@ if (!container) {
   );
 }
 const containerName: string = container;
+const port = process.env.TEST_DB_PORT;
+if (!port) {
+  throw new Error("TEST_DB_PORT não definido, rode via `pnpm test:db`.");
+}
+const pool = new Pool({
+  connectionString: `postgresql://postgres:postgres@127.0.0.1:${port}/postgres`,
+  max: 2,
+});
 
 /** Runs a SQL script in ONE psql session inside the container; returns stdout (tuples-only). */
 function sql(script: string): string {
@@ -94,7 +103,9 @@ beforeAll(() => {
     -- A tabela de pareamentos é server-side e o baseline revoga acesso direto
     -- de authenticated. Este grant existe apenas no banco descartável deste
     -- arquivo para a consulta alcançar a policy e provar seu comportamento.
-    grant select on public.browser_extension_pairings to authenticated;
+    grant select on public.browser_extension_pairings,
+                    public.crm_stage_position_reservations
+      to authenticated;
 
     do $seed$
     declare
@@ -193,6 +204,10 @@ beforeAll(() => {
           insert into public.crm_leads (organization_id, pipeline_id, stage_id, title)
             values (v_org, v_pipe, v_stage, 'RLS invariant lead');
         end if;
+
+        insert into public.crm_stage_position_reservations (stage_id, organization_id)
+          values (v_stage, v_org)
+          on conflict (stage_id) do nothing;
 
         if not exists (select 1 from public.org_guardrail_layers where organization_id = v_org) then
           insert into public.org_guardrail_layers (organization_id, layer, enabled)
@@ -312,6 +327,10 @@ beforeAll(() => {
   `);
 });
 
+afterAll(async () => {
+  await pool.end();
+});
+
 /**
  * ⚠️ LISTA FIXA — tabela tenant-aware nova que NÃO entrar aqui passa verde sem
  * RLS. Não existe varredura genérica do tipo "toda tabela com organization_id
@@ -378,6 +397,9 @@ export const TABLES = [
   // seed deste arquivo concede SELECT apenas no banco descartável para medir a
   // policy com JWT real: a organização lê seu pareamento e não lê o vizinho.
   "browser_extension_pairings",
+  // migration 0279: cursor interno de posição por etapa. O SELECT é concedido
+  // só neste banco descartável para a policy ser exercitada com JWT real.
+  "crm_stage_position_reservations",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"
@@ -427,5 +449,44 @@ describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {
       ),
     );
     expect(total).toBe(2);
+  });
+
+  it("crm_stage_position_reservations: usuário A atualiza a própria linha e não escreve na de B", async () => {
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        "grant update on public.crm_stage_position_reservations to authenticated",
+      );
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: USER_A, role: "authenticated", aal: "aal1" }),
+      ]);
+
+      const own = await client.query(
+        `with updated as (
+           update public.crm_stage_position_reservations
+              set updated_at = clock_timestamp()
+            where organization_id = $1
+            returning 1
+         ) select count(*)::int as count from updated`,
+        [ORG_A],
+      );
+      const crossTenant = await client.query(
+        `with updated as (
+           update public.crm_stage_position_reservations
+              set updated_at = clock_timestamp()
+            where organization_id = $1
+            returning 1
+         ) select count(*)::int as count from updated`,
+        [ORG_B],
+      );
+
+      expect(own.rows[0]?.count).toBe(1);
+      expect(crossTenant.rows[0]?.count).toBe(0);
+    } finally {
+      await client.query("rollback");
+      client.release();
+    }
   });
 });
