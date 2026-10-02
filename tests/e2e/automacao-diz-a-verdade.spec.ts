@@ -38,6 +38,15 @@ interface Creds {
   users: Record<string, { email: string }>;
 }
 
+interface ExecucaoDaRegra {
+  status: "success" | "failed" | "partial" | "adiado";
+  actions_result: Array<{
+    status: "success" | "failed" | "skipped" | "postponed";
+    detail?: Record<string, unknown>;
+  }>;
+  automation_rules: { name: string } | null;
+}
+
 function loadCreds(): Creds {
   if (!fs.existsSync(CREDS_PATH)) {
     execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
@@ -124,9 +133,7 @@ test.describe("a automação conta o que aconteceu de verdade", () => {
       await page.goto(`${APP_URL}/app/webhooks`);
 
       // ── A fonte ──────────────────────────────────────────────────────────
-      await page
-        .getByRole("button", { name: /Conectar primeira página|Conectar página/ })
-        .click();
+      await page.getByRole("button", { name: /Conectar primeira página|Conectar página/ }).click();
       await page.locator("#src-name").fill(SOURCE_NAME);
       await page.getByRole("button", { name: "Continuar" }).click();
       const dialog = page.getByRole("dialog");
@@ -169,7 +176,7 @@ test.describe("a automação conta o que aconteceu de verdade", () => {
       const seletorDeNumero = editor.getByRole("combobox").filter({ hasText: /Escolha o número/ });
       await seletorDeNumero.click();
 
-      // O primeiro número HABILITADO, não o primeiro da lista.
+      // O número DESTE cenário, não o primeiro da lista.
       //
       // A tela desabilita quem não está `WORKING` (correto — mandar por número
       // desconectado é o defeito que aquele `disabled` evita), e o banco do CI é
@@ -177,14 +184,17 @@ test.describe("a automação conta o que aconteceu de verdade", () => {
       // em `STARTING`/`FAILED`, e a ordem não é garantida. `.first()` pegava uma
       // dessas e o clique expirava em `aria-disabled="true"` — medido no CI.
       //
-      // Escolher o primeiro habilitado é o que uma pessoa faria, e não depende
-      // de quem mais semeou número neste banco.
-      const numeros = page.locator('[role="option"]:not([aria-disabled="true"])');
+      // Escolher qualquer WORKING deixava a asserção depender dos knobs de uma
+      // sessão criada por outra spec. O seed abre e autoriza este número pelo
+      // nome idempotente, portanto é ele que torna a entrada determinística.
+      const numeroDoCenario = page.getByRole("option", {
+        name: /Número conectado \(E2E\)/,
+      });
       await expect(
-        numeros.first(),
-        "nenhum número de WhatsApp WORKING — rode scripts/seed-e2e-numero-conectado.ts",
+        numeroDoCenario,
+        "o número de WhatsApp do cenário não está WORKING — rode scripts/seed-e2e-numero-conectado.ts",
       ).toBeVisible({ timeout: 10_000 });
-      await numeros.first().click();
+      await numeroDoCenario.click();
 
       await editor.getByRole("textbox").last().fill(`Olá {{nome}}, vi que você se cadastrou.`);
 
@@ -202,41 +212,68 @@ test.describe("a automação conta o que aconteceu de verdade", () => {
       await expect(page.getByText("Automação ligada.")).toBeVisible({ timeout: 15_000 });
 
       // ── O lead entra pelo formulário ─────────────────────────────────────
-      const envio = await request.post(
-        `${APP_URL}/api/v1/webhooks/in/${fonte.data.path_token}`,
-        { data: { nome: LEAD_NAME, telefone: "11933332222" } },
-      );
+      const envio = await request.post(`${APP_URL}/api/v1/webhooks/in/${fonte.data.path_token}`, {
+        data: { nome: LEAD_NAME, telefone: "11933332222" },
+      });
       expect(envio.status()).toBe(200);
 
       // ── PRIMEIRO o backend, DEPOIS a tela ────────────────────────────────
       //
-      // Drena até a execução EXISTIR, medindo pela rota que a aba consome. A
-      // versão anterior contava texto na tela dentro de um laço de 12 cliques
-      // em "Atualizar", e ficou intermitente pelo motivo errado: quando a
-      // execução ainda não existia, a falha dizia "a automação não registrou
-      // nenhuma execução" — acusando o produto por um teste que olhou cedo
-      // demais. Medido: no run vermelho a rota devolvia a execução `failed`
-      // corretamente e a tela também a mostrava, segundos depois.
+      // Drena até a execução chegar ao DESFECHO, medindo pela rota que a aba
+      // consome. Existir não basta: o ritmo humano persiste a mesma execução
+      // como `adiado` durante as esperas duráveis anteriores ao envio. Parar
+      // no primeiro run confundia esse estado intermediário legítimo com uma
+      // janela fechada e nunca deixava o WhatsApp fora do ar ser tentado.
       //
-      // Separar as duas perguntas mantém as duas asserções e tira o ruído: se
-      // a automação não rodar, este laço falha nomeando isso; se ela rodar e a
-      // tela não mostrar, falha a asserção de baixo.
-      let execucoes = 0;
-      for (let tentativa = 0; tentativa < 10 && execucoes === 0; tentativa++) {
+      // Separar as perguntas mantém as asserções e tira o ruído: se a regra
+      // não rodar, o laço nomeia isso; se a janela fechar, o motivo técnico
+      // denuncia o seed; se a tela não mostrar o desfecho, a asserção abaixo
+      // acusa a camada visual.
+      let execucao: ExecucaoDaRegra | undefined;
+      for (let tentativa = 0; tentativa < 12 && execucao?.status !== "failed"; tentativa++) {
         await drenar(request, page);
-        const resposta = await page.request.get(
-          `${APP_URL}/api/v1/automation-rules/runs?limit=50`,
-        );
+        const resposta = await page.request.get(`${APP_URL}/api/v1/automation-rules/runs?limit=50`);
         expect(resposta.ok()).toBeTruthy();
         const corpo = (await resposta.json()) as {
-          data: Array<{ automation_rules: { name: string } | null }>;
+          data: ExecucaoDaRegra[];
         };
-        execucoes = corpo.data.filter((r) => r.automation_rules?.name === RULE_NAME).length;
+        execucao = corpo.data.find((r) => r.automation_rules?.name === RULE_NAME);
+        if (!execucao || execucao.status !== "adiado") continue;
+
+        const motivos = execucao.actions_result
+          .map((acao) => acao.detail?.reason)
+          .filter((motivo): motivo is string => typeof motivo === "string");
+
+        // Desde que o produto ganhou ritmo humano durável, "adiado" também é
+        // o estado correto durante os 40–100s antes da primeira mensagem e o
+        // intervalo de "digitando". A versão anterior parava ao encontrar
+        // QUALQUER run e chamava todo adiamento de "janela fechada" — portanto
+        // media um estado intermediário como se fosse o desfecho.
+        expect(
+          motivos,
+          "a execução foi adiada pela janela de envio — o seed 0h-24h não alcançou o canal da regra",
+        ).not.toContain("fora_da_janela_de_envio");
+        expect(
+          motivos.some((motivo) => motivo.startsWith("ritmo_humano_")),
+          `adiamento intermediário sem causa de ritmo humano: ${motivos.join(", ") || "sem motivo"}`,
+        ).toBe(true);
+
+        const retryAt = execucao.actions_result
+          .map((acao) => acao.detail?.retry_at)
+          .find((valor): valor is string => typeof valor === "string");
+        const esperaAteRetomada = retryAt
+          ? Math.min(Math.max(Date.parse(retryAt) - Date.now() + 300, 250), 30_000)
+          : 1_000;
+        await page.waitForTimeout(esperaAteRetomada);
       }
       expect(
-        execucoes,
+        execucao,
         "a automação não registrou execução nenhuma — a regra não rodou",
-      ).toBeGreaterThan(0);
+      ).toBeDefined();
+      expect(
+        execucao?.status,
+        "a automação registrou a execução, mas não chegou ao desfecho real do envio",
+      ).toBe("failed");
 
       // ── A TELA: o que a aba Atividade diz ────────────────────────────────
       await page.getByRole("tab", { name: "Atividade" }).click();
@@ -251,16 +288,12 @@ test.describe("a automação conta o que aconteceu de verdade", () => {
       // O WhatsApp está fora do ar neste ambiente, então a mensagem não saiu.
       // A tela tem que dizer isso — e NÃO pode dizer "Sucesso".
       await expect(cartao.getByText("Sucesso")).toHaveCount(0);
-      // ⚠️ E TAMBÉM NÃO PODE ESTAR ADIADO — esta linha é diagnóstico, não régua
-      // nova. Quando a janela de envio fecha, o run vira `adiado` e a tela o
-      // rotula "Aguardando envio": a asserção seguinte então falha com
-      // `element(s) not found`, um sintoma que não menciona relógio nenhum e que
-      // já custou horas de investigação. Com esta linha antes, a spec falha
-      // dizendo O QUE aconteceu. Quem garante que não acontece é o seed, que
-      // fixa a janela em 0h-24h (`garantirJanelaSempreAberta`).
+      // No DESFECHO também não pode continuar adiado. A espera legítima do
+      // ritmo humano já terminou no laço acima; se este badge sobreviver agora,
+      // o envio nunca chegou a ser tentado.
       await expect(
         cartao.getByText("Aguardando envio"),
-        "o envio foi ADIADO (janela de envio fechada), não tentado — a janela do rig deveria estar aberta 0h-24h pelo seed",
+        "o envio continuou ADIADO e não chegou ao desfecho terminal",
       ).toHaveCount(0);
       await expect(cartao.getByText("Falhou").first()).toBeVisible();
 

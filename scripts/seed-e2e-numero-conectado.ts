@@ -64,8 +64,13 @@ async function main(): Promise<void> {
   if (existente) {
     id = (existente as { id: string }).id;
     // Uma spec anterior pode ter deixado o status em outro valor (o watchdog
-    // reconcilia com o WAHA real, que aqui não existe). Reafirma WORKING.
-    await admin.from("channel_sessions").update({ status: "WORKING" }).eq("id", id);
+    // reconcilia com o WAHA real, que aqui não existe). Reafirma WORKING e a
+    // autorização explícita do rig para exercitar envios automáticos.
+    const { error } = await admin
+      .from("channel_sessions")
+      .update({ status: "WORKING", automatic_attendance_enabled: true } as never)
+      .eq("id", id);
+    if (error) throw new Error(`update channel_sessions: ${error.message}`);
   } else {
     const { data, error } = await admin
       .from("channel_sessions")
@@ -75,6 +80,7 @@ async function main(): Promise<void> {
         display_name: "Número conectado (E2E)",
         phone_number: "+5511999990000",
         status: "WORKING",
+        automatic_attendance_enabled: true,
         webhook_secret_encrypted: "\\x00",
       } as never)
       .select("id")
@@ -85,7 +91,7 @@ async function main(): Promise<void> {
 
   creds.numero_conectado = { channel_session_id: id };
   fs.writeFileSync(CREDS_PATH, JSON.stringify(creds, null, 2));
-  console.log(`[seed] número conectado (WORKING): ${id}`);
+  console.info(`[seed] número conectado (WORKING, atendimento automático ligado): ${id}`);
 
   await garantirJanelaSempreAberta(admin, orgId);
 }

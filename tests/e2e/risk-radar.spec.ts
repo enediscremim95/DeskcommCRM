@@ -10,12 +10,14 @@ import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
 
+import { loginComoMembro } from "./helpers/aguardar-sessao";
+
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 
 interface Creds {
   password: string;
   users: Record<string, { email: string }>;
-  radar?: { at_risk_title: string };
+  radar?: { at_risk_lead_id: string; at_risk_title: string; contact_name: string };
 }
 
 function loadCreds(): Creds {
@@ -35,21 +37,20 @@ function loadCreds(): Creds {
 const creds = loadCreds();
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await loginComoMembro(page, email, creds.password, "/app/radar");
 }
 
 async function gotoRadar(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Radar" }).click();
-  await page.waitForURL(/\/app\/radar/);
   await expect(page.getByRole("heading", { name: "Radar de risco" })).toBeVisible();
 }
 
 function radarItem(page: Page) {
-  return page.locator('[data-testid="radar-item"]', { hasText: creds.radar!.at_risk_title });
+  // O alerta mostra a pessoa que precisa de atenção, não o título interno do
+  // negócio. O href prende o item ao lead exato sem depender dessa decisão de
+  // apresentação, e o nome visível continua provado nos casos abaixo.
+  return page
+    .locator('[data-testid="radar-item"]')
+    .filter({ has: page.locator(`a[href="/app/leads/${creds.radar!.at_risk_lead_id}"]`) });
 }
 
 test("o atendente vê no Radar a demanda aberta que esfriou sem próximo passo", async ({ page }) => {
@@ -58,6 +59,7 @@ test("o atendente vê no Radar a demanda aberta que esfriou sem próximo passo",
 
   const item = radarItem(page);
   await expect(item).toBeVisible();
+  await expect(item.getByText(creds.radar!.contact_name, { exact: true })).toBeVisible();
   await expect(item).toHaveAttribute("data-risk", "critico");
   await expect(item.getByText("Lead sem próximo passo")).toBeVisible();
   await expect(page.getByTestId("radar-counts")).toHaveCount(0);

@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import type * as PlaywrightTestTypes from "@playwright/test";
-import { execFileSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
 
 import { test, expect } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
+
+import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { aguardarSessaoCompleta, loginComoMembro } from "./helpers/aguardar-sessao";
 
 /**
  * A AGENDA MOSTRA A ORGANIZAÇÃO ATIVA — e só ela.
@@ -27,102 +29,208 @@ import { test, expect } from "@playwright/test";
  * distingue "a org certa" de "as duas somadas".
  *
  * Toda a suíte até aqui roda com usuário de UMA organização — um cenário de uma
- * org não consegue, por construção, enxergar este defeito. Por isso o seed novo.
+ * org não consegue, por construção, enxergar este defeito. Por isso este caso
+ * cria seu próprio usuário e suas duas organizações, sem alterar o fixture comum.
  */
-const RAIZ = path.resolve(__dirname, "../..");
-
 // Login + duas travessias da Agenda + troca de organização.
 test.describe.configure({ timeout: 150_000 });
 
+const SENHA = "AgendaEscopoQa!2026#";
+const EMAIL = `agenda-escopo-${randomUUID().slice(0, 8)}@qa.local`;
+const supabase = credenciaisSupabaseDeTeste();
+const svc = createClient(supabase.url, supabase.serviceRole, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+
+let userId = "";
+const orgIds: string[] = [];
+let duasOrgs: DuasOrgs | null = null;
+
 interface DuasOrgs {
   org_a_id: string;
+  org_a_nome: string;
   org_b_id: string;
   org_b_nome: string;
   tipo_a: { slug: string; nome: string; id: string };
   tipo_b: { slug: string; nome: string; id: string };
 }
 
-interface Creds {
-  password: string;
-  users: Record<string, { email: string } | undefined>;
-  duas_orgs?: DuasOrgs;
+async function criarOrganizacao(nome: string, prefixo: string): Promise<string> {
+  const { data, error } = await svc
+    .from("organizations")
+    .insert({
+      slug: `${prefixo}-${randomUUID().slice(0, 8)}`,
+      display_name: nome,
+      legal_name: nome,
+      timezone: "America/Sao_Paulo",
+      locale: "pt-BR",
+      status: "active",
+      created_by: userId,
+      onboarded_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+  if (error || !data) throw error ?? new Error(`organização ${nome} não foi criada`);
+  const id = data.id as string;
+  orgIds.push(id);
+  return id;
 }
 
-function lerCreds(): Creds {
-  const p = path.join(RAIZ, ".e2e-creds.json");
-  if (!fs.existsSync(p)) throw new Error("`.e2e-creds.json` ausente — rode `scripts/seed-e2e-credentials.ts`");
-  let c = JSON.parse(fs.readFileSync(p, "utf8")) as Creds;
-  if (!c.duas_orgs) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-duas-organizacoes.ts"], { stdio: "inherit" });
-    c = JSON.parse(fs.readFileSync(p, "utf8")) as Creds;
+async function criarTipo(orgId: string, tipo: { slug: string; nome: string }): Promise<string> {
+  const { data, error } = await svc
+    .from("calendar_event_types")
+    .insert({
+      organization_id: orgId,
+      name: tipo.nome,
+      slug: tipo.slug,
+      description: "Tipo exclusivo desta organização, usado pela spec de escopo.",
+      duration_minutes: 30,
+      minimum_notice_minutes: 60,
+      booking_window_days: 60,
+      is_active: true,
+      default_owner_user_id: userId,
+    } as never)
+    .select("id")
+    .single();
+  if (error || !data) throw error ?? new Error(`tipo ${tipo.slug} não foi criado`);
+  return (data as { id: string }).id;
+}
+
+test.beforeAll(async () => {
+  const { data: criado, error: erroUsuario } = await svc.auth.admin.createUser({
+    email: EMAIL,
+    password: SENHA,
+    email_confirm: true,
+  });
+  if (erroUsuario || !criado.user) throw erroUsuario ?? new Error("usuário E2E não foi criado");
+  userId = criado.user.id;
+
+  // Esta spec precisa de um usuário em duas organizações, mas não precisa usar
+  // o `manager` nem a organização compartilhados pela suíte. O fixture anterior
+  // acrescentava na org comum um tipo cujo dono não tinha jornada; como o tipo
+  // virava o primeiro em ordem alfabética, as specs seguintes abriam o painel
+  // nele e recebiam 422 antes de chegar ao tipo com disponibilidade publicada.
+  const orgAId = await criarOrganizacao("Agenda Escopo E2E A", "agenda-escopo-a");
+  const orgBId = await criarOrganizacao("Agenda Escopo E2E B", "agenda-escopo-b");
+
+  const aceitoEm = new Date().toISOString();
+  const { error: erroMembros } = await svc.from("user_organizations").insert([
+    { organization_id: orgAId, user_id: userId, role: "manager", accepted_at: aceitoEm },
+    { organization_id: orgBId, user_id: userId, role: "manager", accepted_at: aceitoEm },
+  ] as never);
+  if (erroMembros) throw erroMembros;
+
+  const tipoA = {
+    slug: `so-da-org-a-${randomUUID().slice(0, 8)}`,
+    nome: "Atendimento Só Da Org A",
+  };
+  const tipoB = {
+    slug: `so-da-org-b-${randomUUID().slice(0, 8)}`,
+    nome: "Atendimento Só Da Org B",
+  };
+  const tipoAId = await criarTipo(orgAId, tipoA);
+  const tipoBId = await criarTipo(orgBId, tipoB);
+
+  duasOrgs = {
+    org_a_id: orgAId,
+    org_a_nome: "Agenda Escopo E2E A",
+    org_b_id: orgBId,
+    org_b_nome: "Agenda Escopo E2E B",
+    tipo_a: { ...tipoA, id: tipoAId },
+    tipo_b: { ...tipoB, id: tipoBId },
+  };
+});
+
+test.afterAll(async () => {
+  if (orgIds.length > 0) {
+    const { error } = await svc.from("organizations").delete().in("id", orgIds);
+    if (error) throw error;
   }
-  if (!c.duas_orgs) throw new Error("o seed rodou e não gravou o bloco `duas_orgs`");
-  return c;
-}
+  if (userId) {
+    const { error } = await svc.auth.admin.deleteUser(userId);
+    if (error) throw error;
+  }
+});
 
-async function entrar(page: PlaywrightTestTypes.Page, creds: Creds) {
-  // `manager` pelo mesmo motivo das specs irmãs: o `admin` do seed tem TOTP, e a
-  // tela de 2FA não é o assunto aqui.
-  const usuario = creds.users.manager;
-  if (!usuario) throw new Error(".e2e-creds.json sem o usuário `manager`");
-  await page.goto("/login");
-  await page.getByLabel(/e-?mail/i).fill(usuario.email);
-  await page.getByLabel(/senha/i).fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
+async function entrar(page: PlaywrightTestTypes.Page) {
+  await loginComoMembro(page, EMAIL, SENHA, "/app/agenda");
 }
 
 /** Os nomes dos chips de tipo, como quem olha a tela os leria. */
 async function tiposOferecidos(page: PlaywrightTestTypes.Page): Promise<string[]> {
   await page.goto("/app/agenda");
   await page.getByRole("button", { name: /Novo agendamento/i }).click();
-  const lista = page.getByTestId("tipos-de-agendamento");
-  await expect(lista, "o painel de marcação não ofereceu tipo nenhum").toBeVisible({ timeout: 20_000 });
-  const textos = await lista.getByRole("button").allInnerTexts();
+  const painel = page.getByRole("dialog", { name: /Novo agendamento/i });
+  await expect(painel, "o painel de marcação não abriu").toBeVisible({ timeout: 20_000 });
+  const lista = painel.getByTestId("tipos-de-agendamento");
+  let nomes: string[];
+  if ((await lista.count()) > 0) {
+    const textos = await lista.getByRole("button").allInnerTexts();
+    // O chip é "Nome" + a duração colada ("Consulta E2E 30min"). O nome é a
+    // primeira linha; o `replace` tira o sufixo quando não há quebra.
+    nomes = textos.map((t) =>
+      t
+        .split("\n")[0]!
+        .replace(/\d+\s*min$/i, "")
+        .trim(),
+    );
+  } else {
+    // Com UM tipo não existe escolha a fazer, por isso o seletor some. O tipo
+    // oferecido continua visível no contexto da marcação e é dali que um
+    // usuário confirma o que está prestes a marcar.
+    const contexto = painel.getByTestId("contexto-da-marcacao");
+    await expect(contexto, "o único tipo não apareceu no contexto").toBeVisible();
+    nomes = [(await contexto.locator("h3").innerText()).trim()];
+  }
   // FECHA O PAINEL antes de devolver. Ele é um `Sheet` com overlay
   // `fixed inset-0`, e deixá-lo aberto faz o próximo clique — o do seletor de
   // organização — bater no overlay em vez de no botão. Medido: a spec falhava
   // com "intercepts pointer events" por 150s, num ponto que não tinha nada a ver
   // com o que ela mede.
   await page.keyboard.press("Escape");
-  await expect(lista).toBeHidden({ timeout: 10_000 });
-  // O chip é "Nome" + a duração colada ("Consulta E2E 30min"). O nome é a
-  // primeira linha; o `replace` tira o sufixo de duração quando não há quebra.
-  return textos.map((t) => t.split("\n")[0]!.replace(/\d+\s*min$/i, "").trim());
+  await expect(painel).toBeHidden({ timeout: 10_000 });
+  return nomes;
 }
 
 async function trocarPara(page: PlaywrightTestTypes.Page, orgId: string, nome: string) {
-  await page.getByTestId("tenant-switcher").click();
-  await page.getByTestId(`tenant-switcher-item-${orgId}`).click();
-  if (nome) {
-    const seletor = page.getByTestId("tenant-switcher");
-    // ESPERAR A TRANSIÇÃO TERMINAR ANTES DE LER O TEXTO. A troca é uma server
-    // action dentro de `useTransition`, e enquanto ela roda o botão fica
-    // `disabled` mostrando o nome ANTIGO. Ler o texto nesse meio-tempo mede a
-    // velocidade da máquina, não a troca — e reprova com a acusação errada,
-    // "a troca não pegou", quando o certo seria "a troca ainda não terminou".
-    //
-    // Medido no CI: esta parte da suíte levou 16,9 min numa rodada contra 8,6
-    // min em outra, no mesmo repositório. O teto de 20s era do tamanho dessa
-    // variação, então o resultado dependia de quão carregado o runner estava.
-    //
-    // A propriedade medida NÃO afrouxa: depois que o botão volta a ficar
-    // habilitado, o nome TEM de ser o da organização nova. Troca que não
-    // acontece continua reprovando — só deixa de reprovar troca que demora.
-    await expect(seletor, `a troca para "${nome}" não terminou`).toBeEnabled({ timeout: 60_000 });
-    await expect(seletor, `a troca para "${nome}" não pegou`).toContainText(nome, { timeout: 20_000 });
-  }
+  const seletor = page.getByTestId("tenant-switcher");
+  await expect(seletor).toBeVisible();
+
+  // Sem cookie, o servidor elege a primeira organização como ativa. A tela é a
+  // fonte confiável desse estado: clicar na organização já ativa é um no-op e,
+  // portanto, nunca produziria a navegação que o teste antigo esperava.
+  if ((await seletor.getByText(nome, { exact: true }).count()) > 0) return;
+
+  await seletor.click();
+  await page.getByTestId(`tenant-switcher-item-${orgId}`).click({ noWaitAfter: true });
+  await expect
+    .poll(
+      async () =>
+        (await page.context().cookies()).find((cookie) => cookie.name === "active_org")?.value,
+      { message: `o cookie não confirmou a troca para ${orgId}` },
+    )
+    .toBe(orgId);
+  // A troca substitui o documento inteiro. A sessão reconhecida pelo servidor
+  // e o seletor reidratado provam o novo documento sem depender do evento
+  // frágil de `load` da página anterior.
+  await aguardarSessaoCompleta(page, "aal1");
+  await expect(seletor, `a troca para "${nome}" não terminou`).toBeEnabled({ timeout: 60_000 });
+  await expect(seletor, `a troca para "${nome}" não pegou`).toContainText(nome, {
+    timeout: 20_000,
+  });
 }
 
-test("membro de duas organizações vê na Agenda só os tipos da organização ativa", async ({ page }) => {
-  const creds = lerCreds();
-  const d = creds.duas_orgs as DuasOrgs;
-  await entrar(page, creds);
+test("membro de duas organizações vê na Agenda só os tipos da organização ativa", async ({
+  page,
+}) => {
+  if (!duasOrgs) throw new Error("fixture isolado de duas organizações não foi criado");
+  const d = duasOrgs;
+  await entrar(page);
 
   // Começa pela org A EXPLICITAMENTE: sem isto a spec dependeria de qual org o
   // cookie ou a ordem da lista elegeu, e passaria a medir outra coisa no dia em
   // que essa ordem mudasse.
-  await trocarPara(page, d.org_a_id, "");
+  await trocarPara(page, d.org_a_id, d.org_a_nome);
   const naOrgA = await tiposOferecidos(page);
   expect(naOrgA, `a Agenda da org A não ofereceu "${d.tipo_a.nome}"`).toContain(d.tipo_a.nome);
   expect(

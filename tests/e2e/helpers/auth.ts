@@ -5,6 +5,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { findE2EOutboxEmail } from "../../../lib/email/adapters/e2e-outbox";
+
 const MAILPIT_URL = process.env.MAILPIT_URL ?? "http://127.0.0.1:54324";
 
 /** Parser mínimo de .env.local (os specs rodam fora do runtime Next). */
@@ -41,6 +43,9 @@ export async function waitForEmail(
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    const outbox = await findE2EOutboxEmail(to, subjectPart);
+    if (outbox) return outbox;
+
     const res = await fetch(
       `${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${to}`)}`,
     );

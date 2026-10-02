@@ -13,6 +13,8 @@ import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
 
+import { loginComoMembro } from "./helpers/aguardar-sessao";
+
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 
 interface Creds {
@@ -41,26 +43,29 @@ function loadCreds(): Creds {
 const creds = loadCreds();
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await loginComoMembro(
+    page,
+    email,
+    creds.password,
+    `/app/pipelines/${creds.kanban!.pipeline_id}`,
+  );
 }
 
 test("filtro por responsável reflete na URL e esconde leads com dono", async ({ page }) => {
   await login(page, creds.users.manager!.email);
-  await page.goto(`/app/pipelines/${creds.kanban!.pipeline_id}`);
 
   const owned = page.getByRole("heading", { name: "Pedido E2E com responsavel" });
   const unowned = page.getByRole("heading", { name: "Pedido E2E sem responsavel" });
   await expect(owned).toBeVisible();
   await expect(unowned).toBeVisible();
-  // A badge de ausência de dono está presente em ao menos um card.
-  await expect(page.getByText("Sem responsável").first()).toBeVisible();
+  // No card compacto, a ausência de dono é um disco tracejado com rótulo
+  // acessível. Escopar ao card sem dono evita escolher por acaso um dos vários
+  // discos iguais que podem existir no quadro.
+  const unownedCard = page.getByRole("group", { name: "Lead: Pedido E2E sem responsavel" });
+  await expect(unownedCard.getByLabel("Sem responsável")).toBeVisible();
 
-  // Abre o filtro de responsável e escolhe "Sem responsável".
-  await page.getByRole("button", { name: /^Responsável:/ }).click();
+  // O filtro reúne humanos e agentes sob o conceito de negociação.
+  await page.getByRole("button", { name: /^Negociações:/ }).click();
   await page.getByRole("menuitem", { name: "Sem responsável" }).click();
 
   await expect(page).toHaveURL(/owner=unassigned/);

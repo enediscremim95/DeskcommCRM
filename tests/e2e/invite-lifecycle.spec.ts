@@ -26,6 +26,9 @@ import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { signInviteToken } from "../../lib/auth/invite-token";
+import { E2E_EMAIL_OUTBOX } from "../../lib/email/adapters/e2e-outbox";
+import { aguardarSessaoCompleta, loginComoMembro } from "./helpers/aguardar-sessao";
+import { semearConversaDoInbox, type ConversaDoInbox } from "./helpers/conversa-do-inbox";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
 // ---- creds do seed base (.e2e-creds.json) + do convite (.e2e-invite.json) ----
@@ -42,6 +45,7 @@ interface InviteCreds {
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const INVITE_PATH = path.join(process.cwd(), ".e2e-invite.json");
+const OUTBOX_PATH = path.join(process.cwd(), E2E_EMAIL_OUTBOX);
 
 function load(): { base: BaseCreds; inv: InviteCreds } {
   if (!fs.existsSync(INVITE_PATH) || !fs.existsSync(CREDS_PATH)) {
@@ -54,6 +58,7 @@ function load(): { base: BaseCreds; inv: InviteCreds } {
 }
 
 const { base, inv } = load();
+let conversa: ConversaDoInbox;
 
 // service-role client (mesmo env do dev) — pra provar estado no banco e resetar
 const svc = createClient(
@@ -87,12 +92,8 @@ async function resetInvitee(): Promise<void> {
   await svc.from("user_organizations").delete().eq("user_id", inv.invitee_id).eq("organization_id", inv.org_id);
 }
 
-async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(base.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+async function login(page: Page, email: string, destino?: string): Promise<void> {
+  await loginComoMembro(page, email, base.password, destino);
 }
 
 async function loginAdminTotp(page: Page): Promise<void> {
@@ -110,9 +111,13 @@ async function loginAdminTotp(page: Page): Promise<void> {
     try {
       // 1ª compilação de /app no dev pode ser lenta → timeout generoso
       await page.waitForURL(/\/app\//, { timeout: 30_000 });
+      await aguardarSessaoCompleta(page, "aal2");
       return;
     } catch {
-      if (/\/app\//.test(page.url())) return; // navegou; só passou do timeout
+      if (/\/app\//.test(page.url())) {
+        await aguardarSessaoCompleta(page, "aal2");
+        return;
+      }
       if (!/\/login\/mfa/.test(page.url())) throw new Error(`MFA em estado inesperado: ${page.url()}`);
       await page.waitForTimeout(msUntilNextTotpWindow() + 300); // código recusado → nova janela
     }
@@ -121,13 +126,26 @@ async function loginAdminTotp(page: Page): Promise<void> {
 }
 
 // admin convida o convidado como agent → devolve o accept_url (token stateless)
-async function issueInvite(page: Page, email: string, role: string): Promise<{ acceptUrl: string; failed: Array<{ email: string; reason: string }> }> {
+async function issueInvite(page: Page, email: string, role: string): Promise<{ acceptUrl: string; emailDispatched: boolean; failed: Array<{ email: string; reason: string }> }> {
   const res = await page.request.post("/api/v1/team/invite", {
     data: { invitations: [{ email, role }] },
   });
   expect(res.status(), await res.text()).toBe(201);
-  const json = (await res.json()) as { data: { sent: Array<{ email: string; accept_url: string }>; failed: Array<{ email: string; reason: string }> } };
-  return { acceptUrl: json.data.sent[0]?.accept_url ?? "", failed: json.data.failed };
+  const json = (await res.json()) as { data: { sent: Array<{ email: string; accept_url: string; email_dispatched: boolean }>; failed: Array<{ email: string; reason: string }> } };
+  return {
+    acceptUrl: json.data.sent[0]?.accept_url ?? "",
+    emailDispatched: json.data.sent[0]?.email_dispatched === true,
+    failed: json.data.failed,
+  };
+}
+
+function deliveredInvite(email: string, acceptUrl: string): boolean {
+  if (!fs.existsSync(OUTBOX_PATH)) return false;
+  return fs.readFileSync(OUTBOX_PATH, "utf8").trim().split("\n").filter(Boolean).some((line) => {
+    const message = JSON.parse(line) as { to?: string | string[]; html?: string; text?: string };
+    const recipients = Array.isArray(message.to) ? message.to : [message.to];
+    return recipients.includes(email) && `${message.html ?? ""}\n${message.text ?? ""}`.includes(acceptUrl);
+  });
 }
 
 function tokenOf(acceptUrl: string): string {
@@ -143,6 +161,8 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     // persistente, os testes depois rodam rápido.
     test.setTimeout(600_000);
     await resetInvitee(); // convidado começa SEM acesso
+    fs.rmSync(OUTBOX_PATH, { force: true });
+    conversa = await semearConversaDoInbox(inv.org_id);
 
     // (a) telas autenticadas de /app + endpoints — como agent (membro, sem MFA)
     const ctx = await browser.newContext();
@@ -152,7 +172,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await page.locator("#password").fill(base.password);
     await page.getByRole("button", { name: /entrar/i }).click();
     await page.waitForURL(/\/app\//, { timeout: 150_000 }).catch(() => {});
-    for (const r of ["/app/inbox", "/app/kanban?lista=1", "/app/contacts", "/app/settings/billing", "/app/settings/api-tokens"]) {
+    for (const r of [`/app/inbox?conversation=${conversa.conversationId}`, "/app/kanban?lista=1", "/app/contacts", "/app/settings/billing", "/app/settings/api-tokens"]) {
       await page.goto(r).catch(() => {});
     }
     // compila o endpoint de convite (agent → 403, mas compila a rota)
@@ -174,14 +194,24 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await mctx.close();
   });
 
+  test.afterAll(async () => {
+    await conversa.limpar();
+  });
+
   test("1. ciclo feliz: convidar → aceitar → vira agent → cai no inbox", async ({ browser }) => {
     // admin convida
     const adminCtx = await browser.newContext();
     const adminPage = await adminCtx.newPage();
     await loginAdminTotp(adminPage);
-    const { acceptUrl, failed } = await issueInvite(adminPage, inv.invitee_email, "agent");
+    const { acceptUrl, emailDispatched, failed } = await issueInvite(adminPage, inv.invitee_email, "agent");
     expect(failed).toEqual([]);
     expect(acceptUrl).toContain("/team/accept-invite/");
+    expect(emailDispatched).toBe(true);
+    await expect
+      .poll(() => deliveredInvite(inv.invitee_email, acceptUrl), {
+        message: "o convite precisa chegar à caixa de saída local com o link de aceite",
+      })
+      .toBe(true);
     await adminCtx.close();
 
     // antes do aceite: convidado NÃO tem acesso
@@ -214,7 +244,14 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
   });
 
   test("2. escopo pós-aceite: agent vê inbox/kanban, bloqueado em billing/api-tokens", async ({ page }) => {
-    await login(page, inv.invitee_email);
+    await login(
+      page,
+      inv.invitee_email,
+      `/app/inbox?conversation=${conversa.conversationId}`,
+    );
+
+    await expect(page.getByRole("tab", { name: /Minhas/ })).toBeVisible();
+    await expect(page.getByText(conversa.contactName).first()).toBeVisible();
 
     await page.goto("/app/settings/billing");
     await page.waitForURL(/\/403/);
@@ -222,9 +259,6 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
 
     await page.goto("/app/settings/api-tokens");
     await page.waitForURL(/\/403/);
-
-    await page.goto("/app/inbox");
-    await expect(page.getByText("Selecione uma conversa", { exact: true })).toBeVisible();
 
     // /app/kanban abre o quadro padrão desde b8124bc3; a lista é explícita.
     await page.goto("/app/kanban?lista=1");
