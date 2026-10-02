@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   drenarReservaComRedis,
@@ -81,30 +81,36 @@ function item() {
 
 describe("dreno da reserva de leads", () => {
   it("repetir o mesmo item cria um único lead na organização certa", async () => {
-    const redis = new FakeRedis();
-    const reserved = item();
-    await enfileirarWebhookComRedis(redis, reserved, Date.parse("2026-09-30T14:01:00Z"));
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-30T14:01:00.000Z"));
+    try {
+      const redis = new FakeRedis();
+      const reserved = item();
+      await enfileirarWebhookComRedis(redis, reserved, Date.now());
 
-    const leads = new Map<string, { organizationId: string }>();
-    let primeiraRodada = true;
-    const processar = async (queued: typeof reserved) => {
-      const key = `${queued.organizationId}:${queued.externalId}`;
-      if (!leads.has(key)) leads.set(key, { organizationId: queued.organizationId });
-      if (primeiraRodada) {
-        primeiraRodada = false;
-        return false; // simula queda depois do INSERT e antes do ZREM
-      }
-      return true;
-    };
+      const leads = new Map<string, { organizationId: string }>();
+      let primeiraRodada = true;
+      const processar = async (queued: typeof reserved) => {
+        const key = `${queued.organizationId}:${queued.externalId}`;
+        if (!leads.has(key)) leads.set(key, { organizationId: queued.organizationId });
+        if (primeiraRodada) {
+          primeiraRodada = false;
+          return false; // simula queda depois do INSERT e antes do ZREM
+        }
+        return true;
+      };
 
-    const primeira = await drenarReservaComRedis(redis, processar);
-    const segunda = await drenarReservaComRedis(redis, processar);
+      const primeira = await drenarReservaComRedis(redis, processar);
+      const segunda = await drenarReservaComRedis(redis, processar);
 
-    expect(primeira.drained).toBe(0);
-    expect(segunda.drained).toBe(1);
-    expect(leads.size).toBe(1);
-    expect([...leads.values()][0]).toEqual({ organizationId: reserved.organizationId });
-    expect(redis.queue.size).toBe(0);
+      expect(primeira.drained).toBe(0);
+      expect(segunda.drained).toBe(1);
+      expect(leads.size).toBe(1);
+      expect([...leads.values()][0]).toEqual({ organizationId: reserved.organizationId });
+      expect(redis.queue.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("o teto calculado recusa o próximo item de forma explícita", async () => {
