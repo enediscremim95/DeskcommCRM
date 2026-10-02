@@ -164,6 +164,15 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "declarado pela migration 0034 e não há call site de RPC para removê-lo " +
       "com segurança sem medir o disparo de cada trigger.",
   },
+  {
+    fn: "fn_reservar_posicao_lead_na_etapa(uuid,uuid,text)",
+    razao:
+      "POST/PATCH app/api/v1/leads/_handler.ts e as rotas de ganhar, perder e " +
+      "reabrir lead chamam reservarPosicaoNaEtapa com createClient da sessão. " +
+      "A função valida membership, etapa e reserva no mesmo tenant; " +
+      "tests/invariants/lead-novo-no-topo.test.ts prova JWT A/B, etapa alheia, " +
+      "reserva inconsistente e concorrência sem posição repetida.",
+  },
 ];
 
 interface Definer {

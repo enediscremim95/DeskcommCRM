@@ -195,6 +195,23 @@ function fakeAdminClient(): SupabaseClient {
     from: (table: string) => new FakeQuery(table),
     rpc: (name: string, params: Record<string, unknown>): Promise<QResult> => {
       return (async () => {
+        // Migration 0279: usa a função real para preservar min/max, etapa
+        // vazia e o cursor durável que impede duas reservas iguais.
+        if (name === "fn_reservar_posicao_lead_na_etapa") {
+          const p = params as {
+            p_organization_id: string;
+            p_stage_id: string;
+            p_lado: string;
+          };
+          try {
+            const out = sql(
+              `select public.fn_reservar_posicao_lead_na_etapa(${sqlString(p.p_organization_id)}::uuid, ${sqlString(p.p_stage_id)}::uuid, ${sqlString(p.p_lado)}::text)::text;`,
+            ).trim();
+            return { data: out || null, error: null };
+          } catch (err) {
+            return { data: null, error: { message: (err as Error).message } };
+          }
+        }
         if (name !== "emit_event") {
           throw new Error(`fakeAdminClient: unsupported rpc ${name}`);
         }

@@ -52,6 +52,7 @@ function buildDataset() {
 
 class Query implements PromiseLike<QueryResult> {
   private filters: Filter[] = [];
+  private cursor: { position: number; id: string } | null = null;
   private head = false;
   private rowLimit: number | null = null;
   private single = false;
@@ -87,7 +88,13 @@ class Query implements PromiseLike<QueryResult> {
   order() {
     return this;
   }
-  or() {
+  or(expression: string) {
+    const match = expression.match(
+      /^position_in_stage\.gt\.([^,]+),and\(position_in_stage\.eq\.([^,]+),id\.gt\.(.+)\)$/,
+    );
+    if (match) {
+      this.cursor = { position: Number(match[1]), id: match[3]! };
+    }
     return this;
   }
   limit(value: number) {
@@ -100,12 +107,19 @@ class Query implements PromiseLike<QueryResult> {
   }
 
   private matches(row: Record<string, unknown>): boolean {
-    return this.filters.every((filter) => {
+    const matchesFilters = this.filters.every((filter) => {
       const current = row[filter.column];
       if (filter.kind === "eq") return current === filter.value;
       if (filter.kind === "neq") return current !== filter.value;
       return (filter.value as readonly unknown[]).includes(current);
     });
+    if (!matchesFilters || !this.cursor) return matchesFilters;
+
+    const position = Number(row.position_in_stage);
+    return (
+      position > this.cursor.position ||
+      (position === this.cursor.position && String(row.id) > this.cursor.id)
+    );
   }
 
   private execute(): QueryResult {
@@ -183,5 +197,64 @@ describe("GET /api/v1/pipelines/[id]/board com muitos negócios", () => {
     );
     expect(Math.max(...inBatchSizes)).toBeLessThanOrEqual(200);
     expect(inBatchSizes.filter((size) => size === 200).length).toBeGreaterThan(1);
+  });
+
+  it("carregar mais não pula nem repete cards quando um lead novo entra antes do cursor", async () => {
+    const dataset = buildDataset();
+    const inBatchSizes: number[] = [];
+    const supabase = {
+      auth: {
+        getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }),
+      },
+      from: (table: string) => new Query(table, dataset, inBatchSizes),
+    };
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+
+    const { GET } = await import("@/app/api/v1/pipelines/[id]/board/route");
+    const firstResponse = await GET(
+      new NextRequest(`http://localhost/api/v1/pipelines/${PIPELINE_ID}/board?stage_id=stage-0`),
+      { params: Promise.resolve({ id: PIPELINE_ID }) },
+    );
+    const firstBody = (await firstResponse.json()) as {
+      data: { leads: Array<{ id: string }>; page: { cursor: string } };
+    };
+
+    dataset.leads.push({
+      id: "lead-novo-no-topo",
+      organization_id: ORGANIZATION_ID,
+      pipeline_id: PIPELINE_ID,
+      stage_id: "stage-0",
+      title: "Chegou agora",
+      status: "open",
+      position_in_stage: 0,
+      owner_kind: null,
+      owner_agent_id: null,
+      contact_id: null,
+      updated_at: "2026-10-01T00:00:00.000Z",
+    });
+
+    const query = new URLSearchParams({
+      stage_id: "stage-0",
+      cursor: firstBody.data.page.cursor,
+    });
+    const secondResponse = await GET(
+      new NextRequest(`http://localhost/api/v1/pipelines/${PIPELINE_ID}/board?${query}`),
+      { params: Promise.resolve({ id: PIPELINE_ID }) },
+    );
+    const secondBody = (await secondResponse.json()) as {
+      data: { leads: Array<{ id: string }> };
+    };
+
+    const firstIds = firstBody.data.leads.map((lead) => lead.id);
+    const secondIds = secondBody.data.leads.map((lead) => lead.id);
+    const loadedIds = [...firstIds, ...secondIds];
+
+    expect(firstIds).toHaveLength(50);
+    expect(secondIds).toHaveLength(16);
+    expect(new Set(loadedIds).size).toBe(66);
+    expect(loadedIds).toEqual(
+      Array.from({ length: 66 }, (_, index) => `lead-0-${String(index).padStart(3, "0")}`),
+    );
+    expect(secondIds).not.toContain("lead-novo-no-topo");
   });
 });
