@@ -128,7 +128,7 @@ test("conector gerenciado mostra queda e só gera QR depois do clique", async ({
   const connector = {
     id: randomUUID(), provider_label: "Conector externo", instance_name: "existing-instance",
     phone_number: "5541999999999", display_name: "WhatsApp comercial", remote_state: "close",
-    qr_attempts: 0, hook_last_status: null, hook_last_error: null,
+    qr_attempts: 0, client_can_reconnect: true, hook_last_status: null, hook_last_error: null,
   };
   let qrCalls = 0;
   await page.route("**/api/v1/channel-sessions/managed**", async (route) => {

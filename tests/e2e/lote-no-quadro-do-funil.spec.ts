@@ -35,6 +35,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { loginComoMembro } from "./helpers/aguardar-sessao";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const EVIDENCIA =
@@ -65,11 +66,7 @@ let etapaOrigemId = "";
 let etapaDestinoId = "";
 
 async function login(page: Page, email: string, senha: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(senha);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app/, { timeout: 60_000 });
+  await loginComoMembro(page, email, senha, `/app/pipelines/${pipelineId}`);
 }
 
 async function captura(page: Page, nome: string): Promise<void> {
@@ -345,8 +342,11 @@ test.describe("Quadro do funil — agir em vários cards de uma vez", () => {
     await expect(page.getByText(TITULO(1), { exact: true })).toBeVisible({ timeout: 30_000 });
 
     const colunaOrigem = coluna(page, etapaOrigemId);
-    // Sem seleção: o crachá mostra só o total.
-    await expect(colunaOrigem.getByText(String(QUANTOS), { exact: true }).first()).toBeVisible();
+    // Sem seleção: o cabeçalho mostra o total junto da unidade ("9 leads").
+    // O número isolado era o desenho anterior do cabeçalho.
+    await expect(
+      colunaOrigem.getByText(`${QUANTOS} leads`, { exact: true }),
+    ).toBeVisible();
 
     await caixaDoCard(page, TITULO(1)).click();
     await page.getByText(TITULO(4), { exact: true }).click({ modifiers: ["Shift"] });

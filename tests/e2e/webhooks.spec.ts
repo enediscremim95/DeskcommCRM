@@ -23,6 +23,7 @@ import * as path from "node:path";
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 // Segue o dev server do harness (playwright.config webServer) — nunca hardcodar
 // porta: o config usa E2E_PORT (default 3001).
@@ -70,12 +71,20 @@ function cardOf(locator: Locator): Locator {
   );
 }
 
-async function login(page: Page, email: string): Promise<void> {
-  await page.goto(`${APP_URL}/login`);
+async function login(
+  page: Page,
+  email: string,
+  destino = "/app/kanban?lista=1",
+): Promise<void> {
+  await page.goto(`${APP_URL}/login?next=${encodeURIComponent(destino)}`);
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await aguardarSessaoCompleta(page, "aal1");
+  const esperado = new URL(destino, APP_URL);
+  await page.waitForURL(
+    (url) => url.pathname === esperado.pathname && url.search === esperado.search,
+  );
 }
 
 async function selectFirstOption(page: Page, combobox: Locator): Promise<void> {
@@ -166,12 +175,21 @@ test.describe("webhooks & automações — fluxo completo", () => {
 
       // --- Step 3: sheet da fonte abre sozinho; URL visível + lead de teste ---
       const sheet = page.getByRole("dialog").filter({ hasText: SOURCE_NAME });
-      await expect(sheet.locator("code", { hasText: "/api/v1/webhooks/in/" }).first()).toBeVisible();
       const snippetField = sheet.getByLabel("Script para landing page");
       await expect(snippetField).toBeVisible();
       const snippet = await snippetField.inputValue();
       expect(snippet).toContain(sourceUrl);
       expect(snippet).toContain(SOURCE_NAME);
+
+      // O <code> com o endereço puro vive na aba "Uso outra ferramenta".
+      // Encontrá-lo sem ativar a aba media apenas que o Radix o manteve montado
+      // e oculto. Ativamos a situação, provamos o endereço visível e voltamos
+      // ao script que a continuação do fluxo usa.
+      await sheet.getByRole("tab", { name: "Uso outra ferramenta" }).click();
+      const outraFerramenta = sheet.getByRole("tabpanel", { name: /Uso outra ferramenta/ });
+      await expect(outraFerramenta.getByText(sourceUrl, { exact: true })).toBeVisible();
+      await sheet.getByRole("tab", { name: "Meu formulário já funciona" }).click();
+      await expect(snippetField).toBeVisible();
 
       // Página estática, em outra origem, cola o snippet e lê o retorno real.
       // O segundo listener representa o fluxo que a LP já tinha e que precisa
@@ -213,11 +231,14 @@ test.describe("webhooks & automações — fluxo completo", () => {
       await sheet.getByRole("button", { name: "Testar agora" }).click();
       await expectToast(page, "Funcionou! Um lead de teste entrou no seu funil.");
       await page.keyboard.press("Escape");
+      await expect(sheet).toBeHidden();
 
       // --- Step 4: aba Automações — criar regra + ligar ---
       await page.getByRole("tab", { name: "Automações" }).click();
       await page.getByRole("button", { name: /Nova automação|Criar primeira automação/ }).click();
-      const ruleSheet = page.getByRole("dialog");
+      // O sheet da fonte ainda pode estar montado durante a animação de saída.
+      // O nome acessível impede que o teste escolha esse diálogo já escondido.
+      const ruleSheet = page.getByRole("dialog", { name: "Nova automação" });
       await expect(ruleSheet).toBeVisible();
       await ruleSheet.locator("#rule-name").fill(RULE_NAME);
 

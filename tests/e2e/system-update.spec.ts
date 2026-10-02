@@ -39,6 +39,7 @@ import * as path from "node:path";
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
 
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
+import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const SECRET = process.env.INTERNAL_SECRET ?? "";
@@ -78,12 +79,16 @@ function loadCreds(): E2ECreds {
 // banco) para um teste que nunca vai executar.
 const creds: E2ECreds = SECRET ? loadCreds() : ({ password: "", users: {} } as E2ECreds);
 
-async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
+async function login(page: Page, email: string, destino: string): Promise<void> {
+  await page.goto(`/login?next=${encodeURIComponent(destino)}`);
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await aguardarSessaoCompleta(page, "aal1");
+  const esperado = new URL(destino, "http://e2e.local");
+  await page.waitForURL(
+    (url) => url.pathname === esperado.pathname && url.search === esperado.search,
+  );
 }
 
 async function loginWithTotp(page: Page, email: string, secret: string): Promise<void> {
@@ -94,6 +99,7 @@ async function loginWithTotp(page: Page, email: string, secret: string): Promise
   await page.waitForURL(/\/login\/mfa/);
 
   // Até 2 tentativas: um código pode expirar na borda da janela de 30s.
+  let autenticou = false;
   for (let attempt = 0; attempt < 2; attempt++) {
     if (msUntilNextTotpWindow() < 3_000) {
       await page.waitForTimeout(msUntilNextTotpWindow() + 200);
@@ -104,13 +110,15 @@ async function loginWithTotp(page: Page, email: string, secret: string): Promise
     await page.keyboard.type(code, { delay: 40 });
     try {
       await page.waitForURL(/\/app\//, { timeout: 8_000 });
-      return;
+      autenticou = true;
+      break;
     } catch {
       // código rejeitado — espera a próxima janela e tenta de novo
       await page.waitForTimeout(msUntilNextTotpWindow() + 200);
     }
   }
-  throw new Error("MFA challenge failed after 2 TOTP attempts");
+  if (!autenticou) throw new Error("MFA challenge failed after 2 TOTP attempts");
+  await aguardarSessaoCompleta(page, "aal2");
 }
 
 interface HeartbeatResponse {
@@ -249,7 +257,7 @@ test("o dono vê a versão nova na sidebar e atualiza pela tela", async ({ page,
 
   await loginWithTotp(page, creds.users.dono!.email, creds.dono_totp!.secret);
   await heartbeat(request, { latest_version: "1.1.0", changelog });
-  await page.goto("/app/inbox");
+  await page.goto("/app/kanban?lista=1");
 
   const aviso = page.getByRole("link", { name: /nova versão/i });
   await expect(aviso).toBeVisible();
@@ -448,7 +456,7 @@ test("instalação à frente da versão publicada não vira tela quebrada nem al
   await heartbeat(request, { current_version: "abc1234", latest_version: "", off_release: true });
   await loginWithTotp(page, creds.users.dono!.email, creds.dono_totp!.secret);
 
-  await page.goto("/app/inbox");
+  await page.goto("/app/kanban?lista=1");
   await expect(page.getByRole("link", { name: /nova versão/i })).toHaveCount(0);
   await expect(page.getByText("versão abc1234")).toBeVisible();
 
@@ -493,8 +501,7 @@ test("quem não é dono do servidor não vê o botão", async ({ page, request }
   // vir da falta de is_platform_admin, não de coincidentemente já estar em dia.
   await heartbeat(request, { current_version: "1.0.0", latest_version: "1.1.0" });
 
-  await login(page, creds.users.agent!.email);
-  await page.goto("/app/inbox");
+  await login(page, creds.users.agent!.email, "/app/kanban?lista=1");
   await expect(page.getByRole("link", { name: /nova versão/i })).toHaveCount(0);
 
   await page.goto("/app/settings/atualizacao");

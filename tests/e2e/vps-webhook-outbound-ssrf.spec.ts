@@ -22,6 +22,7 @@ import * as path from "node:path";
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { loginComoMembro } from "./helpers/aguardar-sessao";
 
 const APP_URL = `http://localhost:${process.env.E2E_PORT ?? "3001"}`;
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
@@ -57,11 +58,7 @@ function cardOf(locator: Locator): Locator {
 }
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto(`${APP_URL}/login`);
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await loginComoMembro(page, email, creds.password);
 }
 
 async function selectFirstOption(page: Page, combobox: Locator): Promise<void> {
@@ -103,7 +100,7 @@ test.describe("J6.8 — anti-SSRF do outbound call_webhook (real, ponta a ponta)
     try {
       // --- fonte inbound (para gerar o lead que dispara a regra) ---
       await login(page, creds.users.manager!.email);
-      await page.getByRole("link", { name: "Webhooks" }).click();
+      await page.getByRole("link", { name: "Integre seu site" }).click();
       await page.waitForURL(/\/app\/webhooks/);
       await page
         .getByRole("button", { name: /Conectar primeira página|Conectar página/ })
@@ -128,7 +125,7 @@ test.describe("J6.8 — anti-SSRF do outbound call_webhook (real, ponta a ponta)
       // --- automação: gatilho lead novo → ação "Avisar outro sistema (webhook)" ---
       await page.getByRole("tab", { name: "Automações" }).click();
       await page.getByRole("button", { name: /Nova automação|Criar primeira automação/ }).click();
-      const ruleSheet = page.getByRole("dialog");
+      const ruleSheet = page.getByRole("dialog", { name: "Nova automação" });
       await ruleSheet.locator("#rule-name").fill(RULE_NAME);
       await ruleSheet.getByRole("combobox").first().click();
       await page.getByRole("option", { name: "Quando entrar um contato novo (webhook)" }).click();
