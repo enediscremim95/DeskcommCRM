@@ -148,6 +148,20 @@ describe("atendimento em um fluxo", () => {
     expect(items[0]).toMatchObject({ href: "/app/ai/atendimento", minRole: "manager" });
   });
 
+  it("leva o ajuste de conhecimento ao acervo que existe", async () => {
+    const user = userEvent.setup();
+    render(<AtendimentoBuilder {...baseProps} />);
+
+    const conhecimento = screen.getAllByRole("button", { name: "O que ele sabe" })[0];
+    expect(conhecimento).toBeDefined();
+    await user.click(conhecimento!);
+
+    expect(screen.getByRole("link", { name: /^Abrir ajuste fino$/ })).toHaveAttribute(
+      "href",
+      "/app/ai/knowledge/sources",
+    );
+  });
+
   it("cria qualquer modelo de nicho com todas as travas ligadas", () => {
     for (const template of ["servicos", "imobiliaria", "clinica"] as const) {
       const state = novoAtendimentoDoModelo(template);

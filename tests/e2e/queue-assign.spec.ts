@@ -16,6 +16,7 @@ import * as path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "@playwright/test";
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { loginComoMembro } from "./helpers/aguardar-sessao";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const EVIDENCE = path.join(process.cwd(), "loop/checkpoints/evidence/G5");
@@ -44,12 +45,8 @@ const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.SUPABASE_SERVICE_R
 
 let creds: Creds;
 
-async function login(page: Page, email: string, password: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//, { timeout: 60_000 });
+async function login(page: Page, email: string, password: string, destino: string): Promise<void> {
+  await loginComoMembro(page, email, password, destino);
 }
 
 test.describe("G5-03 — fila com posição + atribuição", () => {
@@ -85,8 +82,8 @@ test.describe("G5-03 — fila com posição + atribuição", () => {
     page,
   }) => {
     const q = creds.queue!;
-    await login(page, creds.users.agent!.email, creds.password);
-    await page.goto("/app/inbox?filter=unassigned");
+    const inboxDaFila = `/app/inbox?conversation=${q.conversation_id}&filter=unassigned`;
+    await login(page, creds.users.agent!.email, creds.password, inboxDaFila);
 
     // (1) Na Fila: a conversa aparece com posição (Nº) + "Aguardando há X".
     const queueItem = page.getByRole("button").filter({ hasText: q.contact_name });
@@ -111,7 +108,7 @@ test.describe("G5-03 — fila com posição + atribuição", () => {
 
     // (3) Some da Fila.
     await page.reload();
-    await page.goto("/app/inbox?filter=unassigned");
+    await page.goto(inboxDaFila);
     await expect(
       page.getByRole("button").filter({ hasText: q.contact_name }),
     ).toHaveCount(0, { timeout: 15_000 });

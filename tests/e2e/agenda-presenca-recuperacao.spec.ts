@@ -57,6 +57,7 @@ async function fixture() {
     waha_session_name: randomUUID(),
     display_name: "Canal de teste",
     status: "WORKING",
+    automatic_attendance_enabled: true,
     webhook_secret_encrypted: "\\x00",
   });
   const type = await insert("calendar_event_types", {

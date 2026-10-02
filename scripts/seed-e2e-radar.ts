@@ -191,6 +191,7 @@ async function main(): Promise<void> {
     pipeline_id: pipelineId,
     at_risk_lead_id: leadId,
     at_risk_title: AT_RISK_TITLE,
+    contact_name: CONTACT_NAME,
     contact_id: contactId,
     conversation_id: conversationId,
   };
