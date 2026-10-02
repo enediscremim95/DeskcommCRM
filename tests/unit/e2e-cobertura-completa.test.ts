@@ -70,6 +70,7 @@ const yml = readFileSync(WORKFLOW, "utf8");
 const parte1 = listaDoWorkflow(yml, "SPECS_PARTE_1");
 const parte2 = listaDoWorkflow(yml, "SPECS_PARTE_2");
 const parte3 = listaDoWorkflow(yml, "SPECS_PARTE_3");
+const parte4 = listaDoWorkflow(yml, "SPECS_PARTE_4");
 const foraDoCi = listaDoWorkflow(yml, "FORA_DO_CI");
 const noDisco = readdirSync(DIR_SPECS)
   .filter((f) => f.endsWith(".spec.ts"))
@@ -77,7 +78,7 @@ const noDisco = readdirSync(DIR_SPECS)
 
 describe("cobertura do e2e no CI", () => {
   it("o parser está vivo — controle positivo antes de qualquer conclusão", () => {
-    // Sem isto, um regex que parou de casar devolveria três listas vazias e a
+    // Sem isto, um regex que parou de casar devolveria listas vazias e a
     // asserção de vigência passaria por vacuidade, enquanto a de completude
     // acusaria as 39 specs de uma vez. Verde e vermelho errados pelo mesmo motivo.
     expect(noDisco.length, "nenhuma spec no disco — o diretório mudou de lugar?").toBeGreaterThan(
@@ -86,16 +87,17 @@ describe("cobertura do e2e no CI", () => {
     expect(parte1.length, "SPECS_PARTE_1 não foi lida do workflow").toBeGreaterThan(10);
     expect(parte2.length, "SPECS_PARTE_2 não foi lida do workflow").toBeGreaterThan(10);
     expect(parte3.length, "SPECS_PARTE_3 não foi lida do workflow").toBeGreaterThan(10);
+    expect(parte4.length, "SPECS_PARTE_4 não foi lida do workflow").toBeGreaterThan(0);
     expect(foraDoCi.length, "FORA_DO_CI não foi lida do workflow").toBeGreaterThan(0);
   });
 
   it("toda spec do disco está em exatamente uma lista", () => {
-    const declaradas = [...parte1, ...parte2, ...parte3, ...foraDoCi];
+    const declaradas = [...parte1, ...parte2, ...parte3, ...parte4, ...foraDoCi];
     const semLista = noDisco.filter((f) => !declaradas.includes(f));
     expect(
       semLista,
       "Spec no disco que não roda no CI nem está declarada como fora. Ponha em " +
-        "SPECS_PARTE_1/2/3 (se rodar sem WAHA/Redis/Resend) ou em FORA_DO_CI com o " +
+        "SPECS_PARTE_1/2/3/4 (se rodar sem WAHA/Redis/Resend) ou em FORA_DO_CI com o " +
         "motivo escrito. Cobertura parcial silenciosa se lê como cobertura total.\n",
     ).toEqual([]);
 
@@ -109,7 +111,7 @@ describe("cobertura do e2e no CI", () => {
     // O sentido inverso, e ele é pior: `playwright test naoexiste.spec.ts` não
     // acha nada e o job termina VERDE. Uma renomeação silenciosamente desliga a
     // cobertura daquele arquivo.
-    const fantasmas = [...parte1, ...parte2, ...parte3, ...foraDoCi].filter(
+    const fantasmas = [...parte1, ...parte2, ...parte3, ...parte4, ...foraDoCi].filter(
       (f) => !noDisco.includes(f),
     );
     expect(fantasmas, "lista do CI aponta para spec inexistente — renomeada ou apagada").toEqual(

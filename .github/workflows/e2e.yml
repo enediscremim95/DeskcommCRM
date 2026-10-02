@@ -5,13 +5,13 @@ name: e2e
 #
 # NÃO conte aqui quantas são: o summary do job CONTA em vez de afirmar, e
 # `tests/unit/e2e-cobertura-completa.test.ts` reprova o build quando uma spec do
-# disco não está em nenhuma das três listas abaixo. Um número escrito nesta linha
+# disco não está em nenhuma das listas abaixo. Um número escrito nesta linha
 # é a quarta fonte da mesma verdade, e as três anteriores já divergiram — este
 # cabeçalho dizia "29 de 33" quando o disco tinha 45 e o job rodava 44.
 #
-# A execução é dividida em DUAS invocações do playwright de propósito: o
-# limitador de login do produto é por IP (60/300s) e no CI todos os specs vêm do
-# mesmo 127.0.0.1. Ver o comentário do passo "E2E — parte 1 de 3".
+# Cada parte executa uma invocação isolada do Playwright de propósito: o
+# limitador de login do produto é por IP (60/300s) e no CI todos os specs de uma
+# parte vêm do mesmo 127.0.0.1. Ver o comentário do passo de E2E mais abaixo.
 #
 # É CHECK OBRIGATÓRIO. A régua, para reconferir em vez de acreditar nesta linha:
 #   $ gh api repos/melgarafael/DeskcommCRM/branches/main/protection \
@@ -57,7 +57,7 @@ permissions:
   contents: read
 
 jobs:
-  # AS DUAS PARTES RODAM EM PARALELO, e o motivo é medido, não estético.
+  # AS PARTES RODAM EM PARALELO, e o motivo é medido, não estético.
   #
   # Elas rodavam como dois passos do MESMO job, então somavam contra um único
   # teto de 30 min. Medido no run 33125422531, o último verde antes deste
@@ -88,12 +88,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
-      # Sem fail-fast: se a parte 1 quebrar, ainda quero saber se a 2 também.
+      # Sem fail-fast: se uma parte quebrar, ainda quero saber das demais.
       # Com ele ligado, o primeiro vermelho esconde o outro e o conserto vira
       # uma rodada por parte.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3]
+        parte: [1, 2, 3, 4]
     # ─────────────────────────────────────────────────────────────────────────
     # A COBERTURA DEIXA DE SER PROSA DIGITADA À MÃO.
     #
@@ -106,7 +106,7 @@ jobs:
     # Cobertura parcial silenciosa se lê como cobertura total. Agora há UMA fonte
     # por lista, o summary CONTA em vez de afirmar, e
     # `tests/unit/e2e-cobertura-completa.test.ts` reprova o build quando um arquivo
-    # de spec não está em nenhuma das três listas.
+    # de spec não está em nenhuma das listas.
     #
     # FORA_DO_CI exige motivo escrito no próprio nome do bloco abaixo — spec fora
     # do gate sem razão declarada é a dívida voltando pela porta de serviço.
@@ -265,12 +265,29 @@ jobs:
     #
     # ── A próxima alavanca, quando esta acabar ──────────────────────────────
     #
-    # `prova-painel-provedores` é 199,4 s — 42% de toda a parte 1, num arquivo
-    # de 8 casos a 25 s cada. Se a parte 1 voltar a estourar, é lá que se olha
-    # antes de repartir o resto. E se as duas estourarem juntas, a alavanca
-    # deixa de ser a partição e passa a ser uma terceira parte: o setup de
-    # 8-9 min é pago por parte, então três partes custam ~9 min de runner a mais
-    # e devolvem ~9 min de relógio a cada uma.
+    # `prova-painel-provedores` era 199,4 s — 42% de toda a parte 1, num arquivo
+    # de 8 casos a 25 s cada. A medição de 2026-09-29 abaixo substitui essa
+    # fotografia como base do particionamento atual.
+    #
+    # ═══ REPARTICIONAMENTO DE 2026-09-29 — QUARTA PARTE ═════════════════════
+    #
+    # Nos seis runs mais recentes da main, o passo de Playwright da parte 1
+    # bateu 24,3–24,9 min e o job foi cancelado no teto. As partes 2 e 3 ficaram
+    # em 11,3–12,8 min e 11,8–14,6 min, respectivamente. O desequilíbrio não é
+    # contagem de arquivos: o log com `--reporter=list` dos runs 36646506309 e
+    # 36628424320 mediu `navegacao.spec.ts` em 667 s e 668 s.
+    #
+    # A spec vai sozinha para a parte 4. É uma única fronteira nova de banco, e
+    # ela já declara e prova a própria precondição com
+    # `afirmarAdminDeTenantPuro`; não consome fixture deixada por vizinha. Os
+    # casos continuam seriais com `--workers=1`. As falhas existentes continuam
+    # visíveis, só deixam de segurar outras 39 specs até o teto do job.
+    #
+    # Por que QUATRO, não cinco, com o preparo medido pelo dono em 4,7 min/job:
+    # a quarta remove ~11,1 min do caminho crítico pagando 4,7 min de preparo.
+    # Com ~52,6 min de Playwright nas três partes, uma quinta reduziria o piso
+    # teórico balanceado de 52,6/4 = 13,2 para 52,6/5 = 10,5 min, ganho máximo
+    # de ~2,6 min por mais 4,7 min de preparo. A quarta compensa; a quinta não.
     env:
       # Provider controlado; preview/assistência executam core, ferramentas e gates reais.
       INTERNAL_AGENT_RUN_STUB: "true"
@@ -295,7 +312,6 @@ jobs:
         relogio-http-cron-externo.spec.ts
         j20-elegibilidade-respondi.spec.ts j20-elegibilidade-followup.spec.ts
         j20-elegibilidade-atendimento-manual.spec.ts
-        navegacao.spec.ts
         juntar-contatos-duplicados.spec.ts
         lote-no-quadro-do-funil.spec.ts
         importar-leads-planilha.spec.ts
@@ -601,6 +617,12 @@ jobs:
         zona-de-perigo-apaga-dados-de-teste.spec.ts
         central-avisos-resolver-em-lote.spec.ts
 
+      # Isolada porque consumiu 667–668 s em dois runs consecutivos. Manter uma
+      # lista própria, em vez de paralelizar dentro do job, preserva o banco e o
+      # usuário MFA exclusivos desta execução.
+      SPECS_PARTE_4: >-
+        navegacao.spec.ts
+
       FORA_DO_CI: >-
         vps-fresh-onboarding.spec.ts
         inbox-tempo-real.spec.ts
@@ -837,10 +859,10 @@ jobs:
       # workers, dois specs gerando o mesmo código no mesmo intervalo de 30s
       # fazem o segundo ser recusado como replay. Foi o que derrubava a
       # `reset-password-mfa` (issue #80): ela passa sozinha e falha em paralelo.
-      - name: E2E — parte ${{ matrix.parte }} de 3
+      - name: E2E — parte ${{ matrix.parte }} de 4
         run: |
           set -euo pipefail
-          # A lista sai da matrix, e as duas variáveis continuam existindo no
+          # A lista sai da matrix, e as variáveis de cada parte continuam no
           # `env:` do job porque é DELAS que `e2e-cobertura-completa.test.ts` lê
           # a cobertura. Ler por indireção aqui e não duplicar a lista mantém
           # UMA fonte por parte.
@@ -848,6 +870,7 @@ jobs:
             1) LISTA="$SPECS_PARTE_1" ;;
             2) LISTA="$SPECS_PARTE_2" ;;
             3) LISTA="$SPECS_PARTE_3" ;;
+            4) LISTA="$SPECS_PARTE_4" ;;
             *) echo "::error::parte ${{ matrix.parte }} sem lista"; exit 1 ;;
           esac
           # Falha alto se a variável vier vazia: sem isto, um typo no nome faria
@@ -975,13 +998,13 @@ jobs:
                       dentro { exit }
                     ' .github/workflows/e2e.yml | grep -oE "[a-z0-9-]+\.spec\.ts" | sort -u; }
           NO_DISCO=$(ls tests/e2e/*.spec.ts | wc -l | tr -d " ")
-          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; } | sort -u | wc -l | tr -d " ")
+          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; bloco SPECS_PARTE_4; } | sort -u | wc -l | tr -d " ")
           FORA_LISTA=$(bloco FORA_DO_CI)
           FORA=$(echo "$FORA_LISTA" | grep -c . || true)
           # E o recorte passa a ter CONTROLE, não só um piso.
           #
           # `tests/unit/e2e-cobertura-completa.test.ts` já garante que toda spec
-          # do disco está em exatamente uma das três listas, sem duplicata e sem
+          # do disco está em exatamente uma das quatro listas, sem duplicata e sem
           # fantasma. Logo `RODOU + FORA` TEM de dar `NO_DISCO` — e quando não
           # der, o recorte leu a mais ou a menos. Sem esta linha, ler a mais é
           # invisível: o passo imprime um número maior e segue verde, que é
@@ -1002,5 +1025,5 @@ jobs:
             for s in $FORA_LISTA; do echo "- \`${s}\` — precisa de WAHA + Redis + Resend + Nuvemshop (P0 da doutrina de QA Visual)"; done
             echo ""
             echo "A soma é conferida mecanicamente por \`tests/unit/e2e-cobertura-completa.test.ts\`:"
-            echo "spec no disco que não esteja em nenhuma das três listas reprova o build."
+            echo "spec no disco que não esteja em nenhuma das quatro listas reprova o build."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -7,17 +7,19 @@
  */
 import { resendAdapter } from "@/lib/email/adapters/resend";
 import { sesAdapter } from "@/lib/email/adapters/ses";
+import { e2eOutboxAdapter } from "@/lib/email/adapters/e2e-outbox";
 import type { EmailAdapter, SendArgs, SendResult } from "@/lib/email/types";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 
-function provider(): { name: "resend" | "ses"; adapter: EmailAdapter } {
-  return env.EMAIL_PROVIDER === "ses"
-    ? { name: "ses", adapter: sesAdapter }
-    : { name: "resend", adapter: resendAdapter };
+function provider(): { name: "resend" | "ses" | "e2e"; adapter: EmailAdapter } {
+  if (env.EMAIL_PROVIDER === "e2e") return { name: "e2e", adapter: e2eOutboxAdapter };
+  if (env.EMAIL_PROVIDER === "ses") return { name: "ses", adapter: sesAdapter };
+  return { name: "resend", adapter: resendAdapter };
 }
 
 function enderecoDoProvider(): string {
+  if (env.EMAIL_PROVIDER === "e2e") return "e2e@localhost.invalid";
   return env.EMAIL_PROVIDER === "ses" ? env.SES_FROM_EMAIL : env.RESEND_FROM_EMAIL;
 }
 
@@ -56,7 +58,10 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
   return result;
 }
 
-export function isEmailConfigured(): boolean {
+export function isEmailConfigured(options?: { includeTestTransport?: boolean }): boolean {
   const selected = provider();
+  // A outbox prova efeitos no E2E, mas não é uma configuração que existe na
+  // instalação. Telas que descrevem capacidade operacional excluem esse dublê.
+  if (options?.includeTestTransport === false && selected.name === "e2e") return false;
   return selected.adapter.isConfigured() && fromAddress() !== null;
 }

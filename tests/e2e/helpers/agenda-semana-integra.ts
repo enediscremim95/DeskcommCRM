@@ -143,6 +143,42 @@ export async function diasDesenhados(page: Page): Promise<string[]> {
 }
 
 /**
+ * Espera a consulta de horários terminar sem exigir vaga no mês que está aberto.
+ *
+ * No último dia útil do mês, depois do aviso mínimo, a resposta correta pode ter
+ * vagas somente no mês seguinte. O botão `mes-seguinte` habilitado é a prova de
+ * que a consulta terminou e trouxe esse recorte futuro. Esperar primeiro por um
+ * dia clicável no mês atual cria um impasse: o teste nunca chega ao clique que
+ * revela as vagas que já vieram da API.
+ *
+ * O trace do CI de 30/09/2026 provou o caso completo: a rota respondeu 200 para
+ * o tipo escolhido, com vagas de 01/10 a 30/10, enquanto setembro não tinha um
+ * único `dia-*` disponível. O run das 14:04 passou e os das 16:24 e 17:46
+ * falharam porque o relógio cruzou o último horário possível de setembro.
+ */
+async function abrirMesQueTemVaga(
+  page: Page,
+  mensagemSemVaga: string,
+  mensagemMesSeguinte: string,
+): Promise<boolean> {
+  const diaDisponivel = page.locator('[data-testid^="dia-"][data-disponivel="true"]').first();
+  const mesSeguinte = page.getByTestId("mes-seguinte");
+
+  await expect
+    .poll(
+      async () => (await diaDisponivel.isVisible()) || (await mesSeguinte.isEnabled()),
+      { message: mensagemSemVaga, timeout: 20_000 },
+    )
+    .toBe(true);
+
+  if (await diaDisponivel.isVisible()) return false;
+
+  await mesSeguinte.click();
+  await expect(diaDisponivel, mensagemMesSeguinte).toBeVisible({ timeout: 20_000 });
+  return true;
+}
+
+/**
  * Escolhe, no painel de marcação já aberto, um dia que a grade esteja
  * desenhando — e devolve a chave escolhida.
  *
@@ -162,15 +198,17 @@ export async function escolherDiaDesenhado(page: Page, dias: readonly string[]):
         .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!.slice(4)))
     ).filter((k) => dias.includes(k));
 
-  // Até a consulta de horários responder, TODO dia nasce indisponível — uma
-  // varredura feita antes disso leria "nenhum dia da semana desenhada" onde há.
-  await expect(
-    page.locator('[data-testid^="dia-"][data-disponivel="true"]').first(),
-    "nenhum dia disponível no painel — o seed da agenda não deixou jornada publicada",
-  ).toBeVisible({ timeout: 20_000 });
+  // Até a consulta responder, tanto os dias quanto a navegação futura nascem
+  // indisponíveis. Aceitar o segundo sinal evita exigir vaga no mês atual para
+  // só então permitir que o teste abra o mês onde as vagas realmente estão.
+  const jaAvancouOMes = await abrirMesQueTemVaga(
+    page,
+    "nenhum dia disponível no painel, e a consulta não liberou o mês seguinte",
+    "nem o mês seguinte oferece dia, a janela de busca do painel é de 30 dias",
+  );
 
   let candidatos = await disponiveis();
-  if (candidatos.length === 0) {
+  if (candidatos.length === 0 && !jaAvancouOMes) {
     await page.getByTestId("mes-seguinte").click();
     await expect(
       page.locator('[data-testid^="dia-"][data-disponivel="true"]').first(),
@@ -238,14 +276,26 @@ async function diasCheios(page: Page): Promise<string[]> {
     return chaves.filter((k) => k > hoje).sort();
   };
 
-  await expect(
-    page.locator('[data-testid^="dia-"][data-disponivel="true"]').first(),
-    "nenhum dia disponível — o seed da agenda não deixou jornada publicada, e sem " +
-      "dia clicável a coluna de horários nunca abre (o defeito ficaria invisível)",
-  ).toBeVisible({ timeout: 20_000 });
+  const jaAvancouOMes = await abrirMesQueTemVaga(
+    page,
+    "nenhum dia disponível, e a consulta não liberou o mês seguinte; sem dia clicável " +
+      "a coluna de horários nunca abre (o defeito ficaria invisível)",
+    "nem o mês seguinte oferece dia, a janela de busca da tela é de 30 dias",
+  );
 
   const cheios = await varrer();
   if (cheios.length > 0) return cheios;
+
+  // Se `abrirMesQueTemVaga` já avançou, todo dia visível está depois de hoje.
+  // Chegar aqui vazio seria contradição entre o DOM que habilitou o botão e a
+  // varredura; não navegue para um terceiro mês fora da janela consultada.
+  if (jaAvancouOMes) {
+    expect(
+      cheios,
+      "o mês seguinte mostrou dia disponível, mas a varredura não encontrou um dia depois de hoje",
+    ).not.toHaveLength(0);
+    return cheios;
+  }
 
   // Hoje é o último dia útil do mês visível: o próximo dia com jornada cai no
   // mês seguinte, e o mini-calendário só torna clicável o que é `isSameMonth` do
