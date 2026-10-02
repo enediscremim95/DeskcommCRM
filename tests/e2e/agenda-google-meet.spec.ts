@@ -101,6 +101,7 @@ async function fixture() {
     waha_session_name: sessionName,
     display_name: "Atendimento local",
     status: "WORKING",
+    automatic_attendance_enabled: true,
     webhook_secret_encrypted: "\\x00",
     metadata: { ai_gate: "allowlist" },
   });

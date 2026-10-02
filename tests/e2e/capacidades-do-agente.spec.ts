@@ -22,7 +22,11 @@ import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
 
-import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
+import { TOOL_CATALOG } from "@/lib/mcp/tools/catalogo";
+import {
+  TETO_TOOLS_POR_AGENTE,
+  vagasExigidasPeloPacote,
+} from "@/lib/mcp/tools/selecao-por-pacote";
 
 import { loginComoAdmin } from "./helpers/login-admin";
 import { aguardarSessaoCompleta } from "./helpers/aguardar-sessao";
@@ -65,28 +69,32 @@ const AGENTE = creds.capacidades!.agent_id;
 
 /** O que o seed deixa ligado — o cenário conhecido de onde os casos partem. */
 const TOOLS_DO_SEED = [
-  // As três originais primeiro: o caso do teto desliga `TOOLS_DO_SEED[2]` para
-  // liberar exatamente uma vaga, e a ordem é o que mantém esse índice válido.
   "crm_get_lead",
   "crm_move_lead_stage",
   "crm_list_leads",
-  // ⚠️ AS TRÊS ABAIXO mantêm o cenário exatamente uma vaga acima do teto.
+  // Estas três mantêm o cenário acima do teto mesmo quando o catálogo cresce.
   //
   // A jornada do teto (issue #162) só existe se o cenário ESTOURAR: eram 3 do
   // seed + 18 de "Atender" = 21 contra teto 20, e a tela recusava dizendo
   // "faltam 1 vaga". Com teto 25 essas mesmas 21 passam, a recusa nunca acontece
   // e o caso vira um clique que sempre dá certo — verde sem medir nada.
   //
-  // O pacote cresceu para 20 capacidades reservadas. Seis fora do pacote fazem
-  // 6 + 20 = 26, e desligar uma deixa 5 + 20 = 25, o teto exato.
-  //
   // As escolhidas ficam FORA do pacote "Atender" de propósito — se alguma
-  // estivesse dentro, a união seria menor que a soma e a conta acima não valeria.
+  // estiver dentro no catálogo corrente, ela não serve para liberar vaga.
   // Duas são da agenda, assunto do defeito que subiu o teto.
   "crm_find_free_slots",
   "crm_book_appointment",
   "crm_list_pipelines",
 ];
+
+const VAGAS_A_LIBERAR = Math.max(
+  0,
+  vagasExigidasPeloPacote(TOOLS_DO_SEED, TOOL_CATALOG, "atender") - TETO_TOOLS_POR_AGENTE,
+);
+const TOOLS_A_DESLIGAR = TOOLS_DO_SEED.filter((name) => {
+  const capacidade = TOOL_CATALOG.find((item) => item.name === name);
+  return capacidade !== undefined && !capacidade.pacotes.includes("atender");
+}).slice(0, VAGAS_A_LIBERAR);
 
 /** A capacidade que não pode entrar por pacote. */
 const ENVIO = "crm_send_whatsapp_message";
@@ -212,33 +220,32 @@ test.describe("Configurar o que o agente pode fazer", () => {
 
     // O TETO ENTRA NA JORNADA (issue #162), e entra antes do clique.
     //
-    // "Atender" exige hoje 20 vagas, incluindo a reserva das críticas que o
-    // pacote deliberadamente NÃO liga. Com as 6 do seed dá 26, acima do teto.
-    //
-    // ⚠️ AS 6 SÃO O QUE MANTÉM ESTE CASO VIVO. Eram 3, e 3 + 18 = 21 estourava o
-    // teto de 20. Quando o teto foi para 25 essas mesmas 21 passaram a caber: a
-    // recusa nunca aconteceria e o caso viraria um clique que sempre dá certo —
-    // verde sem medir nada, que é o pior desfecho para um teste de recusa.
-    // As 3 extras estão FORA de "Atender", senão a união seria menor que a soma.
+    // O catálogo é a fonte do número: capacidades novas podem aumentar a reserva
+    // do pacote. Prender "1 vaga" aqui fez o teste envelhecer quando entrou a
+    // autorização de atendimento automático por canal.
     //
     // Antes da correção a tela aceitava o pacote, chegava a 20 exatas e deixava
     // o checkbox da crítica DESABILITADO — prometia uma escolha que o produto
     // não permitia fazer, sem dizer por quê. Agora recusa e diz quantas vagas
     // faltam, e o operador faz o que a própria tela manda.
+    expect(VAGAS_A_LIBERAR).toBeGreaterThan(0);
+    expect(TOOLS_A_DESLIGAR).toHaveLength(VAGAS_A_LIBERAR);
     await page.getByTestId("switch-pacote-atender").click();
-    await expect(page.getByTestId("aviso-teto")).toContainText(/faltam? 1 vaga/);
+    await expect(page.getByTestId("aviso-teto")).toContainText(
+      new RegExp(`faltam? ${VAGAS_A_LIBERAR} vagas?`),
+    );
     await expect(
       page.getByTestId("pacote-atender"),
       "recusar significa NÃO aplicar: pacote meio-ligado seria o pior dos dois mundos",
     ).not.toHaveAttribute("data-estado", "ligado");
 
-    // Libera a vaga desligando uma capacidade que o seed tinha ligado.
+    // Libera exatamente as vagas que o catálogo corrente exige, sempre fora do
+    // pacote para cada clique realmente reduzir a união.
     await page.getByTestId("toggle-avancado").click();
     await page.getByTestId("lista-avancada").waitFor({ state: "visible" });
-    await page
-      .getByTestId(`capacidade-${TOOLS_DO_SEED[2]}`)
-      .locator("input[type=checkbox]")
-      .click();
+    for (const tool of TOOLS_A_DESLIGAR) {
+      await page.getByTestId(`capacidade-${tool}`).locator("input[type=checkbox]").click();
+    }
     await page.getByTestId("toggle-avancado").click();
 
     await page.getByTestId("switch-pacote-atender").click();

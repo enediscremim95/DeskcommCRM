@@ -107,46 +107,40 @@ test.describe("navegação agrupada", () => {
   test("chega nas Etapas do funil pelo CRM, sem passar por Configurações", async ({ page }) => {
     await loginAdmin(page);
 
-    // O caso que originou tudo: o usuário não sabia que esta tela existia.
-    //
-    // ⚠️ O ITEM MUDOU DE NOME, e o nome antigo ("Funis") passou para o VIZINHO —
-    // o atalho operacional dos funis. Desde b8124bc3, /app/kanban redireciona
-    // para o quadro padrão; a lista administrativa exige ?lista=1. Um teste que
-    // esperasse a lista depois do clique mediria um contrato que deixou de existir.
-    // Por isso a asserção de URL
-    // abaixo é específica (`settings/tenant/pipelines`) e não o antigo
-    // /pipelines/, que casa com as duas.
-    //
-    // ⚠️ E O CAMINHO MUDOU: com Tarefas (PR #546), o CRM chegou a cinco telas e
-    // o menu passou a rolar em 900px. A resposta foi o hub do grupo, como o
-    // comentário de densidade do `Sidebar.tsx` já mandava — então esta tela
-    // agora mora atrás de "Ver tudo em CRM". Este teste percorre o caminho
-    // INTEIRO em vez de checar um link: hub → tela. Que a porta existe no grupo
-    // certo do sidebar é o unitário `sidebar-grupos` que prende.
-    await sidebar(page).getByRole("link", { name: "Ver tudo em CRM" }).click();
-    await page.waitForURL(/\/app\/crm$/);
-    await expect(page.getByRole("heading", { name: "O dia a dia da venda" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Preparar a venda" })).toBeVisible();
+    // Decisão do dono em 17/09/2026: o hub do CRM saiu. As telas de montagem
+    // continuam no grupo CRM e são alcançáveis pela busca global, nunca pelo
+    // hub de Configurações. O rótulo do grupo dentro da opção prova essa
+    // classificação na superfície que a pessoa usa.
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByRole("combobox").fill("etapas do funil");
+    const etapas = page.getByRole("option", { name: /Etapas do funil/ });
+    await expect(etapas).toBeVisible();
+    await expect(etapas).toContainText("CRM");
 
-    await page.screenshot({ path: path.join(EVIDENCE, "nav-hub-crm.png"), fullPage: true });
-
-    await page.getByRole("link", { name: /Etapas do funil/ }).click();
-    await page.waitForURL(/settings\/tenant\/pipelines/);
+    await Promise.all([
+      page.waitForURL(/settings\/tenant\/pipelines/, { waitUntil: "commit" }),
+      etapas.click(),
+    ]);
     await expect(page.getByRole("heading", { name: "Etapas do funil", level: 1 })).toBeVisible();
   });
 
-  test("e Produtos, que saiu do menu, continua alcançável pelo mesmo hub", async ({ page }) => {
-    // Tirar do sidebar não pode virar tela órfã: DoD 14 cobra porta, e a porta
-    // passou a ser o hub. Sem este caso, o item "some do menu" ficaria provado
-    // e o "continua alcançável" ficaria só escrito no comentário.
+  test("e Produtos, que saiu do menu, continua alcançável pela busca", async ({ page }) => {
+    // Tirar do sidebar não pode virar tela órfã: DoD 14 cobra porta. Desde a
+    // retirada deliberada do hub do CRM, essa porta é a busca global.
     await loginAdmin(page);
 
     await expect(sidebar(page).getByRole("link", { name: "Produtos" })).toHaveCount(0);
 
-    await sidebar(page).getByRole("link", { name: "Ver tudo em CRM" }).click();
-    await page.waitForURL(/\/app\/crm$/);
-    await page.getByRole("link", { name: /Produtos/ }).click();
-    await page.waitForURL(/\/app\/products/);
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByRole("combobox").fill("produtos");
+    const produtos = page.getByRole("option", { name: /Produtos/ });
+    await expect(produtos).toBeVisible();
+    await expect(produtos).toContainText("CRM");
+    await Promise.all([
+      page.waitForURL(/\/app\/products/, { waitUntil: "commit" }),
+      produtos.click(),
+    ]);
+    await expect(page.getByRole("heading", { name: "Produtos", level: 1 })).toBeVisible();
   });
 
   test("e Funis abre diretamente o quadro padrão", async ({ page }) => {
@@ -163,18 +157,18 @@ test.describe("navegação agrupada", () => {
   test("chega em Conhecimento, que só existia atrás das abas de IA", async ({ page }) => {
     await loginAdmin(page);
 
-    await sidebar(page).getByRole("link", { name: "Ver tudo em IA" }).click();
-    await page.waitForURL(/\/app\/ai$/);
-
-    // O hub organiza por jornada, não numa grade solta.
-    await expect(page.getByRole("heading", { name: "Montar o agente" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Ensinar o agente" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Acompanhar o agente" })).toBeVisible();
-
-    await page.screenshot({ path: path.join(EVIDENCE, "nav-hub-ia.png"), fullPage: true });
-
-    await page.getByRole("link", { name: /Conhecimento/ }).click();
-    await page.waitForURL(/knowledge\/sources/);
+    // O hub de IA também saiu por decisão do dono. A porta principal agora é
+    // o fluxo de Atendimento: o nó "O que ele sabe" leva ao acervo real.
+    await sidebar(page).getByRole("link", { name: "Atendimento", exact: true }).click();
+    await page.waitForURL(/\/app\/ai\/atendimento$/, { waitUntil: "commit" });
+    await page.getByTestId("attendance-node-conhecimento").click();
+    const ajusteFino = page.getByRole("link", { name: "Abrir ajuste fino", exact: true });
+    await expect(ajusteFino).toHaveAttribute("href", "/app/ai/knowledge/sources");
+    await Promise.all([
+      page.waitForURL(/\/app\/ai\/knowledge\/sources$/, { waitUntil: "commit" }),
+      ajusteFino.click(),
+    ]);
+    await expect(page.getByRole("heading", { name: "O que o agente sabe", level: 1 })).toBeVisible();
   });
 
   /**
@@ -208,18 +202,28 @@ test.describe("navegação agrupada", () => {
     await expect(busca).toBeVisible();
 
     await busca.fill("conhec");
-    await expect(page.getByRole("option", { name: /Conhecimento/ })).toBeVisible();
+    const conhecimento = page.locator('[role="option"][data-href="/app/ai/knowledge/sources"]');
+    await expect(conhecimento).toBeVisible();
+
+    // "conhec" também aparece na descrição de Atendimento, que é o primeiro
+    // resultado e começa selecionado. Escolhe explicitamente Conhecimento para
+    // que a URL esperada e o item acionado sejam o mesmo fato.
+    await page.keyboard.press("ArrowDown");
+    await expect(conhecimento).toHaveAttribute("aria-selected", "true");
 
     await page.screenshot({ path: path.join(EVIDENCE, "nav-command-palette.png") });
 
-    await page.keyboard.press("Enter");
-    await page.waitForURL(/knowledge\/sources/);
+    await Promise.all([
+      page.waitForURL(/\/app\/ai\/knowledge\/sources$/, { waitUntil: "commit" }),
+      page.keyboard.press("Enter"),
+    ]);
+    await expect(page.getByRole("heading", { name: "O que o agente sabe", level: 1 })).toBeVisible();
   });
 
   test("todos os grupos continuam alcançáveis com o atendimento nativo aberto", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginAdmin(page);
-    const nav = sidebar(page).getByRole("navigation", { name: "Navegação principal" });
+    const nav = sidebar(page);
     const alertas = nav.getByRole("link", { name: "Alertas" });
     await alertas.scrollIntoViewIfNeeded();
     await expect(alertas).toBeVisible();
@@ -231,19 +235,21 @@ test.describe("navegação agrupada", () => {
   test.describe("mobile", () => {
     test.use({ viewport: { width: 390, height: 844 } });
 
-    test("mantém as telas diárias ao alcance do polegar", async ({ page }) => {
+    test("mantém os atalhos móveis decididos ao alcance do polegar", async ({ page }) => {
       await loginAdmin(page);
 
       const dock = page.getByRole("navigation", { name: "Atalhos principais" });
       await expect(dock).toBeVisible();
+      // Inbox saiu do menu por decisão do dono em 17/09/2026. Ele continua
+      // sendo o pouso do login e o destino do Radar, mas não ocupa o dock.
       await expect(dock.getByRole("link")).toHaveText([
-        "Inbox",
         "Radar",
         "Funis",
         "Tarefas",
         "Configurações",
       ]);
-      await expect(dock.getByRole("link", { name: "Inbox" })).toHaveAttribute(
+      await expect(dock.getByRole("link", { name: "Inbox" })).toHaveCount(0);
+      await expect(dock.getByRole("link", { name: "Configurações" })).toHaveAttribute(
         "aria-current",
         "page",
       );
@@ -304,16 +310,14 @@ test.describe("navegação agrupada", () => {
     await page.setViewportSize({ width: 1280, height: 768 });
     await loginAdmin(page);
 
-    const config = page.getByRole("link", { name: "Configurações" });
+    // O breadcrumb da página também se chama Configurações. O contrato
+    // deste teste é o link do sidebar desktop, não qualquer link homônimo.
+    const config = page.locator("aside.crm-sidebar").getByRole("link", { name: "Configurações" });
     await expect(config).toBeVisible();
 
-    const dentroDaNav = await page.evaluate(() => {
-      const nav = document.querySelector('nav[aria-label="Navegação principal"]')!;
-      const link = [...document.querySelectorAll("a")].find(
-        (a) => a.textContent?.trim() === "Configurações",
-      );
-      return nav.contains(link!);
-    });
+    const dentroDaNav = await config.evaluate(
+      (link) => link.closest('nav[aria-label="Navegação principal"]') !== null,
+    );
     expect(dentroDaNav, "Configurações não pode depender de scroll para aparecer").toBe(false);
   });
 
@@ -322,6 +326,8 @@ test.describe("navegação agrupada", () => {
 
     // CANAIS é todo manager+/admin: o título não pode sobrar sozinho.
     await expect(sidebar(page).getByRole("heading", { name: "Canais" })).toHaveCount(0);
-    await expect(sidebar(page).getByRole("heading", { name: "Atendimento" })).toBeVisible();
+    await expect(
+      sidebar(page).getByRole("heading", { name: "Atendimento", exact: true }),
+    ).toBeVisible();
   });
 });

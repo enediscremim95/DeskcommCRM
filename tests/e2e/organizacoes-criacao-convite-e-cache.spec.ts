@@ -121,7 +121,10 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
     expect(pronta.data?.onboarded_at).toBeTruthy();
     const conversationB = await conversation(orgB, `Cliente B ${suffix}`);
     await page.getByRole("link", { name: "Voltar ao aplicativo" }).click();
-    await page.goto(`/app/inbox?conversation=${conversationA}`);
+    // A conversa sem dono pode estar sob comando do automático. `Fila` não é
+    // sinônimo de todas as conversas; a aba Todas é a superfície que mede o
+    // isolamento entre organizações sem depender de quem está atendendo.
+    await page.goto(`/app/inbox?filter=all&conversation=${conversationA}`);
     await expect(page.locator("[data-conversation-id]").getByText(`Cliente A ${suffix}`, { exact: true })).toBeVisible();
     const cookieBeforeFailure = (await page.context().cookies()).find(cookie => cookie.name === "active_org")?.value;
     await page.route("**/app/**", async route => {
@@ -162,7 +165,7 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
         await page.screenshot({ path: `.superpowers/evidence/comunidade-360/transicao-para-${own}.png` });
       } finally { release(); }
       await navigation;
-      await page.goto(`/app/inbox?conversation=${selected}`);
+      await page.goto(`/app/inbox?filter=all&conversation=${selected}`);
       await page.unroute("**/app/**");
       await expect(page.getByTestId("tenant-switcher")).toContainText(`Empresa ${own} ${suffix}`);
       expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).__oldDocument)).toBeUndefined();
@@ -178,7 +181,7 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
     await guest.goto(new URL(link).pathname);
     await guest.getByRole("button", { name: "Aceitar convite", exact: true }).click();
     await expect(guest.getByTestId("tenant-switcher")).toContainText(`Empresa B ${suffix}`);
-    await guest.goto(`/app/inbox?conversation=${conversationB}`);
+    await guest.goto(`/app/inbox?filter=all&conversation=${conversationB}`);
     await expect(guest.locator("[data-conversation-id]").getByText(`Cliente B ${suffix}`, { exact: true })).toBeVisible();
     const membership = await db.from("user_organizations").select("invited_by,role").eq("organization_id", orgB).eq("user_id", users[1]).single();
     expect(membership.data).toEqual({ invited_by: users[0], role: "admin" });
@@ -194,8 +197,12 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
 test("uma tela prepara o CRM e mantém a falha de envio recuperável", async ({ page }) => {
   test.setTimeout(180_000);
   const suffix = randomUUID().slice(0, 8);
+  const failurePrefix = process.env.E2E_EMAIL_FAIL_TO_PREFIX;
+  if (!failurePrefix) {
+    throw new Error("E2E_EMAIL_FAIL_TO_PREFIX ausente: a spec não consegue pedir a falha de envio");
+  }
   const adminEmail = `admin-ready-${suffix}@invariant.test`;
-  const clientEmail = `client-ready-${suffix}@invariant.test`;
+  const clientEmail = `${failurePrefix}${suffix}@invariant.test`;
   const users: string[] = [];
   const orgs: string[] = [];
   try {
@@ -225,7 +232,8 @@ test("uma tela prepara o CRM e mantém a falha de envio recuperável", async ({ 
     expect(createdResponse.status()).toBe(201);
     const created = (await createdResponse.json()).data;
     orgs.push(created.id);
-    // Ambiente E2E sem SMTP: falha real, nunca simular entrega de e-mail.
+    // A outbox local entrega por padrão. Este destinatário pede uma falha real
+    // do adaptador para provar que a recuperação continua existindo.
     expect(created.owner_access.status).toBe("failed");
     await expect(page.getByText(/O CRM foi criado, mas o envio do acesso falhou/)).toBeVisible();
     const org = await db.from("organizations").select("onboarded_at,settings,timezone").eq("id", created.id).single();

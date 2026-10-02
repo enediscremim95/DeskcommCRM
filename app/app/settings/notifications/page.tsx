@@ -62,7 +62,7 @@ export default async function NotificationsPage() {
   const emailPolicy = activeOrg
     ? await readEmailNotificationPolicy(await createClient(), activeOrg.orgId)
     : { urgent_batch_window_minutes: 60, urgent_daily_limit: 6 };
-  const emailConfigured = isEmailConfigured();
+  const emailConfigured = isEmailConfigured({ includeTestTransport: false });
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
