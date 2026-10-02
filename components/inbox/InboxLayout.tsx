@@ -478,25 +478,35 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
               <div className="min-h-0 flex-1 overflow-hidden">
                 <ChatThread conversationId={selectedConversation.id} onResponder={setRespondendo} />
               </div>
-              <RetentionNotice conversationId={selectedConversation.id} />
-              {motivoDaJanela && (
-                <JanelaFechadaAviso
+              <div
+                data-testid="conversation-footer"
+                className="flex max-h-[min(52%,28rem)] shrink-0 flex-col overflow-hidden"
+              >
+                <div
+                  data-testid="conversation-footer-notices"
+                  className="max-h-28 shrink-0 overflow-y-auto"
+                >
+                  <RetentionNotice conversationId={selectedConversation.id} />
+                  {motivoDaJanela && (
+                    <JanelaFechadaAviso
+                      conversationId={selectedConversation.id}
+                      provider={selectedConversation.channel_sessions?.provider ?? null}
+                      motivo={motivoDaJanela}
+                    />
+                  )}
+                </div>
+                <Composer
+                  ref={composerRef}
                   conversationId={selectedConversation.id}
-                  provider={selectedConversation.channel_sessions?.provider ?? null}
-                  motivo={motivoDaJanela}
+                  blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
+                  janelaFechada={motivoDaJanela}
+                  disabled={selectedConversation.status === "closed"}
+                  contactName={selectedConversation.contacts?.name ?? null}
+                  respondendo={respondendo}
+                  onCancelarResposta={() => setRespondendo(null)}
+                  currentContactId={selectedConversation.contact_id}
                 />
-              )}
-              <Composer
-                ref={composerRef}
-                conversationId={selectedConversation.id}
-                blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
-                janelaFechada={motivoDaJanela}
-                disabled={selectedConversation.status === "closed"}
-                contactName={selectedConversation.contacts?.name ?? null}
-                respondendo={respondendo}
-                onCancelarResposta={() => setRespondendo(null)}
-                currentContactId={selectedConversation.contact_id}
-              />
+              </div>
             </>
           ) : selectionNotFound ? (
             <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
