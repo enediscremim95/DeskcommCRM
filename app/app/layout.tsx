@@ -20,6 +20,7 @@ import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { listarConexoesCaidas, type ConexaoCaida } from "@/lib/channels/health";
 import { VoiceCallProvider } from "@/components/voice/VoiceCallContext";
 import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
+import { assinaturaDosAcessosAsOrganizacoes } from "@/lib/auth/assinatura-acessos-organizacoes";
 import { integrationAccessForOrganization } from "@/lib/integrations/access";
 import { BrowserExtensionHeartbeat } from "./_components/BrowserExtensionHeartbeat";
 
@@ -208,6 +209,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <AppShell sidebarCollapsed={collapsed}>{children}</AppShell>
     </VoiceCallProvider>
   );
+  const organizationsSignature = assinaturaDosAcessosAsOrganizacoes(
+    user.organizations.map((organization) => organization.organization_id),
+  );
 
   return (
     // O idioma envolve a árvore inteira e recebe o código PRONTO — ele não
@@ -215,7 +219,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // acoplamento com a autenticação que derrubou 32 casos.
     <IdiomaProvider locale={user.idioma}>
     <AuthProvider user={user} activeOrg={activeOrg}>
-      <InterfaceRefresh userId={user.id} org={activeOrg} support={!!user.support} />
+      <InterfaceRefresh
+        userId={user.id}
+        org={activeOrg}
+        support={!!user.support}
+        organizationsCount={user.organizations.length}
+        organizationsSignature={organizationsSignature}
+      />
       <BrowserExtensionHeartbeat />
       {/*
         O MARCADOR da marca da organização — o elemento cuja existência define o

@@ -96,6 +96,53 @@ test("interface por membro atualiza ao vivo, preserva formulário e convite apli
     await login(member, emails[1]!);
     await member.goto("/app/settings/profile");
     await member.getByLabel("Nome completo").fill("Rascunho não salvo");
+    const activeBefore = await member.request.get("/api/v1/auth/interface");
+    expect(activeBefore.status()).toBe(200);
+    expect((await activeBefore.json()).data.organization_id).toBe(orgs[0]);
+
+    const secondAccess = await db.from("user_organizations").insert({
+      user_id: users[1],
+      organization_id: orgs[1],
+      role: "admin",
+      accepted_at: new Date().toISOString(),
+    });
+    if (secondAccess.error) throw secondAccess.error;
+
+    await expect(
+      member.getByText(
+        "Você recebeu acesso a outra organização. Use o seletor para escolher onde trabalhar.",
+        { exact: true },
+      ),
+    ).toBeVisible({ timeout: 35_000 });
+    const tenantSwitcher = member.getByTestId("tenant-switcher");
+    await expect(tenantSwitcher).toBeVisible({ timeout: 20_000 });
+    await expect(tenantSwitcher).toContainText("Interface A");
+    await tenantSwitcher.click();
+    await expect(member.getByTestId(`tenant-switcher-item-${orgs[1]}`)).toBeVisible();
+    await member.keyboard.press("Escape");
+    const activeAfterGrant = await member.request.get("/api/v1/auth/interface");
+    expect((await activeAfterGrant.json()).data.organization_id).toBe(orgs[0]);
+    await expect(member.getByLabel("Nome completo")).toHaveValue("Rascunho não salvo");
+    expect(member.url()).toContain("/app/settings/profile");
+
+    const revokeSecondAccess = await db
+      .from("user_organizations")
+      .update({ revoked_at: new Date().toISOString() })
+      .eq("user_id", users[1])
+      .eq("organization_id", orgs[1]);
+    if (revokeSecondAccess.error) throw revokeSecondAccess.error;
+
+    await expect(
+      member.getByText(
+        "Sua lista de organizações foi atualizada. Você pode continuar nesta tela.",
+        { exact: true },
+      ),
+    ).toBeVisible({ timeout: 35_000 });
+    await expect(tenantSwitcher).toHaveCount(0, { timeout: 20_000 });
+    const activeAfterRevoke = await member.request.get("/api/v1/auth/interface");
+    expect((await activeAfterRevoke.json()).data.organization_id).toBe(orgs[0]);
+    await expect(member.getByLabel("Nome completo")).toHaveValue("Rascunho não salvo");
+    expect(member.url()).toContain("/app/settings/profile");
     await login(other, emails[2]!);
     await expect(nav(member).getByRole("link", { name: "Radar", exact: true })).toBeVisible();
     const framesBefore = realtime.length;
