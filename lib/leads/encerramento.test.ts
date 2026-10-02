@@ -118,7 +118,27 @@ function makeDb({
   }
 
   return {
-    client: { from, rpc: async (name: string) => (rpcs.push(name), { error: null }) },
+    client: {
+      from,
+      rpc: async (name: string, args?: Record<string, unknown>) => {
+        rpcs.push(name);
+        if (name === "fn_reservar_posicao_lead_na_etapa") {
+          const positions = leads
+            .filter((lead) => lead.stage_id === args?.p_stage_id)
+            .map((lead) => Number(lead.position_in_stage));
+          const position =
+            args?.p_lado === "topo"
+              ? positions.length
+                ? Math.min(...positions) - 1000
+                : 1000
+              : positions.length
+                ? Math.max(...positions) + 1000
+                : 1000;
+          return { data: position, error: null };
+        }
+        return { data: null, error: null };
+      },
+    },
     tables,
     updates,
     rpcs,
@@ -211,7 +231,7 @@ describe("encerraDemanda", () => {
 
     expect(result.lead).toMatchObject({ status: "won", stage_id: WON_STAGE, position_in_stage: 5000 });
     expect(db.updates[0]).toMatchObject({ stage_id: WON_STAGE, position_in_stage: 5000 });
-    expect(db.rpcs).toEqual([]);
+    expect(db.rpcs).toEqual(["fn_reservar_posicao_lead_na_etapa"]);
   });
 
   it("não alcança lead de outra organização", async () => {

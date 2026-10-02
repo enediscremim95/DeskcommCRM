@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import { reservarPosicaoNaEtapa } from "@/lib/leads/posicao-na-etapa";
 
 interface OpenStage {
   id: string;
@@ -71,15 +72,14 @@ export async function reabreLead(
     );
   }
 
-  const { data: last } = await supabase
-    .from("crm_leads")
-    .select("position_in_stage")
-    .eq("organization_id", ctx.organization_id)
-    .eq("stage_id", stage.id)
-    .order("position_in_stage", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const position = last?.position_in_stage == null ? 1000 : Number(last.position_in_stage) + 1000;
+  // Uma demanda retomada volta a exigir atendimento agora, portanto reaparece
+  // no topo da etapa aberta em vez de ficar escondida no fim da coluna.
+  const position = await reservarPosicaoNaEtapa(supabase, {
+    organizationId: ctx.organization_id,
+    stageId: stage.id,
+    lado: "topo",
+    requestId: ctx.requestId,
+  });
   const { data: updated, error: updateError } = await supabase
     .from("crm_leads")
     .update({

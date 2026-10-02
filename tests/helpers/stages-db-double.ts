@@ -328,6 +328,10 @@ export function makeDb(opts: DbOpts = {}): Registro {
   // comportamento ("o arquivamento não é desfeito por causa do rastro").
   const rpc = async (nome: string, args: unknown) => {
     registro.rpcs.push({ nome, args });
+    if (nome === "fn_reservar_posicao_lead_na_etapa") {
+      const lado = (args as { p_lado?: string }).p_lado;
+      return { data: lado === "fim" ? 2000 : 0, error: null };
+    }
     return { data: null, error: null };
   };
 
