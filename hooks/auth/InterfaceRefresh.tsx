@@ -12,10 +12,14 @@ export function InterfaceRefresh({
   userId,
   org,
   support,
+  organizationsCount,
+  organizationsSignature,
 }: {
   userId: string;
   org: ActiveOrg | null;
   support: boolean;
+  organizationsCount: number;
+  organizationsSignature: string;
 }) {
   const t = useT();
   const router = useRouter();
@@ -23,6 +27,12 @@ export function InterfaceRefresh({
   const epoch = useRef(0);
   const inFlight = useRef(false);
   const pending = useRef(false);
+  const observedOrganizationsCount = useRef(organizationsCount);
+  const observedOrganizationsSignature = useRef(organizationsSignature);
+  useEffect(() => {
+    observedOrganizationsCount.current = organizationsCount;
+    observedOrganizationsSignature.current = organizationsSignature;
+  }, [organizationsCount, organizationsSignature]);
   useEffect(() => {
     const generation = ++epoch.current;
     inFlight.current = false;
@@ -47,11 +57,40 @@ export function InterfaceRefresh({
           if (response.ok) {
             const result = await response.json();
             if (generation !== epoch.current) return;
-            if (result.data?.organization_id === org.orgId && result.data.signature !== expected) {
+            const sameActiveOrganization = result.data?.organization_id === org.orgId;
+            const nextOrganizationsSignature = result.data?.organizations_signature;
+            const nextOrganizationsCount = result.data?.organizations_count;
+            const organizationsChanged =
+              sameActiveOrganization &&
+              typeof nextOrganizationsSignature === "string" &&
+              nextOrganizationsSignature !== observedOrganizationsSignature.current;
+            const interfaceChanged = sameActiveOrganization && result.data?.signature !== expected;
+            if (organizationsChanged || interfaceChanged) {
+              const gainedAccess =
+                organizationsChanged &&
+                typeof nextOrganizationsCount === "number" &&
+                nextOrganizationsCount > observedOrganizationsCount.current;
+              if (organizationsChanged) {
+                observedOrganizationsSignature.current = nextOrganizationsSignature;
+                if (typeof nextOrganizationsCount === "number") {
+                  observedOrganizationsCount.current = nextOrganizationsCount;
+                }
+              }
               router.refresh();
-              toast.info(t("Sua navegação foi atualizada. Você pode continuar nesta tela."), {
-                id: "interface-updated",
-              });
+              if (organizationsChanged) {
+                toast.info(
+                  t(
+                    gainedAccess
+                      ? "Você recebeu acesso a outra organização. Use o seletor para escolher onde trabalhar."
+                      : "Sua lista de organizações foi atualizada. Você pode continuar nesta tela.",
+                  ),
+                  { id: "organizations-updated" },
+                );
+              } else {
+                toast.info(t("Sua navegação foi atualizada. Você pode continuar nesta tela."), {
+                  id: "interface-updated",
+                });
+              }
             }
           }
         } catch {
@@ -71,7 +110,7 @@ export function InterfaceRefresh({
     name: `interface:${userId}:${org?.orgId}`,
     enabled: !!org && !support,
     postgresChanges: {
-      event: "UPDATE",
+      event: "*",
       table: "user_organizations",
       filter: `user_id=eq.${userId}`,
     },

@@ -25,6 +25,13 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { env } from "@/lib/env";
+import {
+  agendarEncerramentoDoApp,
+  avaliarAutoCuraBanco,
+  FALHAS_DE_POOL_ANTES_DO_REINICIO,
+  type DiagnosticoBanco,
+} from "@/lib/health/auto-cura-banco";
+import { logger } from "@/lib/logger";
 import { alvoDe, classificarFalhaDeAlcance, type FalhaDeAlcance } from "@/lib/net/alcance";
 import { validarConfigRedisRest } from "@/lib/redis-config";
 import { statusReservaWebhook } from "@/lib/webhooks/lead-reserve";
@@ -48,6 +55,8 @@ type Check = {
   latency_ms: number;
   error?: string;
   reason?: MotivoDeFalha;
+  /** Código estruturado devolvido pelo PostgREST, quando houver. */
+  code?: string;
   /** Protocolo + host + porta que tentamos. Só com `?verbose=1` autenticado. */
   target?: string;
   count?: number;
@@ -87,11 +96,22 @@ async function checkSupabase(): Promise<Check> {
     if (res.status === 200 || res.status === 401 || res.status === 403) {
       return { status: "ok", latency_ms: Date.now() - t0, target: alvoDe(url) };
     }
+    let code: string | undefined;
+    try {
+      const body: unknown = await res.clone().json();
+      if (typeof body === "object" && body !== null && "code" in body) {
+        const recebido = (body as { code?: unknown }).code;
+        if (typeof recebido === "string") code = recebido;
+      }
+    } catch {
+      // Resposta sem JSON continua sendo uma falha HTTP válida e visível.
+    }
     return {
       status: "down",
       latency_ms: Date.now() - t0,
       error: `http_${res.status}`,
       reason: motivoDoStatusHttp(res.status),
+      ...(code ? { code } : {}),
       target: alvoDe(url),
     };
   } catch (e) {
@@ -260,6 +280,11 @@ function segredoInternoConfere(req: NextRequest): boolean {
   });
 }
 
+function diagnosticoDoBanco(check: Check): DiagnosticoBanco {
+  if (check.status === "ok") return "ok";
+  return check.code === "PGRST003" ? "pool_saturado" : "banco_indisponivel";
+}
+
 /**
  * Sem o segredo, o endereço não sai — nem pelo `target`, nem pelo `error`.
  *
@@ -314,6 +339,26 @@ export async function GET(req: NextRequest) {
     waha: filtrar(waha),
     webhook_reserve: filtrar(webhookReserve),
   };
+  const sondaAutoCura =
+    req.headers.get("x-self-heal-probe") === "1" && segredoInternoConfere(req);
+  const autoCura = await avaliarAutoCuraBanco({
+    diagnostico: diagnosticoDoBanco(supabase),
+    sonda_autorizada: sondaAutoCura,
+    ao_agendar_reinicio: () => {
+      logger.error("auto_cura_banco_reiniciando_app", {
+        code: supabase.code,
+        falhas_consecutivas: FALHAS_DE_POOL_ANTES_DO_REINICIO,
+      });
+      agendarEncerramentoDoApp();
+    },
+  });
+
+  if (autoCura.estado.status === "limite_de_reinicios_atingido") {
+    logger.error("auto_cura_banco_limite_atingido", {
+      reinicios_na_janela: autoCura.estado.reinicios_na_janela,
+      bloqueado_ate: autoCura.estado.bloqueado_ate,
+    });
+  }
 
   const anyDown = Object.values(checks).some((c) => c.status === "down");
   const anyDegraded = Object.values(checks).some((c) => c.status === "degraded");
@@ -341,6 +386,7 @@ export async function GET(req: NextRequest) {
         version: process.env.APP_VERSION || "desconhecido",
         timestamp: new Date().toISOString(),
         checks,
+        auto_cura_banco: autoCura.estado,
       },
     },
     { status: httpStatus },

@@ -86,6 +86,22 @@
       "type": "database",
       "label": "Reserva de leads no Redis",
       "sublabel": "health mostra quantidade e idade sem Postgres"
+    },
+    {
+      "id": "autocura",
+      "lane": "decide",
+      "col": 3,
+      "type": "service",
+      "label": "Auto-cura do app",
+      "sublabel": "3 PGRST003; máximo 3 reinícios por hora"
+    },
+    {
+      "id": "docker",
+      "lane": "protege",
+      "col": 4,
+      "type": "service",
+      "label": "Docker restart",
+      "sublabel": "unless-stopped recria o processo encerrado"
     }
   ],
   "edges": [
@@ -103,7 +119,10 @@
       "to": "health",
       "label": "count + idade do mais antigo"
     },
-    { "id": "e10", "from": "health", "to": "vigia", "label": "backlog deixa saúde degradada" }
+    { "id": "e10", "from": "health", "to": "vigia", "label": "backlog deixa saúde degradada" },
+    { "id": "e11", "from": "health", "to": "autocura", "label": "PGRST003 autenticado pelo probe" },
+    { "id": "e12", "from": "autocura", "to": "docker", "label": "process.exit(1) após tolerância" },
+    { "id": "e13", "from": "docker", "to": "health", "label": "novo processo volta a ser sondado" }
   ],
   "cards": [
     {
@@ -116,7 +135,9 @@
         "anti-morte: processo watchdog separado observa o heartbeat",
         "laço de retorno: duas respostas saudáveis fecham o incidente e avisam a volta",
         "limite físico: queda da VPS ou do próprio WhatsApp exige monitor externo",
-        "reserva de formulário: backlog no Redis aparece com quantidade e idade mesmo sem banco"
+        "reserva de formulário: backlog no Redis aparece com quantidade e idade mesmo sem banco",
+        "auto-cura: só PGRST003 reinicia; banco fora continua servindo e aparece na saúde",
+        "laço de segurança: no máximo 3 reinícios por hora, persistidos no container"
       ]
     }
   ]

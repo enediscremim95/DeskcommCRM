@@ -154,7 +154,7 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
   // ⚠️ O erro é capturado de propósito: aqui `data: null` é AMBÍGUO — significa tanto
   // "não é platform admin" (RLS filtrou, estado normal) quanto "a query falhou".
   // Sem separar os dois, um banco instável rebaixa silenciosamente um super-admin.
-  const { data: paRow, error: paErro } = await supabase
+  const platformAdminPromise = supabase
     .from("platform_admins")
     .select("user_id, revoked_at")
     .eq("user_id", user.id)
@@ -176,7 +176,7 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
   // reconhece como "a minha"; `organization_id` como desempate, para o resultado
   // ser determinístico mesmo quando as duas entraram no mesmo instante (é o caso
   // de quem foi convidado para várias no mesmo lote).
-  const { data: rawMemberships, error: membErro } = await supabase
+  const membershipsPromise = supabase
     .from("user_organizations")
     .select(
       "organization_id, role, interface_settings, accepted_at, organizations(display_name, locale)",
@@ -185,6 +185,24 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
     .is("revoked_at", null)
     .order("accepted_at", { ascending: true, nullsFirst: true })
     .order("organization_id", { ascending: true });
+
+  // Estas três leituras só dependem do usuário já validado acima. Mantê-las
+  // em série fazia cada request pagar três travessias até o Supabase antes de
+  // sequer resolver a organização ativa. O envelope de `support` preserva a
+  // precedência do erro de autorização: se membership/admin falhar, continua
+  // sendo esse o diagnóstico que sobe, exatamente como antes.
+  const [
+    { data: paRow, error: paErro },
+    { data: rawMemberships, error: membErro },
+    supportResult,
+  ] = await Promise.all([
+    platformAdminPromise,
+    membershipsPromise,
+    readSupportContext(supabase).then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    ),
+  ]);
 
   /**
    * FALHA ALTO, não baixo.
@@ -231,7 +249,8 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
     };
   });
 
-  const support = await readSupportContext(supabase);
+  if (!supportResult.ok) throw supportResult.error;
+  const support = supportResult.value;
   const fullName = (user.user_metadata?.full_name as string | undefined) ?? null;
   const avatarUrl = (user.user_metadata?.avatar_url as string | undefined) ?? null;
   const locale = (user.user_metadata?.locale as string | undefined) ?? null;
@@ -329,29 +348,39 @@ export async function requiresMfa(
   isPlatformAdmin: boolean,
   userId?: string,
   orgId?: string,
+  preloaded?: { organizationSettings: unknown | Promise<unknown> },
 ): Promise<boolean> {
   const admin = createAdminClient();
 
-  let plataformaExige: boolean | null = null;
-  if (isPlatformAdmin && userId) {
-    const { data } = await admin
-      .from("platform_admins")
-      .select("mfa_required")
-      .eq("user_id", userId)
-      .is("revoked_at", null)
-      .maybeSingle();
-    plataformaExige = (data?.mfa_required as boolean | undefined) ?? null;
-  }
+  const plataformaPromise = isPlatformAdmin && userId
+    ? admin
+        .from("platform_admins")
+        .select("mfa_required")
+        .eq("user_id", userId)
+        .is("revoked_at", null)
+        .maybeSingle()
+        .then(({ data }) => (data?.mfa_required as boolean | undefined) ?? null)
+    : Promise.resolve<boolean | null>(null);
 
-  let empresaExige = false;
-  if (orgId) {
-    const { data } = await admin
-      .from("organizations")
-      .select("settings")
-      .eq("id", orgId)
-      .maybeSingle();
-    empresaExige = empresaExigeMfa(data?.settings);
-  }
+  // O layout já lê `organizations.settings` para onboarding, visibilidade e
+  // marca. Receber a mesma promise elimina uma segunda consulta sem mudar a
+  // fonte da política. Nos demais call sites, a função continua consultando o
+  // banco. As duas políticas são independentes e, portanto, rodam juntas.
+  const empresaPromise = preloaded
+    ? Promise.resolve(preloaded.organizationSettings).then(empresaExigeMfa)
+    : orgId
+      ? admin
+          .from("organizations")
+          .select("settings")
+          .eq("id", orgId)
+          .maybeSingle()
+          .then(({ data }) => empresaExigeMfa(data?.settings))
+      : Promise.resolve(false);
+
+  const [plataformaExige, empresaExige] = await Promise.all([
+    plataformaPromise,
+    empresaPromise,
+  ]);
 
   return exigeCadastroDeMfa({ role, isPlatformAdmin, plataformaExige, empresaExige });
 }
