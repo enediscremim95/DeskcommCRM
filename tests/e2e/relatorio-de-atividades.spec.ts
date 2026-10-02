@@ -3,12 +3,12 @@
  *
  * O motor (`fn_activity_report`, migration 0217) já tem invariante contra
  * Postgres real. O que nunca tinha sido feito é o que este spec faz: abrir a
- * tela pela BARRA LATERAL, ler os números, trocar o período e conferir que a
+ * tela pela busca global, ler os números, trocar o período e conferir que a
  * troca chegou ao servidor, e sair de uma linha do relatório para o negócio de
  * onde ela veio.
  *
  * ─── O que a tela precisa responder, e como se mede ────────────────────────
- *  · A PORTA existe: item "Atividades" no grupo Análise, e clicar nele leva à
+ *  · A PORTA existe: item "Atividades" no grupo Análise do Cmd+K, e clicar leva à
  *    tela — não basta a rota responder a quem digita a URL.
  *  · Os TRÊS NÚMEROS (equipe / agentes / automático) somam o total. É a
  *    afirmação central da tela: um mês atendido pela IA e um mês atendido pela
@@ -20,20 +20,8 @@
  *    dias atrás só entram na conta do período maior.
  *  · Cada linha LEVA ao negócio. Relatório que só lista é decorativo.
  *
- * ─── ⚠️ O que este spec NÃO afirma, e por quê ──────────────────────────────
- * Que o item novo CABE na barra lateral. Não cabia: medido em 1280×900, logado
- * como admin, `nav.scrollHeight` = 776 contra `clientHeight` = 763 — 13 px de
- * excesso, com "Audit Log" abaixo da dobra. Removendo do DOM só o `<a>` de
- * `/app/activities` a mesma medida devolvia 763 contra 763: a barra cabia com
- * margem NENHUMA e este item era o que a estourava.
- *
- * O conserto NÃO foi raspar densidade, e sim `/app/analise` — o hub do grupo,
- * pela mesma regra que o comentário de `Sidebar.tsx` já escrevia (grupo sem hub
- * que passa de quatro telas ganha um). Evolução da IA e Audit Log saíram do
- * menu para dentro dele; Atividades ficou, e sobrou 19px de folga. Quem guarda
- * o invariante da dobra continua sendo `navegacao.spec.ts` ("nenhum grupo fica
- * fora da dobra, e em 900px o menu não rola") — duplicar a asserção aqui só
- * faria dois vermelhos para o mesmo fato.
+ * A barra lateral foi enxugada por decisão de produto em 18/09/2026. A rota
+ * continua alcançável pelo Cmd+K, que é a porta global para telas fora dela.
  *
  * Pré-requisitos (banco local do baseline, app buildada):
  *   pnpm e2e:env && pnpm e2e:build
@@ -48,6 +36,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { loginComoMembro } from "./helpers/aguardar-sessao";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const EVIDENCIA =
@@ -81,11 +70,20 @@ let leadRecenteId = "";
 let leadAntigoId = "";
 
 async function login(page: Page, email: string, senha: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(senha);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app/, { timeout: 60_000 });
+  await loginComoMembro(page, email, senha);
+}
+
+async function abrirAtividadesPelaPaleta(page: Page): Promise<void> {
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByRole("combobox").fill("atividades");
+  const item = page.locator('[role="option"][data-href="/app/activities"]');
+  await expect(item, "tela sem porta é tela que só existe para quem digita a URL").toBeVisible();
+  await expect(item).toContainText("Atividades");
+  await expect(item, "Atividades pertence ao grupo Análise").toContainText(/an[áa]lise/i);
+  await Promise.all([
+    page.waitForURL(/\/app\/activities/, { waitUntil: "commit" }),
+    item.click(),
+  ]);
 }
 
 async function captura(page: Page, nome: string): Promise<void> {
@@ -274,7 +272,7 @@ test.describe("Relatório de atividades — o período, pela tela", () => {
     await limparFixtures();
   });
 
-  test("a porta existe na barra lateral, no grupo Análise, e leva à tela", async ({ page }) => {
+  test("a porta existe na busca global, no grupo Análise, e leva à tela", async ({ page }) => {
     const errosDeConsole: string[] = [];
     page.on("console", (m) => {
       if (m.type() === "error") errosDeConsole.push(m.text());
@@ -282,28 +280,7 @@ test.describe("Relatório de atividades — o período, pela tela", () => {
 
     await login(page, creds.users.manager!.email, creds.password);
 
-    const sidebar = page.getByRole("navigation", { name: "Navegação principal" });
-    const item = sidebar.getByRole("link", { name: "Atividades", exact: true });
-    await expect(item, "tela sem porta é tela que só existe para quem digita a URL").toBeVisible({
-      timeout: 30_000,
-    });
-    expect(await item.getAttribute("href")).toBe("/app/activities");
-
-    // O grupo importa: "Atividades" é irmã de Desempenho e Audit Log, não de
-    // Inbox. Ir parar no grupo errado é a diferença entre achar e caçar.
-    const grupo = await item.evaluate((a) => {
-      let el: Element | null = a;
-      while (el && el.previousElementSibling === null) el = el.parentElement;
-      // sobe até achar o cabeçalho de grupo mais próximo acima
-      const titulos = [...document.querySelectorAll('nav[aria-label="Navegação principal"] h2')];
-      const y = a.getBoundingClientRect().top;
-      const acima = titulos.filter((h) => h.getBoundingClientRect().top < y);
-      return (acima[acima.length - 1]?.textContent ?? "").trim();
-    });
-    expect(grupo, "Atividades pertence ao grupo Análise").toMatch(/an[áa]lise/i);
-
-    await item.click();
-    await page.waitForURL(/\/app\/activities/, { timeout: 30_000 });
+    await abrirAtividadesPelaPaleta(page);
     await expect(page.getByRole("heading", { name: "Atividades", level: 1 })).toBeVisible();
     await captura(page, "01-tela-de-atividades");
 
@@ -431,15 +408,9 @@ test.describe("Relatório de atividades — o período, pela tela", () => {
   }) => {
     await login(page, creds.users.viewer!.email, creds.password);
 
-    // A porta aparece para viewer — o item não declara `minRole`, e o piso da
-    // rota é `viewer` de propósito: um piso mais alto esconderia da pessoa as
-    // atividades dela mesma.
-    const sidebar = page.getByRole("navigation", { name: "Navegação principal" });
-    await expect(sidebar.getByRole("link", { name: "Atividades", exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
-
-    await page.goto("/app/activities");
+    // A porta do Cmd+K aparece para viewer: o item não declara `minRole`, e o
+    // piso da rota é `viewer` de propósito.
+    await abrirAtividadesPelaPaleta(page);
     await expect(page.getByRole("heading", { name: "Atividades", level: 1 })).toBeVisible({
       timeout: 30_000,
     });

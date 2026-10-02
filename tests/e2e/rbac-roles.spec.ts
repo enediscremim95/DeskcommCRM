@@ -15,11 +15,14 @@ import * as path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+import { aguardarSessaoCompleta, loginComoMembro } from "./helpers/aguardar-sessao";
+import { semearConversaDoInbox, type ConversaDoInbox } from "./helpers/conversa-do-inbox";
 import { afirmarAdminDeTenantPuro } from "./utils/precondicao";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
 interface E2ECreds {
   password: string;
+  org_id: string;
   users: Record<string, { id: string; email: string; role: string }>;
   admin_totp?: { factor_id: string; secret: string };
 }
@@ -39,6 +42,7 @@ function loadCreds(): E2ECreds {
 }
 
 const creds = loadCreds();
+let conversa: ConversaDoInbox;
 
 // ── Precondição de identidade ────────────────────────────────────────────────
 // Esta spec é a matriz de PAPEL do tenant, e é onde um escape de plataforma
@@ -53,14 +57,15 @@ const creds = loadCreds();
 // fica porque é aqui que a próxima asserção de papel vai nascer.
 test.beforeAll(async () => {
   await afirmarAdminDeTenantPuro(creds.users.admin!.email);
+  conversa = await semearConversaDoInbox(creds.org_id);
+});
+
+test.afterAll(async () => {
+  await conversa.limpar();
 });
 
 async function login(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
+  await loginComoMembro(page, email, creds.password);
 }
 
 async function loginWithTotp(page: Page, email: string, secret: string): Promise<void> {
@@ -81,6 +86,7 @@ async function loginWithTotp(page: Page, email: string, secret: string): Promise
     await page.keyboard.type(code, { delay: 40 });
     try {
       await page.waitForURL(/\/app\//, { timeout: 8_000 });
+      await aguardarSessaoCompleta(page, "aal2");
       return;
     } catch {
       // código rejeitado — espera a próxima janela e tenta de novo
@@ -129,10 +135,13 @@ test.describe("rbac role matrix (spec 13 §4)", () => {
   });
 
   test("agent vê inbox e kanban", async ({ page }) => {
-    await login(page, creds.users.agent!.email);
-
-    await page.goto("/app/inbox");
-    await expect(page.getByText("Selecione uma conversa", { exact: true })).toBeVisible();
+    await loginComoMembro(
+      page,
+      creds.users.agent!.email,
+      creds.password,
+      `/app/inbox?conversation=${conversa.conversationId}`,
+    );
+    await expect(page.getByText(conversa.contactName).first()).toBeVisible();
     // Baseline pré-G2-04: as abas Radix de InboxFilters apontam aria-controls
     // para painel não renderizado (aria-valid-attr-value, defeito pré-existente
     // fora do escopo desta feature). Excluímos só o tablist; o resto da tela
