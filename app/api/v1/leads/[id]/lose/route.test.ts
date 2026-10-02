@@ -3,10 +3,12 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireRole } from "@/lib/auth/require-role";
+import { encerraDemanda } from "@/lib/leads/encerramento";
 import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/leads/encerramento", () => ({ encerraDemanda: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/leads/activity-emitter", () => ({
   emitLeadActivity: vi.fn(async () => ({ ok: true })),
@@ -27,6 +29,7 @@ beforeEach(() => {
     org: { orgId: ORG_ID },
   } as never);
   vi.mocked(createClient).mockResolvedValue({ from: vi.fn() } as never);
+  vi.mocked(encerraDemanda).mockResolvedValue({ lead: { id: LEAD_ID }, jaEstava: false });
 });
 
 function request(body: string): NextRequest {
@@ -58,6 +61,43 @@ describe("POST /api/v1/leads/[id]/lose", () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { code: "body_malformed" },
     });
+  });
+
+  it("envia other e o detalhe em campos separados", async () => {
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request(JSON.stringify({ lost_reason: "other", lost_reason_detail: "Mudou de cidade" })),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(encerraDemanda).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ organization_id: ORG_ID }),
+      expect.objectContaining({
+        leadId: LEAD_ID,
+        desfecho: "lost",
+        motivo: "other",
+        detalhe: "Mudou de cidade",
+      }),
+    );
+  });
+
+  it("não associa detalhe livre a um motivo da lista", async () => {
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request(JSON.stringify({ lost_reason: "price", lost_reason_detail: "texto antigo" })),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(encerraDemanda).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ motivo: "price", detalhe: null }),
+    );
   });
 });
 

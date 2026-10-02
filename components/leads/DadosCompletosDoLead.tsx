@@ -16,6 +16,7 @@ import {
   valorLegivel,
 } from "@/lib/leads/dados-completos";
 import { origemComUtms } from "@/lib/leads/utm-da-url";
+import { motivoDaPerdaLegivel } from "@/lib/leads/motivo-da-perda";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import type { Lead } from "@/lib/types/leads";
 import { CaretRight, Check, Copy } from "@/lib/ui/icons";
@@ -252,6 +253,11 @@ export function DadosCompletosDoLead({
 }: Props) {
   const t = useT();
   const locale = useTagDeIdioma();
+  const motivoDaPerda = motivoDaPerdaLegivel(
+    lead.lost_reason,
+    lead.lost_reason_detail ?? null,
+    t,
+  );
   const historico = historicoEstruturado(lead.custom_fields?.historico);
   const campos = ordenarCampos(
     Object.entries(lead.custom_fields ?? {}).filter(
@@ -281,7 +287,7 @@ export function DadosCompletosDoLead({
       nowrap: true,
     },
     { rotulo: t("Fechado em"), valor: dataLegivel(lead.closed_at, locale), nowrap: true },
-    { rotulo: t("Motivo da perda"), valor: lead.lost_reason },
+    { rotulo: t("Motivo da perda"), valor: motivoDaPerda },
   ].filter((campo) => !estaVazio(campo.valor));
 
   const sistema: CampoProps[] = [
