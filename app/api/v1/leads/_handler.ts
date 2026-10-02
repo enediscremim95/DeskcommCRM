@@ -19,6 +19,7 @@ import { camposAlterados } from "@/lib/leads/campos-alterados";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import type { CreateLeadInput, UpdateLeadInput } from "@/lib/schemas";
 import { ehCorrecaoDeMovimentoDaIa } from "@/lib/leads/correcao-humana";
+import { reservarPosicaoNaEtapa } from "@/lib/leads/posicao-na-etapa";
 
 type SB = SupabaseClient;
 
@@ -277,19 +278,12 @@ export async function createLeadHandler(
     );
   }
 
-  // next position_in_stage = MAX + 1000.
-  const { data: maxRow, error: maxErr } = await supabase
-    .from("crm_leads")
-    .select("position_in_stage")
-    .eq("stage_id", input.stage_id)
-    .order("position_in_stage", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (maxErr) {
-    throw new ApiError(500, "internal_error", undefined, ctx.requestId, maxErr.message);
-  }
-  const nextPos = maxRow?.position_in_stage ? Number(maxRow.position_in_stage) + 1000 : 1000;
+  const nextPos = await reservarPosicaoNaEtapa(supabase, {
+    organizationId: ctx.organization_id,
+    stageId: input.stage_id,
+    lado: "topo",
+    requestId: ctx.requestId,
+  });
 
   // Nascer com dono e sem owner_kind é drift silencioso (o CHECK aceita kind
   // null): o lead teria dono e sumiria do filtro e das métricas por kind.
@@ -575,7 +569,7 @@ export async function updateLeadHandler(
 
 export interface MoveLeadAdminInput {
   to_stage_id: string;
-  /** Optional fractional position. If omitted, append at end (max + 1000). */
+  /** Posição fracionária do drag. Sem ela, a nova chegada entra no topo da etapa. */
   position_in_stage?: number;
   /** OCC explícita da porta HTTP; integrações internas usam o valor lido pelo handler. */
   expected_updated_at?: string;
@@ -638,15 +632,12 @@ export async function moveLeadHandler(
 
   let position = input.position_in_stage;
   if (position === undefined) {
-    const { data: maxRow } = await supabase
-      .from("crm_leads")
-      .select("position_in_stage")
-      .eq("organization_id", ctx.organization_id)
-      .eq("stage_id", input.to_stage_id)
-      .order("position_in_stage", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    position = maxRow?.position_in_stage ? Number(maxRow.position_in_stage) + 1000 : 1000;
+    position = await reservarPosicaoNaEtapa(supabase, {
+      organizationId: ctx.organization_id,
+      stageId: input.to_stage_id,
+      lado: "topo",
+      requestId: ctx.requestId,
+    });
   }
 
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id);

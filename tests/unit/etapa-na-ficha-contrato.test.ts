@@ -16,7 +16,7 @@ describe("contrato da etapa na ficha", () => {
     const handler = readFileSync("app/api/v1/leads/_handler.ts", "utf8");
     expect(route).toContain("moveLeadHandler(");
     expect(route).toContain("position_in_stage: input.position_in_stage");
-    expect(handler).toContain("Number(maxRow.position_in_stage) + 1000");
+    expect(handler).toContain('lado: "topo"');
   });
 
   it("o banco atualiza stage_entered_at em qualquer mudança de stage_id", () => {

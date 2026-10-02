@@ -26,6 +26,7 @@ import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import { reservarPosicaoNaEtapa } from "@/lib/leads/posicao-na-etapa";
 
 /** Como a demanda terminou. Não há terceira: encerrar é ganhar ou perder. */
 export type DesfechoDaDemanda = "won" | "lost";
@@ -140,23 +141,14 @@ export async function encerraDemanda(
   }
 
   const terminalStageId = (stage as { id: string }).id;
-  const { data: maxPosition, error: maxPositionErr } = await supabase
-    .from("crm_leads")
-    .select("position_in_stage")
-    .eq("organization_id", ctx.organization_id)
-    .eq("stage_id", terminalStageId)
-    .order("position_in_stage", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (maxPositionErr) {
-    throw new ApiError(500, "internal_error", undefined, ctx.requestId, maxPositionErr.message);
-  }
-
-  const nextPosition =
-    maxPosition?.position_in_stage === null || maxPosition?.position_in_stage === undefined
-      ? 1000
-      : Number(maxPosition.position_in_stage) + 1000;
+  // Encerrado não é atendimento novo. Mantemos ganho/perda no fim da coluna,
+  // mas a mesma reserva atômica impede que dois encerramentos empatem.
+  const nextPosition = await reservarPosicaoNaEtapa(supabase, {
+    organizationId: ctx.organization_id,
+    stageId: terminalStageId,
+    lado: "fim",
+    requestId: ctx.requestId,
+  });
   const patch: Record<string, unknown> = {
     stage_id: terminalStageId,
     position_in_stage: nextPosition,

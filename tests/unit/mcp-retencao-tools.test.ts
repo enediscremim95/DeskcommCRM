@@ -114,6 +114,9 @@ function fakeSupabase(resolve: Resolver, cap: Capturas) {
     rpc: (fn: string, args: Record<string, unknown>) => {
       cap.rpcs.push({ fn, args });
       if (fn === 'fn_service_begin') return Promise.resolve({ data: { organization_id: ORG, contact_id: CONTATO, conversation_id: 'conv-1', service_revision: 1, demanda_id: null, demanda_revision: null, status: 'open', demanda_fechada_em: null }, error: null });
+      if (fn === "fn_reservar_posicao_lead_na_etapa") {
+        return Promise.resolve({ data: args.p_lado === "fim" ? 2000 : 0, error: null });
+      }
       return Promise.resolve({ data: null, error: null });
     },
   };
