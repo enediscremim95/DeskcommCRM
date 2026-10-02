@@ -31,7 +31,11 @@
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 
 /** Por que estes dois registros caíram no mesmo grupo. */
-export type MotivoDeDuplicidade = "telefone" | "email" | "telefone_em_conflito";
+export type MotivoDeDuplicidade =
+  | "telefone"
+  | "email"
+  | "telefone_em_conflito"
+  | "telefone_final_whatsapp";
 
 /**
  * O recorte de `contacts` que a detecção precisa. Deliberadamente menor que

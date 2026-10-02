@@ -59,8 +59,9 @@ import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import {
   useContactDuplicates,
   type GrupoDuplicado,
+  type MesclagemAutomaticaRecente,
 } from "@/hooks/contacts/useContactDuplicates";
-import { useMergeContacts } from "@/hooks/contacts/useMergeContacts";
+import { useMergeContacts, useUndoAutomaticContactMerge } from "@/hooks/contacts/useMergeContacts";
 import type { MotivoDeDuplicidade } from "@/lib/contacts/duplicados";
 
 interface Props {
@@ -72,15 +73,10 @@ const ROTULO_DO_MOTIVO: Record<MotivoDeDuplicidade, string> = {
   telefone: "mesmo telefone",
   email: "mesmo e-mail",
   telefone_em_conflito: "telefone que o WhatsApp deixou em conflito",
+  telefone_final_whatsapp: "mesmo final do telefone informado e do WhatsApp",
 };
 
-function GrupoDeDuplicados({
-  grupo,
-  onFundido,
-}: {
-  grupo: GrupoDuplicado;
-  onFundido: () => void;
-}) {
+function GrupoDeDuplicados({ grupo, onFundido }: { grupo: GrupoDuplicado; onFundido: () => void }) {
   const t = useT();
   const merge = useMergeContacts();
   const [principal, setPrincipal] = useState(grupo.principal_sugerido);
@@ -100,6 +96,7 @@ function GrupoDeDuplicados({
       const res = await merge.mutateAsync({
         primary_contact_id: principal,
         secondary_contact_ids: secundarios,
+        merge_queue_id: grupo.queue_id,
       });
       const pendentes = Object.values(res.data.nao_repontado).reduce((a, b) => a + b, 0);
       // O parcial tem voz própria. Uma fusão que deixou linhas na lápide (por
@@ -108,10 +105,9 @@ function GrupoDeDuplicados({
       // que alguém precisa olhar.
       if (pendentes > 0) {
         toast.warning(
-          t("Contatos juntados. {n} registro(s) continuaram no cadastro antigo — veja a auditoria.").replace(
-            "{n}",
-            String(pendentes),
-          ),
+          t(
+            "Contatos juntados. {n} registro(s) continuaram no cadastro antigo — veja a auditoria.",
+          ).replace("{n}", String(pendentes)),
         );
       } else {
         toast.success(t("Contatos juntados."));
@@ -196,11 +192,7 @@ function GrupoDeDuplicados({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={merge.isPending}>{t("Cancelar")}</AlertDialogCancel>
-            <Button
-              variant="destructive"
-              onClick={() => void juntar()}
-              disabled={merge.isPending}
-            >
+            <Button variant="destructive" onClick={() => void juntar()} disabled={merge.isPending}>
               {merge.isPending ? t("Juntando…") : t("Juntar contatos")}
             </Button>
           </AlertDialogFooter>
@@ -210,10 +202,97 @@ function GrupoDeDuplicados({
   );
 }
 
+function MesclagensAutomaticas({
+  itens,
+  onDesfeita,
+}: {
+  itens: MesclagemAutomaticaRecente[];
+  onDesfeita: () => void;
+}) {
+  const t = useT();
+  const undo = useUndoAutomaticContactMerge();
+  const [confirmando, setConfirmando] = useState<MesclagemAutomaticaRecente | null>(null);
+
+  async function desfazer() {
+    if (!confirmando) return;
+    try {
+      await undo.mutateAsync(confirmando.id);
+      toast.success(t("Junção automática desfeita."));
+      setConfirmando(null);
+      onDesfeita();
+    } catch {
+      /* showApiError já falou no toast */
+    }
+  }
+
+  return (
+    <section className="space-y-2 border-t border-border pt-4">
+      <div>
+        <h3 className="text-sm font-medium">{t("Junções automáticas recentes")}</h3>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "O número do WhatsApp ficou como principal. O número informado no formulário foi preservado.",
+          )}
+        </p>
+      </div>
+      {itens.map((item) => (
+        <div
+          key={item.id}
+          className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="min-w-0 text-sm">
+            <p className="font-medium">{item.whatsapp_name ?? t("Contato do WhatsApp")}</p>
+            <p className="text-xs text-muted-foreground">
+              {item.original_form_phone
+                ? `${t("Formulário")}: ${phoneForDisplay(item.original_form_phone)}`
+                : t("Formulário sem telefone disponível")}
+              {" · "}
+              {item.whatsapp_phone
+                ? `${t("WhatsApp")}: ${phoneForDisplay(item.whatsapp_phone)}`
+                : t("WhatsApp sem telefone disponível")}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setConfirmando(item)}
+            disabled={undo.isPending}
+          >
+            {t("Desfazer junção")}
+          </Button>
+        </div>
+      ))}
+
+      <AlertDialog
+        open={Boolean(confirmando)}
+        onOpenChange={(open) => !open && setConfirmando(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Desfazer esta junção automática?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                "O card volta ao cadastro do formulário. A conversa e as mensagens continuam no contato com o número real do WhatsApp.",
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={undo.isPending}>{t("Cancelar")}</AlertDialogCancel>
+            <Button onClick={() => void desfazer()} disabled={undo.isPending}>
+              {undo.isPending ? t("Desfazendo…") : t("Desfazer junção")}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
+  );
+}
+
 export function MergeDialog({ open, onOpenChange }: Props) {
   const t = useT();
   const q = useContactDuplicates(open);
   const grupos = q.data?.data ?? [];
+  const mesclagensAutomaticas = q.data?.meta?.mesclagens_automaticas ?? [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -256,6 +335,13 @@ export function MergeDialog({ open, onOpenChange }: Props) {
               "Mostrando os duplicados entre os contatos mais antigos. Junte estes e reabra para ver os próximos.",
             )}
           </p>
+        ) : null}
+
+        {mesclagensAutomaticas.length > 0 ? (
+          <MesclagensAutomaticas
+            itens={mesclagensAutomaticas}
+            onDesfeita={() => void q.refetch()}
+          />
         ) : null}
 
         <DialogFooter>

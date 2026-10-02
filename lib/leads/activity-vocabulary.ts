@@ -150,6 +150,8 @@ export type ActivityType =
    * timeline cairia no fallback.
    */
   | "contacts_merged"
+  /** Uma reconciliação automática foi desfeita e o card voltou ao formulário. */
+  | "contacts_merge_undone"
   /** Uma entrada automática curta alimentou o negócio já aberto, sem fingir perda. */
   | "lead_merged";
 
@@ -251,6 +253,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // cadastros da mesma pessoa viraram um — e é por isso que este negócio pode
   // ter mudado de contato sem ninguém tê-lo movido.
   contacts_merged: "Contatos duplicados juntados",
+  contacts_merge_undone: "Junção automática desfeita",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */
