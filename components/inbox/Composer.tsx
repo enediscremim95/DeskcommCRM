@@ -382,10 +382,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               )}
               disabled={mode === "note" ? isDisabled : respostaBarrada}
               aria-label={t("Mensagem")}
-              role="combobox"
+              // Continua sendo caixa de texto (`textbox`): trocar o papel para
+              // `combobox` fez as telas e os testes que procuram "Mensagem" não
+              // acharem mais o campo. `aria-expanded` não vale para `textbox`.
               aria-autocomplete="list"
               aria-haspopup="listbox"
-              aria-expanded={menuOpen}
               aria-controls={menuOpen ? TEMPLATE_LISTBOX_ID : undefined}
               aria-activedescendant={
                 menuOpen && activeTemplate ? templateOptionId(activeTemplate.id) : undefined
