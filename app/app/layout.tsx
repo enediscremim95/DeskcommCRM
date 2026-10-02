@@ -44,6 +44,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/acesso-revogado");
   }
 
+  // Daqui em diante a organização ativa já está decidida. Nenhuma destas
+  // promises participa da escolha de tenant ou idioma: elas podem correr sem
+  // transformar a resolução de escopo numa corrida.
+  const storePromise = cookies();
+  const enrolledPromise = isMfaEnrolled();
+
   /**
    * A cor desta organização, serializada, ou `null` quando ela não tem uma.
    *
@@ -53,20 +59,71 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * e não aqui: a precedência é regra do produto, não detalhe deste layout.
    */
   let cssDaOrganizacao: string | null = null;
+  let conexoesCaidas: ConexaoCaida[] = [];
+  let store: Awaited<ReturnType<typeof cookies>>;
+  let enrolled: boolean;
+  let needsMfaGate: boolean;
 
   // EPIC-02: gate /app/* on completed onboarding.
   // EPIC-11: gate /app/* on org not being suspended (S-11.08).
   if (activeOrg) {
     const admin = createAdminClient();
-    const { data: orgRow } = await admin
+    const organizationId = activeOrg.orgId;
+    const orgRowPromise = admin
       .from("organizations")
       .select("onboarded_at, status, settings")
-      .eq("id", activeOrg.orgId)
-      .maybeSingle();
-    activeOrg = {
-      ...activeOrg,
-      integration_access: await integrationAccessForOrganization(admin, activeOrg.orgId),
-    };
+      .eq("id", organizationId)
+      .maybeSingle()
+      .then(({ data }) => data);
+    const integrationAccessPromise = integrationAccessForOrganization(admin, organizationId);
+    const marcaDaInstalacaoPromise = marcaDaInstalacao();
+    const needsMfaPromise = requiresMfa(
+      activeOrg.role,
+      user.is_platform_admin,
+      user.id,
+      organizationId,
+      {
+        // É a MESMA linha que decide onboarding, suspensão, visibilidade e
+        // marca. Reusar a promise elimina a consulta duplicada da política de
+        // MFA sem trocar sua fonte nem aceitar um valor vindo do cliente.
+        organizationSettings: orgRowPromise.then((row) => row?.settings),
+      },
+    );
+
+    // Esta leitura NÃO entra no primeiro lote para um tenant comum: o direito
+    // de ver WhatsApp vem de `integrationAccessPromise`. Um platform admin não
+    // depende dessa configuração e pode iniciar a sonda imediatamente.
+    // A conexão caiu? A consulta mora no seam (`lib/channels/health`), não
+    // aqui: a mesma lista de estados decide esta faixa e o aviso da Central.
+    const conexoesCaidasPromise = (async () => {
+      if (user.is_platform_admin && !user.support) {
+        return await listarConexoesCaidas(admin, organizationId);
+      }
+      const access = await integrationAccessPromise;
+      return access.whatsapp.client_visible
+        ? await listarConexoesCaidas(admin, organizationId)
+        : [];
+    })();
+
+    const [
+      orgRow,
+      integrationAccess,
+      marcaDaInstalacaoResolvida,
+      conexoesResolvidas,
+      resolvedStore,
+      resolvedEnrolled,
+      needsMfa,
+    ] = await Promise.all([
+      orgRowPromise,
+      integrationAccessPromise,
+      marcaDaInstalacaoPromise,
+      conexoesCaidasPromise,
+      storePromise,
+      enrolledPromise,
+      needsMfaPromise,
+    ]);
+
+    activeOrg = { ...activeOrg, integration_access: integrationAccess };
     if (orgRow && !orgRow.onboarded_at && !user.support) redirect("/onboarding");
     if (orgRow?.status === "suspended") redirect("/account-suspended");
     // G4-02: expõe visibility_mode ao client (inbox decide visões visíveis).
@@ -81,7 +138,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // por render, não uma derivação de rampa por requisição.
     const marca = resolverMarcaDaOrganizacao(
       orgRow?.settings ?? null,
-      await marcaDaInstalacao(),
+      marcaDaInstalacaoResolvida,
       env,
     );
 
@@ -125,22 +182,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (Object.keys(marcaDoTenant).length > 0) {
       activeOrg = { ...activeOrg, marca: marcaDoTenant };
     }
+
+    conexoesCaidas = conexoesResolvidas;
+    store = resolvedStore;
+    enrolled = resolvedEnrolled;
+    needsMfaGate = needsMfa;
+  } else {
+    [store, enrolled, needsMfaGate] = await Promise.all([
+      storePromise,
+      enrolledPromise,
+      requiresMfa(undefined, user.is_platform_admin, user.id),
+    ]);
   }
 
-  // A conexão caiu? A consulta mora no seam (`lib/channels/health`), não aqui:
-  // tela que monta o select de `channel_sessions` à mão foi o que deixou três
-  // seletores oferecendo canal arquivado, e o invariante `canais-selecionaveis`
-  // existe por causa disso. De quebra, o filtro de estados fica LITERALMENTE o
-  // mesmo que decide o aviso da Central — duas listas divergiriam com o tempo.
-  const podeVerWhatsApp = Boolean(
-    (user.is_platform_admin && !user.support) || activeOrg?.integration_access?.whatsapp.client_visible,
-  );
-  const conexoesCaidas: ConexaoCaida[] = activeOrg && podeVerWhatsApp
-    ? await listarConexoesCaidas(createAdminClient(), activeOrg.orgId)
-    : [];
-
-  // Read sidebar collapsed state SSR to avoid flash.
-  const store = await cookies();
+  // O cookie e a MFA vieram junto das demais leituras independentes.
   const collapsed = store.get("sidebar_collapsed")?.value === "1";
 
   const impersonating = user.support ? {
@@ -148,15 +203,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     expiresAt: user.support.expires_at, accessMode: user.support.access_mode,
   } : null;
 
-  const enrolled = await isMfaEnrolled();
-  // A decisão deixou de ser uma constante de papel: ela lê a política de quem
-  // pode exigir (a plataforma e a empresa). Ver `lib/auth/politica-mfa.ts`.
-  const needsMfaGate = await requiresMfa(
-    activeOrg?.role,
-    user.is_platform_admin,
-    user.id,
-    activeOrg?.orgId,
-  );
   const shell = (
     <VoiceCallProvider>
       <AppShell sidebarCollapsed={collapsed}>{children}</AppShell>
