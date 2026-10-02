@@ -25,8 +25,16 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { env } from "@/lib/env";
+import {
+  agendarEncerramentoDoApp,
+  avaliarAutoCuraBanco,
+  FALHAS_DE_POOL_ANTES_DO_REINICIO,
+  type DiagnosticoBanco,
+} from "@/lib/health/auto-cura-banco";
+import { logger } from "@/lib/logger";
 import { alvoDe, classificarFalhaDeAlcance, type FalhaDeAlcance } from "@/lib/net/alcance";
 import { validarConfigRedisRest } from "@/lib/redis-config";
+import { statusReservaWebhook } from "@/lib/webhooks/lead-reserve";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,15 +47,22 @@ type MotivoDeFalha =
   | "credencial_recusada"
   | "resposta_inesperada"
   | "nao_configurado"
-  | "configuracao_invalida";
+  | "configuracao_invalida"
+  | "itens_pendentes";
 
 type Check = {
   status: CheckStatus;
   latency_ms: number;
   error?: string;
   reason?: MotivoDeFalha;
+  /** Código estruturado devolvido pelo PostgREST, quando houver. */
+  code?: string;
   /** Protocolo + host + porta que tentamos. Só com `?verbose=1` autenticado. */
   target?: string;
+  count?: number;
+  capacity?: number;
+  oldest_received_at?: string | null;
+  oldest_age_seconds?: number;
 };
 
 const TIMEOUT_MS = 3_000;
@@ -55,9 +70,7 @@ const TIMEOUT_MS = 3_000;
 async function withTimeout<T>(p: Promise<T>, ms = TIMEOUT_MS): Promise<T> {
   return Promise.race([
     p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms),
-    ),
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms)),
   ]);
 }
 
@@ -83,11 +96,22 @@ async function checkSupabase(): Promise<Check> {
     if (res.status === 200 || res.status === 401 || res.status === 403) {
       return { status: "ok", latency_ms: Date.now() - t0, target: alvoDe(url) };
     }
+    let code: string | undefined;
+    try {
+      const body: unknown = await res.clone().json();
+      if (typeof body === "object" && body !== null && "code" in body) {
+        const recebido = (body as { code?: unknown }).code;
+        if (typeof recebido === "string") code = recebido;
+      }
+    } catch {
+      // Resposta sem JSON continua sendo uma falha HTTP válida e visível.
+    }
     return {
       status: "down",
       latency_ms: Date.now() - t0,
       error: `http_${res.status}`,
       reason: motivoDoStatusHttp(res.status),
+      ...(code ? { code } : {}),
       target: alvoDe(url),
     };
   } catch (e) {
@@ -126,7 +150,12 @@ async function checkRedis(): Promise<Check> {
   const config = validarConfigRedisRest(url, token);
   if (!config.ok) {
     if (config.reason === "nao_configurado") {
-      return { status: "degraded", latency_ms: 0, error: "not_configured", reason: "nao_configurado" };
+      return {
+        status: "degraded",
+        latency_ms: 0,
+        error: "not_configured",
+        reason: "nao_configurado",
+      };
     }
     return {
       status: "down",
@@ -168,11 +197,39 @@ async function checkRedis(): Promise<Check> {
   }
 }
 
+async function checkWebhookReserve(): Promise<Check> {
+  const t0 = Date.now();
+  try {
+    const reserve = await withTimeout(statusReservaWebhook());
+    return {
+      status: reserve.count > 0 ? "degraded" : "ok",
+      latency_ms: Date.now() - t0,
+      ...(reserve.count > 0 ? { reason: "itens_pendentes" as const } : {}),
+      count: reserve.count,
+      capacity: reserve.capacity,
+      oldest_received_at: reserve.oldest_received_at,
+      oldest_age_seconds: reserve.oldest_age_seconds,
+    };
+  } catch (error) {
+    return {
+      status: "down",
+      latency_ms: Date.now() - t0,
+      error: error instanceof Error ? error.message : "reserve_check_failed",
+      reason: classificarFalhaDeAlcance(error),
+    };
+  }
+}
+
 async function checkWaha(): Promise<Check> {
   const t0 = Date.now();
   const base = env.WAHA_API_BASE_URL;
   if (!base) {
-    return { status: "degraded", latency_ms: 0, error: "not_configured", reason: "nao_configurado" };
+    return {
+      status: "degraded",
+      latency_ms: 0,
+      error: "not_configured",
+      reason: "nao_configurado",
+    };
   }
   try {
     // /api/sessions valida conectividade E autenticação num tiro só. O WAHA Core não
@@ -223,6 +280,11 @@ function segredoInternoConfere(req: NextRequest): boolean {
   });
 }
 
+function diagnosticoDoBanco(check: Check): DiagnosticoBanco {
+  if (check.status === "ok") return "ok";
+  return check.code === "PGRST003" ? "pool_saturado" : "banco_indisponivel";
+}
+
 /**
  * Sem o segredo, o endereço não sai — nem pelo `target`, nem pelo `error`.
  *
@@ -262,15 +324,41 @@ function semAlvo(check: Check): Check {
 }
 
 export async function GET(req: NextRequest) {
-  const [supabase, redis, waha] = await Promise.all([
+  const [supabase, redis, waha, webhookReserve] = await Promise.all([
     checkSupabase(),
     checkRedis(),
     checkWaha(),
+    checkWebhookReserve(),
   ]);
 
   const verboso = req.nextUrl.searchParams.get("verbose") === "1" && segredoInternoConfere(req);
   const filtrar = verboso ? (c: Check) => c : semAlvo;
-  const checks = { supabase: filtrar(supabase), redis: filtrar(redis), waha: filtrar(waha) };
+  const checks = {
+    supabase: filtrar(supabase),
+    redis: filtrar(redis),
+    waha: filtrar(waha),
+    webhook_reserve: filtrar(webhookReserve),
+  };
+  const sondaAutoCura =
+    req.headers.get("x-self-heal-probe") === "1" && segredoInternoConfere(req);
+  const autoCura = await avaliarAutoCuraBanco({
+    diagnostico: diagnosticoDoBanco(supabase),
+    sonda_autorizada: sondaAutoCura,
+    ao_agendar_reinicio: () => {
+      logger.error("auto_cura_banco_reiniciando_app", {
+        code: supabase.code,
+        falhas_consecutivas: FALHAS_DE_POOL_ANTES_DO_REINICIO,
+      });
+      agendarEncerramentoDoApp();
+    },
+  });
+
+  if (autoCura.estado.status === "limite_de_reinicios_atingido") {
+    logger.error("auto_cura_banco_limite_atingido", {
+      reinicios_na_janela: autoCura.estado.reinicios_na_janela,
+      bloqueado_ate: autoCura.estado.bloqueado_ate,
+    });
+  }
 
   const anyDown = Object.values(checks).some((c) => c.status === "down");
   const anyDegraded = Object.values(checks).some((c) => c.status === "degraded");
@@ -298,6 +386,7 @@ export async function GET(req: NextRequest) {
         version: process.env.APP_VERSION || "desconhecido",
         timestamp: new Date().toISOString(),
         checks,
+        auto_cura_banco: autoCura.estado,
       },
     },
     { status: httpStatus },

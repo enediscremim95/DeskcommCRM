@@ -42,10 +42,11 @@ services:
       waha:
         condition: service_started
     healthcheck:
-      # Probe TCP puro (node existe na imagem; curl/nc não). NÃO usar /api/v1/health:
-      # ele dá 503 se WAHA/Redis caem, o que deixaria o app "unhealthy" e derrubaria
-      # o Caddy junto (blackout total por uma dependência secundária).
-      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      # Exercita o Supabase pela mesma rota usada na operação. O script ignora
+      # Redis/WAHA para uma dependência secundária não derrubar a entrada do CRM.
+      # Três PGRST003 consecutivos fazem o app encerrar; falha de alcance do banco
+      # só reprova esta sonda, pois reiniciar o app não recupera um banco fora.
+      test: ["CMD", "node", "/opt/app-healthcheck.mjs"]
       interval: 30s
       timeout: 5s
       retries: 5

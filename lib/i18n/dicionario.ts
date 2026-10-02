@@ -508,6 +508,8 @@ export const DICIONARIO: Traducoes = {
   "A seleção anterior contém áreas que não existem mais. Confira e salve novamente.": { es: "La selección anterior contiene áreas que ya no existen. Revísala y vuelve a guardar." },
   "Salvar interface": { es: "Guardar interfaz" },
   "Sua navegação foi atualizada. Você pode continuar nesta tela.": { es: "Tu navegación se ha actualizado. Puedes continuar en esta pantalla." },
+  "Você recebeu acesso a outra organização. Use o seletor para escolher onde trabalhar.": { es: "Has recibido acceso a otra organización. Usa el selector para elegir dónde trabajar." },
+  "Sua lista de organizações foi atualizada. Você pode continuar nesta tela.": { es: "Tu lista de organizaciones se ha actualizado. Puedes continuar en esta pantalla." },
   // ─── Cabeçalhos de grupo da barra lateral ───
   //
   // ⚠️ NUNCA TIVERAM TRADUÇÃO, e o defeito era invisível: `Sidebar.tsx:83` já

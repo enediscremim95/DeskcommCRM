@@ -10,18 +10,90 @@
   "lanes": [
     { "id": "pessoa", "label": "Pessoa" },
     { "id": "app", "label": "Aplicativo" },
-    { "id": "db", "label": "Banco" }
+    { "id": "db", "label": "Banco" },
+    { "id": "reserva", "label": "Reserva externa" }
   ],
   "mainPath": ["assistente", "fonte", "script", "entrada", "captura", "resumo"],
   "nodes": [
-    { "id": "assistente", "lane": "pessoa", "col": 0, "type": "ui", "label": "Página + funil + etapa + responsável" },
-    { "id": "fonte", "lane": "db", "col": 1, "type": "database", "label": "webhook_sources: destino e responsável padrão" },
-    { "id": "script", "lane": "app", "col": 2, "type": "lib", "label": "Script estático: página + UTMs + external_id" },
-    { "id": "entrada", "lane": "app", "col": 3, "type": "route", "label": "POST /webhooks/in/[token]: cria contato e lead" },
-    { "id": "captura", "lane": "db", "col": 4, "type": "database", "label": "webhook_lead_captures + source_metadata" },
-    { "id": "resumo", "lane": "pessoa", "col": 5, "type": "ui", "label": "30 dias: origem, campanha, página e sem marcação" },
-    { "id": "vigia", "lane": "app", "col": 4, "type": "service", "label": "Cron existente verifica 48h sem lead" },
-    { "id": "central", "lane": "pessoa", "col": 5, "type": "ui", "label": "Central mostra aviso crítico da fonte" }
+    {
+      "id": "assistente",
+      "lane": "pessoa",
+      "col": 0,
+      "type": "ui",
+      "label": "Página + funil + etapa + responsável"
+    },
+    {
+      "id": "fonte",
+      "lane": "db",
+      "col": 1,
+      "type": "database",
+      "label": "webhook_sources: destino e responsável padrão"
+    },
+    {
+      "id": "script",
+      "lane": "app",
+      "col": 2,
+      "type": "lib",
+      "label": "Script estático: página + UTMs + external_id"
+    },
+    {
+      "id": "entrada",
+      "lane": "app",
+      "col": 3,
+      "type": "route",
+      "label": "POST /webhooks/in/[token]: cria contato e lead"
+    },
+    {
+      "id": "captura",
+      "lane": "db",
+      "col": 4,
+      "type": "database",
+      "label": "webhook_lead_captures + source_metadata"
+    },
+    {
+      "id": "resumo",
+      "lane": "pessoa",
+      "col": 5,
+      "type": "ui",
+      "label": "30 dias: origem, campanha, página e sem marcação"
+    },
+    {
+      "id": "vigia",
+      "lane": "app",
+      "col": 4,
+      "type": "service",
+      "label": "Cron existente verifica 48h sem lead"
+    },
+    {
+      "id": "central",
+      "lane": "pessoa",
+      "col": 5,
+      "type": "ui",
+      "label": "Central mostra aviso crítico da fonte"
+    },
+    {
+      "id": "redis-reserva",
+      "lane": "reserva",
+      "col": 4,
+      "type": "database",
+      "label": "Redis: corpos cifrados por até 24 h",
+      "sublabel": "3.600 itens; 16 KiB por corpo"
+    },
+    {
+      "id": "dreno-reserva",
+      "lane": "app",
+      "col": 4,
+      "type": "service",
+      "label": "Cron a cada minuto drena pelo mesmo mapeamento"
+    },
+    {
+      "id": "saude-reserva",
+      "lane": "app",
+      "col": 5,
+      "type": "api",
+      "label": "/api/v1/health",
+      "sublabel": "quantidade e idade sem consultar Postgres"
+    }
   ],
   "edges": [
     { "from": "assistente", "to": "fonte", "label": "configuração validada na organização" },
@@ -31,6 +103,22 @@
     { "from": "captura", "to": "resumo", "label": "agregação dos últimos 30 dias" },
     { "from": "fonte", "to": "vigia", "label": "ativa e já recebeu pelo menos uma vez" },
     { "from": "vigia", "to": "central", "label": "48h sem lead abre episódio único" },
-    { "from": "entrada", "to": "vigia", "label": "novo lead resolve o aviso aberto" }
+    { "from": "entrada", "to": "vigia", "label": "novo lead resolve o aviso aberto" },
+    {
+      "from": "entrada",
+      "to": "redis-reserva",
+      "label": "banco indisponível: aceita depois de validar token, assinatura e campos"
+    },
+    { "from": "dreno-reserva", "to": "redis-reserva", "label": "lê o lote mais antigo" },
+    {
+      "from": "redis-reserva",
+      "to": "entrada",
+      "label": "reprocessa com external_id estável por organização"
+    },
+    {
+      "from": "redis-reserva",
+      "to": "saude-reserva",
+      "label": "contagem e idade do item mais antigo"
+    }
   ]
 }
