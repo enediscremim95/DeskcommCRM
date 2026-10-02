@@ -47,7 +47,10 @@ describe("0279 · detalhe do motivo da perda", () => {
         '${ORG}', '${PIPELINE}', '${LOST_STAGE}', 'Outro com detalhe', 'lost',
         'other', 'Cliente mudou de cidade'
       ) returning id
-    `);
+    `)
+      // O psql imprime o id e depois a linha "INSERT 0 1": só a primeira é o id.
+      .split("\n")[0]!
+      .trim();
 
     expect(
       sql(`select lost_reason || ':' || lost_reason_detail from public.crm_leads where id='${leadId}'`),
@@ -62,7 +65,10 @@ describe("0279 · detalhe do motivo da perda", () => {
         '${ORG}', '${PIPELINE}', '${LOST_STAGE}', 'Legado preservado', 'lost',
         'Motivo cadastrado hoje'
       ) returning id
-    `);
+    `)
+      // O psql imprime o id e depois a linha "INSERT 0 1": só a primeira é o id.
+      .split("\n")[0]!
+      .trim();
 
     expect(
       sql(`select lost_reason from public.crm_leads where id='${leadId}'`),
