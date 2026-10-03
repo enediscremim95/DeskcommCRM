@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LeadPageClient } from "@/components/leads/LeadPageClient";
-import type { Lead } from "@/lib/types/leads";
+import { useContactLeads } from "@/hooks/contacts/useContactLeads";
+import type { Lead, LeadComContexto } from "@/lib/types/leads";
 
 vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: ReactNode }) => (
@@ -23,6 +24,7 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
 
 vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useTagDeIdioma: () => "pt-BR" }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
+vi.mock("@/hooks/contacts/useContactLeads", () => ({ useContactLeads: vi.fn() }));
 
 vi.mock("@/hooks/inbox/useConversation", () => ({
   isNotFound: () => false,
@@ -85,7 +87,11 @@ vi.mock("@/components/inbox/RetentionNotice", () => ({
 
 vi.mock("@/components/kanban/LeadFieldsForm", () => ({ LeadFieldsForm: () => null }));
 vi.mock("@/components/kanban/LoseLeadDialog", () => ({ LoseLeadDialog: () => null }));
-vi.mock("@/components/leads/DadosCompletosDoLead", () => ({ DadosCompletosDoLead: () => null }));
+vi.mock("@/components/leads/DadosCompletosDoLead", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("@/components/leads/DadosCompletosDoLead")>();
+  return { ...original, DadosCompletosDoLead: () => null };
+});
 vi.mock("@/components/leads/DeleteLeadDialog", () => ({ DeleteLeadDialog: () => null }));
 vi.mock("@/components/leads/FollowupsDoLead", () => ({ FollowupsDoLead: () => null }));
 vi.mock("@/components/leads/LeadQualification", () => ({ LeadQualification: () => null }));
@@ -126,7 +132,29 @@ const lead: Lead = {
   created_by_user_id: null,
 };
 
+const outroNegocio: LeadComContexto = {
+  ...lead,
+  id: "lead-2",
+  title: "Negócio do formulário",
+  pipeline_name: "Funil principal",
+  stage_name: "Novo",
+  field_defs: [],
+};
+
+function mockNegociosDoContato(data: LeadComContexto[]) {
+  vi.mocked(useContactLeads).mockReturnValue({
+    data,
+    isLoading: false,
+    isError: false,
+  } as ReturnType<typeof useContactLeads>);
+}
+
 describe("rodapé da conversa na página do lead", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockNegociosDoContato([]);
+  });
+
   it("limita a grade à tela no desktop e dá rolagem própria às colunas", () => {
     render(
       <LeadPageClient
@@ -181,5 +209,47 @@ describe("rodapé da conversa na página do lead", () => {
     expect(chatWrapper).toHaveClass("min-h-0", "flex-1", "overflow-hidden");
     expect(chatWrapper?.parentElement).toBe(footer.parentElement);
     expect(footer).not.toContainElement(screen.getByTestId("chat-thread"));
+  });
+
+  it("mostra outros negócios recolhidos com a contagem na ficha do lead", () => {
+    mockNegociosDoContato([outroNegocio]);
+
+    render(
+      <LeadPageClient
+        lead={lead}
+        pipelineName="Funil principal"
+        stageName="Novo"
+        fieldDefs={[]}
+        contact={null}
+        conversationId="conversation-1"
+        hasConnectedChannel
+        canReplyInConversation
+      />,
+    );
+
+    const secao = screen.getByRole("button", { name: "Outros negócios deste contato (1)" });
+    expect(secao).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById(secao.getAttribute("aria-controls")!)).toHaveAttribute(
+      "hidden",
+    );
+  });
+
+  it("não mostra a seção na ficha quando o contato não tem outro negócio", () => {
+    render(
+      <LeadPageClient
+        lead={lead}
+        pipelineName="Funil principal"
+        stageName="Novo"
+        fieldDefs={[]}
+        contact={null}
+        conversationId="conversation-1"
+        hasConnectedChannel
+        canReplyInConversation
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /Outros negócios deste contato/ }),
+    ).not.toBeInTheDocument();
   });
 });

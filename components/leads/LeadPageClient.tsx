@@ -33,6 +33,7 @@ import { apiClient } from "@/lib/api/client";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { ChatCircle, Gear, Phone, Trash } from "@/lib/ui/icons";
 import { DadosCompletosDoLead } from "./DadosCompletosDoLead";
+import { OutrosNegociosDoContato } from "./OutrosNegociosDoContato";
 import { FollowupsDoLead } from "./FollowupsDoLead";
 import { DeleteLeadDialog } from "./DeleteLeadDialog";
 import { StageSelector } from "./StageSelector";
@@ -380,6 +381,10 @@ export function LeadPageClient({
               pipelineName={pipelineName}
               stageName={nomeDaEtapa}
               fieldDefs={fieldDefs}
+            />
+            <OutrosNegociosDoContato
+              contactId={leadAtual.contact_id}
+              leadIdAtual={leadAtual.id}
             />
             <FollowupsDoLead
               leadId={leadAtual.id}
