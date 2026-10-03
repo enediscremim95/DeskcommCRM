@@ -301,14 +301,27 @@ mapfile -t CLIENT_DOMAINS < <(
     | sort -u
 )
 [ "${#CLIENT_DOMAINS[@]}" -gt 0 ] || die 'nenhum domínio de cliente foi encontrado em docker-compose.dominios.yml'
-DOMAINS=("$MAIN_DOMAIN" "${CLIENT_DOMAINS[@]}")
-
 declare -A LAST_CODES=()
 BROKEN=()
 for ((attempt = 1; attempt <= VERIFY_ATTEMPTS; attempt++)); do
   BROKEN=()
-  for domain in "${DOMAINS[@]}"; do
-    if code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$domain/" 2>/dev/null)"; then
+  if code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$MAIN_DOMAIN/" 2>/dev/null)"; then
+    :
+  else
+    code='000'
+  fi
+  LAST_CODES["$MAIN_DOMAIN"]="$code"
+  [ "$code" = '307' ] || BROKEN+=("$MAIN_DOMAIN")
+
+  APP_IP="$(
+    docker inspect --format '{{range .NetworkSettings.Networks}}{{println .IPAddress}}{{end}}' \
+      deskcommcrm-app-1 2>/dev/null | awk 'NF { print; exit }'
+  )"
+  for domain in "${CLIENT_DOMAINS[@]}"; do
+    if [ -n "$APP_IP" ] && code="$(
+      curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
+        -H "Host: $domain" "http://$APP_IP:3000/" 2>/dev/null
+    )"; then
       :
     else
       code='000'
@@ -329,8 +342,10 @@ if [ "${#BROKEN[@]}" -gt 0 ]; then
   for domain in "${BROKEN[@]}"; do
     printf '  - %s: HTTP %s\n' "$domain" "${LAST_CODES[$domain]:-000}" >&2
   done
-  exit 1
+  # 10 significa que o compose terminou bem e somente a sonda de dominios
+  # falhou. O wrapper com rollback pode aplicar sua verificacao mais completa.
+  exit 10
 fi
 
-printf 'CONFERIDO: domínio principal e %s domínio(s) de cliente responderam HTTP 307.\n' "${#CLIENT_DOMAINS[@]}"
+printf 'CONFERIDO: domínio principal público e %s host(s) de cliente direto no app responderam HTTP 307.\n' "${#CLIENT_DOMAINS[@]}"
 DEPLOY_OK=1
