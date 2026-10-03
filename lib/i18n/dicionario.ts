@@ -1797,6 +1797,10 @@ export const DICIONARIO: Traducoes = {
   "Você ainda não tem modelos de mensagem. Crie um em Ajustes → Modelos e ele aparece aqui.": {
     es: "Todavía no tienes plantillas de mensaje. Créala en Ajustes → Plantillas y aparecerá aquí.",
   },
+  "Modelos de mensagem": { es: "Plantillas de mensaje" },
+  "Nenhum modelo salvo. Crie em Modelos de mensagem.": {
+    es: "No hay ninguna plantilla guardada. Créala en Plantillas de mensaje.",
+  },
   "Escolha um modelo": { es: "Elige una plantilla" },
   Nenhum: { es: "Ninguno" },
   "Como escrever a mensagem": { es: "Cómo escribir el mensaje" },
