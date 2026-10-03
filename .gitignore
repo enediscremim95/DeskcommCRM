@@ -146,3 +146,6 @@ backups/
 *.dump
 .grok/
 System.Collections.Hashtable
+
+# Atalhos temporários do Codex para rodar o Docker via WSL. Nunca versionar.
+.codex-tmp/
