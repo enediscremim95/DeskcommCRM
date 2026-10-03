@@ -240,13 +240,13 @@ export function LeadPageClient({
   return (
     <OpenConversationProvider conversationId={conversationId}>
       <div
-        className="grid min-h-[calc(100dvh-8.5rem)] overflow-hidden rounded-xl border border-border bg-surface shadow-xs lg:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]"
+        className="grid min-h-[calc(100dvh-8.5rem)] overflow-hidden rounded-xl border border-border bg-surface shadow-xs lg:h-[calc(100dvh-8.5rem)] lg:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]"
         data-testid="lead-page-workspace"
         data-realtime-status={timeline.realtimeStatus.toLowerCase()}
         data-refetch-divergencias={timeline.seguranca.divergencias}
       >
         {/* ── Esquerda: o negócio, a etapa e a pessoa ─────────────────────── */}
-        <aside className="min-w-0 overflow-y-auto border-b border-border bg-surface-elevated/40 lg:border-r lg:border-b-0">
+        <aside className="min-w-0 overflow-y-auto border-b border-border bg-surface-elevated/40 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:border-r lg:border-b-0">
           <header className="border-b border-border bg-surface px-4 pt-4 pb-4">
             <p className="truncate text-[11px] font-medium tracking-[0.08em] text-text-muted uppercase">
               {pipelineName}
@@ -402,7 +402,7 @@ export function LeadPageClient({
         </aside>
 
         {/* ── Direita: a linha do tempo com a conversa ────────────────────── */}
-        <section className="flex min-h-[42rem] min-w-0 flex-col bg-surface lg:min-h-0">
+        <section className="flex min-h-[42rem] min-w-0 flex-col bg-surface lg:h-full lg:min-h-0">
           {conversation.isLoading ? (
             <div className="flex flex-1 items-center justify-center text-sm text-text-muted">
               {t("Carregando conversa…")}
