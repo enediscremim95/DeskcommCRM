@@ -77,6 +77,8 @@ const COPY: Record<string, { variant: Variant; msg?: string }> = {
     variant: "error",
     msg: "Erro interno. Tente de novo em instantes.",
   },
+  // A rota explica qual escolha resolve; repetir a mesma tentativa não resolve.
+  lost_reason_invalid: { variant: "warning" },
 
   // ---- Agenda ----
   //

@@ -250,8 +250,8 @@ exposes:
     response_schema: "{ data: Lead }"
   - type: api_route
     id: "POST /api/v1/leads/[id]/lose"
-    request_schema: "{ lost_reason: string (min 1) }"
-    error_codes: [lost_reason_required, resource_not_found]
+    request_schema: "{ lost_reason: string (min 1), lost_reason_detail?: string | null (max 500) }"
+    error_codes: [lost_reason_required, lost_reason_invalid, resource_not_found]
 ```
 
 #### Definition of Done

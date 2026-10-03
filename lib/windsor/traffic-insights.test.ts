@@ -65,6 +65,28 @@ describe("situação dos leads no relatório", () => {
     });
   });
 
+  it("agrupa detalhes diferentes de Outro na mesma categoria", () => {
+    const result = buildTrafficLeadSituation(
+      [
+        {
+          status: "lost",
+          stage_id: "lost",
+          lost_reason: "other",
+          lost_reason_detail: "Mudou de cidade",
+        },
+        {
+          status: "lost",
+          stage_id: "lost",
+          lost_reason: "other",
+          lost_reason_detail: "Pausou o projeto",
+        },
+      ],
+      stages,
+    );
+
+    expect(result.loss_reasons).toEqual([{ reason: "other", count: 2 }]);
+  });
+
   it("lê todas as etapas reais do Kanban e conta somente os leads na etapa exata", () => {
     expect(
       buildTrafficKanbanStages(

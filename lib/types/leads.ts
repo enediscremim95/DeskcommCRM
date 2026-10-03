@@ -44,6 +44,8 @@ export interface Lead {
   /** Nota humana, separada do score calculado pela IA. */
   qualification: number | null;
   lost_reason: string | null;
+  /** Texto livre informado quando `lost_reason` é `other`; não entra no agrupamento do funil. */
+  lost_reason_detail?: string | null;
   position_in_stage: number;
   value_cents: number | null;
   currency: string | null;

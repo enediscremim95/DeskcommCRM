@@ -65,6 +65,7 @@ export const ApiErrorCodes = {
   invalid_state_transition: "invalid_state_transition",
   invalid_owner: "invalid_owner", // novo dono não é membro ativo agent+ da org (bulk assign, G3-04)
   trigger_kind_not_implemented: "trigger_kind_not_implemented", // publish de followup-flow com kind sem motor de enrollment (stage_change/conversation_end)
+  lost_reason_invalid: "lost_reason_invalid",
 
   // 415 — tipo de mídia
   unsupported_media_type: "unsupported_media_type",

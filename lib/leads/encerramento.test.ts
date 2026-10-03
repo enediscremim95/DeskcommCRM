@@ -30,9 +30,11 @@ type Row = Record<string, unknown>;
 function makeDb({
   leads = [],
   stages = [],
+  updateError = null,
 }: {
   leads?: Row[];
   stages?: Row[];
+  updateError?: { code: string; message: string } | null;
 } = {}) {
   const tables: Record<string, Row[]> = {
     crm_leads: leads,
@@ -93,6 +95,7 @@ function makeDb({
       },
       then: async (resolve: (value: unknown) => unknown) => {
         if (operation === "update") {
+          if (updateError) return resolve({ data: null, error: updateError });
           const rows = tables[table] ?? [];
           for (const row of rows) {
             if (filters.every(([column, value]) => row[column] === value)) {
@@ -232,6 +235,47 @@ describe("encerraDemanda", () => {
     expect(result.lead).toMatchObject({ status: "won", stage_id: WON_STAGE, position_in_stage: 5000 });
     expect(db.updates[0]).toMatchObject({ stage_id: WON_STAGE, position_in_stage: 5000 });
     expect(db.rpcs).toEqual(["fn_reservar_posicao_lead_na_etapa"]);
+  });
+
+  it("grava o detalhe separado da categoria da perda", async () => {
+    const db = makeDb({ leads: [baseLead()], stages: baseStages() });
+
+    const result = await encerraDemanda(db.client as never, ctx, {
+      leadId: LEAD,
+      desfecho: "lost",
+      motivo: "other",
+      detalhe: "  Cliente mudou de cidade  ",
+    });
+
+    expect(db.updates[0]).toMatchObject({
+      lost_reason: "other",
+      lost_reason_detail: "Cliente mudou de cidade",
+    });
+    expect(result.lead).toMatchObject({
+      status: "lost",
+      lost_reason: "other",
+      lost_reason_detail: "Cliente mudou de cidade",
+    });
+  });
+
+  it("traduz a recusa do banco em orientação útil", async () => {
+    const db = makeDb({
+      leads: [baseLead()],
+      stages: baseStages(),
+      updateError: { code: "22023", message: "lost_reason_invalid: motivo inventado" },
+    });
+
+    await expect(
+      encerraDemanda(db.client as never, ctx, {
+        leadId: LEAD,
+        desfecho: "lost",
+        motivo: "motivo inventado",
+      }),
+    ).rejects.toMatchObject({
+      code: "lost_reason_invalid",
+      status: 422,
+      message: "Esse motivo não está disponível neste funil. Escolha um motivo da lista.",
+    });
   });
 
   it("não alcança lead de outra organização", async () => {

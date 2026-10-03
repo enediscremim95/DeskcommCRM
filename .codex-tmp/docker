@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+command_line="docker"
+for argument in "$@"; do
+  printf -v quoted '%q' "$argument"
+  command_line+=" $quoted"
+done
+
+exec /c/Windows/System32/wsl.exe sh -lc "$command_line"
