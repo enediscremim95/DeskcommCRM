@@ -143,3 +143,15 @@ export const bulkLeadActionSchema = z.discriminatedUnion("action", [
   }),
 ]);
 export type BulkLeadActionInput = z.infer<typeof bulkLeadActionSchema>;
+
+/** Revisão humana: um negócio vazio é absorvido por outro do mesmo contato e funil. */
+export const mergeDuplicateLeadSchema = z
+  .object({
+    survivor_lead_id: z.string().uuid(),
+    absorbed_lead_id: z.string().uuid(),
+  })
+  .strict()
+  .refine((v) => v.survivor_lead_id !== v.absorbed_lead_id, {
+    message: "Os negócios precisam ser diferentes.",
+  });
+export type MergeDuplicateLeadInput = z.infer<typeof mergeDuplicateLeadSchema>;

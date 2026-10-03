@@ -9623,6 +9623,44 @@ export const DICIONARIO: Traducoes = {
   },
   "Arquivo removido após o prazo de retenção": { es: "Archivo eliminado después del plazo de retención" },
   "Arquivo não guardado porque o limite de mídia foi atingido": { es: "Archivo no guardado porque se alcanzó el límite de medios" },
+  "Não foi possível concluir.": { es: "No se pudo completar." },
+  Conjunto: { es: "Conjunto" },
+  "Sem contexto": { es: "Sin contexto" },
+  Fica: { es: "Se conserva" },
+  "Sem origem, campanha, campos, valor ou marcadores.": { es: "Sin origen, campaña, campos, valor ni etiquetas." },
+  "Não foi possível carregar.": { es: "No se pudo cargar." },
+  "Negócios juntados.": { es: "Negocios unidos." },
+  Desfazer: { es: "Deshacer" },
+  "Não foi possível juntar.": { es: "No se pudieron unir." },
+  "Junção desfeita.": { es: "Se deshizo la unión." },
+  "Não foi possível desfazer.": { es: "No se pudo deshacer." },
+  "Negócios duplicados": { es: "Negocios duplicados" },
+  "Confira os negócios abertos do mesmo contato e funil. Nada é juntado sem sua confirmação.": {
+    es: "Revisa los negocios abiertos del mismo contacto y embudo. Nada se une sin tu confirmación.",
+  },
+  "Nenhum negócio duplicado para conferir.": { es: "No hay negocios duplicados para revisar." },
+  "Negócios para conferir": { es: "Negocios para revisar" },
+  "Todos estão vazios. O mais antigo fica.": { es: "Todos están vacíos. Se conserva el más antiguo." },
+  "O negócio com origem e campanha fica. Os vazios podem ser absorvidos.": {
+    es: "Se conserva el negocio con origen y campaña. Los vacíos pueden ser absorbidos.",
+  },
+  "Junções recentes": { es: "Uniones recientes" },
+  "Você pode desfazer enquanto o histórico não tiver mudado.": {
+    es: "Puedes deshacer mientras el historial no haya cambiado.",
+  },
+  "Nenhuma junção recente.": { es: "No hay uniones recientes." },
+  "Absorveu: {{absorbed}}": { es: "Absorbió: {{absorbed}}" },
+  "Juntar estes negócios?": { es: "¿Unir estos negocios?" },
+  'O negócio "{{survivor}}" fica. O negócio "{{absorbed}}" será absorvido e sairá do funil. Você poderá desfazer depois.': {
+    es: 'El negocio "{{survivor}}" se conserva. El negocio "{{absorbed}}" será absorbido y saldrá del embudo. Podrás deshacerlo después.',
+  },
+  "Juntando...": { es: "Uniendo..." },
+  "Juntar negócios": { es: "Unir negocios" },
+  "Desfazer esta junção?": { es: "¿Deshacer esta unión?" },
+  'O negócio "{{absorbed}}" voltará com os registros que foram movidos.': {
+    es: 'El negocio "{{absorbed}}" volverá con los registros que se movieron.',
+  },
+  "Desfazendo...": { es: "Deshaciendo..." },
 };
 
 /**

@@ -203,6 +203,16 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    href: "/app/negocios-duplicados",
+    label: "Negócios duplicados",
+    description: "Confira e junte negócios vazios repetidos do mesmo contato, com opção de desfazer.",
+    icon: "UsersThree",
+    group: "crm",
+    section: "Cuidar da base",
+    minRole: "manager",
+    sidebar: true,
+  },
+  {
     // Extraída do PR #418 (@clinicacentrodosorrisosc-code). Fica no CRM e no
     // sidebar porque é tela de USO DIÁRIO — quem atende abre para ver o que
     // vence hoje, do mesmo jeito que abre o Inbox. Sem `minRole`: `viewer` VÊ
