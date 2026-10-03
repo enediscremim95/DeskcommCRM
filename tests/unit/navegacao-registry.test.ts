@@ -59,6 +59,8 @@ describe("canSee", () => {
   it("nega quem está abaixo do minRole", () => {
     expect(canSee(dest("/app/audit"), MANAGER.platform, MANAGER.role)).toBe(true);
     expect(canSee(dest("/app/audit"), AGENT.platform, AGENT.role)).toBe(false);
+    expect(canSee(dest("/app/negocios-duplicados"), MANAGER.platform, MANAGER.role)).toBe(true);
+    expect(canSee(dest("/app/negocios-duplicados"), AGENT.platform, AGENT.role)).toBe(false);
   });
 
   it("destino sem minRole é visível até para viewer", () => {
@@ -105,9 +107,10 @@ describe("sidebarGroups", () => {
     expect(hub).toContain("/app/settings/tenant/pipelines");
   });
 
-  it("o CRM ficou sem hub, e o sidebar dele mostra só as três portas escolhidas", () => {
+  it("o CRM ficou sem hub, e o sidebar dele mostra só as quatro portas escolhidas", () => {
     // Decisão do dono em 17/09/2026: o hub saiu e o grupo ficou limitado a
-    // Funis, Contatos e Tarefas. As demais telas seguem no registro e no ⌘K;
+    // Funis, Contatos e Tarefas. A revisão humana de duplicados acrescentou uma
+    // quarta porta manager+; as demais telas seguem no registro e no ⌘K;
     // este teste não pode continuar ressuscitando a navegação anterior.
     //
     // A lista é EXATA de propósito. `toContain` deixaria um sexto item entrar
@@ -116,6 +119,7 @@ describe("sidebarGroups", () => {
     expect(crm?.items.map((i) => i.href)).toEqual([
       "/app/kanban",
       "/app/contacts",
+      "/app/negocios-duplicados",
       "/app/tasks",
     ]);
     expect(NAV_GROUPS.find((g) => g.id === "crm")?.hub).toBeUndefined();
@@ -151,16 +155,21 @@ describe("sidebarGroups", () => {
 });
 
 describe("hubSections", () => {
-  it("o catálogo do CRM preserva as cinco telas nas duas seções", () => {
+  it("o catálogo do CRM preserva as seis telas nas três seções", () => {
     // As seções são a régua do sidebar escrita por extenso — o que se abre todo
     // dia contra o que se define uma vez. Lista EXATA: `toContain` deixaria uma
     // tela nova entrar sem que ninguém decidisse de que lado dela ela cai.
     const secoes = hubSections("crm", true, null);
-    expect(secoes.map((s) => s.section)).toEqual(["O dia a dia da venda", "Preparar a venda"]);
+    expect(secoes.map((s) => s.section)).toEqual([
+      "O dia a dia da venda",
+      "Cuidar da base",
+      "Preparar a venda",
+    ]);
     expect(secoes.flatMap((s) => s.items.map((i) => i.href))).toEqual([
       "/app/kanban",
       "/app/contacts",
       "/app/tasks",
+      "/app/negocios-duplicados",
       "/app/products",
       "/app/settings/tenant/pipelines",
     ]);

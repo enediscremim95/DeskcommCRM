@@ -50,6 +50,8 @@ export const AUDIT_ACTIONS = [
   "lead.won",
   "lead.lost",
   "lead.bulk_action",
+  "lead.duplicate_merged",
+  "lead.duplicate_merge_undone",
   // A importação de planilha (extração do PR #418). O GESTO é auditado além dos
   // N `lead.created`: "quem despejou 300 negócios neste funil, e quando" é a
   // pergunta que se faz depois, e ela não se responde contando linhas soltas.

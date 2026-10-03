@@ -57,6 +57,7 @@ const ORG_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const ORG_B = "bbbbbbbb-0000-4000-8000-000000000002";
 const USER_A = "aaaaaaaa-1111-4000-8000-000000000001";
 const USER_B = "bbbbbbbb-1111-4000-8000-000000000002";
+const MANAGER_A = "aaaaaaaa-1111-4000-8000-000000000003";
 const SESS_A = "aaaaaaaa-2222-4000-8000-000000000001";
 const SESS_B = "bbbbbbbb-2222-4000-8000-000000000002";
 
@@ -97,7 +98,14 @@ function seedOrg(org: string, user: string, sess: string, tag: string): string {
 }
 
 beforeAll(() => {
-  sql(seedOrg(ORG_A, USER_A, SESS_A, "a") + seedOrg(ORG_B, USER_B, SESS_B, "b"));
+  sql(seedOrg(ORG_A, USER_A, SESS_A, "a") + seedOrg(ORG_B, USER_B, SESS_B, "b") + `
+    insert into auth.users (id, email)
+      values ('${MANAGER_A}', 'rls-manager-a@invariant.test')
+      on conflict (id) do nothing;
+    insert into public.user_organizations (user_id, organization_id, role, accepted_at)
+      values ('${MANAGER_A}', '${ORG_A}', 'manager', now())
+      on conflict do nothing;
+  `);
   // Contact → conversation → message + pipeline → stage → lead, per org.
   sql(`
     -- A tabela de pareamentos é server-side e o baseline revoga acesso direto
@@ -115,6 +123,8 @@ beforeAll(() => {
       v_conv uuid;
       v_pipe uuid;
       v_stage uuid;
+      v_survivor uuid;
+      v_absorbed public.crm_leads%rowtype;
       v_agent uuid;
       v_version uuid;
       v_boundary jsonb;
@@ -203,6 +213,22 @@ beforeAll(() => {
         if not exists (select 1 from public.crm_leads where organization_id = v_org) then
           insert into public.crm_leads (organization_id, pipeline_id, stage_id, title)
             values (v_org, v_pipe, v_stage, 'RLS invariant lead');
+        end if;
+
+        -- 0282: authenticated e service_role não gravam direto neste log.
+        -- A fixture nasce neste bloco executado como postgres; a leitura abaixo
+        -- usa o manager da organização A e atravessa a policy real.
+        if not exists (select 1 from public.crm_lead_merge_log where organization_id = v_org) then
+          select id into v_survivor from public.crm_leads
+            where organization_id = v_org order by created_at, id limit 1;
+          insert into public.crm_leads (organization_id, pipeline_id, stage_id, title)
+            values (v_org, v_pipe, v_stage, 'RLS invariant absorbed lead')
+            returning * into v_absorbed;
+          insert into public.crm_lead_merge_log
+            (organization_id, survivor_lead_id, absorbed_lead_id, absorbed_snapshot)
+            values (v_org, v_survivor, v_absorbed.id, to_jsonb(v_absorbed));
+          delete from public.crm_leads
+            where organization_id = v_org and id = v_absorbed.id;
         end if;
 
         insert into public.crm_stage_position_reservations (stage_id, organization_id)
@@ -348,6 +374,8 @@ export const TABLES = [
   "messages",
   "contacts",
   "crm_leads",
+  // migration 0282: leitura exige manager; a fixture é gravada como postgres.
+  "crm_lead_merge_log",
   "org_memory_versions",
   "org_memory_entries",
   "skill_activations",
@@ -410,9 +438,11 @@ export const TABLES = [
 
 describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {
   for (const table of TABLES) {
+    const reader = table === "crm_lead_merge_log" ? MANAGER_A : USER_A;
+
     it(`user of org A reads 0 rows of org B in ${table}`, () => {
       const crossTenant = countAs(
-        USER_A,
+        reader,
         `select count(*) from public.${table} where organization_id = '${ORG_B}';`,
       );
       expect(crossTenant).toBe(0);
@@ -420,7 +450,7 @@ describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {
 
     it(`user of org A still reads their own org rows in ${table} (positive control)`, () => {
       const ownRows = countAs(
-        USER_A,
+        reader,
         `select count(*) from public.${table} where organization_id = '${ORG_A}';`,
       );
       expect(ownRows).toBeGreaterThanOrEqual(1);

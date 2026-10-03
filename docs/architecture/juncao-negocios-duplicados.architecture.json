@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Junção humana de negócios duplicados",
+    "subtitle": "a pessoa decide, a transação preserva o rastro e o desfazer restaura somente o que foi movido",
+    "output": "juncao-negocios-duplicados.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "leitura", "label": "Leitura segura" },
+    { "id": "humano", "label": "Decisão humana" },
+    { "id": "transacao", "label": "Transação" },
+    { "id": "rastro", "label": "Rastro e reversão" }
+  ],
+  "mainPath": ["leads", "candidatos", "tela", "juntar", "filhos", "log"],
+  "nodes": [
+    { "id": "leads", "lane": "leitura", "col": 0, "type": "database", "label": "crm_leads", "sublabel": "negócios abertos do mesmo contato e funil" },
+    { "id": "candidatos", "lane": "leitura", "col": 1, "type": "service", "label": "fn_candidatos_negocios_duplicados", "sublabel": "vazio com contexto ou todos vazios" },
+    { "id": "tela", "lane": "humano", "col": 2, "type": "frontend", "label": "Negócios duplicados", "sublabel": "manager confere lado a lado e confirma" },
+    { "id": "juntar", "lane": "transacao", "col": 3, "type": "service", "label": "fn_juntar_negocios", "sublabel": "travas, papel, tenant e vazio revalidados" },
+    { "id": "filhos", "lane": "transacao", "col": 4, "type": "database", "label": "Referências filhas", "sublabel": "somente FKs simples com chave primária simples" },
+    { "id": "log", "lane": "rastro", "col": 4, "type": "database", "label": "crm_lead_merge_log", "sublabel": "snapshot completo e IDs exatos movidos" },
+    { "id": "timeline", "lane": "rastro", "col": 3, "type": "database", "label": "crm_lead_activities", "sublabel": "junção e desfazer visíveis no negócio" },
+    { "id": "recentes", "lane": "humano", "col": 3, "type": "frontend", "label": "Junções recentes", "sublabel": "a mesma tela oferece Desfazer" },
+    { "id": "desfazer", "lane": "transacao", "col": 4, "type": "service", "label": "fn_desfazer_juncao_de_negocios", "sublabel": "recria o mesmo ID e repõe só os IDs guardados" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "leads", "to": "candidatos", "label": "agrupa por tenant, contato e funil" },
+    { "id": "e2", "from": "candidatos", "to": "tela", "label": "sugere sobrevivente e absorvidos" },
+    { "id": "e3", "from": "tela", "to": "juntar", "label": "pessoa confirma" },
+    { "id": "e4", "from": "leads", "to": "juntar", "label": "revalida e trava as duas linhas" },
+    { "id": "e5", "from": "juntar", "to": "filhos", "label": "move referências pelo catálogo" },
+    { "id": "e6", "from": "juntar", "to": "log", "label": "grava snapshot e IDs antes de apagar" },
+    { "id": "e7", "from": "juntar", "to": "timeline", "label": "registra a junção" },
+    { "id": "e8", "from": "log", "to": "recentes", "label": "lista operações ainda reversíveis" },
+    { "id": "e9", "from": "recentes", "to": "desfazer", "label": "pessoa confirma" },
+    { "id": "e10", "from": "desfazer", "to": "leads", "label": "restaura a linha absorvida" },
+    { "id": "e11", "from": "desfazer", "to": "filhos", "label": "devolve somente os IDs guardados" },
+    { "id": "e12", "from": "desfazer", "to": "log", "label": "marca quem e quando desfez" },
+    { "id": "e13", "from": "desfazer", "to": "timeline", "label": "registra o desfazer" }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Travas",
+      "items": [
+        "Não existe junção automática",
+        "Grupos com todos os negócios contextualizados ficam fora",
+        "Qualquer dado novo no absorvido recusa a operação",
+        "O desfazer falha inteiro quando o histórico mudou"
+      ]
+    }
+  ]
+}
