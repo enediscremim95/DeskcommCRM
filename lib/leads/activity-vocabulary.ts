@@ -152,6 +152,8 @@ export type ActivityType =
   | "contacts_merged"
   /** Uma reconciliação automática foi desfeita e o card voltou ao formulário. */
   | "contacts_merge_undone"
+  | "lead_duplicate_merged"
+  | "lead_duplicate_merge_undone"
   /** Uma entrada automática curta alimentou o negócio já aberto, sem fingir perda. */
   | "lead_merged";
 
@@ -254,6 +256,8 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // ter mudado de contato sem ninguém tê-lo movido.
   contacts_merged: "Contatos duplicados juntados",
   contacts_merge_undone: "Junção automática desfeita",
+  lead_duplicate_merged: "Negócio duplicado juntado",
+  lead_duplicate_merge_undone: "Junção de negócios desfeita",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

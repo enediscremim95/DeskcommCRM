@@ -168,6 +168,22 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "histórico mudou. Mesmo desenho de fn_mesclar_contatos, acima.",
   },
   {
+    fn: "fn_juntar_negocios(uuid,uuid,uuid)",
+    razao:
+      "POST app/api/v1/leads/merge/route.ts usa createClient da sessão. " +
+      "auth.uid() é obrigatório e reconfirma manager+, organização, contato, funil, " +
+      "status aberto e que o absorvido continua vazio sob lock antes de mover qualquer FK. " +
+      "tests/invariants/juntar-negocios-duplicados.test.ts prova ACL A/B, recusas e reversão.",
+  },
+  {
+    fn: "fn_desfazer_juncao_de_negocios(uuid,uuid)",
+    razao:
+      "POST app/api/v1/leads/merge/[id]/undo/route.ts usa createClient da sessão. " +
+      "auth.uid() é obrigatório e reconfirma manager+; a função filtra a organização, " +
+      "recria o mesmo ID e devolve somente os IDs registrados, falhando fechado quando " +
+      "o histórico mudou. tests/invariants/juntar-negocios-duplicados.test.ts prova o ciclo.",
+  },
+  {
     fn: "fn_log_event(uuid,text,jsonb)",
     razao:
       "Chamada de dentro dos triggers de domínio; o grant a authenticated foi " +
