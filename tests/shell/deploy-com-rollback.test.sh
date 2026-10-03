@@ -135,12 +135,18 @@ export FAKE_CURL_CALLS="$WORK/curl.calls"
 export FAKE_SSH_CALLS="$WORK/ssh.calls"
 export FAKE_GATE_CALLS="$WORK/gate.calls"
 
+# Fonte única do namespace das imagens (a catraca namespace-das-imagens proíbe o literal).
+IMG_NS_TESTE="$(sed -n 's/^IMG_NS="\(.*\)"$/\1/p' "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../hostgator-setup-kit" && pwd)/_common.sh" | head -1)"
+[ -n "$IMG_NS_TESTE" ] || { echo "não consegui ler IMG_NS de _common.sh"; exit 1; }
+# O projeto de teste é uma pasta isolada, sem o kit: o namespace entra pela variável.
+export DEPLOY_IMAGE_NAMESPACE="$IMG_NS_TESTE"
+
 env_valido() {
   cat > "$DEPLOY_ENV_FILE" <<EOF
 DOMAIN=crm.agenciaveritasdigital.com
-APP_IMAGE=ghcr.io/enediscremim95/deskcommcrm:$FAKE_OLD_TAG
-WORKER_IMAGE=ghcr.io/enediscremim95/deskcomm-worker:$FAKE_OLD_TAG
-SCHEDULER_IMAGE=ghcr.io/enediscremim95/deskcomm-scheduler:$FAKE_OLD_TAG
+APP_IMAGE=$IMG_NS_TESTE/deskcommcrm:$FAKE_OLD_TAG
+WORKER_IMAGE=$IMG_NS_TESTE/deskcomm-worker:$FAKE_OLD_TAG
+SCHEDULER_IMAGE=$IMG_NS_TESTE/deskcomm-scheduler:$FAKE_OLD_TAG
 OUTRA_CONFIG=preservada
 EOF
 }

@@ -10,6 +10,10 @@ PROJECT_DIR="${DEPLOY_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && p
 ENV_FILE="${DEPLOY_ENV_FILE:-$PROJECT_DIR/.env}"
 DOMAINS_FILE="${DEPLOY_DOMAINS_FILE:-$PROJECT_DIR/docker-compose.dominios.yml}"
 GATE_SCRIPT="${DEPLOY_GATE_SCRIPT:-$PROJECT_DIR/scripts/deploy-producao.sh}"
+# O namespace das imagens tem UMA fonte: IMG_NS em hostgator-setup-kit/_common.sh.
+# Nunca um literal aqui (a catraca tests/unit/namespace-das-imagens.test.ts reprova).
+IMG_NS="${DEPLOY_IMAGE_NAMESPACE:-$(sed -n 's/^IMG_NS="\(.*\)"$/\1/p' "$PROJECT_DIR/hostgator-setup-kit/_common.sh" 2>/dev/null | head -1)}"
+IMG_NS_RE="${IMG_NS//./\\.}"
 LOG_FILE="${DEPLOY_LOG_FILE:-/var/log/deskcommcrm/deploy.log}"
 APP_CONTAINER="${DEPLOY_APP_CONTAINER:-deskcommcrm-app-1}"
 WORKER_CONTAINER="${DEPLOY_WORKER_CONTAINER:-deskcommcrm-worker-1}"
@@ -60,7 +64,7 @@ ler_tag_imagem() {
   count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
   [ "$count" -eq 1 ] || return 1
   line="$(grep -E "^${key}=" "$ENV_FILE")"
-  if [[ "$line" =~ ^${key}=ghcr\.io/enediscremim95/[A-Za-z0-9._-]+:([A-Za-z0-9][A-Za-z0-9._-]*)$ ]]; then
+  if [[ "$line" =~ ^${key}=${IMG_NS_RE}/[A-Za-z0-9._-]+:([A-Za-z0-9][A-Za-z0-9._-]*)$ ]]; then
     printf '%s' "${BASH_REMATCH[1]}"
     return 0
   fi
@@ -297,9 +301,9 @@ done
 [[ "$VERIFY_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] || die 'DEPLOY_ROLLBACK_VERIFY_ATTEMPTS deve ser inteiro positivo'
 [[ "$VERIFY_INTERVAL" =~ ^[0-9]+([.][0-9]+)?$ ]] || die 'DEPLOY_ROLLBACK_VERIFY_INTERVAL_SECONDS deve ser número não negativo'
 
-app_tag="$(ler_tag_imagem APP_IMAGE)" || die 'APP_IMAGE ausente, duplicada ou fora do formato ghcr.io/enediscremim95/<imagem>:<tag>'
-worker_tag="$(ler_tag_imagem WORKER_IMAGE)" || die 'WORKER_IMAGE ausente, duplicada ou fora do formato ghcr.io/enediscremim95/<imagem>:<tag>'
-scheduler_tag="$(ler_tag_imagem SCHEDULER_IMAGE)" || die 'SCHEDULER_IMAGE ausente, duplicada ou fora do formato ghcr.io/enediscremim95/<imagem>:<tag>'
+app_tag="$(ler_tag_imagem APP_IMAGE)" || die 'APP_IMAGE ausente, duplicada ou fora do formato <namespace>/<imagem>:<tag>'
+worker_tag="$(ler_tag_imagem WORKER_IMAGE)" || die 'WORKER_IMAGE ausente, duplicada ou fora do formato <namespace>/<imagem>:<tag>'
+scheduler_tag="$(ler_tag_imagem SCHEDULER_IMAGE)" || die 'SCHEDULER_IMAGE ausente, duplicada ou fora do formato <namespace>/<imagem>:<tag>'
 [ "$app_tag" = "$worker_tag" ] && [ "$app_tag" = "$scheduler_tag" ] || \
   die 'APP_IMAGE, WORKER_IMAGE e SCHEDULER_IMAGE não estão na mesma tag; nada foi alterado'
 PREVIOUS_TAG="$app_tag"
