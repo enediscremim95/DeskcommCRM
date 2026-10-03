@@ -127,6 +127,28 @@ const lead: Lead = {
 };
 
 describe("rodapé da conversa na página do lead", () => {
+  it("limita a grade à tela no desktop e dá rolagem própria às colunas", () => {
+    render(
+      <LeadPageClient
+        lead={lead}
+        pipelineName="Funil principal"
+        stageName="Novo"
+        fieldDefs={[]}
+        contact={null}
+        conversationId="conversation-1"
+        hasConnectedChannel
+        canReplyInConversation
+      />,
+    );
+
+    const workspace = screen.getByTestId("lead-page-workspace");
+    expect(workspace).toHaveClass("lg:h-[calc(100dvh-8.5rem)]");
+
+    const [leadDetails, conversation] = Array.from(workspace.children);
+    expect(leadDetails).toHaveClass("lg:h-full", "lg:min-h-0", "lg:overflow-y-auto");
+    expect(conversation).toHaveClass("lg:h-full", "lg:min-h-0");
+  });
+
   it("mantém o chat flexível e limita avisos e compositor no rodapé", () => {
     render(
       <LeadPageClient
