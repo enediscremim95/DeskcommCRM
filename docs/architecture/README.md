@@ -39,6 +39,7 @@ ser fonte sem ninguém decidir isso.
 | `notificacoes-email-lead.architecture.json` | e-mail assíncrono somente para lead novo e ação urgente, com opt-out pessoal, responsável ou administradores e conteúdo mínimo white-label |
 | `integrar-site.architecture.json` | uma fonte por página, script com identificação e UTMs, reserva Redis durante queda do banco, resumo de 30 dias e aviso na Central após 48h sem lead |
 | `vigia-infraestrutura.architecture.json` | saúde por dependência, aviso externo, watchdog, reserva de leads visível e auto-cura limitada do app quando o pool devolve PGRST003 |
+| `juncao-negocios-duplicados.architecture.json` | revisão humana de duplicados vazios, movimentação reversível dos filhos e restauração exata protegida contra histórico alterado |
 
 > **Esta tabela já apodreceu uma vez:** ela listava 8 mapas quando o disco tinha 9 — faltava
 > `indice-de-atrito`. Nenhum teste lê este README (o gate lê os `.json`), então mapa novo que
