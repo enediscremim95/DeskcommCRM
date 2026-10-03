@@ -34,3 +34,20 @@ export function useMergeContacts() {
     },
   });
 }
+
+export function useUndoAutomaticContactMerge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (mergeQueueId: string) =>
+      apiClient.post<{ data: { outcome: string } }>(
+        `/api/v1/contacts/merge/${mergeQueueId}/undo`,
+        {},
+      ),
+    onError: showApiError,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
+}

@@ -115,6 +115,7 @@ export const contactsMergeSchema = z
   .object({
     primary_contact_id: z.string().uuid(),
     secondary_contact_ids: z.array(z.string().uuid()).min(1).max(20),
+    merge_queue_id: z.string().uuid().optional(),
   })
   .refine((v) => !v.secondary_contact_ids.includes(v.primary_contact_id), {
     message: "O contato principal não pode estar entre os que serão absorvidos.",

@@ -16,14 +16,30 @@ export interface ContatoDuplicado {
 
 export interface GrupoDuplicado {
   chave: string;
+  queue_id?: string;
   motivos: MotivoDeDuplicidade[];
   principal_sugerido: string;
   contatos: ContatoDuplicado[];
 }
 
+export interface MesclagemAutomaticaRecente {
+  id: string;
+  whatsapp_contact_id: string;
+  form_contact_id: string;
+  whatsapp_name: string | null;
+  form_name: string | null;
+  whatsapp_phone: string | null;
+  original_form_phone: string | null;
+  merged_at: string;
+}
+
 interface DuplicatesResponse {
   data: GrupoDuplicado[];
-  meta?: { varreu_tudo?: boolean; contatos_varridos?: number };
+  meta?: {
+    varreu_tudo?: boolean;
+    contatos_varridos?: number;
+    mesclagens_automaticas?: MesclagemAutomaticaRecente[];
+  };
 }
 
 /**

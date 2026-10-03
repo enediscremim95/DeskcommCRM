@@ -17,6 +17,7 @@ import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
+import { reconciliarContatoWhatsappComFormulario } from "@/lib/contacts/reconciliacao-whatsapp";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
 import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -623,6 +624,43 @@ async function handleInbound(
     telefoneAlternativoDe(p),
   );
   if (!contactId) return;
+
+  // Só a PRIMEIRA entrada de um número novo é elegível. A RPC reconhece a
+  // marca gravada atomicamente no nascimento do contato, procura apenas nesta
+  // organização e remove a marca em qualquer desfecho. Se houver ambiguidade,
+  // ela alimenta a fila que a tela de duplicados já mostra.
+  const reconciliacao = await reconciliarContatoWhatsappComFormulario(admin, {
+    organizationId: session.organization_id,
+    whatsappContactId: contactId,
+    externalMessageId: p.id,
+  });
+  if (reconciliacao?.outcome === "merged") {
+    await audit({
+      action: "contact.merged",
+      organizationId: session.organization_id,
+      resourceType: "contact",
+      resourceId: contactId,
+      requestId,
+      metadata: {
+        automatic: true,
+        rule: "ultimos_8_digitos_7_dias_nome_compativel",
+        form_contact_id: reconciliacao.form_contact_id,
+        merge_queue_id: reconciliacao.merge_queue_id,
+      },
+    });
+  } else if (reconciliacao?.outcome === "suggestion") {
+    await audit({
+      action: "contact.merge_pending",
+      organizationId: session.organization_id,
+      resourceType: "contact",
+      resourceId: contactId,
+      requestId,
+      metadata: {
+        reason: reconciliacao.motivo,
+        merge_queue_id: reconciliacao.merge_queue_id,
+      },
+    });
+  }
 
   // Best-effort: o dado do anúncio (se houver) vai embutido na PRÓPRIA
   // mensagem que o app do cliente manda ao clicar num anúncio "Clique para o

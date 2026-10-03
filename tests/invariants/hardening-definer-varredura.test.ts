@@ -158,6 +158,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "Mesmo desenho de fn_conversation_assign, acima.",
   },
   {
+    fn: "fn_desfazer_mesclagem_automatica_whatsapp(uuid,uuid)",
+    razao:
+      "A rota POST /api/v1/contacts/merge/[id]/undo chama com a sessão do " +
+      "usuário, de propósito: é `auth.uid()` que faz a função reconferir o " +
+      "papel (piso `manager`, igual a fn_mesclar_contatos) e que assina a " +
+      "atividade de desfazer na timeline. A função filtra por organização, " +
+      "só desfaz junção automática ainda resolvida e falha fechado se o " +
+      "histórico mudou. Mesmo desenho de fn_mesclar_contatos, acima.",
+  },
+  {
     fn: "fn_log_event(uuid,text,jsonb)",
     razao:
       "Chamada de dentro dos triggers de domínio; o grant a authenticated foi " +

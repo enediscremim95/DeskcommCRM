@@ -125,6 +125,24 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const resultado = data as unknown as ResultadoDaFusao;
 
+  if (input.merge_queue_id) {
+    await supabase
+      .from("merge_queue")
+      .update({
+        status: "resolved",
+        resolved_at: new Date().toISOString(),
+        resolved_by_user_id: user.id,
+        resolution: {
+          outcome: "merged_manually",
+          primary_contact_id: input.primary_contact_id,
+          secondary_contact_ids: input.secondary_contact_ids,
+        },
+      })
+      .eq("id", input.merge_queue_id)
+      .eq("organization_id", org.orgId)
+      .eq("status", "pending");
+  }
+
   // A auditoria é o rastro que EXISTE SEMPRE. A timeline do passo 7 da função
   // só tem onde escrever quando o vencedor tem negócio no funil
   // (`crm_lead_activities.lead_id` é NOT NULL); um contato sem negócio nenhum
@@ -144,6 +162,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       // runtime). Auditar só o sucesso descreveria uma fusão completa que não foi.
       not_repointed: resultado.nao_repontado,
       timeline_activities: resultado.atividades_emitidas,
+      merge_queue_id: input.merge_queue_id,
     },
   });
 

@@ -6071,6 +6071,21 @@ export const DICIONARIO: Traducoes = {
   },
   "Juntando…": { es: "Juntando…" },
   "Contatos juntados.": { es: "Contactos juntados." },
+  "Junção automática desfeita.": { es: "La unión automática fue deshecha." },
+  "Junções automáticas recentes": { es: "Uniones automáticas recientes" },
+  "O número do WhatsApp ficou como principal. O número informado no formulário foi preservado.": {
+    es: "El número de WhatsApp quedó como principal. El número informado en el formulario fue conservado.",
+  },
+  "Contato do WhatsApp": { es: "Contacto de WhatsApp" },
+  Formulário: { es: "Formulario" },
+  "Formulário sem telefone disponível": { es: "Formulario sin teléfono disponible" },
+  "WhatsApp sem telefone disponível": { es: "WhatsApp sin teléfono disponible" },
+  "Desfazer junção": { es: "Deshacer unión" },
+  "Desfazer esta junção automática?": { es: "¿Deshacer esta unión automática?" },
+  "O card volta ao cadastro do formulário. A conversa e as mensagens continuam no contato com o número real do WhatsApp.": {
+    es: "El negocio vuelve al registro del formulario. La conversación y los mensajes permanecen en el contacto con el número real de WhatsApp.",
+  },
+  "Desfazendo…": { es: "Deshaciendo…" },
   "Contatos juntados. {n} registro(s) continuaram no cadastro antigo — veja a auditoria.": {
     es: "Contactos juntados. {n} registro(s) siguieron en la ficha antigua — revisa la auditoría.",
   },
