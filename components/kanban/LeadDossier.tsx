@@ -15,6 +15,7 @@ import { OwnerBadge } from "./OwnerBadge";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
 import type { CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import { DadosCompletosDoLead } from "@/components/leads/DadosCompletosDoLead";
+import { OutrosNegociosDoContato } from "@/components/leads/OutrosNegociosDoContato";
 import { FollowupsDoLead } from "@/components/leads/FollowupsDoLead";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -59,7 +60,7 @@ function campaignOf(lead: Lead): string | null {
 /**
  * O dossiê do negócio: cabeçalho vivo → timeline → campos.
  *
- * A ORDEM É a mudança em relação ao diálogo de edição: quem abre um lead quer
+ * A ORDEM É a mudança em relqção ao diálogo de edição: quem abre um lead quer
  * primeiro saber O QUE ACONTECEU, e só depois mexer. O formulário íntegro fica
  * por último, e o cabeçalho tem um atalho para ele — ordem preservada, custo de
  * rolagem resolvido.
@@ -201,6 +202,9 @@ export function LeadDossier({
             stageName={stageName}
             fieldDefs={fieldDefs}
           />
+          <div className="mt-5">
+            <OutrosNegociosDoContato contactId={lead.contact_id} leadIdAtual={lead.id} />
+          </div>
         </section>
 
         <section className="border-b border-border py-3">
