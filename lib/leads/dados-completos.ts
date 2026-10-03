@@ -38,6 +38,11 @@ const ROTULOS_CONHECIDOS: Record<string, string> = {
   pagina: "Página",
   webhook_source_id: "Fonte de captação",
   raw_phone: "Telefone informado",
+  source: "Origem",
+  origem: "Origem",
+  page_url: "Página",
+  landing_page: "Página",
+  campaign: "Campanha",
 };
 
 function capitalizar(texto: string): string {
