@@ -4,14 +4,14 @@ import { apiClient } from "@/lib/api/client";
 import { liberarEcoLocal, marcarEcoLocal } from "@/lib/kanban/local-echo";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Lead } from "@/lib/types/leads";
-import type { UpdateLeadInput } from "@/lib/schemas/leads";
+import type { LoseLeadInput, UpdateLeadInput } from "@/lib/schemas/leads";
 
 interface WinArgs {
   leadId: string;
 }
 interface LoseArgs {
   leadId: string;
-  lostReason: string;
+  input: LoseLeadInput;
 }
 
 export function useWinLead(pipelineId: string) {
@@ -33,11 +33,9 @@ export function useWinLead(pipelineId: string) {
 export function useLoseLead(pipelineId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ leadId, lostReason }: LoseArgs) => {
+    mutationFn: async ({ leadId, input }: LoseArgs) => {
       marcarEcoLocal(leadId);
-      return apiClient.post<{ data: Lead }>(`/api/v1/leads/${leadId}/lose`, {
-        lost_reason: lostReason,
-      });
+      return apiClient.post<{ data: Lead }>(`/api/v1/leads/${leadId}/lose`, input);
     },
     onError: showApiError,
     onSettled: (_data, _err, { leadId }) => {

@@ -6,6 +6,8 @@ export interface TrafficLeadRow {
   stage_id: string;
   pipeline_id?: string;
   lost_reason: string | null;
+  /** Leitura complementar; o agrupamento usa somente `lost_reason`. */
+  lost_reason_detail?: string | null;
   created_at?: string;
   closed_at?: string | null;
   value_cents?: number | null;

@@ -319,6 +319,7 @@ create table public.crm_leads (
 
   status              text not null default 'open',  -- open | won | lost
   lost_reason         text,                          -- obrigatório quando status='lost' (regra P-03)
+  lost_reason_detail  text,                          -- texto livre opcional de lost_reason='other'
 
   -- Posição (fractional indexing)
   position_in_stage   numeric not null default 1000,
@@ -1392,6 +1393,7 @@ other
 ```
 
 Extensão por pipeline via `pipelines.settings.lost_reasons[]` (array de strings adicionais). Validação em §3.5.
+`lost_reason_detail` guarda apenas a observação de leitura e nunca participa do agrupamento por motivo.
 
 ---
 

@@ -36,6 +36,8 @@ export interface EncerraDemandaInput {
   desfecho: DesfechoDaDemanda;
   /** OBRIGATÓRIO em `lost` (P-03): perder sem motivo não ensina nada a ninguém. */
   motivo?: string | null;
+  /** Observação humana da categoria `other`; leitura, nunca categoria de relatório. */
+  detalhe?: string | null;
 }
 
 export interface DemandaEncerrada {
@@ -154,7 +156,10 @@ export async function encerraDemanda(
     position_in_stage: nextPosition,
     updated_at: new Date().toISOString(),
   };
-  if (input.desfecho === "lost") patch.lost_reason = input.motivo;
+  if (input.desfecho === "lost") {
+    patch.lost_reason = input.motivo;
+    patch.lost_reason_detail = input.detalhe?.trim() || null;
+  }
 
   const { error: updErr } = await supabase
     .from("crm_leads")
@@ -163,6 +168,18 @@ export async function encerraDemanda(
     .eq("organization_id", ctx.organization_id);
 
   if (updErr) {
+    if (updErr.code === "22023" && updErr.message.includes("lost_reason_invalid")) {
+      throw new ApiError(
+        422,
+        "lost_reason_invalid",
+        undefined,
+        ctx.requestId,
+        traduzir(
+          "Esse motivo não está disponível neste funil. Escolha um motivo da lista.",
+          ctx.idioma ?? "pt-BR",
+        ),
+      );
+    }
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
   }
 

@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useLoseLead } from "@/hooks/kanban/useUpdateLead";
 import { CANONICAL_LOST_REASONS } from "@/lib/schemas/leads";
+import { entradaDePerda } from "@/lib/leads/motivo-da-perda";
 import type { Lead } from "@/lib/types/leads";
 
 const REASON_LABELS: Record<(typeof CANONICAL_LOST_REASONS)[number], string> = {
@@ -53,14 +54,14 @@ export function LoseLeadDialog({
   const [otherText, setOtherText] = useState("");
   const mutation = useLoseLead(pipelineId);
 
-  const finalReason = reasonCode === "other" ? otherText.trim() || "other" : reasonCode;
-  const disabled = !reasonCode || finalReason.length === 0 || finalReason.length > MAX_LEN || mutation.isPending;
+  const input = entradaDePerda(reasonCode, otherText);
+  const disabled = !reasonCode || otherText.length > MAX_LEN || mutation.isPending;
 
   const handleSubmit = async () => {
     if (disabled) return;
     onBeforeSubmit?.();
     try {
-      const result = await mutation.mutateAsync({ leadId, lostReason: finalReason });
+      const result = await mutation.mutateAsync({ leadId, input });
       setReasonCode("");
       setOtherText("");
       onOpenChange(false);
