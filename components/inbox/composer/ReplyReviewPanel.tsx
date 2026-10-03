@@ -103,7 +103,7 @@ export function ReplyReviewPanel({
   };
   return (
     <section
-      className="mb-3 space-y-2 rounded-md border bg-muted/30 p-3"
+      className="space-y-2 rounded-md border bg-muted/30 p-3"
       aria-label={t("Assistência do agente")}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">

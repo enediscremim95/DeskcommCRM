@@ -1797,6 +1797,10 @@ export const DICIONARIO: Traducoes = {
   "Você ainda não tem modelos de mensagem. Crie um em Ajustes → Modelos e ele aparece aqui.": {
     es: "Todavía no tienes plantillas de mensaje. Créala en Ajustes → Plantillas y aparecerá aquí.",
   },
+  "Modelos de mensagem": { es: "Plantillas de mensaje" },
+  "Nenhum modelo salvo. Crie em Modelos de mensagem.": {
+    es: "No hay ninguna plantilla guardada. Créala en Plantillas de mensaje.",
+  },
   "Escolha um modelo": { es: "Elige una plantilla" },
   Nenhum: { es: "Ninguno" },
   "Como escrever a mensagem": { es: "Cómo escribir el mensaje" },
@@ -8596,6 +8600,9 @@ export const DICIONARIO: Traducoes = {
   "Esta sugestão já foi": { es: "Esta sugerencia ya fue" },
   "decidida": { es: "decidida" },
   "Informe o motivo da perda.": { es: "Indica el motivo de la pérdida." },
+  "Esse motivo não está disponível neste funil. Escolha um motivo da lista.": {
+    es: "Ese motivo no está disponible en este embudo. Elige un motivo de la lista.",
+  },
   "Pipeline não tem stage de fechamento como ganho.": {
     es: "El pipeline no tiene stage de cierre como ganado.",
   },

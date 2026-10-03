@@ -21,6 +21,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { stageAgeTooltip } from "@/lib/kanban/card-state";
+import { motivoDaPerdaLegivel } from "@/lib/leads/motivo-da-perda";
 
 interface Props {
   open: boolean;
@@ -85,6 +86,11 @@ export function LeadDossier({
   const { user, activeOrg } = useAuth();
   const owner = resolveLeadOwner(lead, ownerNames);
   const score = lead.score ?? null;
+  const motivoDaPerda = motivoDaPerdaLegivel(
+    lead.lost_reason,
+    lead.lost_reason_detail ?? null,
+    t,
+  );
   const podeEditarFollowup = Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && user.support?.access_mode !== "support_readonly");
 
   return (
@@ -157,7 +163,7 @@ export function LeadDossier({
             ],
             [t("Previsão de fechamento"), stageAgeTooltip(lead.expected_close_date, tagDoIdioma) || t("Não informado")],
             ...(lead.status === "lost"
-              ? [[t("Motivo da perda"), lead.lost_reason || t("Não informado")]]
+              ? [[t("Motivo da perda"), motivoDaPerda || t("Não informado")]]
               : []),
             [t("Responsável"), owner.name || t("Não informado")],
           ].map(([label, value]) => (

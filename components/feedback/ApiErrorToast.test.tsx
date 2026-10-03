@@ -82,4 +82,24 @@ describe("ApiErrorToast", () => {
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(toast.error).toHaveBeenCalledWith("Erro inesperado. Tente novamente.");
   });
+
+  it("explica como corrigir um motivo de perda recusado", () => {
+    showApiError(
+      new ApiError(
+        422,
+        "lost_reason_invalid",
+        undefined,
+        "req-motivo",
+        "Esse motivo não está disponível neste funil. Escolha um motivo da lista.",
+      ),
+    );
+    expect(toast.warning).toHaveBeenCalledWith(
+      "Esse motivo não está disponível neste funil. Escolha um motivo da lista.",
+      expect.objectContaining({ description: "ID: req-motivo" }),
+    );
+    expect(toast.error).not.toHaveBeenCalledWith(
+      "Erro interno. Tente de novo em instantes.",
+      expect.anything(),
+    );
+  });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
   valorLegivel,
 } from "@/lib/leads/dados-completos";
 import { origemComUtms } from "@/lib/leads/utm-da-url";
+import { motivoDaPerdaLegivel } from "@/lib/leads/motivo-da-perda";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 import type { Lead } from "@/lib/types/leads";
 import { CaretRight, Check, Copy } from "@/lib/ui/icons";
@@ -180,11 +181,99 @@ function Campo({ rotulo, valor, nowrap }: CampoProps) {
   );
 }
 
-function Titulo({ children }: { children: string }) {
+export type LeadSectionKey = "negocio" | "dados-informados" | "origem" | "historico" | "sistema";
+
+export function leadSectionStorageKey(sectionKey: LeadSectionKey): string {
+  return `lead-details-section:${sectionKey}`;
+}
+
+function useSecaoRecolhivel(sectionKey: LeadSectionKey, defaultOpen: boolean) {
+  const storageKey = leadSectionStorageKey(sectionKey);
+  const [open, setOpen] = useState(defaultOpen);
+  const restoreVersion = useRef(0);
+
+  useEffect(() => {
+    const version = ++restoreVersion.current;
+    const timeout = window.setTimeout(() => {
+      try {
+        const stored = window.localStorage.getItem(storageKey);
+        if (version !== restoreVersion.current) return;
+        setOpen(stored == null ? defaultOpen : stored !== "closed");
+      } catch {
+        if (version === restoreVersion.current) setOpen(defaultOpen);
+      }
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [defaultOpen, storageKey]);
+
+  function toggle() {
+    restoreVersion.current += 1;
+    setOpen((current) => {
+      const next = !current;
+      try {
+        if (next === defaultOpen) window.localStorage.removeItem(storageKey);
+        else window.localStorage.setItem(storageKey, next ? "open" : "closed");
+      } catch {
+        // A preferência é conforto, não requisito para a ficha funcionar.
+      }
+      return next;
+    });
+  }
+
+  return { open, toggle };
+}
+
+function SecaoRecolhivel({
+  sectionKey,
+  titulo,
+  defaultOpen,
+  vazia = false,
+  children,
+}: {
+  sectionKey: LeadSectionKey;
+  titulo: string;
+  defaultOpen: boolean;
+  vazia?: boolean;
+  children: ReactNode;
+}) {
+  const t = useT();
+  const { open, toggle } = useSecaoRecolhivel(sectionKey, defaultOpen);
+  const contentId = `lead-details-${useId().replace(/:/g, "")}`;
+  const aberta = open && !vazia;
+  const vazioLabel = t("vazio");
+
   return (
-    <h4 className="mb-1 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
-      {children}
-    </h4>
+    <section>
+      <button
+        type="button"
+        aria-label={`${titulo}${vazia ? ` (${vazioLabel})` : ""}`}
+        aria-expanded={aberta}
+        aria-controls={contentId}
+        disabled={vazia}
+        onClick={toggle}
+        className={cn(
+          "flex w-full items-center gap-2 text-left text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase",
+          "hover:text-text focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden",
+          "disabled:cursor-default disabled:hover:text-text-muted",
+        )}
+      >
+        <span className="min-w-0 flex-1">{titulo}</span>
+        {vazia ? (
+          <span className="font-normal tracking-normal lowercase">({vazioLabel})</span>
+        ) : null}
+        <CaretRight
+          size={12}
+          aria-hidden
+          className={cn(
+            "shrink-0 transition-transform motion-reduce:transition-none",
+            aberta && "rotate-90",
+          )}
+        />
+      </button>
+      <div id={contentId} hidden={!aberta} className="mt-1">
+        {children}
+      </div>
+    </section>
   );
 }
 
@@ -252,6 +341,11 @@ export function DadosCompletosDoLead({
 }: Props) {
   const t = useT();
   const locale = useTagDeIdioma();
+  const motivoDaPerda = motivoDaPerdaLegivel(
+    lead.lost_reason,
+    lead.lost_reason_detail ?? null,
+    t,
+  );
   const historico = historicoEstruturado(lead.custom_fields?.historico);
   const campos = ordenarCampos(
     Object.entries(lead.custom_fields ?? {}).filter(
@@ -281,7 +375,7 @@ export function DadosCompletosDoLead({
       nowrap: true,
     },
     { rotulo: t("Fechado em"), valor: dataLegivel(lead.closed_at, locale), nowrap: true },
-    { rotulo: t("Motivo da perda"), valor: lead.lost_reason },
+    { rotulo: t("Motivo da perda"), valor: motivoDaPerda },
   ].filter((campo) => !estaVazio(campo.valor));
 
   const sistema: CampoProps[] = [
@@ -328,17 +422,20 @@ export function DadosCompletosDoLead({
         </div>
       </div>
 
-      <section>
-        <Titulo>{t("Negócio")}</Titulo>
+      <SecaoRecolhivel sectionKey="negocio" titulo={t("Negócio")} defaultOpen>
         <dl className="grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
           {negocio.map((campo) => (
             <Campo key={campo.rotulo} {...campo} />
           ))}
         </dl>
-      </section>
+      </SecaoRecolhivel>
 
-      <section>
-        <Titulo>{t("Dados informados")}</Titulo>
+      <SecaoRecolhivel
+        sectionKey="dados-informados"
+        titulo={t("Dados informados")}
+        defaultOpen={campos.length > 0}
+        vazia={campos.length === 0}
+      >
         {campos.length > 0 ? (
           <dl className="grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
             {campos.map(([chave, valor]) => (
@@ -348,10 +445,14 @@ export function DadosCompletosDoLead({
         ) : (
           <p className="text-sm text-text-muted">{t("Nenhum campo adicional informado.")}</p>
         )}
-      </section>
+      </SecaoRecolhivel>
 
-      <section>
-        <Titulo>{t("Origem, campanha e anúncio")}</Titulo>
+      <SecaoRecolhivel
+        sectionKey="origem"
+        titulo={t("Origem, campanha e anúncio")}
+        defaultOpen={false}
+        vazia={origem.length === 0}
+      >
         {origem.length > 0 ? (
           <dl className="grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
             {origem.map(([chave, valor]) => (
@@ -361,11 +462,14 @@ export function DadosCompletosDoLead({
         ) : (
           <p className="text-sm text-text-muted">{t("Sem detalhes adicionais de origem.")}</p>
         )}
-      </section>
+      </SecaoRecolhivel>
 
       {lead.custom_fields && Object.hasOwn(lead.custom_fields, "historico") && (
-        <section>
-          <Titulo>{t("Histórico de atendimento")}</Titulo>
+        <SecaoRecolhivel
+          sectionKey="historico"
+          titulo={t("Histórico de atendimento")}
+          defaultOpen={false}
+        >
           {historico ? (
             <Historico itens={historico} fieldDefs={fieldDefs} />
           ) : (
@@ -373,30 +477,17 @@ export function DadosCompletosDoLead({
               {valorLegivel(lead.custom_fields.historico)}
             </p>
           )}
-        </section>
+        </SecaoRecolhivel>
       )}
 
       {sistema.length > 0 ? (
-        <details className="group">
-          <summary
-            className={cn(
-              "flex cursor-pointer list-none items-center gap-1 text-[11px] font-semibold tracking-[0.08em] text-text-subtle uppercase select-none",
-              "hover:text-text-muted [&::-webkit-details-marker]:hidden",
-            )}
-          >
-            <CaretRight
-              size={12}
-              aria-hidden
-              className="transition-transform group-open:rotate-90"
-            />
-            {t("Sistema")}
-          </summary>
-          <dl className="mt-1 grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
+        <SecaoRecolhivel sectionKey="sistema" titulo={t("Sistema")} defaultOpen={false}>
+          <dl className="grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
             {sistema.map((campo) => (
               <Campo key={campo.rotulo} {...campo} />
             ))}
           </dl>
-        </details>
+        </SecaoRecolhivel>
       ) : null}
     </div>
   );
