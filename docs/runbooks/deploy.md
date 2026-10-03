@@ -82,10 +82,11 @@ tail -n 50 /var/log/deskcommcrm/deploy.log
 ## 2. Verificação pós-deploy (não pule)
 
 `healthy` no `docker ps` **não prova que o site está acessível**. O porteiro
-consulta o domínio principal e todos os hosts extraídos de
-`docker-compose.dominios.yml`, repete durante até 2 minutos e exige HTTP 307 em
-todos. Qualquer falha mantém o deploy vermelho, imprime a lista completa de
-domínios quebrados e só então libera a tranca.
+consulta publicamente o domínio principal e testa os hosts extraídos de
+`docker-compose.dominios.yml` direto no IP do contêiner `deskcommcrm-app-1`, com
+o header `Host`. Isso evita o falso negativo dos clientes atrás da Cloudflare,
+que pode seguir o redirecionamento e devolver 200. A sonda repete durante até 2
+minutos e exige HTTP 307 em todos os caminhos.
 
 Para diagnóstico manual, sem subir nada:
 
@@ -103,6 +104,25 @@ grep -oE 'Host\(`[^`]+`\)' docker-compose.dominios.yml | sort -u
 curl -s -o /dev/null -w "%{http_code}\n" https://<DOMAIN>/
 # esperado: 307. 404 = labels perdidas; o próximo deploy deve ser pelo porteiro.
 ```
+
+### Deploy com volta automática
+
+Para trocar as três imagens e voltar sozinho se a versão nova não passar nas
+sondas:
+
+```bash
+bash scripts/deploy-com-rollback.sh --session <id-da-sessao> --tag <nova-tag>
+```
+
+O wrapper guarda `.env.bak-antes-<nova-tag>`, chama o porteiro para `app`,
+`worker` e `scheduler`, confere health e versão, rotas, saúde dos contêineres e
+erros críticos recentes. Saída `0` significa deploy aprovado. Saída `20`
+significa versão nova reprovada e rollback aprovado. Saída `30` significa que o
+rollback também falhou e exige intervenção manual. Erros de argumento ou do
+`.env` saem com `1` antes de alterar as imagens.
+
+Migration não faz parte deste script. Ela deve ser aditiva e aplicada antes do
+deploy; voltar a imagem não desfaz migration.
 
 ---
 

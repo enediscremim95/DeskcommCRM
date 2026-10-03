@@ -26,6 +26,10 @@ printf 'DOMAIN=crm.agenciaveritasdigital.com\n' > "$WORK/project/.env"
 
 cat > "$WORK/bin/docker" <<'STUB'
 #!/usr/bin/env bash
+if [ "${1:-}" = inspect ]; then
+  printf '172.18.0.5\n'
+  exit 0
+fi
 if mkdir "$FAKE_DOCKER_ACTIVE" 2>/dev/null; then
   trap 'rmdir "$FAKE_DOCKER_ACTIVE" 2>/dev/null || true' EXIT
 else
@@ -41,8 +45,8 @@ chmod +x "$WORK/bin/docker"
 cat > "$WORK/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 url="${!#}"
-printf '%s\n' "$url" >> "$FAKE_CURL_CALLS"
-if [ -n "${FAKE_CURL_FAIL_DOMAIN:-}" ] && [[ "$url" == *"$FAKE_CURL_FAIL_DOMAIN"* ]]; then
+printf '%s\n' "$*" >> "$FAKE_CURL_CALLS"
+if [ -n "${FAKE_CURL_FAIL_DOMAIN:-}" ] && [[ "$*" == *"$FAKE_CURL_FAIL_DOMAIN"* ]]; then
   printf '404'
   exit 0
 fi
@@ -188,8 +192,10 @@ check 'o deploy reprova quando um domínio de cliente responde 404' test "$rc" -
 check 'a saída lista nominalmente o domínio quebrado' grep -q 'crm.lecote.com.br: HTTP 404' "$WORK/dominio.out"
 check 'o domínio principal também foi conferido' grep -q 'https://crm.agenciaveritasdigital.com/' "$FAKE_CURL_CALLS"
 for cliente in crm.imobiliariaa.com.br crm.zaparolliimoveis.com crm.lecote.com.br crm.alavancagem.site crm-imobiliariaa.agenciaveritasdigital.com; do
-  check "o cliente $cliente foi conferido" grep -q "https://$cliente/" "$FAKE_CURL_CALLS"
+  check "o cliente $cliente foi conferido direto no app" grep -q -- "-H Host: $cliente http://172.18.0.5:3000/" "$FAKE_CURL_CALLS"
+  check "o cliente $cliente não foi conferido pela Cloudflare" bash -c '! grep -q "https://$1/" "$2"' _ "$cliente" "$FAKE_CURL_CALLS"
 done
+check 'falha exclusiva da sonda usa o código reservado 10' test "$rc" -eq 10
 check 'a tranca também é liberada após falha HTTP' test ! -d "$DEPLOY_LOCK_DIR"
 
 printf '\n▶ cada host está nas três regras de roteamento\n'
