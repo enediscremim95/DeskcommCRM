@@ -102,6 +102,7 @@ stable
 security definer
 set search_path = ''
 as $$
+#variable_conflict use_column
 begin
   if auth.uid() is null
      or not public.fn_role_at_least(p_organization_id, 'manager') then
