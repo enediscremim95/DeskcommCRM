@@ -444,27 +444,37 @@ export function LeadPageClient({
                   contextItems={contextItems}
                 />
               </div>
-              <RetentionNotice conversationId={selectedConversation.id} />
-              {motivoDaJanela ? (
-                <JanelaFechadaAviso
+              <div
+                data-testid="conversation-footer"
+                className="flex max-h-[min(52%,28rem)] shrink-0 flex-col overflow-hidden"
+              >
+                <div
+                  data-testid="conversation-footer-notices"
+                  className="max-h-28 shrink-0 overflow-y-auto"
+                >
+                  <RetentionNotice conversationId={selectedConversation.id} />
+                  {motivoDaJanela ? (
+                    <JanelaFechadaAviso
+                      conversationId={selectedConversation.id}
+                      provider={selectedConversation.channel_sessions?.provider ?? null}
+                      motivo={motivoDaJanela}
+                    />
+                  ) : null}
+                </div>
+                <Composer
+                  ref={composerRef}
                   conversationId={selectedConversation.id}
-                  provider={selectedConversation.channel_sessions?.provider ?? null}
-                  motivo={motivoDaJanela}
+                  blockedReason={
+                    supportReadonly ? t("Acompanhamento somente leitura") : blockedReason
+                  }
+                  janelaFechada={motivoDaJanela}
+                  disabled={selectedConversation.status === "closed"}
+                  contactName={selectedConversation.contacts?.name ?? nome}
+                  respondendo={respondendo}
+                  onCancelarResposta={() => setRespondendo(null)}
+                  currentContactId={selectedConversation.contact_id}
                 />
-              ) : null}
-              <Composer
-                ref={composerRef}
-                conversationId={selectedConversation.id}
-                blockedReason={
-                  supportReadonly ? t("Acompanhamento somente leitura") : blockedReason
-                }
-                janelaFechada={motivoDaJanela}
-                disabled={selectedConversation.status === "closed"}
-                contactName={selectedConversation.contacts?.name ?? nome}
-                respondendo={respondendo}
-                onCancelarResposta={() => setRespondendo(null)}
-                currentContactId={selectedConversation.contact_id}
-              />
+              </div>
             </>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-surface-elevated/40 px-6 text-center">
