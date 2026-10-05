@@ -53,7 +53,7 @@ drop policy if exists "crm_leads_select" on public.crm_leads;
 create policy "crm_leads_select" on public.crm_leads
   for select using (
     (select public.fn_is_platform_admin())
-    or organization_id = any((select public.fn_orgs_leitura_total()))
+    or organization_id = any(((select public.fn_orgs_leitura_total()))::uuid[])
     or public.fn_can_view_lead(organization_id, owner_user_id)
   );
 
