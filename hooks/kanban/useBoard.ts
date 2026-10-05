@@ -6,6 +6,7 @@ import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { apiClient } from "@/lib/api/client";
 import type { BoardData, BoardStageChunk } from "@/lib/kanban/types";
+import type { Lead } from "@/lib/types/leads";
 
 /**
  * Fetch board via API route (NOT direct supabase-js).

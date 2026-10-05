@@ -156,7 +156,7 @@ describe("0284 · contagem agrupada por etapa", () => {
         'anon', 'public.fn_contagem_por_etapa(uuid,uuid)'::regprocedure, 'EXECUTE');`),
     ).toBe("f");
     expect(
-      sql(`select p.prosecdef::text || '|' || p.provolatile
+      sql(`select p.prosecdef::text || '|' || p.provolatile::text
              from pg_proc p
             where p.oid = 'public.fn_contagem_por_etapa(uuid,uuid)'::regprocedure;`),
     ).toBe("false|s");

@@ -51,7 +51,7 @@ const board = {
       next_position_in_stage: null,
     },
   },
-} as BoardData;
+} as unknown as BoardData;
 
 describe("useBoard agrupa a reconciliação depois do realtime", () => {
   beforeEach(() => {
