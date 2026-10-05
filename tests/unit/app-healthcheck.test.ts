@@ -1,82 +1,48 @@
-import { spawn } from "node:child_process";
 import fs from "node:fs";
-import { createServer, type Server } from "node:http";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-const servidores: Server[] = [];
+const RAIZ = process.cwd();
+const compose = fs.readFileSync(path.join(RAIZ, "docker-compose.prod.yml"), "utf8");
+const SONDA_TCP =
+  "test: [\"CMD\", \"node\", \"-e\", \"require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\"]";
 
-afterEach(async () => {
-  await Promise.all(
-    servidores.splice(0).map(
-      (server) => new Promise<void>((resolve) => server.close(() => resolve())),
-    ),
-  );
-});
-
-async function servidorDeSaude(statusBanco: "ok" | "down", httpStatus: number) {
-  let cabecalhos: Record<string, string | string[] | undefined> = {};
-  const server = createServer((req, res) => {
-    cabecalhos = req.headers;
-    res.writeHead(httpStatus, { "content-type": "application/json" });
-    res.end(
-      JSON.stringify({
-        data: {
-          status: httpStatus === 200 ? "healthy" : "unhealthy",
-          checks: { supabase: { status: statusBanco } },
-        },
-      }),
-    );
-  });
-  servidores.push(server);
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("servidor de teste sem porta");
-  return {
-    url: `http://127.0.0.1:${address.port}/api/v1/health`,
-    cabecalhos: () => cabecalhos,
-  };
+function blocoDoApp(): string {
+  const bloco = compose.match(/^  app:\r?\n[\s\S]*?(?=^  [a-z][a-z0-9-]*:\r?$)/m)?.[0];
+  if (!bloco) throw new Error("serviço app não encontrado no compose de produção");
+  return bloco;
 }
 
-async function executarProbe(url: string): Promise<number | null> {
-  const script = path.join(process.cwd(), "docker", "app-healthcheck.mjs");
-  return new Promise((resolve, reject) => {
-    const filho = spawn(process.execPath, [script, url], {
-      env: { ...process.env, INTERNAL_SECRET: "segredo-do-healthcheck" },
-      stdio: "ignore",
-    });
-    filho.once("error", reject);
-    filho.once("exit", resolve);
-  });
+function blocoDoHealthcheck(): string {
+  const bloco = blocoDoApp().match(
+    /^    healthcheck:\r?\n[\s\S]*?(?=^    [a-z][a-z0-9_-]*:|^  [a-z][a-z0-9-]*:)/m,
+  )?.[0];
+  if (!bloco) throw new Error("healthcheck do app não encontrado no compose de produção");
+  return bloco;
 }
 
 describe("healthcheck do container app", () => {
-  it("o compose executa a sonda que a imagem realmente carrega e a rota publica o estado", () => {
-    const compose = fs.readFileSync(path.join(process.cwd(), "docker-compose.prod.yml"), "utf8");
-    const dockerfile = fs.readFileSync(path.join(process.cwd(), "Dockerfile"), "utf8");
-    const rota = fs.readFileSync(
-      path.join(process.cwd(), "app", "api", "v1", "health", "route.ts"),
-      "utf8",
-    );
+  it("mede somente se o processo aceita conexão TCP na porta 3000", () => {
+    const healthcheck = blocoDoHealthcheck();
+    const comando = healthcheck
+      .split(/\r?\n/)
+      .find((linha) => linha.trimStart().startsWith("test:"));
 
-    expect(compose).toContain('["CMD", "node", "/opt/app-healthcheck.mjs"]');
-    expect(dockerfile).toContain("docker/app-healthcheck.mjs /opt/app-healthcheck.mjs");
-    expect(rota).toContain('check.code === "PGRST003"');
-    expect(rota).toContain("auto_cura_banco: autoCura.estado");
+    expect(comando, "o healthcheck do app ficou sem comando").toBeDefined();
+    expect(comando?.trim()).toBe(SONDA_TCP);
+    expect(comando).not.toMatch(/api\/v1\/health|app-healthcheck\.mjs|fetch\(|supabase|redis|waha/i);
   });
 
-  it("aprova quando o banco responde, mesmo se outra dependência deixou a rota em 503", async () => {
-    const servidor = await servidorDeSaude("ok", 503);
+  it("preserva a tolerância operacional e não empacota a sonda antiga", () => {
+    const healthcheck = blocoDoHealthcheck();
+    const dockerfile = fs.readFileSync(path.join(RAIZ, "Dockerfile"), "utf8");
 
-    expect(await executarProbe(servidor.url)).toBe(0);
-    expect(servidor.cabecalhos()["x-self-heal-probe"]).toBe("1");
-    expect(servidor.cabecalhos().authorization).toBe("Bearer segredo-do-healthcheck");
-  });
-
-  it("reprova quando o banco não responde", async () => {
-    const servidor = await servidorDeSaude("down", 503);
-
-    expect(await executarProbe(servidor.url)).toBe(1);
+    expect(healthcheck).toContain("interval: 30s");
+    expect(healthcheck).toContain("timeout: 5s");
+    expect(healthcheck).toContain("retries: 5");
+    expect(healthcheck).toContain("start_period: 40s");
+    expect(dockerfile).not.toContain("app-healthcheck.mjs");
+    expect(fs.existsSync(path.join(RAIZ, "docker", "app-healthcheck.mjs"))).toBe(false);
   });
 });

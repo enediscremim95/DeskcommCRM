@@ -105,6 +105,29 @@ curl -s -o /dev/null -w "%{http_code}\n" https://<DOMAIN>/
 # esperado: 307. 404 = labels perdidas; o próximo deploy deve ser pelo porteiro.
 ```
 
+### Por que a sonda do app é de vida
+
+Em 05/10/2026, duas janelas de latência do Supabase deixaram a rota
+`/api/v1/health` degradada. Como o healthcheck do Docker consultava essa rota,
+cinco falhas marcaram o contêiner `unhealthy`; o Traefik o retirou do roteamento
+e o CRM inteiro respondeu 404 por cerca de 10 minutos em cada janela, inclusive
+o login e os webhooks do WhatsApp.
+
+Por isso a sonda do serviço `app` mede somente vida: o processo precisa aceitar
+conexão TCP na porta 3000. O estado de Supabase, Redis e WAHA continua exposto
+pela rota de saúde e consumido pela vigia independente. Degradação de
+dependência deve gerar **alerta**, nunca decidir o roteamento público.
+
+**Atenção, a autocura TEM gatilho externo.** A decisão de reiniciar o app após três
+`PGRST003` consecutivos vive em `lib/health/auto-cura-banco.ts`, mas só é avaliada
+quando a rota `GET /api/v1/health` recebe o cabeçalho `x-self-heal-probe: 1` junto do
+segredo interno (`app/api/v1/health/route.ts`). Antes de 05/10/2026 quem mandava isso
+era a sonda do Docker; ao trocá-la pela sonda de vida, a autocura ficou **desligada por
+algumas horas** até o gatilho ser devolvido. Hoje o gatilho é a vigia
+(`vigia_silencio_crm.py`, cron de 1 minuto). **Quem instalar sem a vigia não tem
+autocura.** Seguimento: um temporizador interno do app que dispare a avaliação sem
+depender de ninguém de fora.
+
 ### Deploy com volta automática
 
 Para trocar as três imagens e voltar sozinho se a versão nova não passar nas
