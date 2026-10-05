@@ -1544,7 +1544,7 @@ function CampaignTable({
                                                 aria-hidden="true"
                                                 className="h-5 w-3 shrink-0 border-b border-l border-border"
                                               />
-                                              {localText(idioma, "Anúncio", "Anuncio")}
+                                              {t("Anúncio")}
                                             </span>
                                           </td>
                                           <td className="min-w-72 max-w-sm overflow-hidden px-4 py-2.5">

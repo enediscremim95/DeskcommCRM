@@ -602,6 +602,7 @@ export const DICIONARIO: Traducoes = {
   "Menor custo por lead": { es: "Menor costo por lead" },
   "Melhor cliques para leads": { es: "Mejor clics a leads" },
   "Sem dados suficientes": { es: "Sin datos suficientes" },
+  "Anúncio": { es: "Anuncio" },
   "Anúncios Meta": { es: "Anuncios Meta" },
   "Cliques para leads": { es: "Clics a leads" },
   "Taxa de conv. site": { es: "Tasa de conv. sitio" },
