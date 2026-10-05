@@ -947,6 +947,8 @@ describe("colunas da tabela de campanhas", () => {
 
     expect(headerNames(table)).toEqual([
       "Campanha",
+      "Criativo",
+      "Página de destino",
       "Status",
       "Valor gasto",
       "Leads",
@@ -1078,9 +1080,16 @@ describe("colunas da tabela de campanhas", () => {
 
     await user.click(screen.getByText("Colunas (3)"));
     await user.click(screen.getByRole("checkbox", { name: "Impressões" }));
-    expect(headerNames(table)).toEqual(["Campanha", "Status", "Valor gasto", "Leads"]);
-    expect(adsetRow.cells).toHaveLength(4);
-    expect(adRow.cells).toHaveLength(4);
+    expect(headerNames(table)).toEqual([
+      "Campanha",
+      "Criativo",
+      "Página de destino",
+      "Status",
+      "Valor gasto",
+      "Leads",
+    ]);
+    expect(adsetRow.cells).toHaveLength(6);
+    expect(adRow.cells).toHaveLength(6);
     expect(within(adsetRow).queryByText("456")).not.toBeInTheDocument();
     expect(within(adRow).queryByText("123")).not.toBeInTheDocument();
 
@@ -1090,6 +1099,79 @@ describe("colunas da tabela de campanhas", () => {
     campaignButton.focus();
     await user.keyboard("{Enter}");
     expect(within(table).queryByText("Conjunto alinhado")).not.toBeInTheDocument();
+  });
+
+  it("mostra página limpa, contagem deduplicada e ausência de destino no drill", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      const response = baseResponse([
+        {
+          ...metrics,
+          name: "Pesquisa Google",
+          platform: "google_ads",
+          campaign_status: "ENABLED",
+          adsets: [
+            {
+              ...metrics,
+              name: "Grupo de pesquisa",
+              ads: [
+                {
+                  ...metrics,
+                  name: "Criativo com página",
+                  thumbnail_url: null,
+                  story_id: null,
+                  destination_urls: [
+                    "https://cliente.test/oferta?utm_source=google#formulario",
+                    "https://cliente.test/oferta?gclid=duplicada",
+                    "https://cliente.test/consulta?utm_campaign=pesquisa",
+                  ],
+                },
+                {
+                  ...metrics,
+                  name: "Criativo sem página",
+                  thumbnail_url: null,
+                  story_id: null,
+                  destination_urls: [],
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+      response.data.currencies[0]!.platforms = [{ ...metrics, platform: "google_ads" }];
+      return Response.json(response);
+    });
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+
+    const campaignButton = await screen.findByRole("button", {
+      name: /^Pesquisa Google/,
+      expanded: false,
+    });
+    const table = campaignButton.closest("table") as HTMLTableElement;
+    const campaignPageCount = within(campaignButton.closest("tr")!).getByText("2 páginas");
+    expect(campaignPageCount).toHaveAttribute(
+      "title",
+      "cliente.test/oferta\ncliente.test/consulta",
+    );
+
+    await user.click(campaignButton);
+    await user.click(
+      within(table).getByRole("button", { name: /^Grupo de pesquisa/, expanded: false }),
+    );
+
+    const destination = within(table).getByRole("link", { name: "cliente.test/oferta" });
+    expect(destination).toHaveAttribute("href", "https://cliente.test/oferta");
+    expect(destination).toHaveAttribute("target", "_blank");
+    expect(destination).toHaveAttribute("rel", "noopener noreferrer");
+    expect(destination).toHaveAttribute("title", "cliente.test/oferta");
+    expect(within(table).getByText("+1")).toHaveAttribute("title", "cliente.test/consulta");
+    expect(within(table).getByText("Sem página informada")).toBeInTheDocument();
+    expect(table.textContent).not.toContain("utm_");
+    expect(headerNames(table).slice(0, 3)).toEqual([
+      "Campanha",
+      "Criativo",
+      "Página de destino",
+    ]);
   });
 
   it("esconde o filtro e a coluna de status quando nenhuma campanha tem status conhecido", async () => {
@@ -1119,7 +1201,14 @@ describe("colunas da tabela de campanhas", () => {
     render(<TrafficDashboard />);
     const beta = await screen.findByText("Beta");
     const table = beta.closest("table") as HTMLTableElement;
-    expect(headerNames(table)).toEqual(["Campanha", "Valor gasto", "Leads", "Impressões"]);
+    expect(headerNames(table)).toEqual([
+      "Campanha",
+      "Criativo",
+      "Página de destino",
+      "Valor gasto",
+      "Leads",
+      "Impressões",
+    ]);
     expect(
       screen.queryByRole("group", { name: "Filtrar campanhas por status" }),
     ).not.toBeInTheDocument();
@@ -1127,9 +1216,9 @@ describe("colunas da tabela de campanhas", () => {
     // O filtro "Ativas" lembrado não some com as campanhas quando o status ainda não chegou.
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
     for (const row of Array.from(table.tBodies[0]?.rows ?? [])) {
-      expect(row.cells).toHaveLength(4);
+      expect(row.cells).toHaveLength(6);
     }
-    expect(screen.getByText("Total").closest("tr")?.cells).toHaveLength(4);
+    expect(screen.getByText("Total").closest("tr")?.cells).toHaveLength(6);
   });
 
   it("marca uma campanha sem ordenar nem abrir o detalhamento", async () => {
@@ -1517,11 +1606,19 @@ describe("colunas da tabela de campanhas", () => {
     );
     render(<TrafficDashboard />);
     const table = (await screen.findByText("Beta")).closest("table") as HTMLTableElement;
-    expect(headerNames(table)).toEqual(["Campanha", "Status", "Impressões", "CTR", "Valor gasto"]);
+    expect(headerNames(table)).toEqual([
+      "Campanha",
+      "Criativo",
+      "Página de destino",
+      "Status",
+      "Impressões",
+      "CTR",
+      "Valor gasto",
+    ]);
     const row = screen.getByText("Beta").closest("tr") as HTMLTableRowElement;
-    expect(row.cells[2]?.textContent).toBe("1.000");
-    expect(row.cells[3]?.textContent).toBe("5%");
-    expect(row.cells[4]?.textContent).toMatch(/^R\$\s50,00$/);
+    expect(row.cells[4]?.textContent).toBe("1.000");
+    expect(row.cells[5]?.textContent).toBe("5%");
+    expect(row.cells[6]?.textContent).toMatch(/^R\$\s50,00$/);
     expect(screen.getByText("Pausada")).toBeInTheDocument();
   });
 
@@ -1551,7 +1648,14 @@ describe("colunas da tabela de campanhas", () => {
     expect(spendHeader).toHaveAttribute("data-drop-position", "antes");
     drag.drop();
 
-    expect(headerNames(firstTable)).toEqual(["Campanha", "Status", "Leads", "Valor gasto"]);
+    expect(headerNames(firstTable)).toEqual([
+      "Campanha",
+      "Criativo",
+      "Página de destino",
+      "Status",
+      "Leads",
+      "Valor gasto",
+    ]);
     const storageKey = "traffic-report-column-order:org-1:viewer-1:meta_ads";
     expect(JSON.parse(localStorage.getItem(storageKey) ?? "[]")).toEqual([
       "name",
@@ -1566,11 +1670,25 @@ describe("colunas da tabela de campanhas", () => {
       "table",
     ) as HTMLTableElement;
     await waitFor(() =>
-      expect(headerNames(restoredTable)).toEqual(["Campanha", "Status", "Leads", "Valor gasto"]),
+      expect(headerNames(restoredTable)).toEqual([
+        "Campanha",
+        "Criativo",
+        "Página de destino",
+        "Status",
+        "Leads",
+        "Valor gasto",
+      ]),
     );
 
     await userEvent.setup().click(screen.getByRole("button", { name: "Voltar à ordem padrão" }));
-    expect(headerNames(restoredTable)).toEqual(["Campanha", "Status", "Valor gasto", "Leads"]);
+    expect(headerNames(restoredTable)).toEqual([
+      "Campanha",
+      "Criativo",
+      "Página de destino",
+      "Status",
+      "Valor gasto",
+      "Leads",
+    ]);
     expect(localStorage.getItem(storageKey)).toBeNull();
   });
 
@@ -1627,6 +1745,28 @@ describe("colunas da tabela de campanhas", () => {
       "draggable",
       "true",
     );
+  });
+
+  it("mantém barras nos dois eixos e o cabeçalho fixo nas tabelas largas", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json(
+        baseResponse([campaignWithStatus("Campanha com rolagem", "ACTIVE", 50)], [
+          "spend",
+          "leads",
+        ]),
+      ),
+    );
+
+    render(<TrafficDashboard />);
+    const table = (await screen.findByText("Campanha com rolagem")).closest(
+      "table",
+    ) as HTMLTableElement;
+    const scrollContainer = table.parentElement as HTMLDivElement;
+
+    expect(scrollContainer).toHaveClass("max-h-[70vh]", "overflow-auto");
+    expect(scrollContainer.className).toContain("[scrollbar-gutter:stable]");
+    expect(scrollContainer.className).toContain("[scrollbar-width:auto]");
+    expect(table.querySelector("thead")).toHaveClass("sticky", "top-0", "bg-card");
   });
 
   it("redimensiona sem ordenar e restaura a largura persistida pela organização", async () => {

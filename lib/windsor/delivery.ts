@@ -1,3 +1,4 @@
+import { paginasDestinoLimpas } from "./pagina-limpa";
 import type { AdPlatform } from "./types";
 
 export type TrafficDeliveryFact = {
@@ -37,19 +38,6 @@ function campaignKey(fact: TrafficDeliveryFact): string {
 
 function campaignDisplayKey(campaign: TrafficDeliveryCampaign): string {
   return `${campaign.platform}:${campaign.name.trim().toLocaleLowerCase("pt-BR")}`;
-}
-
-export function cleanDestinationUrl(value: string): string | null {
-  const candidate = value.trim();
-  if (!candidate) return null;
-  try {
-    const parsed = new URL(/^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`);
-    if (!/^https?:$/.test(parsed.protocol)) return null;
-    const path = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/$/, "");
-    return `${parsed.hostname.toLocaleLowerCase("en-US")}${path}`;
-  } catch {
-    return null;
-  }
 }
 
 export function buildTrafficDelivery(
@@ -96,9 +84,8 @@ export function buildTrafficDelivery(
       }
       current.latestStatusDate = statusDate;
       current.statuses.add(status);
-      for (const raw of fact.destination_urls ?? []) {
-        const clean = cleanDestinationUrl(raw);
-        if (clean) current.latestUrls.add(clean);
+      for (const page of paginasDestinoLimpas(fact.destination_urls ?? [])) {
+        current.latestUrls.add(page.endereco);
       }
     }
   }
@@ -108,9 +95,8 @@ export function buildTrafficDelivery(
     if (!current) continue;
     const spend = Number(fact.spend ?? 0);
     if (Number.isFinite(spend) && spend > 0) current.spend += spend;
-    for (const raw of fact.destination_urls ?? []) {
-      const clean = cleanDestinationUrl(raw);
-      if (clean) current.periodUrls.add(clean);
+    for (const page of paginasDestinoLimpas(fact.destination_urls ?? [])) {
+      current.periodUrls.add(page.endereco);
     }
   }
 

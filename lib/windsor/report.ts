@@ -342,6 +342,7 @@ export function buildTrafficReport(args: {
                   total: Bucket;
                   thumbnail_url: string | null;
                   story_id: string | null;
+                  destination_urls: Set<string>;
                 }
               >;
             }
@@ -444,11 +445,15 @@ export function buildTrafficReport(args: {
         total: empty(),
         thumbnail_url: fact.thumbnail_url,
         story_id: fact.story_id,
+        destination_urls: new Set(fact.destination_urls ?? []),
       };
       adset.ads.set(adKey, ad);
     }
     if (!ad.thumbnail_url && fact.thumbnail_url) ad.thumbnail_url = fact.thumbnail_url;
     if (!ad.story_id && fact.story_id) ad.story_id = fact.story_id;
+    for (const destinationUrl of fact.destination_urls ?? []) {
+      ad.destination_urls.add(destinationUrl);
+    }
     add(ad.total, fact, args.conversionFields);
   }
 
@@ -514,6 +519,7 @@ export function buildTrafficReport(args: {
                 ...ratios(ad.total, args.model),
                 thumbnail_url: ad.thumbnail_url,
                 story_id: ad.story_id,
+                destination_urls: [...ad.destination_urls],
               })),
             })),
           })),

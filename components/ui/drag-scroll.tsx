@@ -11,7 +11,7 @@ const INTERATIVO = "a,button,input,select,textarea,label,summary,[role=button],[
 const LIMIAR = 5;
 
 function rolagemVertical(inicio: HTMLElement | null): HTMLElement {
-  for (let el = inicio?.parentElement ?? null; el; el = el.parentElement) {
+  for (let el = inicio; el; el = el.parentElement) {
     const { overflowY } = getComputedStyle(el);
     if ((overflowY === "auto" || overflowY === "scroll") && el.scrollHeight > el.clientHeight) {
       return el;
@@ -22,8 +22,9 @@ function rolagemVertical(inicio: HTMLElement | null): HTMLElement {
 
 /**
  * Área com rolagem que pode ser "agarrada" com o mouse: arrastar para os lados
- * rola a própria área; para cima ou para baixo, rola a página (ou o painel que
- * a contém). Toque e caneta seguem com a rolagem nativa.
+ * rola a própria área; para cima ou para baixo, rola a própria área quando ela
+ * tem overflow vertical, ou o painel/página que a contém. Toque e caneta seguem
+ * com a rolagem nativa.
  */
 export function DragScroll({ className, children }: { className?: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
