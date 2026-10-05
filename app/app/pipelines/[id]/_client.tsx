@@ -102,7 +102,7 @@ export function PipelinePageClient({
 
   return (
     <div
-      className="flex min-h-[600px] flex-col gap-4"
+      className="flex min-h-[600px] flex-col gap-4 md:h-[calc(100dvh-8.75rem)] md:min-h-0"
       // OBSERVÁVEL de propósito, e é a razão de existir desta linha: "a
       // assinatura morreu" e "nada aconteceu" produzem o MESMO silêncio na
       // tela, e sem este valor nem o produto nem o teste conseguem separar as
@@ -126,7 +126,7 @@ export function PipelinePageClient({
           limite curto) + botão na mesma linha sem quebra empurrava o botão pra
           fora da viewport em telas estreitas. De `sm:` pra cima volta a ser
           uma linha só, como sempre foi. */}
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="min-w-0 truncate text-2xl font-semibold tracking-tight">
           {data?.pipeline.name ?? initialName}
         </h1>
@@ -160,18 +160,20 @@ export function PipelinePageClient({
           stages={data.stages}
         />
       )}
-      <FilterBar
-        filters={filters}
-        onChange={setFilters}
-        leads={data?.leads ?? []}
-        extra={
-          podeEditarEtapas ? (
-            <Button variant="outline" size="sm" onClick={() => mudarEtapasOpen(true)}>
-              <PencilSimple size={14} className="mr-1.5" /> {t("Editar etapas")}
-            </Button>
-          ) : null
-        }
-      />
+      <div className="shrink-0">
+        <FilterBar
+          filters={filters}
+          onChange={setFilters}
+          leads={data?.leads ?? []}
+          extra={
+            podeEditarEtapas ? (
+              <Button variant="outline" size="sm" onClick={() => mudarEtapasOpen(true)}>
+                <PencilSimple size={14} className="mr-1.5" /> {t("Editar etapas")}
+              </Button>
+            ) : null
+          }
+        />
+      </div>
       {error ? (
         <div className="flex items-center justify-between gap-4 rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
           <span>{t("Não foi possível carregar este funil agora. Tente novamente.")}</span>

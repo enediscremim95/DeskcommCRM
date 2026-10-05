@@ -257,7 +257,7 @@ export function KanbanBoard({
   return (
     <>
       <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="flex min-h-[480px] flex-1 gap-3 overflow-x-auto p-4">
+        <div className="flex min-h-[480px] flex-1 gap-3 overflow-x-auto p-4 md:min-h-0 md:items-stretch md:overflow-y-hidden">
           {data.stages.map((stage) => {
             const leads = grouped.get(stage.id) ?? [];
             const page = data.stage_pages?.[stage.id];
