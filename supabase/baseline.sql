@@ -28203,6 +28203,34 @@ create policy "crm_leads_select" on public.crm_leads
 
 notify pgrst, 'reload schema';
 
+-- ---- contagem agrupada do quadro (migration 0284) ----
+-- SECURITY INVOKER conserva a RLS de crm_leads. O filtro de status replica a
+-- rota do quadro; estágios sem negócio não geram linha e viram zero na rota.
+create or replace function public.fn_contagem_por_etapa(
+  p_organization_id uuid,
+  p_pipeline_id uuid
+)
+returns table (stage_id uuid, total bigint)
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select l.stage_id, count(*)::bigint as total
+    from public.crm_leads l
+   where l.organization_id = p_organization_id
+     and l.pipeline_id = p_pipeline_id
+     and l.status <> 'archived'
+   group by l.stage_id;
+$$;
+
+revoke execute on function public.fn_contagem_por_etapa(uuid, uuid)
+  from public, anon;
+grant execute on function public.fn_contagem_por_etapa(uuid, uuid)
+  to authenticated;
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

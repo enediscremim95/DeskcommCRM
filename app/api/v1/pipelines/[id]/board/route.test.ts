@@ -23,7 +23,7 @@ interface Filter {
 }
 
 function buildDataset() {
-  const stages = Array.from({ length: 25 }, (_, index) => ({
+  const stages = Array.from({ length: 26 }, (_, index) => ({
     id: `stage-${index}`,
     organization_id: ORGANIZATION_ID,
     pipeline_id: PIPELINE_ID,
@@ -32,7 +32,7 @@ function buildDataset() {
     is_archived: false,
   }));
   const leads = stages.flatMap((stage, stageIndex) => {
-    const amount = 65 + (stageIndex < 6 ? 1 : 0);
+    const amount = stageIndex === 25 ? 0 : 65 + (stageIndex < 6 ? 1 : 0);
     return Array.from({ length: amount }, (_, index) => ({
       id: `lead-${stageIndex}-${String(index).padStart(3, "0")}`,
       organization_id: ORGANIZATION_ID,
@@ -62,10 +62,12 @@ class Query implements PromiseLike<QueryResult> {
     private readonly table: string,
     private readonly dataset: ReturnType<typeof buildDataset>,
     private readonly inBatchSizes: number[],
+    private readonly exactCountQueries: string[],
   ) {}
 
   select(_columns: string, options?: { head?: boolean }) {
     this.head = options?.head ?? false;
+    if (this.head) this.exactCountQueries.push(this.table);
     return this;
   }
   eq(column: string, value: unknown) {
@@ -173,11 +175,24 @@ describe("GET /api/v1/pipelines/[id]/board com muitos negócios", () => {
   it("carrega 1.631 negócios por páginas de etapa sem montar filtro in gigante", async () => {
     const dataset = buildDataset();
     const inBatchSizes: number[] = [];
+    const exactCountQueries: string[] = [];
+    const rpc = vi.fn(async () => ({
+      data: dataset.stages
+        .map((stage) => ({
+          stage_id: stage.id,
+          total: dataset.leads.filter(
+            (lead) => lead.stage_id === stage.id && lead.status !== "archived",
+          ).length,
+        }))
+        .filter((row) => row.total > 0),
+      error: null,
+    }));
     const supabase = {
       auth: {
         getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }),
       },
-      from: (table: string) => new Query(table, dataset, inBatchSizes),
+      from: (table: string) => new Query(table, dataset, inBatchSizes, exactCountQueries),
+      rpc,
     };
     vi.mocked(createClient).mockResolvedValue(supabase as never);
 
@@ -195,18 +210,38 @@ describe("GET /api/v1/pipelines/[id]/board com muitos negócios", () => {
     expect(Object.values(body.data.stage_pages).reduce((sum, page) => sum + page.total, 0)).toBe(
       1_631,
     );
+    expect(body.data.stage_pages["stage-25"]?.total).toBe(0);
     expect(Math.max(...inBatchSizes)).toBeLessThanOrEqual(200);
     expect(inBatchSizes.filter((size) => size === 200).length).toBeGreaterThan(1);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("fn_contagem_por_etapa", {
+      p_organization_id: ORGANIZATION_ID,
+      p_pipeline_id: PIPELINE_ID,
+    });
+    expect(exactCountQueries).toEqual([]);
   });
 
   it("carregar mais não pula nem repete cards quando um lead novo entra antes do cursor", async () => {
     const dataset = buildDataset();
     const inBatchSizes: number[] = [];
+    const exactCountQueries: string[] = [];
+    const rpc = vi.fn(async () => ({
+      data: dataset.stages
+        .map((stage) => ({
+          stage_id: stage.id,
+          total: dataset.leads.filter(
+            (lead) => lead.stage_id === stage.id && lead.status !== "archived",
+          ).length,
+        }))
+        .filter((row) => row.total > 0),
+      error: null,
+    }));
     const supabase = {
       auth: {
         getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }),
       },
-      from: (table: string) => new Query(table, dataset, inBatchSizes),
+      from: (table: string) => new Query(table, dataset, inBatchSizes, exactCountQueries),
+      rpc,
     };
     vi.mocked(createClient).mockResolvedValue(supabase as never);
 
@@ -256,5 +291,7 @@ describe("GET /api/v1/pipelines/[id]/board com muitos negócios", () => {
       Array.from({ length: 66 }, (_, index) => `lead-0-${String(index).padStart(3, "0")}`),
     );
     expect(secondIds).not.toContain("lead-novo-no-topo");
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(exactCountQueries).toEqual([]);
   });
 });
