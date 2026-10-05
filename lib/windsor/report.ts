@@ -46,7 +46,12 @@ export interface CampaignStatusSnapshot {
   occurred_on: string;
 }
 export function latestCampaignStatuses(
-  facts: StoredFact[],
+  facts: Array<
+    Pick<
+      StoredFact,
+      "platform" | "campaign_id" | "campaign_name" | "campaign_status" | "occurred_on"
+    >
+  >,
 ): Map<string, CampaignStatusSnapshot> {
   const statuses = new Map<string, CampaignStatusSnapshot>();
   for (const fact of facts) {
@@ -59,6 +64,54 @@ export function latestCampaignStatuses(
     }
   }
   return statuses;
+}
+export interface AdDeliverySnapshot {
+  first_delivery_on: string;
+  last_delivery_on: string;
+}
+type AdDeliveryFact = Pick<
+  StoredFact,
+  | "account_id"
+  | "platform"
+  | "campaign_id"
+  | "campaign_name"
+  | "adset_id"
+  | "adset_name"
+  | "ad_id"
+  | "ad_name"
+  | "occurred_on"
+  | "impressions"
+  | "spend"
+>;
+function adDeliveryKey(fact: AdDeliveryFact): string {
+  return JSON.stringify([
+    fact.platform,
+    fact.account_id,
+    fact.campaign_id ?? fact.campaign_name,
+    fact.adset_id ?? fact.adset_name,
+    fact.ad_id ?? fact.ad_name,
+  ]);
+}
+export function adDeliverySnapshots(facts: AdDeliveryFact[]): Map<string, AdDeliverySnapshot> {
+  const snapshots = new Map<string, AdDeliverySnapshot>();
+  for (const fact of facts) {
+    const spend = Number(fact.spend ?? 0);
+    const impressions = Number(fact.impressions ?? 0);
+    if (!(spend > 0 || impressions > 0) || (!fact.ad_id && !fact.ad_name)) continue;
+    const key = adDeliveryKey(fact);
+    const current = snapshots.get(key);
+    snapshots.set(key, {
+      first_delivery_on:
+        current == null || fact.occurred_on < current.first_delivery_on
+          ? fact.occurred_on
+          : current.first_delivery_on,
+      last_delivery_on:
+        current == null || fact.occurred_on > current.last_delivery_on
+          ? fact.occurred_on
+          : current.last_delivery_on,
+    });
+  }
+  return snapshots;
 }
 interface Bucket {
   spend: number;
@@ -274,6 +327,7 @@ export function buildTrafficReport(args: {
   campaignReach?: ReadonlyMap<string, number>;
   accountReach?: ReadonlyMap<string, number>;
   campaignStatuses?: ReadonlyMap<string, CampaignStatusSnapshot>;
+  adDeliverySnapshots?: ReadonlyMap<string, AdDeliverySnapshot>;
 }) {
   // A consulta já filtra a janela no banco. Este segundo limite mantém o
   // agregador fiel ao contrato mesmo se uma fonte auxiliar entregar snapshot
@@ -281,17 +335,12 @@ export function buildTrafficReport(args: {
   const selectedWindow = args.window;
   const facts = selectedWindow
     ? args.facts.filter(
-        (fact) =>
-          fact.occurred_on >= selectedWindow.from && fact.occurred_on <= selectedWindow.to,
+        (fact) => fact.occurred_on >= selectedWindow.from && fact.occurred_on <= selectedWindow.to,
       )
     : args.facts;
   const accountById = new Map(args.accounts.map((account) => [account.account_id, account]));
   const campaignRollupKey = (fact: StoredFact) =>
-    JSON.stringify([
-      fact.account_id,
-      fact.occurred_on,
-      fact.campaign_id ?? fact.campaign_name,
-    ]);
+    JSON.stringify([fact.account_id, fact.occurred_on, fact.campaign_id ?? fact.campaign_name]);
   const adsetRollupKey = (fact: StoredFact) =>
     JSON.stringify([
       fact.account_id,
@@ -304,9 +353,7 @@ export function buildTrafficReport(args: {
     fact.platform === "meta_ads" && Boolean(fact.ad_id || fact.ad_name);
   const metaCampaignSummaryKeys = new Set(
     facts
-      .filter(
-        (fact) => fact.platform === "meta_ads" && !isMetaDetail(fact) && !hasAdset(fact),
-      )
+      .filter((fact) => fact.platform === "meta_ads" && !isMetaDetail(fact) && !hasAdset(fact))
       .map(campaignRollupKey),
   );
   const metaAdsetSummaryKeys = new Set(
@@ -342,6 +389,9 @@ export function buildTrafficReport(args: {
                   total: Bucket;
                   thumbnail_url: string | null;
                   story_id: string | null;
+                  destination_urls: Set<string>;
+                  first_delivery_on: string | null;
+                  last_delivery_on: string | null;
                 }
               >;
             }
@@ -374,8 +424,7 @@ export function buildTrafficReport(args: {
     accountIds.add(fact.account_id);
     const metaDetail = isMetaDetail(fact);
     const campaignSummaryExists = metaCampaignSummaryKeys.has(campaignRollupKey(fact));
-    const isCampaignSummary =
-      fact.platform === "meta_ads" && !metaDetail && !hasAdset(fact);
+    const isCampaignSummary = fact.platform === "meta_ads" && !metaDetail && !hasAdset(fact);
     const contributesToRollup = campaignSummaryExists
       ? isCampaignSummary
       : !(metaDetail && metaAdsetSummaryKeys.has(adsetRollupKey(fact)));
@@ -431,24 +480,36 @@ export function buildTrafficReport(args: {
       adset = { name: adsetName, total: empty(), ads: new Map() };
       campaign.adsets.set(adsetKey, adset);
     }
-    const contributesToAdset =
-      !(metaDetail && metaAdsetSummaryKeys.has(adsetRollupKey(fact)));
+    const contributesToAdset = !(metaDetail && metaAdsetSummaryKeys.has(adsetRollupKey(fact)));
     if (contributesToAdset) add(adset.total, fact, args.conversionFields);
     if (fact.platform === "meta_ads" && !metaDetail) continue;
     const adName = fact.ad_name || "Sem anúncio";
     const adKey = fact.ad_id ?? adName;
     let ad = adset.ads.get(adKey);
     if (!ad) {
+      const delivery = args.adDeliverySnapshots?.get(adDeliveryKey(fact));
       ad = {
         name: adName,
         total: empty(),
         thumbnail_url: fact.thumbnail_url,
         story_id: fact.story_id,
+        destination_urls: new Set(fact.destination_urls ?? []),
+        first_delivery_on: delivery?.first_delivery_on ?? null,
+        last_delivery_on: null,
       };
       adset.ads.set(adKey, ad);
     }
     if (!ad.thumbnail_url && fact.thumbnail_url) ad.thumbnail_url = fact.thumbnail_url;
     if (!ad.story_id && fact.story_id) ad.story_id = fact.story_id;
+    for (const destinationUrl of fact.destination_urls ?? []) {
+      ad.destination_urls.add(destinationUrl);
+    }
+    if (n(fact.spend) > 0 || n(fact.impressions) > 0) {
+      ad.last_delivery_on =
+        ad.last_delivery_on == null || fact.occurred_on > ad.last_delivery_on
+          ? fact.occurred_on
+          : ad.last_delivery_on;
+    }
     add(ad.total, fact, args.conversionFields);
   }
 
@@ -514,6 +575,9 @@ export function buildTrafficReport(args: {
                 ...ratios(ad.total, args.model),
                 thumbnail_url: ad.thumbnail_url,
                 story_id: ad.story_id,
+                destination_urls: [...ad.destination_urls],
+                first_delivery_on: ad.first_delivery_on,
+                last_delivery_on: ad.last_delivery_on,
               })),
             })),
           })),

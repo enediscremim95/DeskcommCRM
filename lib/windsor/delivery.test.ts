@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { buildTrafficDelivery, cleanDestinationUrl } from "./delivery";
+import { buildTrafficDelivery } from "./delivery";
+import { paginaDestinoLimpa } from "./pagina-limpa";
 
 describe("campanhas e páginas do relatório", () => {
   it("separa status ativo do fallback por investimento e ignora status inativo", () => {
@@ -55,25 +56,40 @@ describe("campanhas e páginas do relatório", () => {
 
     expect(delivery.active_campaigns).toHaveLength(1);
     expect(delivery.pages).toEqual(["cliente.test/a"]);
-    expect(cleanDestinationUrl("javascript:alert(1)")).toBeNull();
+    expect(paginaDestinoLimpa("javascript:alert(1)")).toBeNull();
   });
 
   it("usa o status mais recente do snapshot e restringe o fallback ao período", () => {
     const snapshot = [
       {
-        account_id: "meta-1", platform: "meta_ads" as const, campaign_id: "1",
-        campaign_name: "Captação", occurred_on: "2026-09-20", campaign_status: "PAUSED",
-        destination_urls: ["https://cliente.test/antiga"], spend: 0,
+        account_id: "meta-1",
+        platform: "meta_ads" as const,
+        campaign_id: "1",
+        campaign_name: "Captação",
+        occurred_on: "2026-09-20",
+        campaign_status: "PAUSED",
+        destination_urls: ["https://cliente.test/antiga"],
+        spend: 0,
       },
       {
-        account_id: "meta-1", platform: "meta_ads" as const, campaign_id: "1",
-        campaign_name: "Captação", occurred_on: "2026-09-19", campaign_status: "ACTIVE",
-        destination_urls: ["https://cliente.test/antiga"], spend: 10,
+        account_id: "meta-1",
+        platform: "meta_ads" as const,
+        campaign_id: "1",
+        campaign_name: "Captação",
+        occurred_on: "2026-09-19",
+        campaign_status: "ACTIVE",
+        destination_urls: ["https://cliente.test/antiga"],
+        spend: 10,
       },
       {
-        account_id: "google-1", platform: "google_ads" as const, campaign_id: "2",
-        campaign_name: "Pesquisa", occurred_on: "2026-09-20", campaign_status: null,
-        destination_urls: ["https://cliente.test/pesquisa"], spend: 50,
+        account_id: "google-1",
+        platform: "google_ads" as const,
+        campaign_id: "2",
+        campaign_name: "Pesquisa",
+        occurred_on: "2026-09-20",
+        campaign_status: null,
+        destination_urls: ["https://cliente.test/pesquisa"],
+        spend: 50,
       },
     ];
 
@@ -87,14 +103,24 @@ describe("campanhas e páginas do relatório", () => {
   it("lista somente as páginas da data mais recente da campanha ativa", () => {
     const snapshot = [
       {
-        account_id: "meta-1", platform: "meta_ads" as const, campaign_id: "1",
-        campaign_name: "Captação", occurred_on: "2026-09-19", campaign_status: "ACTIVE",
-        destination_urls: ["https://cliente.test/antiga"], spend: 10,
+        account_id: "meta-1",
+        platform: "meta_ads" as const,
+        campaign_id: "1",
+        campaign_name: "Captação",
+        occurred_on: "2026-09-19",
+        campaign_status: "ACTIVE",
+        destination_urls: ["https://cliente.test/antiga"],
+        spend: 10,
       },
       {
-        account_id: "meta-1", platform: "meta_ads" as const, campaign_id: "1",
-        campaign_name: "Captação", occurred_on: "2026-09-20", campaign_status: "ACTIVE",
-        destination_urls: ["https://cliente.test/atual?utm_source=meta"], spend: 10,
+        account_id: "meta-1",
+        platform: "meta_ads" as const,
+        campaign_id: "1",
+        campaign_name: "Captação",
+        occurred_on: "2026-09-20",
+        campaign_status: "ACTIVE",
+        destination_urls: ["https://cliente.test/atual?utm_source=meta"],
+        spend: 10,
       },
     ];
 

@@ -1,5 +1,6 @@
 import {
   Document,
+  Image,
   Page,
   Polygon,
   StyleSheet,
@@ -12,6 +13,8 @@ import React from "react";
 
 import type { MarcaDeSaida } from "@/lib/branding/saida";
 import type { TrafficDelivery, TrafficDeliveryCampaign } from "@/lib/windsor/delivery";
+import { paginaDestinoLimpa } from "@/lib/windsor/pagina-limpa";
+import { preloadPdfThumbnails, type ThumbnailDependencies } from "@/lib/windsor/pdf-thumbnails";
 import {
   PRIORITY_METRIC_META,
   priorityMetricValue,
@@ -48,16 +51,34 @@ export type TrafficSummarySource = {
       impressions: number;
       clicks: number;
     };
-    comparison?: PriorityMetricValues & {
-      reach: number | null;
-      impressions: number;
-      clicks: number;
-    } | null;
+    comparison?:
+      | (PriorityMetricValues & {
+          reach: number | null;
+          impressions: number;
+          clicks: number;
+        })
+      | null;
     campaigns?: Array<{
       name: string;
+      platform?: "meta_ads" | "google_ads";
+      campaign_status?: string | null;
       leads: number;
       cost_per_lead: number | null;
       conversion_rate: number | null;
+      adsets?: Array<{
+        name: string;
+        ads?: Array<{
+          name: string;
+          spend: number;
+          impressions: number;
+          leads: number;
+          cost_per_lead: number | null;
+          thumbnail_url: string | null;
+          destination_urls: string[];
+          first_delivery_on: string | null;
+          last_delivery_on: string | null;
+        }>;
+      }>;
     }>;
   }>;
   delivery?: TrafficDelivery;
@@ -129,10 +150,10 @@ export function buildTrafficSummaryGroups(source: TrafficSummarySource): Traffic
       mediaValue: group.summary.reach ?? group.summary.impressions,
       mediaKind:
         group.summary.reach != null
-          ? "reach" as const
+          ? ("reach" as const)
           : group.summary.impressions > 0
-            ? "impressions" as const
-            : "unavailable" as const,
+            ? ("impressions" as const)
+            : ("unavailable" as const),
       inService: source.crm.in_service,
       closedWon: source.crm.closed_won,
       closedLost: source.crm.closed_lost ?? 0,
@@ -238,6 +259,47 @@ const styles = StyleSheet.create({
   championLabel: { color: "#66736a", fontSize: 7, textTransform: "uppercase" },
   championName: { marginTop: 4, fontSize: 8, fontWeight: "bold" },
   championValue: { marginTop: 3, fontSize: 11, fontWeight: "bold" },
+  adsBlock: {
+    marginTop: 2,
+    borderWidth: 1,
+    borderColor: "#dce4de",
+    borderRadius: 7,
+    padding: 10,
+  },
+  adsTitle: { fontSize: 11, fontWeight: "bold", marginBottom: 7 },
+  adsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    borderColor: "#dce4de",
+    backgroundColor: "#f7faf8",
+  },
+  adsHeaderText: {
+    color: "#66736a",
+    fontSize: 6.2,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+  },
+  adRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 48,
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderColor: "#eef2ef",
+  },
+  adCreative: { width: 58, paddingRight: 5 },
+  adThumbnail: { width: 42, height: 42, objectFit: "cover", borderRadius: 4 },
+  adCreativeFallback: { fontSize: 6.5, color: "#344139" },
+  adIdentity: { flex: 1, paddingRight: 6 },
+  adName: { fontSize: 7.5, fontWeight: "bold" },
+  adCampaign: { marginTop: 2, fontSize: 6.5, color: "#66736a" },
+  adMovement: { marginTop: 2, fontSize: 6.2, fontWeight: "bold" },
+  adPage: { width: 128, paddingRight: 6, fontSize: 6.5, color: "#344139" },
+  adMoney: { width: 63, textAlign: "right", paddingRight: 5, fontSize: 7 },
+  adLeads: { width: 35, textAlign: "right", paddingRight: 5, fontSize: 7 },
+  adsEmpty: { paddingVertical: 8, color: "#66736a", fontSize: 8 },
 });
 
 /** Largura do topo do funil e quanto cada nível afina, em pontos. */
@@ -266,6 +328,75 @@ type Language = "pt-BR" | "es";
 
 function text(language: Language, pt: string, es: string): string {
   return language === "es" ? es : pt;
+}
+
+export type TrafficAdMovement = "new" | "active" | "paused" | null;
+
+export type TrafficAdInTest = {
+  key: string;
+  currency: string;
+  name: string;
+  campaign: string;
+  spend: number;
+  impressions: number;
+  leads: number;
+  cost_per_lead: number | null;
+  thumbnail_url: string | null;
+  thumbnail_data_uri?: string | null;
+  pages: string[];
+  movement: TrafficAdMovement;
+};
+
+function adMovement(
+  ad: { first_delivery_on: string | null; last_delivery_on: string | null },
+  campaignStatus: string | null | undefined,
+  platform: "meta_ads" | "google_ads" | undefined,
+  window: TrafficSummarySource["window"],
+): TrafficAdMovement {
+  if (
+    ad.first_delivery_on != null &&
+    ad.first_delivery_on >= window.from &&
+    ad.first_delivery_on <= window.to
+  ) {
+    return "new";
+  }
+  const status = campaignStatus?.trim().toUpperCase();
+  const active = platform === "google_ads" ? status === "ENABLED" : status === "ACTIVE";
+  if (active) return "active";
+  if (status && ad.last_delivery_on && ad.last_delivery_on < window.to) return "paused";
+  return null;
+}
+
+export function buildTrafficAdsInTest(source: TrafficSummarySource): TrafficAdInTest[] {
+  const ads: TrafficAdInTest[] = [];
+  source.currencies.forEach((currencyGroup, currencyIndex) => {
+    currencyGroup.campaigns?.forEach((campaign, campaignIndex) => {
+      campaign.adsets?.forEach((adset, adsetIndex) => {
+        adset.ads?.forEach((ad, adIndex) => {
+          if (!(ad.spend > 0 || ad.impressions > 0)) return;
+          const pages = new Map<string, string>();
+          for (const raw of ad.destination_urls ?? []) {
+            const page = paginaDestinoLimpa(raw);
+            if (page && !pages.has(page.endereco)) pages.set(page.endereco, page.endereco);
+          }
+          ads.push({
+            key: `${currencyIndex}:${campaignIndex}:${adsetIndex}:${adIndex}`,
+            currency: currencyGroup.currency,
+            name: ad.name,
+            campaign: campaign.name,
+            spend: ad.spend,
+            impressions: ad.impressions,
+            leads: ad.leads,
+            cost_per_lead: ad.cost_per_lead,
+            thumbnail_url: ad.thumbnail_url,
+            pages: [...pages.values()],
+            movement: adMovement(ad, campaign.campaign_status, campaign.platform, source.window),
+          });
+        });
+      });
+    });
+  });
+  return ads.sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name, "pt-BR"));
 }
 
 function formatNumber(value: number | null, language: Language): string {
@@ -348,14 +479,18 @@ export function buildTrafficCampaignChampions(
   )[0];
 
   return [
-    card(text(language, "Mais leads", "Más leads"), mostLeads, (campaign) =>
-      `${formatNumber(campaign.leads, language)} leads`,
+    card(
+      text(language, "Mais leads", "Más leads"),
+      mostLeads,
+      (campaign) => `${formatNumber(campaign.leads, language)} leads`,
     ),
     card(text(language, "Menor custo por lead", "Menor costo por lead"), lowestCost, (campaign) =>
       formatMoney(campaign.cost_per_lead, currency, language),
     ),
-    card(text(language, "Melhor conversão", "Mejor conversión"), bestConversion, (campaign) =>
-      `${formatPercentNumber(campaign.conversion_rate ?? 0, language)}%`,
+    card(
+      text(language, "Melhor conversão", "Mejor conversión"),
+      bestConversion,
+      (campaign) => `${formatPercentNumber(campaign.conversion_rate ?? 0, language)}%`,
     ),
   ];
 }
@@ -523,7 +658,9 @@ function FunnelDrawing({
         const next = stages[level + 1];
         return (
           <React.Fragment key={level}>
-            {levelLabels[level] ? <Text style={styles.levelLabel}>{levelLabels[level]}</Text> : null}
+            {levelLabels[level] ? (
+              <Text style={styles.levelLabel}>{levelLabels[level]}</Text>
+            ) : null}
             <Trapezoid
               level={level}
               fill={tint(brand.accent, amount)}
@@ -653,7 +790,6 @@ function Metric({
     </View>
   );
 }
-
 
 const DELIVERY_LIMIT = 10;
 
@@ -837,6 +973,91 @@ function DeliveryBlock({
   );
 }
 
+function movementLabel(movement: TrafficAdMovement, language: Language): string | null {
+  if (movement === "new") return text(language, "Novo no período", "Nuevo en el período");
+  if (movement === "active") return text(language, "Ativo", "Activo");
+  if (movement === "paused") return text(language, "Pausou no período", "Se pausó en el período");
+  return null;
+}
+
+function AdsInTestBlock({
+  ads,
+  language,
+  accent,
+}: {
+  ads: TrafficAdInTest[];
+  language: Language;
+  accent: string;
+}) {
+  return (
+    <View style={styles.adsBlock} break>
+      <Text style={[styles.adsTitle, { color: accent }]}>
+        {text(language, "Anúncios em teste", "Anuncios en prueba")}
+      </Text>
+      <View style={styles.adsHeader} wrap={false}>
+        <Text style={[styles.adsHeaderText, styles.adCreative]}>
+          {text(language, "Criativo", "Creativo")}
+        </Text>
+        <Text style={[styles.adsHeaderText, styles.adIdentity]}>
+          {text(language, "Anúncio / campanha", "Anuncio / campaña")}
+        </Text>
+        <Text style={[styles.adsHeaderText, styles.adPage]}>
+          {text(language, "Página de destino", "Página de destino")}
+        </Text>
+        <Text style={[styles.adsHeaderText, styles.adMoney]}>
+          {text(language, "Gasto", "Gasto")}
+        </Text>
+        <Text style={[styles.adsHeaderText, styles.adLeads]}>
+          {text(language, "Leads", "Leads")}
+        </Text>
+        <Text style={[styles.adsHeaderText, styles.adMoney]}>
+          {text(language, "Custo por lead", "Costo por lead")}
+        </Text>
+      </View>
+      {ads.length === 0 ? (
+        <Text style={styles.adsEmpty}>
+          {text(
+            language,
+            "Nenhum anúncio com entrega neste período",
+            "Ningún anuncio con entrega en este período",
+          )}
+        </Text>
+      ) : null}
+      {ads.map((ad) => {
+        const movement = movementLabel(ad.movement, language);
+        const pages =
+          ad.pages.length > 0
+            ? ad.pages.join("\n")
+            : text(language, "Sem página informada", "Sin página informada");
+        return (
+          <View key={ad.key} style={styles.adRow} wrap={false}>
+            <View style={styles.adCreative}>
+              {ad.thumbnail_data_uri ? (
+                <Image src={ad.thumbnail_data_uri} style={styles.adThumbnail} />
+              ) : (
+                <Text style={styles.adCreativeFallback}>{limparNomeParaPdf(ad.name)}</Text>
+              )}
+            </View>
+            <View style={styles.adIdentity}>
+              <Text style={styles.adName}>{limparNomeParaPdf(ad.name)}</Text>
+              <Text style={styles.adCampaign}>{limparNomeParaPdf(ad.campaign)}</Text>
+              {movement ? (
+                <Text style={[styles.adMovement, { color: accent }]}>{movement}</Text>
+              ) : null}
+            </View>
+            <Text style={styles.adPage}>{pages}</Text>
+            <Text style={styles.adMoney}>{formatMoney(ad.spend, ad.currency, language)}</Text>
+            <Text style={styles.adLeads}>{formatNumber(ad.leads, language)}</Text>
+            <Text style={styles.adMoney}>
+              {formatMoney(ad.cost_per_lead, ad.currency, language)}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function changeSentence(
   language: Language,
   labelPt: string,
@@ -944,12 +1165,28 @@ export function buildTrafficFunnelReading(
       ? text(language, "visualização do anúncio", "visualización del anuncio")
       : text(language, "impressão", "impresión");
   const transitions = [
-    { from: primary.mediaValue, to: primary.clicks, fromLabel: mediaLabel, toLabel: text(language, "clique", "clic") },
-    { from: primary.clicks, to: primary.leads, fromLabel: text(language, "clique", "clic"), toLabel: "lead" },
-    { from: primary.leads, to: primary.closedWon, fromLabel: "lead", toLabel: text(language, "venda", "venta") },
+    {
+      from: primary.mediaValue,
+      to: primary.clicks,
+      fromLabel: mediaLabel,
+      toLabel: text(language, "clique", "clic"),
+    },
+    {
+      from: primary.clicks,
+      to: primary.leads,
+      fromLabel: text(language, "clique", "clic"),
+      toLabel: "lead",
+    },
+    {
+      from: primary.leads,
+      to: primary.closedWon,
+      fromLabel: "lead",
+      toLabel: text(language, "venda", "venta"),
+    },
   ]
-    .filter((item): item is { from: number; to: number; fromLabel: string; toLabel: string } =>
-      item.from != null && item.from > 0,
+    .filter(
+      (item): item is { from: number; to: number; fromLabel: string; toLabel: string } =>
+        item.from != null && item.from > 0,
     )
     .map((item) => ({ ...item, rate: item.to / item.from }));
   const bottleneck = [...transitions].sort((a, b) => a.rate - b.rate)[0];
@@ -975,25 +1212,25 @@ export function buildTrafficFunnelReading(
   return readings;
 }
 
-
 export function TrafficSummaryPdf({
   source,
   brand,
   language,
+  adsInTest,
 }: {
   source: TrafficSummarySource;
   brand: MarcaDeSaida;
   language: Language;
+  adsInTest?: TrafficAdInTest[];
 }): React.ReactElement {
   const groups = buildTrafficSummaryGroups(source);
+  const ads = adsInTest ?? buildTrafficAdsInTest(source);
 
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={[styles.header, { borderBottomColor: brand.accent }]}>
-          <Text style={styles.title}>
-            {text(language, "Relatório", "Informe")}
-          </Text>
+          <Text style={styles.title}>{text(language, "Relatório", "Informe")}</Text>
           <Text style={styles.muted}>{formatPeriod(source.window, language)}</Text>
         </View>
 
@@ -1056,6 +1293,7 @@ export function TrafficSummaryPdf({
           accent={brand.accent}
         />
         <DeliveryBlock delivery={source.delivery} language={language} accent={brand.accent} />
+        <AdsInTestBlock ads={ads} language={language} accent={brand.accent} />
       </Page>
     </Document>
   );
@@ -1065,6 +1303,28 @@ export async function renderTrafficSummaryPdf(args: {
   source: TrafficSummarySource;
   brand: MarcaDeSaida;
   language: Language;
+  thumbnailDependencies?: ThumbnailDependencies;
 }): Promise<Buffer> {
-  return (await renderToBuffer(<TrafficSummaryPdf {...args} />)) as Buffer;
+  const ads = buildTrafficAdsInTest(args.source);
+  const prepared = await preloadPdfThumbnails(ads.slice(0, 12), args.thumbnailDependencies);
+  const adsInTest: TrafficAdInTest[] = [
+    ...prepared,
+    ...ads.slice(12).map((ad) => ({ ...ad, thumbnail_data_uri: null })),
+  ];
+  const documentProps = {
+    source: args.source,
+    brand: args.brand,
+    language: args.language,
+  };
+  try {
+    return (await renderToBuffer(
+      <TrafficSummaryPdf {...documentProps} adsInTest={adsInTest} />,
+    )) as Buffer;
+  } catch (error) {
+    if (!adsInTest.some((ad) => ad.thumbnail_data_uri)) throw error;
+    const withoutThumbnails = adsInTest.map((ad) => ({ ...ad, thumbnail_data_uri: null }));
+    return (await renderToBuffer(
+      <TrafficSummaryPdf {...documentProps} adsInTest={withoutThumbnails} />,
+    )) as Buffer;
+  }
 }
