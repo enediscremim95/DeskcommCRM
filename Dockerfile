@@ -78,7 +78,6 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
-COPY --chown=nextjs:nodejs docker/app-healthcheck.mjs /opt/app-healthcheck.mjs
 USER nextjs
 EXPOSE 3000
 # server.js é o entrypoint gerado pelo output standalone.
