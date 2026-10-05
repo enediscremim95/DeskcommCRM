@@ -190,7 +190,7 @@ export function StageColumn({
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={cn(
-              "flex min-h-0 flex-1 [scrollbar-gutter:stable] flex-col gap-1.5 overflow-y-auto overscroll-contain px-1.5 pb-1.5 transition-colors",
+              "quadro-rolagem-y flex min-h-0 flex-1 [scrollbar-gutter:stable] flex-col gap-1.5 overflow-y-auto overscroll-contain px-1.5 pb-1.5 transition-colors",
               snapshot.isDraggingOver && "bg-accent/5",
             )}
           >

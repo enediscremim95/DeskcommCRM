@@ -12,6 +12,7 @@ import { useMoveCard } from "@/hooks/kanban/useMoveCard";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAtRiskLeads } from "@/hooks/leads/useAtRiskLeads";
 import { useReactivations } from "@/hooks/leads/useReactivations";
+import { useAlturaAteORodape } from "@/hooks/ui/useAlturaAteORodape";
 import { positionForPaginatedDrop } from "@/lib/kanban/paginated-move";
 import type { Lead } from "@/lib/types/leads";
 import type { BoardStagePage, Pipeline, Stage } from "@/lib/kanban/types";
@@ -91,6 +92,7 @@ export function KanbanBoard({
   leadInicial,
 }: KanbanBoardProps) {
   const t = useT();
+  const quadroRef = useAlturaAteORodape<HTMLDivElement>();
   const podeMover = usePermission("pipeline.move_card");
   const router = useRouter();
   const useExternal = stagesProp !== undefined && leadsProp !== undefined;
@@ -257,7 +259,10 @@ export function KanbanBoard({
   return (
     <>
       <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="flex min-h-[480px] flex-1 gap-3 overflow-x-auto p-4 md:min-h-0 md:items-stretch md:overflow-y-hidden">
+        <div
+          ref={quadroRef}
+          className="quadro-rolagem-x flex min-h-[480px] flex-1 gap-3 overflow-x-auto overflow-y-hidden p-4 md:min-h-0 md:items-stretch"
+        >
           {data.stages.map((stage) => {
             const leads = grouped.get(stage.id) ?? [];
             const page = data.stage_pages?.[stage.id];
