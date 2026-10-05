@@ -30,6 +30,7 @@ const fact = (overrides: Partial<StoredFact>): StoredFact => ({
   video_p95: 0,
   thumbnail_url: null,
   story_id: null,
+  destination_urls: [],
   ...overrides,
 });
 
@@ -63,6 +64,50 @@ describe("relatório de tráfego", () => {
     expect(group!.summary.roas).toBe(5);
     expect(group!.summary.average_order_value).toBe(250);
     expect(group!.campaigns[0]!.adsets[0]!.ads[0]!.name).toBe("Anúncio");
+  });
+
+  it("mantém os destinos do anúncio para o drill do relatório", () => {
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
+      facts: [
+        fact({ destination_urls: ["https://cliente.test/oferta?utm_source=meta"] }),
+        fact({ destination_urls: ["https://cliente.test/consulta#gclid"] }),
+      ],
+    });
+
+    expect(group?.campaigns[0]?.adsets[0]?.ads[0]?.destination_urls).toEqual([
+      "https://cliente.test/oferta?utm_source=meta",
+      "https://cliente.test/consulta#gclid",
+    ]);
+  });
+
+  it("só cria anúncio quando a linha tem ad_id ou ad_name", () => {
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        {
+          account_id: "google",
+          account_name: "Google",
+          platform: "google_ads",
+          currency: "BRL",
+        },
+      ],
+      facts: [
+        fact({
+          account_id: "google",
+          platform: "google_ads",
+          ad_id: null,
+          ad_name: "",
+        }),
+      ],
+    });
+
+    expect(group?.campaigns[0]?.adsets[0]?.ads).toEqual([]);
   });
 
   it("não funde campanhas diferentes que têm o mesmo nome", () => {

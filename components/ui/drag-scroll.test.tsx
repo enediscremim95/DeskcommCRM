@@ -47,4 +47,26 @@ describe("DragScroll", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ver anúncio" }));
     expect(aoClicar).toHaveBeenCalledTimes(1);
   });
+
+  it("arrastar para cima ou para baixo rola a própria área quando ela tem overflow vertical", () => {
+    render(
+      <DragScroll>
+        <div data-testid="linha">linha</div>
+      </DragScroll>,
+    );
+    const area = screen.getByTestId("linha").parentElement as HTMLDivElement;
+    area.style.overflowY = "auto";
+    Object.defineProperty(area, "scrollHeight", { configurable: true, value: 600 });
+    Object.defineProperty(area, "clientHeight", { configurable: true, value: 200 });
+    area.setPointerCapture = vi.fn();
+    area.hasPointerCapture = () => true;
+    area.releasePointerCapture = vi.fn();
+    area.scrollTop = 100;
+
+    fireEvent(screen.getByTestId("linha"), mouse("pointerdown", 100, 200));
+    fireEvent(area, mouse("pointermove", 100, 150));
+    fireEvent(area, mouse("pointerup", 100, 150));
+
+    expect(area.scrollTop).toBe(150);
+  });
 });

@@ -349,8 +349,8 @@ export function buildTrafficReport(args: {
       fact.adset_id ?? fact.adset_name,
     ]);
   const hasAdset = (fact: StoredFact) => Boolean(fact.adset_id || fact.adset_name);
-  const isMetaDetail = (fact: StoredFact) =>
-    fact.platform === "meta_ads" && Boolean(fact.ad_id || fact.ad_name);
+  const hasAd = (fact: StoredFact) => Boolean(fact.ad_id || fact.ad_name);
+  const isMetaDetail = (fact: StoredFact) => fact.platform === "meta_ads" && hasAd(fact);
   const metaCampaignSummaryKeys = new Set(
     facts
       .filter((fact) => fact.platform === "meta_ads" && !isMetaDetail(fact) && !hasAdset(fact))
@@ -482,7 +482,7 @@ export function buildTrafficReport(args: {
     }
     const contributesToAdset = !(metaDetail && metaAdsetSummaryKeys.has(adsetRollupKey(fact)));
     if (contributesToAdset) add(adset.total, fact, args.conversionFields);
-    if (fact.platform === "meta_ads" && !metaDetail) continue;
+    if (!hasAd(fact)) continue;
     const adName = fact.ad_name || "Sem anúncio";
     const adKey = fact.ad_id ?? adName;
     let ad = adset.ads.get(adKey);

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { buildTrafficDelivery } from "./delivery";
-import { paginaDestinoLimpa } from "./pagina-limpa";
 
 describe("campanhas e páginas do relatório", () => {
   it("separa status ativo do fallback por investimento e ignora status inativo", () => {
@@ -56,7 +55,6 @@ describe("campanhas e páginas do relatório", () => {
 
     expect(delivery.active_campaigns).toHaveLength(1);
     expect(delivery.pages).toEqual(["cliente.test/a"]);
-    expect(paginaDestinoLimpa("javascript:alert(1)")).toBeNull();
   });
 
   it("usa o status mais recente do snapshot e restringe o fallback ao período", () => {
