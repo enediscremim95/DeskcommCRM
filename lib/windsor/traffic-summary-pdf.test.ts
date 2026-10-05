@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildTrafficAdsInTest,
   buildTrafficCampaignChampions,
   buildTrafficDeliverySections,
   buildTrafficFunnelReading,
@@ -9,8 +10,138 @@ import {
   buildTrafficSummaryGroups,
   trafficVariation,
 } from "./traffic-summary-pdf";
+import { adDeliverySnapshots, buildTrafficReport, type StoredFact } from "./report";
 
 describe("resumo do relatório para PDF", () => {
+  it("muda a lista de anúncios quando a mesma entrega é lida em 7 ou 15 dias", () => {
+    const base: StoredFact = {
+      account_id: "meta",
+      platform: "meta_ads",
+      occurred_on: "2026-09-08",
+      campaign_id: "campaign-1",
+      campaign_name: "Campanha",
+      adset_id: "adset-1",
+      adset_name: "Conjunto",
+      ad_id: "ad-old",
+      ad_name: "Anúncio antigo",
+      impressions: 100,
+      reach: 80,
+      clicks: 5,
+      link_clicks: 4,
+      spend: 40,
+      conversions: { actions_lead: 2 },
+      revenue: 0,
+      video_views: 0,
+      video_p25: 0,
+      video_p50: 0,
+      video_p75: 0,
+      video_p95: 0,
+      thumbnail_url: null,
+      story_id: null,
+      campaign_status: "ACTIVE",
+      destination_urls: ["https://cliente.test/antiga?utm_source=meta"],
+    };
+    const detailFacts = [
+      base,
+      {
+        ...base,
+        occurred_on: "2026-09-16",
+        ad_id: "ad-new",
+        ad_name: "Anúncio novo",
+        spend: 20,
+        conversions: { actions_lead: 1 },
+        destination_urls: ["https://cliente.test/nova#form"],
+      },
+    ];
+    const facts = detailFacts.flatMap((detail) => [
+      {
+        ...detail,
+        ad_id: null,
+        ad_name: "",
+        thumbnail_url: null,
+        destination_urls: [],
+      },
+      detail,
+    ]);
+    const snapshots = adDeliverySnapshots(facts);
+    const reportFor = (from: string) =>
+      buildTrafficReport({
+        model: "leads",
+        conversionFields: ["actions_lead"],
+        accounts: [
+          { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+        ],
+        facts,
+        window: { from, to: "2026-09-21" },
+        adDeliverySnapshots: snapshots,
+      });
+    const adsFor = (from: string) =>
+      buildTrafficAdsInTest({
+        window: { from, to: "2026-09-21" },
+        crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
+        currencies: reportFor(from),
+      });
+
+    const report7Days = reportFor("2026-09-15");
+    const report15Days = reportFor("2026-09-07");
+    const ads7Days = adsFor("2026-09-15");
+    const ads15Days = adsFor("2026-09-07");
+
+    expect(ads7Days.map((ad) => ad.name)).toEqual(["Anúncio novo"]);
+    expect(ads15Days.map((ad) => ad.name)).toEqual(["Anúncio antigo", "Anúncio novo"]);
+    expect(ads7Days.reduce((total, ad) => total + ad.spend, 0)).toBe(report7Days[0]?.summary.spend);
+    expect(ads15Days.reduce((total, ad) => total + ad.spend, 0)).toBe(
+      report15Days[0]?.summary.spend,
+    );
+    expect(ads7Days[0]).toMatchObject({
+      pages: ["cliente.test/nova"],
+      movement: "new",
+    });
+  });
+
+  it("marca pausa somente quando o status atual e a última entrega permitem concluir", () => {
+    const ads = buildTrafficAdsInTest({
+      window: { from: "2026-09-15", to: "2026-09-21" },
+      crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
+      currencies: [
+        {
+          currency: "BRL",
+          summary: { spend: 10, reach: 20, impressions: 30, clicks: 2 },
+          campaigns: [
+            {
+              name: "Campanha pausada",
+              platform: "meta_ads",
+              campaign_status: "PAUSED",
+              leads: 1,
+              cost_per_lead: 10,
+              conversion_rate: 50,
+              adsets: [
+                {
+                  name: "Conjunto",
+                  ads: [
+                    {
+                      name: "Anúncio pausado",
+                      spend: 10,
+                      impressions: 30,
+                      leads: 1,
+                      cost_per_lead: 10,
+                      thumbnail_url: null,
+                      destination_urls: [],
+                      first_delivery_on: "2026-09-01",
+                      last_delivery_on: "2026-09-18",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(ads[0]?.movement).toBe("paused");
+  });
+
   it("elege as campanhas campeãs com a métrica atribuída pela plataforma", () => {
     const champions = buildTrafficCampaignChampions(
       [
@@ -131,11 +262,14 @@ describe("resumo do relatório para PDF", () => {
   });
 
   it("mostra as duas réguas separadas, URLs limpas e limita listas longas", () => {
-    const sections = buildTrafficDeliverySections({
-      active_campaigns: [{ name: "Captação", platform: "meta_ads" }],
-      invested_campaigns: [{ name: "Pesquisa", platform: "google_ads" }],
-      pages: Array.from({ length: 12 }, (_, index) => `cliente.test/pagina-${index + 1}`),
-    }, "pt-BR");
+    const sections = buildTrafficDeliverySections(
+      {
+        active_campaigns: [{ name: "Captação", platform: "meta_ads" }],
+        invested_campaigns: [{ name: "Pesquisa", platform: "google_ads" }],
+        pages: Array.from({ length: 12 }, (_, index) => `cliente.test/pagina-${index + 1}`),
+      },
+      "pt-BR",
+    );
 
     expect(sections[0]).toEqual({
       title: "Hoje: 1 campanha ativa",

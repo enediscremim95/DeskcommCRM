@@ -10,6 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchWindsorCampaignReach } from "@/lib/windsor/client";
 import { buildWindsorUrl, WINDSOR_REQUEST_TIMEOUT_MS } from "@/lib/windsor/request";
 import {
+  adDeliverySnapshots,
   buildTrafficReport,
   campaignReportKey,
   latestCampaignStatuses,
@@ -249,7 +250,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       ? admin
           .from("traffic_dashboard_facts" as never)
           .select(
-            "account_id,platform,occurred_on,campaign_id,campaign_name,campaign_status,destination_urls,spend",
+            "account_id,platform,occurred_on,campaign_id,campaign_name,campaign_status,adset_id,adset_name,ad_id,ad_name,impressions,destination_urls,spend",
           )
           .eq("organization_id", organizationId)
           .eq("sync_generation", typedConfig.published_generation)
@@ -361,6 +362,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     campaignReach: currentReach.campaignReach,
     accountReach: currentReach.accountReach,
     campaignStatuses: latestCampaignStatuses(deliveryFacts),
+    adDeliverySnapshots: adDeliverySnapshots(deliveryFacts),
   });
   const previousCurrencies = buildTrafficReport({
     model: typedConfig.model,

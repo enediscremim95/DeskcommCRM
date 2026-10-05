@@ -119,8 +119,8 @@ export function buildTrafficDelivery(
 
   for (const key of active.keys()) invested.delete(key);
   const sortCampaigns = (items: Iterable<TrafficDeliveryCampaign>) =>
-    [...items].sort((a, b) =>
-      a.name.localeCompare(b.name, "pt-BR") || a.platform.localeCompare(b.platform),
+    [...items].sort(
+      (a, b) => a.name.localeCompare(b.name, "pt-BR") || a.platform.localeCompare(b.platform),
     );
 
   return {

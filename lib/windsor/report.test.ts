@@ -1,21 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { buildTrafficReport, latestCampaignStatuses, type StoredFact } from "./report";
+import {
+  adDeliverySnapshots,
+  buildTrafficReport,
+  latestCampaignStatuses,
+  type StoredFact,
+} from "./report";
 
 const fact = (overrides: Partial<StoredFact>): StoredFact => ({
-  account_id: "meta", platform: "meta_ads", occurred_on: "2026-09-18",
-  campaign_id: "campaign-1", campaign_name: "Campanha",
-  adset_id: "adset-1", adset_name: "Conjunto", ad_id: "ad-1", ad_name: "Anúncio",
-  impressions: 1000, reach: 800, clicks: 50, link_clicks: 40, spend: 100,
-  conversions: { actions_lead: 4 }, revenue: 0, video_views: 0,
-  video_p25: 0, video_p50: 0, video_p75: 0, video_p95: 0,
-  thumbnail_url: null, story_id: null, destination_urls: [],
+  account_id: "meta",
+  platform: "meta_ads",
+  occurred_on: "2026-09-18",
+  campaign_id: "campaign-1",
+  campaign_name: "Campanha",
+  adset_id: "adset-1",
+  adset_name: "Conjunto",
+  ad_id: "ad-1",
+  ad_name: "Anúncio",
+  impressions: 1000,
+  reach: 800,
+  clicks: 50,
+  link_clicks: 40,
+  spend: 100,
+  conversions: { actions_lead: 4 },
+  revenue: 0,
+  video_views: 0,
+  video_p25: 0,
+  video_p50: 0,
+  video_p75: 0,
+  video_p95: 0,
+  thumbnail_url: null,
+  story_id: null,
+  destination_urls: [],
   ...overrides,
 });
 
 describe("relatório de tráfego", () => {
   it("mantém moedas separadas e agrega por plataforma", () => {
     const result = buildTrafficReport({
-      model: "leads", conversionFields: ["actions_lead"],
+      model: "leads",
+      conversionFields: ["actions_lead"],
       accounts: [
         { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
         { account_id: "google", account_name: "Google", platform: "google_ads", currency: "USD" },
@@ -29,8 +52,11 @@ describe("relatório de tráfego", () => {
 
   it("soma somente as conversões configuradas e calcula e-commerce", () => {
     const [group] = buildTrafficReport({
-      model: "ecommerce", conversionFields: ["actions_purchase"],
-      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      model: "ecommerce",
+      conversionFields: ["actions_purchase"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
       facts: [fact({ conversions: { actions_lead: 99, actions_purchase: 2 }, revenue: 500 })],
     });
     expect(group).toBeDefined();
@@ -59,10 +85,38 @@ describe("relatório de tráfego", () => {
     ]);
   });
 
+  it("só cria anúncio quando a linha tem ad_id ou ad_name", () => {
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        {
+          account_id: "google",
+          account_name: "Google",
+          platform: "google_ads",
+          currency: "BRL",
+        },
+      ],
+      facts: [
+        fact({
+          account_id: "google",
+          platform: "google_ads",
+          ad_id: null,
+          ad_name: "",
+        }),
+      ],
+    });
+
+    expect(group?.campaigns[0]?.adsets[0]?.ads).toEqual([]);
+  });
+
   it("não funde campanhas diferentes que têm o mesmo nome", () => {
     const [group] = buildTrafficReport({
-      model: "leads", conversionFields: ["actions_lead"],
-      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
       facts: [fact({ campaign_id: "campaign-1" }), fact({ campaign_id: "campaign-2" })],
     });
     expect(group?.campaigns).toHaveLength(2);
@@ -72,8 +126,11 @@ describe("relatório de tráfego", () => {
     const summary = fact({ ad_id: null, ad_name: "", spend: 101.11, impressions: 1010 });
     const detail = fact({ spend: 100, impressions: 1000 });
     const [group] = buildTrafficReport({
-      model: "leads", conversionFields: ["actions_lead"],
-      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
       facts: [summary, detail],
     });
 
@@ -82,25 +139,42 @@ describe("relatório de tráfego", () => {
     expect(group?.campaigns[0]?.adsets[0]?.spend).toBe(101.11);
     expect(group?.campaigns[0]?.adsets[0]?.ads).toHaveLength(1);
     expect(group?.campaigns[0]?.adsets[0]?.ads[0]?.spend).toBe(100);
+    expect(
+      group?.campaigns
+        .flatMap((campaign) => campaign.adsets)
+        .flatMap((adset) => adset.ads)
+        .reduce((total, ad) => total + ad.spend, 0),
+    ).toBe(100);
   });
 
   it("não soma orçamento por dia e não publica alcance diário como alcance do período", () => {
     const [group] = buildTrafficReport({
-      model: "ecommerce", conversionFields: ["actions_purchase"],
-      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      model: "ecommerce",
+      conversionFields: ["actions_purchase"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
       facts: [
         fact({
-          occurred_on: "2026-09-17", reach: 800,
+          occurred_on: "2026-09-17",
+          reach: 800,
           conversions: {
-            actions_purchase: 1, actions_landing_page_view: 10, actions_add_to_cart: 4,
-            actions_initiate_checkout: 2, campaign_daily_budget: 12500,
+            actions_purchase: 1,
+            actions_landing_page_view: 10,
+            actions_add_to_cart: 4,
+            actions_initiate_checkout: 2,
+            campaign_daily_budget: 12500,
           },
         }),
         fact({
-          occurred_on: "2026-09-18", reach: 900,
+          occurred_on: "2026-09-18",
+          reach: 900,
           conversions: {
-            actions_purchase: 1, actions_landing_page_view: 15, actions_add_to_cart: 6,
-            actions_initiate_checkout: 3, campaign_daily_budget: 12500,
+            actions_purchase: 1,
+            actions_landing_page_view: 15,
+            actions_add_to_cart: 6,
+            actions_initiate_checkout: 3,
+            campaign_daily_budget: 12500,
           },
         }),
       ],
@@ -120,7 +194,9 @@ describe("relatório de tráfego", () => {
     const [group] = buildTrafficReport({
       model: "leads",
       conversionFields: ["actions_lead"],
-      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
       facts: [fact({ campaign_id: "camp-1", reach: 900 })],
       campaignReach: new Map([["meta_ads:camp-1", 750]]),
     });
@@ -130,8 +206,11 @@ describe("relatório de tráfego", () => {
 
   it("publica o status mais recente de cada campanha", () => {
     const [group] = buildTrafficReport({
-      model: "leads", conversionFields: ["actions_lead"],
-      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
       facts: [
         fact({ occurred_on: "2026-09-17", campaign_status: "ACTIVE" }),
         fact({ occurred_on: "2026-09-18", campaign_status: "PAUSED" }),
@@ -142,8 +221,11 @@ describe("relatório de tráfego", () => {
 
   it("leva à resposta o status mais recente da geração quando o fato do período não o traz", () => {
     const [group] = buildTrafficReport({
-      model: "leads", conversionFields: ["actions_lead"],
-      accounts: [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
       facts: [fact({ occurred_on: "2026-09-21", campaign_status: null })],
       campaignStatuses: latestCampaignStatuses([
         fact({ occurred_on: "2026-09-19", campaign_status: "ACTIVE" }),
@@ -152,6 +234,40 @@ describe("relatório de tráfego", () => {
       ]),
     });
     expect(group?.campaigns[0]?.campaign_status).toBe("PAUSED");
+  });
+
+  it("leva URL, miniatura e datas de entrega ao anúncio do envelope", () => {
+    const snapshot = [
+      fact({ occurred_on: "2026-09-01", spend: 10, impressions: 100 }),
+      fact({
+        occurred_on: "2026-09-18",
+        spend: 20,
+        impressions: 200,
+        thumbnail_url: "https://cdn.example/criativo.jpg",
+        destination_urls: ["https://cliente.test/oferta?utm_source=meta"],
+      }),
+    ];
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
+      facts: snapshot,
+      window: { from: "2026-09-15", to: "2026-09-21" },
+      adDeliverySnapshots: adDeliverySnapshots(snapshot),
+    });
+
+    expect(group?.campaigns[0]?.adsets[0]?.ads[0]).toMatchObject({
+      name: "Anúncio",
+      spend: 20,
+      leads: 4,
+      cost_per_lead: 5,
+      thumbnail_url: "https://cdn.example/criativo.jpg",
+      destination_urls: ["https://cliente.test/oferta?utm_source=meta"],
+      first_delivery_on: "2026-09-01",
+      last_delivery_on: "2026-09-18",
+    });
   });
 
   it("restringe campanha, detalhes, total e retenção à janela escolhida sem duplicar anúncios", () => {
@@ -237,17 +353,14 @@ describe("relatório de tráfego", () => {
     expect(group?.summary.spend).toBeCloseTo(19.89, 2);
     expect(group?.summary.impressions).toBe(300);
     expect(group?.summary.video_views).toBe(30);
-    expect(group?.daily.map((day) => day.date)).toEqual([
-      "2026-09-15",
-      "2026-09-16",
-      "2026-09-17",
-    ]);
+    expect(group?.daily.map((day) => day.date)).toEqual(["2026-09-15", "2026-09-16", "2026-09-17"]);
     expect(group?.campaigns.map((campaign) => campaign.name)).toEqual(["Campanha"]);
     expect(group?.campaigns[0]?.spend).toBeCloseTo(19.89, 2);
     expect(group?.campaigns[0]?.adsets[0]?.spend).toBeCloseTo(19.89, 2);
     expect(group?.campaigns[0]?.adsets[0]?.ads).toHaveLength(2);
-    expect(
-      group?.campaigns[0]?.adsets[0]?.ads.reduce((sum, ad) => sum + ad.spend, 0),
-    ).toBeCloseTo(19.89, 2);
+    expect(group?.campaigns[0]?.adsets[0]?.ads.reduce((sum, ad) => sum + ad.spend, 0)).toBeCloseTo(
+      19.89,
+      2,
+    );
   });
 });
