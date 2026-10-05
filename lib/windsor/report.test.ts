@@ -8,7 +8,7 @@ const fact = (overrides: Partial<StoredFact>): StoredFact => ({
   impressions: 1000, reach: 800, clicks: 50, link_clicks: 40, spend: 100,
   conversions: { actions_lead: 4 }, revenue: 0, video_views: 0,
   video_p25: 0, video_p50: 0, video_p75: 0, video_p95: 0,
-  thumbnail_url: null, story_id: null,
+  thumbnail_url: null, story_id: null, destination_urls: [],
   ...overrides,
 });
 
@@ -38,6 +38,25 @@ describe("relatório de tráfego", () => {
     expect(group!.summary.roas).toBe(5);
     expect(group!.summary.average_order_value).toBe(250);
     expect(group!.campaigns[0]!.adsets[0]!.ads[0]!.name).toBe("Anúncio");
+  });
+
+  it("mantém os destinos do anúncio para o drill do relatório", () => {
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
+      facts: [
+        fact({ destination_urls: ["https://cliente.test/oferta?utm_source=meta"] }),
+        fact({ destination_urls: ["https://cliente.test/consulta#gclid"] }),
+      ],
+    });
+
+    expect(group?.campaigns[0]?.adsets[0]?.ads[0]?.destination_urls).toEqual([
+      "https://cliente.test/oferta?utm_source=meta",
+      "https://cliente.test/consulta#gclid",
+    ]);
   });
 
   it("não funde campanhas diferentes que têm o mesmo nome", () => {
