@@ -129,8 +129,8 @@ export function StageColumn({
   };
 
   return (
-    <div className="flex w-72 shrink-0 flex-col rounded-lg bg-surface-elevated/70">
-      <div className="group/etapa px-2.5 pt-2.5 pb-2">
+    <div className="flex max-h-full min-h-0 w-72 shrink-0 flex-col rounded-lg bg-surface-elevated/70">
+      <div className="group/etapa shrink-0 px-2.5 pt-2.5 pb-2">
         <div className="flex items-center gap-1.5">
           {/* "Selecionar a etapa inteira" é o gesto que faz a ação em lote valer a
               pena: sem ele, mover trinta cards deixa de ser trinta arrastes e vira
@@ -190,7 +190,7 @@ export function StageColumn({
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={cn(
-              "flex flex-1 flex-col gap-1.5 px-1.5 pb-1.5 transition-colors",
+              "quadro-rolagem-y flex min-h-0 flex-1 [scrollbar-gutter:stable] flex-col gap-1.5 overflow-y-auto overscroll-contain px-1.5 pb-1.5 transition-colors",
               snapshot.isDraggingOver && "bg-accent/5",
             )}
           >

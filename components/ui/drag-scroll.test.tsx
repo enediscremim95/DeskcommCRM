@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import { DragScroll } from "./drag-scroll";
 
 function mouse(type: string, x: number, y: number) {
-  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    button: 0,
+  });
   Object.defineProperty(event, "pointerType", { value: "mouse" });
   Object.defineProperty(event, "pointerId", { value: 1 });
   return event;
@@ -48,7 +54,57 @@ describe("DragScroll", () => {
     expect(aoClicar).toHaveBeenCalledTimes(1);
   });
 
-  it("arrastar para cima ou para baixo rola a própria área quando ela tem overflow vertical", () => {
+  it("com eixo x rola somente na horizontal", () => {
+    render(
+      <DragScroll eixo="x">
+        <div data-testid="linha">linha</div>
+      </DragScroll>,
+    );
+    const area = screen.getByTestId("linha").parentElement as HTMLDivElement;
+    area.style.overflowY = "auto";
+    Object.defineProperty(area, "scrollHeight", { configurable: true, value: 600 });
+    Object.defineProperty(area, "clientHeight", { configurable: true, value: 200 });
+    area.setPointerCapture = vi.fn();
+    area.hasPointerCapture = () => true;
+    area.releasePointerCapture = vi.fn();
+    area.scrollLeft = 200;
+    area.scrollTop = 100;
+
+    fireEvent(screen.getByTestId("linha"), mouse("pointerdown", 300, 200));
+    fireEvent(area, mouse("pointermove", 220, 150));
+    fireEvent(area, mouse("pointerup", 220, 150));
+
+    expect(area.scrollLeft).toBe(280);
+    expect(area.scrollTop).toBe(100);
+  });
+
+  it("não inicia no seletor excluído e inicia no fundo", () => {
+    render(
+      <DragScroll eixo="x" naoIniciaEm="[data-quadro-card]">
+        <div data-testid="card" data-quadro-card>
+          card
+        </div>
+        <div data-testid="fundo">fundo</div>
+      </DragScroll>,
+    );
+    const area = screen.getByTestId("fundo").parentElement as HTMLDivElement;
+    area.setPointerCapture = vi.fn();
+    area.hasPointerCapture = () => true;
+    area.releasePointerCapture = vi.fn();
+    area.scrollLeft = 100;
+
+    fireEvent(screen.getByTestId("card"), mouse("pointerdown", 300, 100));
+    fireEvent(area, mouse("pointermove", 250, 100));
+    fireEvent(area, mouse("pointerup", 250, 100));
+    expect(area.scrollLeft).toBe(100);
+
+    fireEvent(screen.getByTestId("fundo"), mouse("pointerdown", 300, 100));
+    fireEvent(area, mouse("pointermove", 250, 100));
+    fireEvent(area, mouse("pointerup", 250, 100));
+    expect(area.scrollLeft).toBe(150);
+  });
+
+  it("mantém xy como padrão e rola a própria área na vertical", () => {
     render(
       <DragScroll>
         <div data-testid="linha">linha</div>

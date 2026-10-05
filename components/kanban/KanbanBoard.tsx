@@ -6,12 +6,14 @@ import { useT } from "@/hooks/i18n/useT";
 import { usePermission } from "@/hooks/auth/AuthProvider";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DragScroll } from "@/components/ui/drag-scroll";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBoard } from "@/hooks/kanban/useBoard";
 import { useMoveCard } from "@/hooks/kanban/useMoveCard";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAtRiskLeads } from "@/hooks/leads/useAtRiskLeads";
 import { useReactivations } from "@/hooks/leads/useReactivations";
+import { useAlturaAteORodape } from "@/hooks/ui/useAlturaAteORodape";
 import { positionForPaginatedDrop } from "@/lib/kanban/paginated-move";
 import type { Lead } from "@/lib/types/leads";
 import type { BoardStagePage, Pipeline, Stage } from "@/lib/kanban/types";
@@ -91,6 +93,7 @@ export function KanbanBoard({
   leadInicial,
 }: KanbanBoardProps) {
   const t = useT();
+  const quadroRef = useAlturaAteORodape<HTMLDivElement>();
   const podeMover = usePermission("pipeline.move_card");
   const router = useRouter();
   const useExternal = stagesProp !== undefined && leadsProp !== undefined;
@@ -257,7 +260,12 @@ export function KanbanBoard({
   return (
     <>
       <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="flex min-h-[480px] flex-1 gap-3 overflow-x-auto p-4">
+        <DragScroll
+          containerRef={quadroRef}
+          eixo="x"
+          naoIniciaEm="[data-quadro-card]"
+          className="quadro-rolagem-x flex min-h-[480px] flex-1 gap-3 overflow-x-auto overflow-y-hidden p-4 md:min-h-0 md:items-stretch"
+        >
           {data.stages.map((stage) => {
             const leads = grouped.get(stage.id) ?? [];
             const page = data.stage_pages?.[stage.id];
@@ -287,7 +295,7 @@ export function KanbanBoard({
               />
             );
           })}
-        </div>
+        </DragScroll>
       </DragDropContext>
       {summaryLead && (
         <LeadDossier

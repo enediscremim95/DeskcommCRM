@@ -1,11 +1,28 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useCallback, useRef, type ReactNode, type RefCallback } from "react";
 
 import { cn } from "@/lib/utils";
 
 /** Elementos que continuam recebendo o clique normal (não iniciam arraste). */
-const INTERATIVO = "a,button,input,select,textarea,label,summary,[role=button],[contenteditable=true]";
+const INTERATIVO = [
+  "a",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "label",
+  "summary",
+  '[role="button"]',
+  '[role="link"]',
+  '[role="menuitem"]',
+  '[role="option"]',
+  '[role="checkbox"]',
+  '[role="radio"]',
+  '[role="switch"]',
+  '[role="tab"]',
+  '[contenteditable="true"]',
+].join(",");
 
 /** Distância mínima (px) para um clique virar arraste. */
 const LIMIAR = 5;
@@ -26,33 +43,61 @@ function rolagemVertical(inicio: HTMLElement | null): HTMLElement {
  * tem overflow vertical, ou o painel/página que a contém. Toque e caneta seguem
  * com a rolagem nativa.
  */
-export function DragScroll({ className, children }: { className?: string; children: ReactNode }) {
+interface DragScrollProps {
+  className?: string;
+  children: ReactNode;
+  /** `xy` preserva o comportamento das tabelas; `x` nunca move a rolagem vertical. */
+  eixo?: "x" | "xy";
+  /** Seletores adicionais cujos descendentes não podem iniciar o arraste. */
+  naoIniciaEm?: string;
+  /** Permite que outro hook meça ou observe o mesmo div que recebe a rolagem. */
+  containerRef?: RefCallback<HTMLDivElement>;
+}
+
+export function DragScroll({
+  className,
+  children,
+  eixo = "xy",
+  naoIniciaEm,
+  containerRef,
+}: DragScrollProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const definirRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      ref.current = node;
+      containerRef?.(node);
+    },
+    [containerRef],
+  );
   const arraste = useRef<{
     x: number;
     y: number;
     left: number;
     top: number;
-    vertical: HTMLElement;
+    vertical: HTMLElement | null;
+    somenteX: boolean;
     moveu: boolean;
   } | null>(null);
   const ignorarClique = useRef(false);
 
   return (
     <div
-      ref={ref}
+      ref={definirRef}
       className={cn("cursor-grab", className)}
       onPointerDown={(event) => {
         const el = ref.current;
         if (!el || event.pointerType !== "mouse" || event.button !== 0) return;
-        if ((event.target as Element).closest(INTERATIVO)) return;
-        const vertical = rolagemVertical(el);
+        const alvo = event.target;
+        if (!(alvo instanceof Element)) return;
+        if (alvo.closest(INTERATIVO) || (naoIniciaEm && alvo.closest(naoIniciaEm))) return;
+        const vertical = eixo === "xy" ? rolagemVertical(el) : null;
         arraste.current = {
           x: event.clientX,
           y: event.clientY,
           left: el.scrollLeft,
-          top: vertical.scrollTop,
+          top: vertical?.scrollTop ?? 0,
           vertical,
+          somenteX: eixo === "x",
           moveu: false,
         };
       }}
@@ -63,7 +108,8 @@ export function DragScroll({ className, children }: { className?: string; childr
         const dx = event.clientX - atual.x;
         const dy = event.clientY - atual.y;
         if (!atual.moveu) {
-          if (Math.hypot(dx, dy) < LIMIAR) return;
+          const distancia = atual.somenteX ? Math.abs(dx) : Math.hypot(dx, dy);
+          if (distancia < LIMIAR) return;
           atual.moveu = true;
           el.setPointerCapture(event.pointerId);
           el.style.cursor = "grabbing";
@@ -72,7 +118,7 @@ export function DragScroll({ className, children }: { className?: string; childr
         }
         event.preventDefault();
         el.scrollLeft = atual.left - dx;
-        atual.vertical.scrollTop = atual.top - dy;
+        if (atual.vertical) atual.vertical.scrollTop = atual.top - dy;
       }}
       onPointerUp={(event) => {
         const el = ref.current;
