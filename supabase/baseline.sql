@@ -28154,6 +28154,55 @@ notify pgrst, 'reload schema';
 
 -- END MIGRATION 0281 RECONCILIAR FORMULARIO WHATSAPP
 
+-- ---- leitura barata de crm_leads (migration 0283) ----
+-- Os dois primeiros ramos da política são InitPlans. fn_can_view_lead permanece
+-- como reserva por linha e conserva a semântica dos atendentes.
+create or replace function public.fn_orgs_leitura_total()
+returns uuid[]
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select array(
+    with contexto as (
+      select public.fn_support_context() as suporte
+    ), organizacoes as (
+      select uo.organization_id
+        from public.user_organizations uo
+        cross join contexto c
+       where uo.user_id = auth.uid()
+         and uo.revoked_at is null
+         and uo.role in ('viewer', 'manager', 'admin')
+         and not (
+           coalesce(c.suporte->>'status' = 'active', false)
+           and uo.organization_id = nullif(c.suporte->>'organization_id', '')::uuid
+         )
+      union
+      select (c.suporte->>'organization_id')::uuid
+        from contexto c
+       where c.suporte->>'status' = 'active'
+         and c.suporte->>'access_mode' in ('full', 'support_readonly')
+    )
+    select organization_id
+      from organizacoes
+     order by organization_id
+  );
+$$;
+
+revoke execute on function public.fn_orgs_leitura_total() from public, anon;
+grant execute on function public.fn_orgs_leitura_total() to authenticated;
+
+drop policy if exists "crm_leads_select" on public.crm_leads;
+create policy "crm_leads_select" on public.crm_leads
+  for select using (
+    (select public.fn_is_platform_admin())
+    or organization_id = any(((select public.fn_orgs_leitura_total()))::uuid[])
+    or public.fn_can_view_lead(organization_id, owner_user_id)
+  );
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$
