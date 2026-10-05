@@ -30,7 +30,7 @@ interface Props {
   conversationId?: string | null;
 }
 
-function dataLegivel(valor: string | null | undefined, locale: string): string {
+export function dataLegivel(valor: string | null | undefined, locale: string): string {
   if (!valor) return "-";
   if (/^\d{4}-\d{2}-\d{2}$/.test(valor)) {
     const [ano, mes, dia] = valor.split("-");
@@ -44,7 +44,7 @@ function dataLegivel(valor: string | null | undefined, locale: string): string {
   }).format(data);
 }
 
-function dinheiroLegivel(centavos: number | null, moeda: string | null, locale: string): string {
+export function dinheiroLegivel(centavos: number | null, moeda: string | null, locale: string): string {
   if (centavos === null) return "-";
   try {
     return new Intl.NumberFormat(locale, {
