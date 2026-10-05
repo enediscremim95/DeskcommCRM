@@ -9604,6 +9604,23 @@ export const DICIONARIO: Traducoes = {
   "Confira a mensagem fixa e decida se este contato deve ser retomado.": { es: "Revisa el mensaje fijo y decide si se debe retomar este contacto." },
   "Não foi possível conferir a resposta mais recente do contato.": { es: "No fue posible comprobar la respuesta más reciente del contacto." },
   "Não foi possível registrar os fatos desta decisão.": { es: "No fue posible registrar los hechos de esta decisión." },
+  "Contexto": { es: "Contexto" },
+  "Este contato tem outro negócio aberto. O contexto de onde ele veio está aqui.": {
+    es: "Este contacto tiene otro negocio abierto. Aquí está el contexto de su origen.",
+  },
+  "Este contato tem outros negócios abertos.": {
+    es: "Este contacto tiene otros negocios abiertos.",
+  },
+  "O contexto de onde ele veio está aqui.": {
+    es: "Aquí está el contexto de su origen.",
+  },
+  "Este contato tem outros negócios. O contexto de onde ele veio está aqui.": {
+    es: "Este contacto tiene otros negocios. Aquí está el contexto de su origen.",
+  },
+  "Outros negócios deste contato": { es: "Otros negocios de este contacto" },
+  "Mostrando os 5 negócios mais recentes, com os abertos primeiro.": {
+    es: "Mostrando los 5 negocios más recientes, con los abiertos primero.",
+  },
   "Arquivo removido após o prazo de retenção": { es: "Archivo eliminado después del plazo de retención" },
   "Arquivo não guardado porque o limite de mídia foi atingido": { es: "Archivo no guardado porque se alcanzó el límite de medios" },
   "Não foi possível concluir.": { es: "No se pudo completar." },
