@@ -5,6 +5,7 @@ describe("rolagem vertical por coluna no quadro", () => {
   it("mede o espaço real do quadro sem manter a estimativa fixa na página", () => {
     const page = readFileSync("app/app/pipelines/[id]/_client.tsx", "utf8");
     const board = readFileSync("components/kanban/KanbanBoard.tsx", "utf8");
+    const card = readFileSync("components/kanban/KanbanCard.tsx", "utf8");
 
     expect(page).toContain("min-h-[600px]");
     expect(page).toContain("md:min-h-0");
@@ -12,13 +13,17 @@ describe("rolagem vertical por coluna no quadro", () => {
     expect(page).toMatch(/<header className="[^"]*\bshrink-0\b/);
     expect(page).toContain('<div className="shrink-0">\n        <FilterBar');
 
-    expect(board).toContain('useAlturaAteORodape<HTMLDivElement>()');
-    expect(board).toContain("ref={quadroRef}");
-    expect(board).toContain("quadro-rolagem-x");
-    expect(board).toContain("min-h-[480px]");
-    expect(board).toContain("md:min-h-0");
-    expect(board).toContain("md:items-stretch");
-    expect(board).toContain("overflow-x-auto overflow-y-hidden");
+    expect(board).toContain("useAlturaAteORodape<HTMLDivElement>()");
+    const dragScrollProps = board.match(/<DragScroll([\s\S]*?)>/)?.[1];
+    expect(dragScrollProps).toContain("containerRef={quadroRef}");
+    expect(dragScrollProps).toContain('eixo="x"');
+    expect(dragScrollProps).toContain('naoIniciaEm="[data-quadro-card]"');
+    expect(dragScrollProps).toContain("quadro-rolagem-x");
+    expect(dragScrollProps).toContain("min-h-[480px]");
+    expect(dragScrollProps).toContain("md:min-h-0");
+    expect(dragScrollProps).toContain("md:items-stretch");
+    expect(dragScrollProps).toContain("overflow-x-auto overflow-y-hidden");
+    expect(card).toContain("data-quadro-card");
   });
 
   it("mantém o cabeçalho da etapa fixo e rola no próprio Droppable", () => {
@@ -48,7 +53,9 @@ describe("rolagem vertical por coluna no quadro", () => {
     expect(css).toContain("scrollbar-width: thin");
     expect(css).toContain("scrollbar-color: var(--color-neutral-400) transparent");
     expect(css).toMatch(/::-webkit-scrollbar\s*\{[\s\S]*?width: 8px;[\s\S]*?height: 8px;/);
-    expect(css).toMatch(/::-webkit-scrollbar-thumb\s*\{[\s\S]*?border-radius: var\(--radius-full\);/);
+    expect(css).toMatch(
+      /::-webkit-scrollbar-thumb\s*\{[\s\S]*?border-radius: var\(--radius-full\);/,
+    );
     expect(css).toContain("background-color: var(--color-neutral-300)");
     expect(css).toContain("::-webkit-scrollbar-button");
   });

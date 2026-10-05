@@ -202,6 +202,7 @@ export function KanbanCard({
           ref={provided.innerRef}
           {...provided.draggableProps}
           {...provided.dragHandleProps}
+          data-quadro-card
           // O dnd marca o handle como role="button"; com o menu de ações dentro,
           // isso vira nested-interactive no axe. "group" mantém o foco e o
           // teclado do dnd (tabIndex e handlers continuam vindo do spread) sem

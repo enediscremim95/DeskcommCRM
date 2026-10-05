@@ -6,6 +6,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { usePermission } from "@/hooks/auth/AuthProvider";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DragScroll } from "@/components/ui/drag-scroll";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBoard } from "@/hooks/kanban/useBoard";
 import { useMoveCard } from "@/hooks/kanban/useMoveCard";
@@ -259,8 +260,10 @@ export function KanbanBoard({
   return (
     <>
       <DragDropContext onDragEnd={handleDragEnd}>
-        <div
-          ref={quadroRef}
+        <DragScroll
+          containerRef={quadroRef}
+          eixo="x"
+          naoIniciaEm="[data-quadro-card]"
           className="quadro-rolagem-x flex min-h-[480px] flex-1 gap-3 overflow-x-auto overflow-y-hidden p-4 md:min-h-0 md:items-stretch"
         >
           {data.stages.map((stage) => {
@@ -292,7 +295,7 @@ export function KanbanBoard({
               />
             );
           })}
-        </div>
+        </DragScroll>
       </DragDropContext>
       {summaryLead && (
         <LeadDossier
