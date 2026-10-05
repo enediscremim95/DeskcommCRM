@@ -1093,11 +1093,7 @@ function CampaignTable({
     <td className="min-w-64 max-w-sm overflow-hidden px-4 py-3 text-muted-foreground">
       <span className="block truncate" title={pages.map((page) => page.endereco).join("\n")}>
         {number(pages.length)}{" "}
-        {localText(
-          idioma,
-          pages.length === 1 ? "página" : "páginas",
-          pages.length === 1 ? "página" : "páginas",
-        )}
+        {t(pages.length === 1 ? "página" : "páginas")}
       </span>
     </td>
   );
@@ -1128,7 +1124,7 @@ function CampaignTable({
           </span>
         ) : (
           <span className="text-muted-foreground">
-            {localText(idioma, "Sem página informada", "Sin página informada")}
+            {t("Sem página informada")}
           </span>
         )}
       </td>
@@ -1333,7 +1329,7 @@ function CampaignTable({
                         scope="col"
                         className={`${headerCell} min-w-64 text-left text-muted-foreground`}
                       >
-                        {localText(idioma, "Página de destino", "Página de destino")}
+                        {t("Página de destino")}
                       </th>
                     </Fragment>
                   );

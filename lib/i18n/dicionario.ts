@@ -3715,6 +3715,10 @@ export const DICIONARIO: Traducoes = {
   "Nenhum campo além dos acima.": { es: "Ningún campo además de los de arriba." },
   "De onde veio": { es: "De dónde vino" },
   Página: { es: "Página" },
+  página: { es: "página" },
+  páginas: { es: "páginas" },
+  "Sem página informada": { es: "Sin página informada" },
+  "Página de destino": { es: "Página de destino" },
   "não informada": { es: "no informada" },
   "Endereço IP": { es: "Dirección IP" },
   "não identificado — sua instalação não está atrás de um proxy que informe a origem": {
