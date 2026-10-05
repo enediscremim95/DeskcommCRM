@@ -6,6 +6,7 @@ import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { apiClient } from "@/lib/api/client";
 import type { BoardData, BoardStageChunk } from "@/lib/kanban/types";
+import type { Lead } from "@/lib/types/leads";
 
 /**
  * Fetch board via API route (NOT direct supabase-js).
@@ -51,6 +52,7 @@ async function fetchStagePage(
  * divergência" apaga a pista de acessibilidade.
  */
 const PULSE_MS = 1_200;
+const REFETCH_AGRUPADO_MS = 3_000;
 
 /** O id do lead dentro do payload do postgres_changes (new, ou old no delete). */
 function idDoEvento(payload: unknown): string | null {
@@ -58,6 +60,106 @@ function idDoEvento(payload: unknown): string | null {
   const p = payload as { new?: { id?: unknown }; old?: { id?: unknown } };
   const id = p.new?.id ?? p.old?.id;
   return typeof id === "string" ? id : null;
+}
+
+function registroDoEvento(payload: unknown): Partial<Lead> | null {
+  if (!payload || typeof payload !== "object") return null;
+  const registro = (payload as { new?: unknown }).new;
+  if (!registro || typeof registro !== "object") return null;
+  return registro as Partial<Lead>;
+}
+
+function tipoDoEvento(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const tipo = (payload as { eventType?: unknown }).eventType;
+  return typeof tipo === "string" ? tipo : null;
+}
+
+/**
+ * Aplica a linha entregue pelo Realtime antes da reconciliação com o servidor.
+ * Campos enriquecidos que não vivem em crm_leads são preservados no UPDATE.
+ */
+function aplicarEventoNoBoard(
+  board: BoardData | undefined,
+  payload: unknown,
+  pipelineId: string,
+): BoardData | undefined {
+  if (!board) return board;
+  const leadId = idDoEvento(payload);
+  if (!leadId) return board;
+
+  const existente = board.leads.find((lead) => lead.id === leadId);
+  const registro = registroDoEvento(payload);
+  const remove =
+    tipoDoEvento(payload) === "DELETE" ||
+    (registro !== null &&
+      (registro.pipeline_id !== pipelineId ||
+        (registro as { status?: string }).status === "archived"));
+
+  const stagePages = board.stage_pages ? { ...board.stage_pages } : undefined;
+  const ajustarTotal = (stageId: string, delta: number) => {
+    if (!stagePages) return;
+    const page = stagePages[stageId];
+    if (!page) return;
+    stagePages[stageId] = { ...page, total: Math.max(0, page.total + delta) };
+  };
+
+  if (remove) {
+    if (!existente) return board;
+    ajustarTotal(existente.stage_id, -1);
+    return {
+      ...board,
+      leads: board.leads.filter((lead) => lead.id !== leadId),
+      stage_pages: stagePages,
+    };
+  }
+
+  if (!registro || registro.pipeline_id !== pipelineId || typeof registro.stage_id !== "string") {
+    return board;
+  }
+
+  // UPDATE de card que ainda não foi paginado não pode virar INSERT local:
+  // isso inflaria o total e furaria a janela carregada. O refetch agrupado faz
+  // a reconciliação porque o payload antigo não traz a etapa anterior.
+  if (!existente && tipoDoEvento(payload) !== "INSERT") return board;
+
+  const atualizado = existente
+    ? ({ ...existente, ...registro } as Lead)
+    : ({ ...registro, id: leadId } as Lead);
+  if (existente) {
+    if (existente.stage_id !== atualizado.stage_id) {
+      ajustarTotal(existente.stage_id, -1);
+      ajustarTotal(atualizado.stage_id, 1);
+    }
+  } else {
+    ajustarTotal(atualizado.stage_id, 1);
+  }
+
+  let leads = existente
+    ? board.leads.map((lead) => (lead.id === leadId ? atualizado : lead))
+    : [...board.leads, atualizado];
+
+  // Se a primeira página já estava cheia, um INSERT no topo desloca o último
+  // card para a página seguinte. Mantemos a mesma janela visível até o refetch.
+  const entrouNaEtapa = !existente || existente.stage_id !== atualizado.stage_id;
+  if (entrouNaEtapa && stagePages?.[atualizado.stage_id]?.has_more) {
+    const quantidadeCarregada = board.leads.filter(
+      (lead) => lead.stage_id === atualizado.stage_id,
+    ).length;
+    const destaEtapa = leads
+      .filter((lead) => lead.stage_id === atualizado.stage_id)
+      .sort(
+        (a, b) =>
+          a.position_in_stage - b.position_in_stage || a.id.localeCompare(b.id),
+      )
+      .slice(0, Math.max(quantidadeCarregada, 1));
+    const idsMantidos = new Set(destaEtapa.map((lead) => lead.id));
+    leads = leads.filter(
+      (lead) => lead.stage_id !== atualizado.stage_id || idsMantidos.has(lead.id),
+    );
+  }
+
+  return { ...board, leads, stage_pages: stagePages };
 }
 
 export function useBoard(pipelineId: string | null) {
@@ -74,6 +176,7 @@ export function useBoard(pipelineId: string | null) {
    */
   const [pulses, setPulses] = useState<Map<string, number>>(new Map());
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingStages = useRef<Set<string>>(new Set());
   const [loadingStageIds, setLoadingStageIds] = useState<Set<string>>(new Set());
   const [stageLoadErrors, setStageLoadErrors] = useState<Set<string>>(new Set());
@@ -128,12 +231,25 @@ export function useBoard(pipelineId: string | null) {
     [pipelineId, qc, queryKey],
   );
 
+  const agendarRefetch = useCallback(() => {
+    if (refetchTimer.current) clearTimeout(refetchTimer.current);
+    refetchTimer.current = setTimeout(() => {
+      refetchTimer.current = null;
+      void qc.invalidateQueries({ queryKey });
+    }, REFETCH_AGRUPADO_MS);
+  }, [qc, queryKey]);
+
   const onChange = useCallback(
     (payload: unknown) => {
-      // Conservative: invalidate the board on any change. Optimistic patches
-      // arrive faster via useMoveCard's onMutate; this just reconciles
-      // cross-user changes within ~250ms.
-      qc.invalidateQueries({ queryKey });
+      // O evento já traz a linha alterada: atualiza a tela agora e agrupa a
+      // reconciliação completa. Rajadas deixam de recarregar N páginas a cada
+      // escrita sem esconder a mudança do operador.
+      if (pipelineId) {
+        qc.setQueryData<BoardData>(queryKey, (board) =>
+          aplicarEventoNoBoard(board, payload, pipelineId),
+        );
+      }
+      agendarRefetch();
 
       const leadId = idDoEvento(payload);
       // Janela, não marca gasta por evento: uma ação minha chega aqui em DUAS
@@ -168,7 +284,7 @@ export function useBoard(pipelineId: string | null) {
         }, PULSE_MS),
       );
     },
-    [qc, queryKey],
+    [agendarRefetch, pipelineId, qc, queryKey],
   );
 
   // O STATUS DO CANAL NÃO PODE SER DESCARTADO. `useRealtimeChannel` calcula
@@ -201,6 +317,10 @@ export function useBoard(pipelineId: string | null) {
     return () => {
       for (const t of pendentes.values()) clearTimeout(t);
       pendentes.clear();
+      if (refetchTimer.current) {
+        clearTimeout(refetchTimer.current);
+        refetchTimer.current = null;
+      }
     };
   }, []);
 
