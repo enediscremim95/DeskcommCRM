@@ -4,7 +4,9 @@ import { paginaDestinoLimpa, paginasDestinoLimpas } from "./pagina-limpa";
 
 describe("página de destino limpa", () => {
   it("mantém domínio e caminho e remove query, hash e barra final", () => {
-    expect(paginaDestinoLimpa("https://CLIENTE.test/oferta/?utm_source=meta#formulario")).toEqual({
+    expect(
+      paginaDestinoLimpa("https://CLIENTE.test/oferta/?utm_source=meta#formulario"),
+    ).toEqual({
       endereco: "cliente.test/oferta",
       href: "https://cliente.test/oferta",
     });

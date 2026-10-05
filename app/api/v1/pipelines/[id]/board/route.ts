@@ -56,6 +56,11 @@ interface BoardCursor {
   id: string;
 }
 
+interface StageCountRow {
+  stage_id: string;
+  total: number | string;
+}
+
 function encodeBoardCursor(cursor: BoardCursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
 }
@@ -76,6 +81,7 @@ async function loadStagePage(
   pipelineId: string,
   stageId: string,
   cursor: BoardCursor | null,
+  total: number,
 ): Promise<{ chunk: BoardStageChunk | null; error: string | null }> {
   let pageQuery = supabase
     .from("crm_leads")
@@ -94,19 +100,9 @@ async function loadStagePage(
     );
   }
 
-  const [pageResult, countResult] = await Promise.all([
-    pageQuery,
-    supabase
-      .from("crm_leads")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .eq("pipeline_id", pipelineId)
-      .eq("stage_id", stageId)
-      .neq("status", "archived"),
-  ]);
+  const pageResult = await pageQuery;
 
   if (pageResult.error) return { chunk: null, error: pageResult.error.message };
-  if (countResult.error) return { chunk: null, error: countResult.error.message };
 
   const rows = (pageResult.data ?? []) as Lead[];
   const hasMore = rows.length > STAGE_PAGE_SIZE;
@@ -114,7 +110,7 @@ async function loadStagePage(
   const last = leads[leads.length - 1];
   const next = hasMore ? rows[STAGE_PAGE_SIZE] : undefined;
   const page: BoardStagePage = {
-    total: countResult.count ?? leads.length,
+    total,
     has_more: hasMore,
     cursor:
       hasMore && last
@@ -124,6 +120,24 @@ async function loadStagePage(
   };
 
   return { chunk: { stage_id: stageId, leads, page }, error: null };
+}
+
+async function loadStageCounts(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  pipelineId: string,
+): Promise<{ totals: Map<string, number>; error: string | null }> {
+  const result = await supabase.rpc("fn_contagem_por_etapa" as never, {
+    p_organization_id: organizationId,
+    p_pipeline_id: pipelineId,
+  } as never);
+  if (result.error) return { totals: new Map(), error: result.error.message };
+
+  const rows = (result.data ?? []) as unknown as StageCountRow[];
+  return {
+    totals: new Map(rows.map((row) => [row.stage_id, Number(row.total)])),
+    error: null,
+  };
 }
 
 /**
@@ -528,13 +542,20 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const defaultPipelineId = (pipelinePadrao as { id: string } | null)?.id ?? null;
 
   if (requestedStageId) {
-    const pageResult = await loadStagePage(
-      supabase,
-      typedPipeline.organization_id,
-      pipelineId,
-      requestedStageId,
-      cursor,
-    );
+    const [countResult, pageResult] = await Promise.all([
+      loadStageCounts(supabase, typedPipeline.organization_id, pipelineId),
+      loadStagePage(
+        supabase,
+        typedPipeline.organization_id,
+        pipelineId,
+        requestedStageId,
+        cursor,
+        0,
+      ),
+    ]);
+    if (countResult.error) {
+      return fail("internal_error", countResult.error, 500, { requestId });
+    }
     if (pageResult.error || !pageResult.chunk) {
       return fail(
         "internal_error",
@@ -545,30 +566,53 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         },
       );
     }
+    const chunk = {
+      ...pageResult.chunk,
+      page: {
+        ...pageResult.chunk.page,
+        total: countResult.totals.get(requestedStageId) ?? 0,
+      },
+    };
     const leadsComConversa = await enrichLeads(
       supabase,
       typedPipeline.organization_id,
-      pageResult.chunk.leads,
+      chunk.leads,
       defaultPipelineId,
     );
     if (leadsComConversa.error) {
       return fail("internal_error", leadsComConversa.error, 500, { requestId });
     }
     return ok<BoardStageChunk>(
-      { ...pageResult.chunk, leads: leadsComConversa.leads },
+      { ...chunk, leads: leadsComConversa.leads },
       { requestId },
     );
   }
 
-  const pageResults = await Promise.all(
-    typedStages.map((stage) =>
-      loadStagePage(supabase, typedPipeline.organization_id, pipelineId, stage.id, null),
+  const [countResult, pageResults] = await Promise.all([
+    loadStageCounts(supabase, typedPipeline.organization_id, pipelineId),
+    Promise.all(
+      typedStages.map((stage) =>
+        loadStagePage(supabase, typedPipeline.organization_id, pipelineId, stage.id, null, 0),
+      ),
     ),
-  );
+  ]);
+  if (countResult.error) return fail("internal_error", countResult.error, 500, { requestId });
   const pageError = pageResults.find((result) => result.error)?.error;
   if (pageError) return fail("internal_error", pageError, 500, { requestId });
 
-  const chunks = pageResults.flatMap((result) => (result.chunk ? [result.chunk] : []));
+  const chunks = pageResults.flatMap((result) =>
+    result.chunk
+      ? [
+          {
+            ...result.chunk,
+            page: {
+              ...result.chunk.page,
+              total: countResult.totals.get(result.chunk.stage_id) ?? 0,
+            },
+          },
+        ]
+      : [],
+  );
   const firstLeads = chunks.flatMap((chunk) => chunk.leads);
   const leadsComConversa = await enrichLeads(
     supabase,

@@ -42,11 +42,13 @@ services:
       waha:
         condition: service_started
     healthcheck:
-      # Exercita o Supabase pela mesma rota usada na operação. O script ignora
-      # Redis/WAHA para uma dependência secundária não derrubar a entrada do CRM.
-      # Três PGRST003 consecutivos fazem o app encerrar; falha de alcance do banco
-      # só reprova esta sonda, pois reiniciar o app não recupera um banco fora.
-      test: ["CMD", "node", "/opt/app-healthcheck.mjs"]
+      # Sonda de vida: só prova que o processo aceita TCP na porta 3000.
+      # Em 05/10/2026, consultar o Supabase aqui transformou latência do banco em
+      # 404 público, pois o Traefik retirou do roteamento o app marcado unhealthy.
+      # Dependências ficam com a vigia. ATENÇÃO: a autocura de PGRST003 só é avaliada
+      # quando /api/v1/health recebe `x-self-heal-probe: 1`; quem manda é a vigia, não esta
+      # sonda (ver docs/runbooks/deploy.md).
+      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 5

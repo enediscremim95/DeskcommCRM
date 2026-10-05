@@ -16,7 +16,13 @@ step "Dump do banco → $BACKUP_DIR/db-$ts.sql.gz"
 # o que a role enxerga, e com uma role menor — a que recomendamos no `.env` de
 # quem usa Supabase próprio — o backup sai PARCIAL e sai verde. Falha silenciosa
 # de backup é a pior das falhas: só aparece na hora de restaurar.
+#
+# `webhook_events_log` entra com a ESTRUTURA mas sem as linhas: é o log bruto de entrada de webhooks
+# (centenas de milhares de linhas com o corpo inteiro de cada chamada), cujo conteúdo já virou lead,
+# mensagem e evento. Despejá-lo levava ~10 min de leitura pesada no banco, no horário de movimento, e
+# num Supabase pequeno isso derruba o app (05/10/2026). A tabela existe vazia após o restore.
 docker run --rm postgres:17-alpine pg_dump "$(url_do_schema)" --no-owner --no-privileges \
+  --exclude-table-data=public.webhook_events_log \
   | gzip > "$BACKUP_DIR/db-$ts.sql.gz"
 c_grn "✓ banco: $(du -h "$BACKUP_DIR/db-$ts.sql.gz" | awk '{print $1}')"
 
