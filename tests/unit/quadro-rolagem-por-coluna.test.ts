@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 
 describe("rolagem vertical por coluna no quadro", () => {
   it("mede o espaço real do quadro sem manter a estimativa fixa na página", () => {
+    const route = readFileSync("app/app/pipelines/[id]/page.tsx", "utf8");
     const page = readFileSync("app/app/pipelines/[id]/_client.tsx", "utf8");
     const board = readFileSync("components/kanban/KanbanBoard.tsx", "utf8");
     const card = readFileSync("components/kanban/KanbanCard.tsx", "utf8");
 
+    expect(route).toContain("flex min-h-[640px] flex-col gap-4 p-6 md:pb-0");
     expect(page).toContain("min-h-[600px]");
     expect(page).toContain("md:min-h-0");
     expect(page).not.toContain("h-[calc(100dvh");

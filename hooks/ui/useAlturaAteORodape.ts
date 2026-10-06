@@ -10,6 +10,25 @@ const MEDIA_DESKTOP = "(min-width: 768px)";
  */
 export const FOLGA_INFERIOR_QUADRO_PX = 4;
 
+function espacoInferiorDosAncestrais(elemento: HTMLElement): number {
+  let espaco = 0;
+
+  for (
+    let ancestral = elemento.parentElement;
+    ancestral && ancestral !== document.body;
+    ancestral = ancestral.parentElement
+  ) {
+    const estilo = window.getComputedStyle(ancestral);
+    const paddingInferior = Number.parseFloat(estilo.paddingBottom);
+    const bordaInferior = Number.parseFloat(estilo.borderBottomWidth);
+
+    if (!Number.isNaN(paddingInferior)) espaco += paddingInferior;
+    if (!Number.isNaN(bordaInferior)) espaco += bordaInferior;
+  }
+
+  return espaco;
+}
+
 /**
  * Mantém um elemento exatamente no espaço restante até o rodapé da viewport.
  *
@@ -30,12 +49,18 @@ export function useAlturaAteORodape<T extends HTMLElement>(): RefCallback<T> {
     const medir = () => {
       if (!media.matches) {
         elemento.style.removeProperty("height");
+        elemento.style.removeProperty("flex");
         return;
       }
 
       const topo = elemento.getBoundingClientRect().top;
-      const altura = Math.max(0, window.innerHeight - topo - FOLGA_INFERIOR_QUADRO_PX);
+      const espacoInferior = espacoInferiorDosAncestrais(elemento);
+      const altura = Math.max(
+        0,
+        window.innerHeight - topo - espacoInferior - FOLGA_INFERIOR_QUADRO_PX,
+      );
       elemento.style.height = `${altura}px`;
+      elemento.style.flex = "none";
     };
 
     const observador = new ResizeObserver(medir);
@@ -59,6 +84,7 @@ export function useAlturaAteORodape<T extends HTMLElement>(): RefCallback<T> {
       media.removeEventListener("change", medir);
       observador.disconnect();
       elemento.style.removeProperty("height");
+      elemento.style.removeProperty("flex");
     };
   });
 
