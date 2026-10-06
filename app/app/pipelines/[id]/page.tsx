@@ -27,7 +27,7 @@ export default async function PipelinePage({
     .maybeSingle();
   if (!pipeline) notFound();
   return (
-    <div className="flex min-h-[640px] flex-col gap-4 p-6">
+    <div className="flex min-h-[640px] flex-col gap-4 p-6 md:pb-0">
       {/* Sem "voltar para Funis": o quadro é destino de uso diário, alcançado
           pelo menu, não uma subtela das configurações. O link levava para a
           tela de configurar etapas, que não é de onde a pessoa veio. */}
