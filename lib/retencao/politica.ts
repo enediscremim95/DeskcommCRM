@@ -1,6 +1,6 @@
 /**
- * A política de retenção — regra PURA, sem banco e sem env, para a poda da fila
- * e o expurgo da auditoria (issue #261).
+ * A política de retenção, regra PURA, sem banco e sem env, para as podas do
+ * cron `data-retention`.
  *
  * ─── Por que um módulo, e não `z.coerce.number()` em `lib/env.ts` ───────────
  *
@@ -8,8 +8,8 @@
  * requisição — com healthcheck TCP puro, o contêiner fica `healthy` com 100% das
  * respostas em 500. É a mesma armadilha documentada em `AI_BUDGET_ENFORCEMENT`:
  * um `z.coerce.number().int().positive()` aqui transformaria
- * `JOB_QUEUE_RETENTION_DAYS=noventa` — digitado às 2h por quem está tentando
- * liberar espaço — no derrubador do produto inteiro. As duas chaves entram como
+ * `JOB_QUEUE_RETENTION_DAYS=noventa`, digitado às 2h por quem está tentando
+ * liberar espaço, no derrubador do produto inteiro. As chaves entram como
  * `z.string()` e são interpretadas AQUI, onde lixo resolve para o lado seguro.
  *
  * ─── O piso não é sugestão ──────────────────────────────────────────────────
@@ -86,6 +86,21 @@ export const RETENCAO_CAPTACAO_DIAS_PADRAO = 365;
  * enfiá-lo. O alcance é menor e está escrito aqui em vez de presumido.
  */
 export const RETENCAO_CAPTACAO_DIAS_PISO = 30;
+
+/**
+ * 14 dias para a linha leve do arquivo de webhooks.
+ *
+ * A Nuvemshop repete entregas por no máximo 48 horas. A linha preserva o
+ * `external_id` usado na deduplicação por sete vezes essa janela; o corpo já
+ * foi descartado separadamente em D+7.
+ */
+export const RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PADRAO = 14;
+/** Nem um knob incorreto encurta a deduplicação para menos de uma semana. */
+export const RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PISO = 7;
+/** Eventos concluídos permanecem 30 dias após a última mudança de estado. */
+export const RETENCAO_EVENT_LOG_DIAS_PADRAO = 30;
+/** O histórico terminal nunca pode ser reduzido para menos de duas semanas. */
+export const RETENCAO_EVENT_LOG_DIAS_PISO = 14;
 
 export interface RetencaoInterpretada {
   /** Dias a pedir ao banco. Nunca abaixo do piso, nunca `NaN`. */

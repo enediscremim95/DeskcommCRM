@@ -1,8 +1,9 @@
 /**
  * GET/POST /api/v1/cron/data-retention — issue #261.
  *
- * As duas tabelas que crescem sozinhas numa instalação parada — `job_queue` e
- * `api_audit_log` — não tinham poda nenhuma. Medido no HEAD anterior:
+ * Nasceu para `job_queue` e `api_audit_log` e hoje é o relógio único das podas
+ * de histórico. A migration 0285 acrescenta as duas tabelas medidas na máquina
+ * Micro: `webhook_events_log` e `event_log`.
  *
  *     $ grep -rn "from job_queue" lib workers app supabase scripts | grep -i delete
  *     (zero linhas)
@@ -14,11 +15,11 @@
  *
  * O que ele faz, e o que deliberadamente NÃO faz:
  *
- *   - chama `fn_podar_fila_de_jobs` e `fn_expurgar_auditoria_vencida` EM LOTES.
+ *   - chama as funções de retenção EM LOTES.
  *     Um DELETE grande num banco de cliente trava a tabela e o tempo do lock
  *     cresce com o backlog; lotes de `TAMANHO_DO_LOTE` fecham a transação a cada
  *     rodada e o backlog drena ao longo de vários dias, sem janela de manutenção;
- *   - **não decide o que é podável.** As duas regras (quais status são terminais,
+ *   - **não decide o que é podável.** As regras (quais status são terminais,
  *     o que ainda tem dono, o piso da retenção) moram DENTRO das funções do
  *     banco, porque lá elas valem para qualquer chamador — inclusive um `psql`
  *     na mão. Este arquivo é só o relógio e o laço;
@@ -57,10 +58,14 @@ import { logger } from "@/lib/logger";
 import {
   RETENCAO_AUDITORIA_DIAS_PADRAO,
   RETENCAO_AUDITORIA_DIAS_PISO,
+  RETENCAO_EVENT_LOG_DIAS_PADRAO,
+  RETENCAO_EVENT_LOG_DIAS_PISO,
   RETENCAO_ESPELHO_AGENDA_DIAS_PADRAO,
   RETENCAO_ESPELHO_AGENDA_DIAS_PISO,
   RETENCAO_FILA_DIAS_PADRAO,
   RETENCAO_FILA_DIAS_PISO,
+  RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PADRAO,
+  RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PISO,
   interpretarRetencao,
 } from "@/lib/retencao/politica";
 import {
@@ -80,6 +85,14 @@ export const dynamic = "force-dynamic";
 export const TAMANHO_DO_LOTE = 1000;
 
 /**
+ * As duas tabelas medidas em produção usam lote de 2 mil, mas no máximo cinco
+ * transações por tabela e por rodada. Assim o primeiro catch-up remove até 10
+ * mil linhas por dia sem transformar o cron diário numa consulta longa.
+ */
+export const TAMANHO_DO_LOTE_LOGS = 2000;
+export const MAX_LOTES_LOGS = 5;
+
+/**
  * Teto de lotes POR TABELA e por invocação. Sem ele, a primeira rodada numa
  * instalação antiga tentaria apagar tudo de uma vez e seguraria a conexão do
  * cron (timeout de 120 s no crontab) até o `curl` desistir — deixando a
@@ -90,11 +103,17 @@ export const MAX_LOTES = 20;
 export interface ResultadoDaRetencao {
   jobs_apagados: number;
   auditoria_apagada: number;
+  webhooks_arquivados_apagados: number;
+  eventos_concluidos_apagados: number;
   lotes_fila: number;
   lotes_auditoria: number;
+  lotes_webhooks_arquivados: number;
+  lotes_eventos_concluidos: number;
   /** O último lote veio cheio e o teto foi atingido: sobrou trabalho para amanhã. */
   fila_tem_resto: boolean;
   auditoria_tem_resto: boolean;
+  webhooks_arquivados_tem_resto: boolean;
+  eventos_concluidos_tem_resto: boolean;
   /** Os nonces de OAuth do Google já queimados (migration 0190). */
   nonces_apagados: number;
   /** O espelho da agenda conectada — cache com prazo (migration 0187). */
@@ -103,6 +122,8 @@ export interface ResultadoDaRetencao {
   espelho_tem_resto: boolean;
   retencao_fila_dias: number;
   retencao_auditoria_dias: number;
+  retencao_webhooks_dias: number;
+  retencao_eventos_dias: number;
   retencao_espelho_dias: number;
   /** Avisos de configuração — nunca ausentes em silêncio quando existem. */
   avisos: string[];
@@ -111,22 +132,40 @@ export interface ResultadoDaRetencao {
 /** Só a superfície que este cron usa — o teste injeta uma implementação. */
 export interface PodaDb {
   rpc(
-    nome: "fn_podar_fila_de_jobs" | "fn_expurgar_auditoria_vencida" | "fn_expurgar_espelho_da_agenda" | "fn_expurgar_nonces_de_oauth",
-    args: { p_retencao_dias: number; p_limite: number },
+    nome:
+      | "fn_podar_fila_de_jobs"
+      | "fn_expurgar_auditoria_vencida"
+      | "fn_expurgar_espelho_da_agenda"
+      | "fn_expurgar_nonces_de_oauth"
+      | "fn_expurgar_webhook_events_log_arquivado"
+      | "fn_expurgar_event_log_concluido",
+    args: {
+      p_retencao_dias: number;
+      p_limite?: number;
+      p_lote?: number;
+    },
   ): Promise<{ data: number | null; error: { message: string } | null }>;
 }
 
 async function drenar(
   db: PodaDb,
-  nome: "fn_podar_fila_de_jobs" | "fn_expurgar_auditoria_vencida" | "fn_expurgar_espelho_da_agenda" | "fn_expurgar_nonces_de_oauth",
+  nome: Parameters<PodaDb["rpc"]>[0],
   dias: number,
+  opcoes: {
+    tamanhoDoLote?: number;
+    maxLotes?: number;
+    parametroDoLote?: "p_limite" | "p_lote";
+  } = {},
 ): Promise<{ apagadas: number; lotes: number; temResto: boolean }> {
+  const tamanhoDoLote = opcoes.tamanhoDoLote ?? TAMANHO_DO_LOTE;
+  const maxLotes = opcoes.maxLotes ?? MAX_LOTES;
+  const parametroDoLote = opcoes.parametroDoLote ?? "p_limite";
   let apagadas = 0;
   let lotes = 0;
-  for (let i = 0; i < MAX_LOTES; i += 1) {
+  for (let i = 0; i < maxLotes; i += 1) {
     const { data, error } = await db.rpc(nome, {
       p_retencao_dias: dias,
-      p_limite: TAMANHO_DO_LOTE,
+      [parametroDoLote]: tamanhoDoLote,
     });
     if (error) throw new Error(`${nome}: ${error.message}`);
     const n = data ?? 0;
@@ -134,7 +173,7 @@ async function drenar(
     apagadas += n;
     // Lote incompleto = a ponta velha acabou. Encerra sem gastar mais uma ida
     // ao banco só para ouvir zero.
-    if (n < TAMANHO_DO_LOTE) return { apagadas, lotes, temResto: false };
+    if (n < tamanhoDoLote) return { apagadas, lotes, temResto: false };
   }
   return { apagadas, lotes, temResto: true };
 }
@@ -149,6 +188,8 @@ export async function podarHistorico(
   ambiente: {
     JOB_QUEUE_RETENTION_DAYS?: string;
     AUDIT_LOG_RETENTION_DAYS?: string;
+    WEBHOOK_EVENTS_LOG_RETENTION_DAYS?: string;
+    EVENT_LOG_RETENTION_DAYS?: string;
     CALENDAR_MIRROR_RETENTION_DAYS?: string;
   },
 ): Promise<ResultadoDaRetencao> {
@@ -162,6 +203,16 @@ export async function podarHistorico(
     padrao: RETENCAO_AUDITORIA_DIAS_PADRAO,
     piso: RETENCAO_AUDITORIA_DIAS_PISO,
   });
+  const webhooks = interpretarRetencao(ambiente.WEBHOOK_EVENTS_LOG_RETENTION_DAYS, {
+    chave: "WEBHOOK_EVENTS_LOG_RETENTION_DAYS",
+    padrao: RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PADRAO,
+    piso: RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PISO,
+  });
+  const eventosConcluidos = interpretarRetencao(ambiente.EVENT_LOG_RETENTION_DAYS, {
+    chave: "EVENT_LOG_RETENTION_DAYS",
+    padrao: RETENCAO_EVENT_LOG_DIAS_PADRAO,
+    piso: RETENCAO_EVENT_LOG_DIAS_PISO,
+  });
 
   const espelho = interpretarRetencao(ambiente.CALENDAR_MIRROR_RETENTION_DAYS, {
     chave: "CALENDAR_MIRROR_RETENTION_DAYS",
@@ -171,6 +222,26 @@ export async function podarHistorico(
 
   const jobs = await drenar(db, "fn_podar_fila_de_jobs", fila.dias);
   const linhas = await drenar(db, "fn_expurgar_auditoria_vencida", auditoria.dias);
+  const webhooksArquivados = await drenar(
+    db,
+    "fn_expurgar_webhook_events_log_arquivado",
+    webhooks.dias,
+    {
+      tamanhoDoLote: TAMANHO_DO_LOTE_LOGS,
+      maxLotes: MAX_LOTES_LOGS,
+      parametroDoLote: "p_lote",
+    },
+  );
+  const eventosConcluidosApagados = await drenar(
+    db,
+    "fn_expurgar_event_log_concluido",
+    eventosConcluidos.dias,
+    {
+      tamanhoDoLote: TAMANHO_DO_LOTE_LOGS,
+      maxLotes: MAX_LOTES_LOGS,
+      parametroDoLote: "p_lote",
+    },
+  );
   const eventos = await drenar(db, "fn_expurgar_espelho_da_agenda", espelho.dias);
   // Quarta poda: os nonces de OAuth já queimados. O `state` vale dez minutos,
   // então um dia é folga de duas ordens de grandeza — e sem esta linha a tabela
@@ -181,20 +252,32 @@ export async function podarHistorico(
   return {
     jobs_apagados: jobs.apagadas,
     auditoria_apagada: linhas.apagadas,
+    webhooks_arquivados_apagados: webhooksArquivados.apagadas,
+    eventos_concluidos_apagados: eventosConcluidosApagados.apagadas,
     espelho_apagado: eventos.apagadas,
     nonces_apagados: nonces.apagadas,
     lotes_fila: jobs.lotes,
     lotes_auditoria: linhas.lotes,
+    lotes_webhooks_arquivados: webhooksArquivados.lotes,
+    lotes_eventos_concluidos: eventosConcluidosApagados.lotes,
     lotes_espelho: eventos.lotes,
     fila_tem_resto: jobs.temResto,
     auditoria_tem_resto: linhas.temResto,
+    webhooks_arquivados_tem_resto: webhooksArquivados.temResto,
+    eventos_concluidos_tem_resto: eventosConcluidosApagados.temResto,
     espelho_tem_resto: eventos.temResto,
     retencao_fila_dias: fila.dias,
     retencao_auditoria_dias: auditoria.dias,
+    retencao_webhooks_dias: webhooks.dias,
+    retencao_eventos_dias: eventosConcluidos.dias,
     retencao_espelho_dias: espelho.dias,
-    avisos: [fila.aviso, auditoria.aviso, espelho.aviso].filter(
-      (a): a is string => a !== null,
-    ),
+    avisos: [
+      fila.aviso,
+      auditoria.aviso,
+      webhooks.aviso,
+      eventosConcluidos.aviso,
+      espelho.aviso,
+    ].filter((a): a is string => a !== null),
   };
 }
 
@@ -207,6 +290,8 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
   return (
     resultado.jobs_apagados > 0 ||
     resultado.auditoria_apagada > 0 ||
+    resultado.webhooks_arquivados_apagados > 0 ||
+    resultado.eventos_concluidos_apagados > 0 ||
     // A terceira conta: sem ela, uma rodada que só podou o espelho apagaria
     // linhas e não deixaria registro — e o CLAUDE.md manda auditar QUANDO HÁ
     // EFEITO, não parar de auditar.
@@ -250,6 +335,8 @@ async function handle(req: NextRequest): Promise<Response> {
     resultado = await podarHistorico(db, {
       JOB_QUEUE_RETENTION_DAYS: env.JOB_QUEUE_RETENTION_DAYS,
       AUDIT_LOG_RETENTION_DAYS: env.AUDIT_LOG_RETENTION_DAYS,
+      WEBHOOK_EVENTS_LOG_RETENTION_DAYS: env.WEBHOOK_EVENTS_LOG_RETENTION_DAYS,
+      EVENT_LOG_RETENTION_DAYS: env.EVENT_LOG_RETENTION_DAYS,
     });
     // ── A cascata de anonimização que ficou pela metade ──────────────────
     //

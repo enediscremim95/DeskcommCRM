@@ -28231,6 +28231,105 @@ grant execute on function public.fn_contagem_por_etapa(uuid, uuid)
 
 notify pgrst, 'reload schema';
 
+-- ---- retenção dos logs que crescem sozinhos (migration 0285) ----
+-- `webhook_events_log`: somente linhas cujo corpo pesado já foi descartado;
+-- default 14 dias desde received_at, piso de 7 para preservar a deduplicação.
+-- `event_log`: somente done/dead, por updated_at; default 30 dias, piso 14.
+-- O cron chama cinco lotes de 2.000 por tabela; SKIP LOCKED e lock_timeout curto
+-- fazem a manutenção ceder para o tráfego normal da instalação.
+create index if not exists idx_webhook_events_log_expurgo_arquivado
+  on public.webhook_events_log (received_at, id)
+  where archived_at is not null;
+
+create index if not exists idx_event_log_expurgo_concluido
+  on public.event_log (updated_at, id)
+  where status in ('done', 'dead');
+
+create or replace function public.fn_expurgar_webhook_events_log_arquivado(
+  p_retencao_dias int default null,
+  p_lote int default 2000
+) returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_dias int := greatest(coalesce(p_retencao_dias, 14), 7);
+  v_lote int := least(greatest(coalesce(p_lote, 2000), 1), 10000);
+  v_apagadas int;
+begin
+  perform set_config('lock_timeout', '1s', true);
+
+  with candidatas as materialized (
+    select w.id
+      from public.webhook_events_log w
+     where w.archived_at is not null
+       and w.received_at < now() - make_interval(days => v_dias)
+     order by w.received_at, w.id
+     limit v_lote
+     for update skip locked
+  )
+  delete from public.webhook_events_log w
+   using candidatas c
+   where w.id = c.id;
+
+  get diagnostics v_apagadas = row_count;
+  return v_apagadas;
+end;
+$$;
+
+create or replace function public.fn_expurgar_event_log_concluido(
+  p_retencao_dias int default null,
+  p_lote int default 2000
+) returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_dias int := greatest(coalesce(p_retencao_dias, 30), 14);
+  v_lote int := least(greatest(coalesce(p_lote, 2000), 1), 10000);
+  v_apagadas int;
+begin
+  perform set_config('lock_timeout', '1s', true);
+
+  with candidatas as materialized (
+    select e.id
+      from public.event_log e
+     where e.status in ('done', 'dead')
+       and e.updated_at < now() - make_interval(days => v_dias)
+     order by e.updated_at, e.id
+     limit v_lote
+     for update skip locked
+  )
+  delete from public.event_log e
+   using candidatas c
+   where e.id = c.id;
+
+  get diagnostics v_apagadas = row_count;
+  return v_apagadas;
+end;
+$$;
+
+revoke execute on function public.fn_expurgar_webhook_events_log_arquivado(int, int)
+  from public, anon, authenticated;
+grant execute on function public.fn_expurgar_webhook_events_log_arquivado(int, int)
+  to service_role;
+
+revoke execute on function public.fn_expurgar_event_log_concluido(int, int)
+  from public, anon, authenticated;
+grant execute on function public.fn_expurgar_event_log_concluido(int, int)
+  to service_role;
+
+comment on function public.fn_expurgar_webhook_events_log_arquivado(int, int) is
+  'Apaga em lote apenas linhas de webhook já sem corpo, por received_at. Default 14 dias; piso 7.';
+
+comment on function public.fn_expurgar_event_log_concluido(int, int) is
+  'Apaga em lote apenas eventos done/dead pela última mudança. Default 30 dias; piso 14.';
+
+notify pgrst, 'reload schema';
+
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

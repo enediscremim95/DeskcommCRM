@@ -28,7 +28,7 @@
  * As três colunas pesadas são ~97% do peso; a linha sem elas custa ~200 B.
  * Esvaziando, o índice forense inteiro sobrevive por ~11 MB.
  *
- * ─── Por que em lotes, e por que dois passos ────────────────────────────────
+ * ─── Por que em lotes ──────────────────────────────────────────────────────
  *
  * Um `update` sem teto sobre 31 mil linhas segura a tabela que TODO webhook
  * escreve — a poda derrubaria a entrada de mensagem, que é o oposto do que ela
@@ -36,9 +36,11 @@
  * do serviço `scheduler`), chega ao
  * mesmo lugar sem nunca ser o dono de uma trava longa.
  *
- * São dois passos porque `supabase-js` não escreve `update ... where id in
- * (select ... limit n)`: primeiro escolhe os ids, depois esvazia por id. As
- * duas idas custam menos que a trava que a alternativa pediria.
+ * `supabase-js` não escreve `update ... where id in (select ... limit n)`:
+ * primeiro escolhe os ids, depois esvazia por id. As duas idas custam menos
+ * que a trava que a alternativa pediria. A linha inteira tem outro dono:
+ * `fn_expurgar_webhook_events_log_arquivado`, chamada pelo `data-retention`,
+ * com piso dentro do banco e auditoria somente quando houve efeito.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -50,8 +52,6 @@ export const LOTE_PADRAO = 500;
 export interface ResultadoDaPoda {
   /** Linhas que perderam o corpo nesta rodada. */
   esvaziadas: number;
-  /** Linhas apagadas de vez (velhas demais até para o índice forense). */
-  apagadas: number;
   /** `true` quando o lote encheu — ainda há trabalho para a próxima rodada. */
   temMais: boolean;
 }
@@ -61,16 +61,13 @@ function limiteEm(dias: number): string {
 }
 
 /**
- * Esvazia o corpo das linhas velhas e apaga as velhas demais.
- *
- * Os dois horizontes são independentes de propósito: o primeiro protege o
- * ESPAÇO (o corpo é 97% do peso) e o segundo protege a TABELA de crescer em
- * número de linhas para sempre. Colapsá-los num só forçaria a escolha entre
- * perder o índice forense cedo ou carregar o corpo por meses.
+ * Esvazia o corpo das linhas velhas. O expurgo da linha vive no banco e roda no
+ * cron diário de retenção; manter uma única porta impede que dois knobs com
+ * horizontes diferentes disputem qual deles vale.
  */
 export async function podarArquivoDeWebhooks(
   admin: SupabaseClient,
-  opcoes: { diasComCorpo: number; diasParaApagar: number; lote?: number },
+  opcoes: { diasComCorpo: number; lote?: number },
 ): Promise<ResultadoDaPoda> {
   const lote = opcoes.lote ?? LOTE_PADRAO;
 
@@ -91,7 +88,7 @@ export async function podarArquivoDeWebhooks(
     logger.warn("[retencao-webhook] não consegui escolher as linhas", {
       detail: erroBusca.message.slice(0, 160),
     });
-    return { esvaziadas: 0, apagadas: 0, temMais: false };
+    return { esvaziadas: 0, temMais: false };
   }
 
   const ids = (alvos ?? []).map((r) => (r as { id: string }).id);
@@ -120,28 +117,8 @@ export async function podarArquivoDeWebhooks(
     }
   }
 
-  // ── 2. Apagar as velhas demais ────────────────────────────────────────────
-  //
-  // Só depois do horizonte longo. Aqui a linha já não tem corpo há muito tempo,
-  // então o que se perde é o registro de que um evento existiu — aceitável
-  // passados meses, e é o único jeito de a tabela não crescer para sempre em
-  // número de linhas.
-  const { data: apagadasRows, error: erroDelete } = await admin
-    .from("webhook_events_log")
-    .delete()
-    .lt("received_at", limiteEm(opcoes.diasParaApagar))
-    .select("id")
-    .limit(lote);
-
-  if (erroDelete) {
-    logger.warn("[retencao-webhook] não consegui apagar as velhas", {
-      detail: erroDelete.message.slice(0, 160),
-    });
-  }
-
   return {
     esvaziadas,
-    apagadas: (apagadasRows ?? []).length,
     // Lote cheio = ainda há fila. Quem chama pode usar isto para saber que a
     // poda ainda não alcançou o estado estável — útil no primeiro dia, quando
     // há 31 mil linhas atrasadas e a varredura leva várias rodadas.

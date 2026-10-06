@@ -47,14 +47,12 @@ export async function GET(req: NextRequest): Promise<Response> {
   // escreve — a poda derrubando a entrada de mensagem seria o oposto do ponto.
   const url = new URL(req.url);
   const pedido = Number.parseInt(url.searchParams.get("lote") ?? "", 10);
-  const lote =
-    Number.isFinite(pedido) && pedido > 0 ? Math.min(pedido, LOTE_MAXIMO) : LOTE_PADRAO;
+  const lote = Number.isFinite(pedido) && pedido > 0 ? Math.min(pedido, LOTE_MAXIMO) : LOTE_PADRAO;
 
   const admin = createAdminClient();
 
   const resultado = await podarArquivoDeWebhooks(admin, {
     diasComCorpo: env.WEBHOOK_LOG_BODY_RETENTION_DAYS,
-    diasParaApagar: env.WEBHOOK_LOG_ROW_RETENTION_DAYS,
     lote,
   });
 
