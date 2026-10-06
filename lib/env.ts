@@ -96,13 +96,6 @@ const schema = z.object({
    */
   WEBHOOK_LOG_BODY_RETENTION_DAYS: diasDeRetencao("WEBHOOK_LOG_BODY_RETENTION_DAYS", 7),
   /**
-   * Quando a LINHA some, e não só o corpo. Horizonte longo de propósito: até
-   * aqui a linha custa ~200 B e ainda responde "quantos eventos de que tipo
-   * chegaram, quando, e a assinatura conferia?", que é a pergunta de depois do
-   * incidente.
-   */
-  WEBHOOK_LOG_ROW_RETENTION_DAYS: diasDeRetencao("WEBHOOK_LOG_ROW_RETENTION_DAYS", 90),
-  /**
    * Retenção do HISTÓRICO de leads captados (`webhook_lead_captures`).
    *
    * Horizonte muito mais longo que o do arquivo forense acima, e a diferença é
@@ -112,8 +105,8 @@ const schema = z.object({
    * leads/dia por um ano dão ~110 MB; o ano fiscal cabe.
    *
    * Entra como `z.string()` — e não pelo `diasDeRetencao` acima — porque quem
-   * a interpreta é `lib/retencao/politica.ts`, o mesmo módulo da poda da fila e
-   * do expurgo da auditoria. Ele resolve lixo para o lado seguro E devolve a
+   * a interpreta é `lib/retencao/politica.ts`, o mesmo módulo das podas do cron
+   * de retenção. Ele resolve lixo para o lado seguro E devolve a
    * frase de aviso, que é o que faz o operador saber que o número dele foi
    * elevado ao piso de 30 dias, em vez de descobrir pela ausência de efeito.
    */
@@ -298,7 +291,7 @@ const schema = z.object({
   /**
    * Retenção do histórico que o cron `data-retention` poda (issue #261).
    *
-   * As DUAS entram como `z.string()` e nunca como `z.coerce.number()`, pelo
+   * As chaves entram como `z.string()` e nunca como `z.coerce.number()`, pelo
    * mesmo motivo de `AI_BUDGET_ENFORCEMENT` algumas linhas acima: o `safeParse`
    * deste arquivo LANÇA quando o schema recusa, e no Next isso derruba toda
    * requisição com 500 num contêiner que segue `healthy` (o healthcheck é probe
@@ -311,6 +304,8 @@ const schema = z.object({
    */
   JOB_QUEUE_RETENTION_DAYS: z.string().optional().default(""),
   AUDIT_LOG_RETENTION_DAYS: z.string().optional().default(""),
+  WEBHOOK_EVENTS_LOG_RETENTION_DAYS: z.string().optional().default(""),
+  EVENT_LOG_RETENTION_DAYS: z.string().optional().default(""),
   /**
    * Binário de mídia do WhatsApp. Strings de propósito: lixo no `.env` cai nos
    * defaults seguros da política em vez de derrubar o app no primeiro request.

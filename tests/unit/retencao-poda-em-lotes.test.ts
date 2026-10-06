@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   GET,
   MAX_LOTES,
+  MAX_LOTES_LOGS,
   type PodaDb,
   TAMANHO_DO_LOTE,
+  TAMANHO_DO_LOTE_LOGS,
   houveEfeito,
   podarHistorico,
 } from "@/app/api/v1/cron/data-retention/route";
@@ -12,10 +14,14 @@ import {
 import {
   RETENCAO_AUDITORIA_DIAS_PADRAO,
   RETENCAO_AUDITORIA_DIAS_PISO,
+  RETENCAO_EVENT_LOG_DIAS_PADRAO,
+  RETENCAO_EVENT_LOG_DIAS_PISO,
   RETENCAO_ESPELHO_AGENDA_DIAS_PADRAO,
   RETENCAO_ESPELHO_AGENDA_DIAS_PISO,
   RETENCAO_FILA_DIAS_PADRAO,
   RETENCAO_FILA_DIAS_PISO,
+  RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PADRAO,
+  RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PISO,
   interpretarRetencao,
 } from "@/lib/retencao/politica";
 
@@ -25,6 +31,8 @@ vi.mock("@/lib/env", () => ({
     INTERNAL_SECRET: "",
     JOB_QUEUE_RETENTION_DAYS: "",
     AUDIT_LOG_RETENTION_DAYS: "",
+    WEBHOOK_EVENTS_LOG_RETENTION_DAYS: "",
+    EVENT_LOG_RETENTION_DAYS: "",
   },
 }));
 const auditou = vi.fn();
@@ -35,6 +43,10 @@ let respostaRpc: { data: number | null; error: { message: string } | null } = {
   data: 0,
   error: null,
 };
+let respostasRpcPorNome: Record<
+  string,
+  { data: number | null; error: { message: string } | null }
+> = {};
 /**
  * As linhas que a varredura de anonimização enxerga nesta rodada. Vazio por
  * padrão: os casos deste arquivo medem a PODA, e uma varredura com trabalho a
@@ -44,7 +56,7 @@ let respostaRpc: { data: number | null; error: { message: string } | null } = {
 let contatosAnonimizados: Array<{ id: string; organization_id: string }> = [];
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
-    rpc: async () => respostaRpc,
+    rpc: async (nome: string) => respostasRpcPorNome[nome] ?? respostaRpc,
     from: () => {
       const q: Record<string, unknown> = {
         eq: () => q,
@@ -81,13 +93,31 @@ vi.mock("@/lib/supabase/admin", () => ({
 function bancoQueDevolve(sequencias: {
   fila: number[];
   auditoria: number[];
+  webhooks?: number[];
+  eventos?: number[];
 }): { db: PodaDb; chamadas: { nome: string; dias: number; limite: number }[] } {
   const chamadas: { nome: string; dias: number; limite: number }[] = [];
-  const restante = { fila: [...sequencias.fila], auditoria: [...sequencias.auditoria] };
+  const restante = {
+    fila: [...sequencias.fila],
+    auditoria: [...sequencias.auditoria],
+    webhooks: [...(sequencias.webhooks ?? [0])],
+    eventos: [...(sequencias.eventos ?? [0])],
+  };
   const db: PodaDb = {
     async rpc(nome, args) {
-      chamadas.push({ nome, dias: args.p_retencao_dias, limite: args.p_limite });
-      const balde = nome === "fn_podar_fila_de_jobs" ? restante.fila : restante.auditoria;
+      chamadas.push({
+        nome,
+        dias: args.p_retencao_dias,
+        limite: args.p_limite ?? args.p_lote ?? 0,
+      });
+      const balde =
+        nome === "fn_podar_fila_de_jobs"
+          ? restante.fila
+          : nome === "fn_expurgar_webhook_events_log_arquivado"
+            ? restante.webhooks
+            : nome === "fn_expurgar_event_log_concluido"
+              ? restante.eventos
+              : restante.auditoria;
       return { data: balde.shift() ?? 0, error: null };
     },
   };
@@ -153,6 +183,26 @@ describe("podarHistorico — o laço de lotes", () => {
     expect(r.fila_tem_resto).toBe(true);
   });
 
+  it("os logs medidos em produção drenam no máximo cinco lotes de 2 mil", async () => {
+    const cheios = Array.from({ length: MAX_LOTES_LOGS + 2 }, () => TAMANHO_DO_LOTE_LOGS);
+    const { db, chamadas } = bancoQueDevolve({
+      fila: [0],
+      auditoria: [0],
+      webhooks: cheios,
+      eventos: cheios,
+    });
+
+    const r = await podarHistorico(db, {});
+
+    expect(r.webhooks_arquivados_apagados).toBe(MAX_LOTES_LOGS * TAMANHO_DO_LOTE_LOGS);
+    expect(r.eventos_concluidos_apagados).toBe(MAX_LOTES_LOGS * TAMANHO_DO_LOTE_LOGS);
+    expect(r.webhooks_arquivados_tem_resto).toBe(true);
+    expect(r.eventos_concluidos_tem_resto).toBe(true);
+    expect(
+      chamadas.filter((c) => c.nome === "fn_expurgar_webhook_events_log_arquivado"),
+    ).toHaveLength(MAX_LOTES_LOGS);
+  });
+
   it("pede ao banco os dias do padrão quando o .env está intocado", async () => {
     const { db, chamadas } = bancoQueDevolve({ fila: [0], auditoria: [0] });
     const r = await podarHistorico(db, {});
@@ -165,6 +215,16 @@ describe("podarHistorico — o laço de lotes", () => {
       nome: "fn_expurgar_auditoria_vencida",
       dias: RETENCAO_AUDITORIA_DIAS_PADRAO,
       limite: TAMANHO_DO_LOTE,
+    });
+    expect(chamadas[2]).toEqual({
+      nome: "fn_expurgar_webhook_events_log_arquivado",
+      dias: RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PADRAO,
+      limite: TAMANHO_DO_LOTE_LOGS,
+    });
+    expect(chamadas[3]).toEqual({
+      nome: "fn_expurgar_event_log_concluido",
+      dias: RETENCAO_EVENT_LOG_DIAS_PADRAO,
+      limite: TAMANHO_DO_LOTE_LOGS,
     });
     expect(r.avisos).toEqual([]);
   });
@@ -196,10 +256,16 @@ describe("houveEfeito — as duas direções", () => {
   const base = {
     jobs_apagados: 0,
     auditoria_apagada: 0,
+    webhooks_arquivados_apagados: 0,
+    eventos_concluidos_apagados: 0,
     lotes_fila: 1,
     lotes_auditoria: 1,
+    lotes_webhooks_arquivados: 1,
+    lotes_eventos_concluidos: 1,
     fila_tem_resto: false,
     auditoria_tem_resto: false,
+    webhooks_arquivados_tem_resto: false,
+    eventos_concluidos_tem_resto: false,
     espelho_apagado: 0,
     // Quarta poda (migration 0190): os nonces de OAuth do Google já queimados.
     nonces_apagados: 0,
@@ -207,6 +273,8 @@ describe("houveEfeito — as duas direções", () => {
     espelho_tem_resto: false,
     retencao_fila_dias: RETENCAO_FILA_DIAS_PADRAO,
     retencao_auditoria_dias: RETENCAO_AUDITORIA_DIAS_PADRAO,
+    retencao_webhooks_dias: RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PADRAO,
+    retencao_eventos_dias: RETENCAO_EVENT_LOG_DIAS_PADRAO,
     retencao_espelho_dias: RETENCAO_ESPELHO_AGENDA_DIAS_PADRAO,
     avisos: [] as string[],
   };
@@ -230,6 +298,11 @@ describe("houveEfeito — as duas direções", () => {
     expect(houveEfeito({ ...base, auditoria_apagada: 1 })).toBe(true);
   });
 
+  it("apagou webhook arquivado ou evento concluído → audita", () => {
+    expect(houveEfeito({ ...base, webhooks_arquivados_apagados: 1 })).toBe(true);
+    expect(houveEfeito({ ...base, eventos_concluidos_apagados: 1 })).toBe(true);
+  });
+
   it("...e apagou espelho da agenda → TAMBÉM audita (migration 0187)", () => {
     // Sem este caso, uma rodada que só podou o espelho apagaria linhas e não
     // deixaria registro. A doutrina do repo é auditar QUANDO HÁ EFEITO — nunca
@@ -247,11 +320,21 @@ describe("os pisos do TypeScript e os do SQL são os mesmos números", () => {
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const sql = readFileSync(join(__dirname, "..", "..", "supabase", "baseline.sql"), "utf8");
-    const bloco = sql.slice(sql.indexOf("-- ---- poda da fila e expurgo do audit (migration 0167)"));
+    const bloco = sql.slice(
+      sql.indexOf("-- ---- poda da fila e expurgo do audit (migration 0167)"),
+    );
     expect(bloco.length).toBeGreaterThan(500);
-    expect(bloco).toContain(`greatest(coalesce(p_retencao_dias, ${RETENCAO_FILA_DIAS_PADRAO}), ${RETENCAO_FILA_DIAS_PISO})`);
+    expect(bloco).toContain(
+      `greatest(coalesce(p_retencao_dias, ${RETENCAO_FILA_DIAS_PADRAO}), ${RETENCAO_FILA_DIAS_PISO})`,
+    );
     expect(bloco).toContain(
       `greatest(coalesce(p_retencao_dias, ${RETENCAO_AUDITORIA_DIAS_PADRAO}), ${RETENCAO_AUDITORIA_DIAS_PISO})`,
+    );
+    expect(bloco).toContain(
+      `greatest(coalesce(p_retencao_dias, ${RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PADRAO}), ${RETENCAO_WEBHOOK_EVENTS_LOG_DIAS_PISO})`,
+    );
+    expect(bloco).toContain(
+      `greatest(coalesce(p_retencao_dias, ${RETENCAO_EVENT_LOG_DIAS_PADRAO}), ${RETENCAO_EVENT_LOG_DIAS_PISO})`,
     );
   });
 
@@ -266,7 +349,9 @@ describe("os pisos do TypeScript e os do SQL são os mesmos números", () => {
     // A 0187 está PARTIDA em dois no baseline — a função antes da varredura anon,
     // o resto no fim —, e o `greatest` mora só na primeira metade. Apontar para o
     // rótulo errado dava vermelho num conserto que estava certo.
-    const bloco = sql.slice(sql.indexOf("-- ---- o espelho do Google é cache com prazo: função (migration 0187)"));
+    const bloco = sql.slice(
+      sql.indexOf("-- ---- o espelho do Google é cache com prazo: função (migration 0187)"),
+    );
     expect(bloco.length).toBeGreaterThan(500);
     expect(bloco).toContain(
       `greatest(coalesce(p_retencao_dias, ${RETENCAO_ESPELHO_AGENDA_DIAS_PADRAO}), ${RETENCAO_ESPELHO_AGENDA_DIAS_PISO})`,
@@ -283,6 +368,8 @@ describe("o handler HTTP — a falha entra na trilha, o vazio não", () => {
   beforeEach(() => {
     auditou.mockClear();
     contatosAnonimizados = [];
+    respostasRpcPorNome = {};
+    respostaRpc = { data: 0, error: null };
   });
 
   it("rodada que não apagou nada responde 200 e NÃO audita", async () => {
@@ -302,6 +389,22 @@ describe("o handler HTTP — a falha entra na trilha, o vazio não", () => {
     expect(auditou.mock.calls[0]?.[0]).toMatchObject({
       action: "retention.sweep_run",
       metadata: { jobs_apagados: 7 },
+    });
+  });
+
+  it("rodada que só apagou webhook arquivado também audita", async () => {
+    respostaRpc = { data: 0, error: null };
+    respostasRpcPorNome.fn_expurgar_webhook_events_log_arquivado = {
+      data: 3,
+      error: null,
+    };
+
+    await GET(requisicaoAutorizada());
+
+    expect(auditou).toHaveBeenCalledTimes(1);
+    expect(auditou.mock.calls[0]?.[0]).toMatchObject({
+      action: "retention.sweep_run",
+      metadata: { webhooks_arquivados_apagados: 3 },
     });
   });
 

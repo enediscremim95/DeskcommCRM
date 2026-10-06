@@ -47,10 +47,22 @@ describe("o schema de verdade não lança com valor inválido", () => {
   it("lib/env.ts usa o helper tolerante nas duas vars, não o schema que lança", async () => {
     const { readFileSync } = await import("node:fs");
     const fonte = readFileSync("lib/env.ts", "utf8");
-    for (const nome of ["WEBHOOK_LOG_BODY_RETENTION_DAYS", "WEBHOOK_LOG_ROW_RETENTION_DAYS"]) {
+    for (const nome of ["WEBHOOK_LOG_BODY_RETENTION_DAYS"]) {
       const linha = fonte.split("\n").find((l) => l.includes(`${nome}:`));
       expect(linha, `${nome} precisa existir em lib/env.ts`).toBeTruthy();
       expect(linha, `${nome} não pode voltar ao schema que lança`).toContain("diasDeRetencao(");
+    }
+  });
+
+  it("os knobs do data-retention ficam como string para a política aplicar piso e aviso", async () => {
+    const { readFileSync } = await import("node:fs");
+    const fonte = readFileSync("lib/env.ts", "utf8");
+    for (const nome of ["WEBHOOK_EVENTS_LOG_RETENTION_DAYS", "EVENT_LOG_RETENTION_DAYS"]) {
+      const linha = fonte.split("\n").find((l) => l.includes(`${nome}:`));
+      expect(linha, `${nome} precisa existir em lib/env.ts`).toBeTruthy();
+      expect(linha, `${nome} deve ser interpretado pela política tolerante`).toContain(
+        "z.string().optional().default",
+      );
     }
   });
 });
