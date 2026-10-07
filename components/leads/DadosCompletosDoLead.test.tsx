@@ -153,4 +153,25 @@ describe("seções recolhíveis dos dados do lead", () => {
     await userEvent.setup().click(negocio);
     expect(negocio).toHaveAttribute("aria-expanded", "false");
   });
+
+  it("mantém os atalhos úteis sem renderizar Abrir no quadro", () => {
+    render(
+      <DadosCompletosDoLead
+        lead={lead({ contact_id: "contact-1" })}
+        pipelineName="Funil principal"
+        stageName="Novo"
+        conversationId="conversation-1"
+      />,
+    );
+
+    expect(screen.queryByText("Abrir no quadro")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ver contato" })).toHaveAttribute(
+      "href",
+      "/app/contacts/contact-1",
+    );
+    expect(screen.getByRole("link", { name: "Abrir conversa" })).toHaveAttribute(
+      "href",
+      "/app/inbox?id=conversation-1",
+    );
+  });
 });

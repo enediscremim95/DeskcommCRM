@@ -147,7 +147,6 @@ export const DICIONARIO: Traducoes = {
   "Este contato ainda não tem negócio vinculado.": { es: "Este contacto todavía no tiene un negocio vinculado." },
   "Ficha completa": { es: "Ficha completa" },
   "Não informado": { es: "No informado" },
-  "Abrir no quadro": { es: "Abrir en el tablero" },
   "Atribuído em": { es: "Asignado el" },
   "Previsão de fechamento": { es: "Fecha prevista de cierre" },
   "Fechado em": { es: "Cerrado el" },

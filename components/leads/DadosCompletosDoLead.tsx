@@ -414,11 +414,6 @@ export function DadosCompletosDoLead({
               <Link href={`/app/contacts/${lead.contact_id}`}>{t("Ver contato")}</Link>
             </Button>
           )}
-          <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
-            <Link href={`/app/pipelines/${lead.pipeline_id}?lead=${lead.id}`}>
-              {t("Abrir no quadro")}
-            </Link>
-          </Button>
           {(conversationId ?? lead.conversa?.id) && (
             <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
               <Link href={`/app/inbox?id=${conversationId ?? lead.conversa?.id}`}>
