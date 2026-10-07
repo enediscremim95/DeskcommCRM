@@ -15,6 +15,18 @@ export function gerarSnippetDaLandingPage(url: string, pagina: string): string {
   const endpoint = ${endpoint};
   const pagina = ${nomeDaPagina};
   const emFluxoOriginal = new WeakSet();
+  const telefoneInvalidoAvisado = new WeakMap();
+  const seletorTelefone = [
+    'input[type="tel"]',
+    'input[name*="tel" i]',
+    'input[id*="tel" i]',
+    'input[name*="fone" i]',
+    'input[id*="fone" i]',
+    'input[name*="whats" i]',
+    'input[id*="whats" i]',
+    'input[name*="celular" i]',
+    'input[id*="celular" i]',
+  ].join(",");
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const novoId = () =>
     globalThis.crypto?.randomUUID?.() ||
@@ -51,12 +63,121 @@ export function gerarSnippetDaLandingPage(url: string, pagina: string): string {
     return { ok: false, status: ultimoStatus };
   }
 
+  function campoDeTelefone(form) {
+    const input = form.querySelector(seletorTelefone);
+    return input instanceof HTMLInputElement ? input : null;
+  }
+
+  function dddValido(digits, offset) {
+    return /^[1-9]\\d$/.test(digits.slice(offset, offset + 2));
+  }
+
+  function formatarTelefoneLeve(raw) {
+    const internacional = raw.trim().startsWith("+");
+    const digits = raw.replace(/\\D/g, "");
+    if (internacional && digits.startsWith("55")) {
+      const nacional = digits.slice(2, 13);
+      if (nacional.length <= 2) return "+55 " + nacional;
+      const ddd = nacional.slice(0, 2);
+      const local = nacional.slice(2);
+      if (local.length <= 4) return "+55 (" + ddd + ") " + local;
+      const corte = local.length <= 8 ? 4 : 5;
+      return "+55 (" + ddd + ") " + local.slice(0, corte) + "-" + local.slice(corte);
+    }
+    if (!internacional && (digits.length === 10 || digits.length === 11)) {
+      const ddd = digits.slice(0, 2);
+      const local = digits.slice(2);
+      const corte = local.length === 8 ? 4 : 5;
+      return "(" + ddd + ") " + local.slice(0, corte) + "-" + local.slice(corte);
+    }
+    return (internacional ? "+" : "") + digits.slice(0, internacional ? 15 : 13);
+  }
+
+  function limparTroncoAoSair(input) {
+    const raw = input.value;
+    const internacional = raw.trim().startsWith("+");
+    let digits = raw.replace(/\\D/g, "");
+    if (
+      !internacional &&
+      (digits.length === 11 || digits.length === 12) &&
+      digits.startsWith("0") &&
+      dddValido(digits, 1)
+    ) {
+      digits = digits.slice(1);
+    }
+    input.value = formatarTelefoneLeve((internacional ? "+" : "") + digits);
+  }
+
+  function telefoneValido(input) {
+    const raw = input.value.trim();
+    const digits = raw.replace(/\\D/g, "");
+    if (raw.startsWith("+")) {
+      return digits.startsWith("55") &&
+        (digits.length === 12 || digits.length === 13) &&
+        dddValido(digits, 2);
+    }
+    return (digits.length === 10 || digits.length === 11) && dddValido(digits, 0);
+  }
+
+  function limparErroDoTelefone(input) {
+    input.removeAttribute("aria-invalid");
+    const proximo = input.nextElementSibling;
+    if (proximo?.matches('[data-crm-phone-error="true"]')) proximo.remove();
+  }
+
+  function mostrarErroDoTelefone(input) {
+    limparErroDoTelefone(input);
+    input.setAttribute("aria-invalid", "true");
+    const mensagem = document.createElement("span");
+    mensagem.dataset.crmPhoneError = "true";
+    mensagem.setAttribute("role", "alert");
+    mensagem.textContent = "Confira seu WhatsApp com DDD. Exemplo: (41) 99999-9999";
+    mensagem.style.cssText =
+      "display:block;margin-top:6px;color:#b42318;font:500 13px/1.35 system-ui,sans-serif;";
+    input.insertAdjacentElement("afterend", mensagem);
+  }
+
+  document.addEventListener("input", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.matches(seletorTelefone)) return;
+    if (!input.closest("form[data-crm-lead]")) return;
+    input.value = formatarTelefoneLeve(input.value);
+    telefoneInvalidoAvisado.delete(input);
+    limparErroDoTelefone(input);
+  }, true);
+
+  document.addEventListener("blur", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.matches(seletorTelefone)) return;
+    if (!input.closest("form[data-crm-lead]")) return;
+    limparTroncoAoSair(input);
+  }, true);
+
   document.addEventListener("submit", async (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || !form.matches("form[data-crm-lead]")) return;
     if (emFluxoOriginal.has(form)) {
       emFluxoOriginal.delete(form);
       return;
+    }
+
+    const telefone = campoDeTelefone(form);
+    if (telefone) {
+      limparTroncoAoSair(telefone);
+      if (!telefoneValido(telefone)) {
+        if (telefoneInvalidoAvisado.get(telefone) !== telefone.value) {
+          telefoneInvalidoAvisado.set(telefone, telefone.value);
+          mostrarErroDoTelefone(telefone);
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          telefone.focus();
+          return;
+        }
+        limparErroDoTelefone(telefone);
+      } else {
+        telefoneInvalidoAvisado.delete(telefone);
+        limparErroDoTelefone(telefone);
+      }
     }
 
     event.preventDefault();

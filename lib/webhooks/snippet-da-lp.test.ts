@@ -33,6 +33,16 @@ describe("gerarSnippetDaLandingPage", () => {
     expect(snippet).toContain("emFluxoOriginal.add(form)");
   });
 
+  it("leva auxílio de telefone sem transformar validação em perda de lead", () => {
+    expect(snippet).toContain('input[type="tel"]');
+    expect(snippet).toContain('input[name*="whats" i]');
+    expect(snippet).toContain("limparTroncoAoSair(telefone)");
+    expect(snippet).toContain("telefoneInvalidoAvisado.get(telefone) !== telefone.value");
+    expect(snippet).toContain(
+      "Confira seu WhatsApp com DDD. Exemplo: (41) 99999-9999",
+    );
+  });
+
   it("não permite fechar a tag script a partir da URL", () => {
     const hostil = gerarSnippetDaLandingPage(
       "https://example.com/</script><script>alert(1)</script>",
@@ -42,7 +52,7 @@ describe("gerarSnippetDaLandingPage", () => {
     expect(hostil).toContain("<\\/script>");
   });
 
-  it("envia JSON, inclui UTMs, confirma e depois libera o submit original", async () => {
+  it("envia JSON e bloqueia telefone inválido somente no primeiro clique", async () => {
     window.history.replaceState({}, "", "/?utm_source=instagram&utm_campaign=lancamento");
     document.body.innerHTML = `<form data-crm-lead>
       <input name="nome" value="Ana" />
@@ -50,7 +60,7 @@ describe("gerarSnippetDaLandingPage", () => {
       <button type="submit">Enviar</button>
     </form>`;
 
-    const fetchMock = vi.fn().mockResolvedValue(
+    const fetchMock = vi.fn().mockImplementation(async () =>
       new Response(JSON.stringify({ data: { lead_id: "lead-123" } }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -82,12 +92,69 @@ describe("gerarSnippetDaLandingPage", () => {
     const payload = JSON.parse(String(init.body)) as Record<string, string>;
     expect(payload).toMatchObject({
       nome: "Ana",
-      telefone: "11999990000",
+      telefone: "(11) 99999-0000",
       utm_source: "instagram",
       utm_campaign: "lancamento",
       pagina: "Dia dos Professores",
     });
     expect(payload.external_id).toBeTruthy();
+
+    document.body.innerHTML = `<form data-crm-lead>
+      <input id="meu-whatsapp" name="contato" value="999237616" />
+      <button type="submit">Enviar</button>
+    </form>`;
+    const formInvalido = document.querySelector("form")!;
+    let submitOriginalInvalido = false;
+    formInvalido.addEventListener("submit", (event) => {
+      event.preventDefault();
+      submitOriginalInvalido = true;
+    });
+
+    formInvalido.requestSubmit(formInvalido.querySelector("button")!);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(submitOriginalInvalido).toBe(false);
+    expect(document.querySelector('[data-crm-phone-error="true"]')?.textContent).toBe(
+      "Confira seu WhatsApp com DDD. Exemplo: (41) 99999-9999",
+    );
+
+    const segundoResultado = new Promise<{ ok: boolean; lead_id: string }>((resolve) => {
+      formInvalido.addEventListener("crm:lead", (event) =>
+        resolve((event as CustomEvent<{ ok: boolean; lead_id: string }>).detail),
+      );
+    });
+    formInvalido.requestSubmit(formInvalido.querySelector("button")!);
+    await expect(segundoResultado).resolves.toEqual({ ok: true, lead_id: "lead-123" });
+    expect(submitOriginalInvalido).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const payloadInvalido = JSON.parse(
+      String((fetchMock.mock.calls[1]![1] as RequestInit).body),
+    ) as Record<string, string>;
+    expect(payloadInvalido.contato).toBe("999237616");
+
+    document.body.innerHTML = `<form data-crm-lead>
+      <input type="tel" name="telefone" value="0 (41) 99599-9437" />
+      <button type="submit">Enviar</button>
+    </form>`;
+    const inputComTronco = document.querySelector("input")!;
+    inputComTronco.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(inputComTronco.value).toBe("041995999437");
+    inputComTronco.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+    expect(inputComTronco.value).toBe("(41) 99599-9437");
+
+    inputComTronco.value = "999237616";
+    const formCorrigido = document.querySelector("form")!;
+    formCorrigido.requestSubmit(formCorrigido.querySelector("button")!);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    inputComTronco.value = "41995999437";
+    inputComTronco.dispatchEvent(new Event("input", { bubbles: true }));
+    const corrigidoResultado = new Promise<{ ok: boolean; lead_id: string }>((resolve) => {
+      formCorrigido.addEventListener("crm:lead", (event) =>
+        resolve((event as CustomEvent<{ ok: boolean; lead_id: string }>).detail),
+      );
+    });
+    formCorrigido.requestSubmit(formCorrigido.querySelector("button")!);
+    await expect(corrigidoResultado).resolves.toEqual({ ok: true, lead_id: "lead-123" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   afterEach(() => {

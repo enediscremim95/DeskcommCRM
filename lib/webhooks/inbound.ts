@@ -26,19 +26,85 @@ export interface MappedLead {
   source_metadata: Record<string, string>;
 }
 
-/** Normaliza telefone BR para E.164 com o nono dígito no celular. */
-export function normalizePhoneBR(raw: unknown): string | null {
-  if (typeof raw !== "string" || !raw.trim()) return null;
-  const digits = raw.replace(/\D/g, "");
+function dddBrasileiroValido(digits: string): boolean {
+  return /^[1-9]\d$/.test(digits.slice(0, 2));
+}
+
+/** Normaliza UMA grafia, sem tentar reparar quantidade de dígitos. */
+function normalizarUmaCopia(digitsRaw: string, internacional: boolean): string | null {
+  let digits = digitsRaw;
+  if (internacional) {
+    return /^\d{8,15}$/.test(digits) ? canonicalPhoneBR(`+${digits}`) : null;
+  }
+
+  // Prefixo nacional de tronco: 0 + DDD + número. Não cobre 0 + operadora.
+  if (
+    (digits.length === 11 || digits.length === 12) &&
+    digits.startsWith("0") &&
+    dddBrasileiroValido(digits.slice(1))
+  ) {
+    digits = digits.slice(1);
+  }
+
   let e164: string | null = null;
-  if (raw.trim().startsWith("+")) {
-    e164 = /^\d{8,15}$/.test(digits) ? `+${digits}` : null;
-  } else if (digits.length === 12 || digits.length === 13) {
+  if (digits.length === 12 || digits.length === 13) {
     e164 = digits.startsWith("55") ? `+${digits}` : null;
   } else if (digits.length === 10 || digits.length === 11) {
     e164 = `+55${digits}`;
   }
   return e164 ? canonicalPhoneBR(e164) : null;
+}
+
+/**
+ * Cópias reconhecíveis sem heurística de tamanho:
+ *
+ * - número completo duas vezes;
+ * - DDI uma vez e o número nacional/local duas vezes, como +55 N N ou +34 N N.
+ *
+ * Se mais de uma decomposição produzir telefones diferentes, a entrada continua
+ * ambígua e não é aceita.
+ */
+function normalizarDuplicacao(digits: string, internacional: boolean): string | null {
+  const candidatas: Array<{ digits: string; internacional: boolean }> = [];
+
+  if (digits.length % 2 === 0) {
+    const metade = digits.length / 2;
+    if (digits.slice(0, metade) === digits.slice(metade)) {
+      candidatas.push({ digits: digits.slice(0, metade), internacional });
+    }
+  }
+
+  const tamanhosDeDdi = internacional ? [1, 2, 3] : digits.startsWith("55") ? [2] : [];
+  for (const tamanhoDoDdi of tamanhosDeDdi) {
+    const restante = digits.slice(tamanhoDoDdi);
+    if (restante.length % 2 !== 0) continue;
+    const metade = restante.length / 2;
+    if (restante.slice(0, metade) !== restante.slice(metade)) continue;
+    candidatas.push({
+      digits: digits.slice(0, tamanhoDoDdi + metade),
+      internacional,
+    });
+  }
+
+  const normalizadas = new Set(
+    candidatas
+      .map((copia) => normalizarUmaCopia(copia.digits, copia.internacional))
+      .filter((phone): phone is string => phone !== null),
+  );
+  return normalizadas.size === 1 ? [...normalizadas][0]! : null;
+}
+
+/** Normaliza telefone para E.164, sem inventar DDD ou corrigir tamanho. */
+export function normalizePhoneBR(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const trimmed = raw.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  const internacional = trimmed.startsWith("+") || trimmed.startsWith("±");
+
+  return (
+    normalizarUmaCopia(digits, internacional) ??
+    normalizarDuplicacao(digits, internacional)
+  );
 }
 
 function firstMatch(payload: Record<string, unknown>, aliases: string[]): { key: string; value: string } | null {

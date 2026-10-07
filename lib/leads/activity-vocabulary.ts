@@ -17,6 +17,9 @@
  * não conhecemos quebraria no `update.sh` (doutrina de migrations). O banco
  * aceita; quem escreve daqui é que fica preso ao vocabulário.
  */
+/** Tipo compartilhado pela recuperação operacional e pela timeline. */
+export const ATIVIDADE_CONTATO_RECUPERADO = "lead_contact_recovered" as const;
+
 export type ActivityType =
   // Spec 17: o lead nasceu da primeira mensagem. Sem esta linha na timeline, o
   // card aparece no kanban sem que ninguém saiba de onde veio — e "apareceu
@@ -155,7 +158,9 @@ export type ActivityType =
   | "lead_duplicate_merged"
   | "lead_duplicate_merge_undone"
   /** Uma entrada automática curta alimentou o negócio já aberto, sem fingir perda. */
-  | "lead_merged";
+  | "lead_merged"
+  /** Um telefone bruto válido voltou a ligar o negócio ao cadastro da pessoa. */
+  | typeof ATIVIDADE_CONTATO_RECUPERADO;
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   lead_created: "Entrou pelo WhatsApp",
@@ -258,6 +263,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   contacts_merge_undone: "Junção automática desfeita",
   lead_duplicate_merged: "Negócio duplicado juntado",
   lead_duplicate_merge_undone: "Junção de negócios desfeita",
+  [ATIVIDADE_CONTATO_RECUPERADO]: "Contato recuperado pelo telefone do formulário",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

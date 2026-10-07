@@ -107,6 +107,94 @@ export async function encontrarContatoPorTelefoneComNome(
   return (linha as { id: string; phone_number: string | null; name: string | null } | null) ?? null;
 }
 
+export interface EncontrarOuCriarContatoPorTelefoneInput {
+  organizationId: string;
+  phone: string;
+  name: string;
+  email?: string | null;
+  source: string;
+  sourceMetadata?: Record<string, unknown>;
+  consent?: unknown;
+}
+
+export interface ContatoPorTelefoneResolvido {
+  contato: { id: string; phone_number: string | null; name: string | null } | null;
+  criado: boolean;
+  error?: { code?: string; message: string };
+}
+
+/**
+ * Caminho único da captação para reencontrar ou criar um contato por telefone.
+ *
+ * O filtro de organização é explícito em todas as consultas porque este helper
+ * recebe o client admin, que bypassa RLS. A colisão 23505 é tratada como corrida:
+ * relê primeiro por telefone e, se necessário, pelo e-mail normalizado.
+ */
+export async function encontrarOuCriarContatoPorTelefone(
+  admin: SupabaseClient,
+  input: EncontrarOuCriarContatoPorTelefoneInput,
+): Promise<ContatoPorTelefoneResolvido> {
+  const existente = await encontrarContatoPorTelefoneComNome(
+    admin,
+    input.organizationId,
+    input.phone,
+  );
+  if (existente) return { contato: existente, criado: false };
+
+  const { data: criado, error } = await admin
+    .from("contacts")
+    .insert({
+      organization_id: input.organizationId,
+      name: input.name,
+      phone_number: input.phone,
+      email: input.email ?? null,
+      source: input.source,
+      source_metadata: input.sourceMetadata ?? {},
+      ...(input.consent !== undefined ? { consent: input.consent } : {}),
+    })
+    .select("id, phone_number, name")
+    .maybeSingle();
+
+  if (!error) {
+    return {
+      contato: (criado as { id: string; phone_number: string | null; name: string | null } | null) ?? null,
+      criado: criado !== null,
+    };
+  }
+  if (error.code !== "23505") {
+    return { contato: null, criado: false, error: { code: error.code, message: error.message } };
+  }
+
+  const vencedorPorTelefone = await encontrarContatoPorTelefoneComNome(
+    admin,
+    input.organizationId,
+    input.phone,
+  );
+  if (vencedorPorTelefone) return { contato: vencedorPorTelefone, criado: false };
+
+  if (input.email) {
+    const { data: vencedorPorEmail } = await admin
+      .from("contacts")
+      .select("id, phone_number, name")
+      .eq("organization_id", input.organizationId)
+      .eq("email_normalized", input.email.trim().toLowerCase())
+      .is("is_merged_into", null)
+      .maybeSingle();
+    if (vencedorPorEmail) {
+      return {
+        contato: vencedorPorEmail as {
+          id: string;
+          phone_number: string | null;
+          name: string | null;
+        },
+        criado: false,
+      };
+    }
+  }
+
+  return { contato: null, criado: false, error: { code: error.code, message: error.message } };
+}
+
 /** O contato da mensagem e os gêmeos gravados com a outra grafia do número. */
 export async function idsDoContatoEGemeos(
   admin: SupabaseClient,
