@@ -11,10 +11,15 @@ import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open"
 
 interface AppShellProps {
   sidebarCollapsed: boolean;
+  showSidebarUpdateNotice: boolean;
   children: ReactNode;
 }
 
-export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
+export function AppShell({
+  sidebarCollapsed,
+  showSidebarUpdateNotice,
+  children,
+}: AppShellProps) {
   const t = useT();
   useInboundMessageAlerts();
   useCrmAlerts();
@@ -28,7 +33,10 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
         {t("Pular para o conteúdo")}
       </a>
       <div className="hidden md:block">
-        <Sidebar collapsed={sidebarCollapsed} />
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          showUpdateNotice={showSidebarUpdateNotice}
+        />
       </div>
       {/*
         `min-w-0` é o que permite a coluna de conteúdo ENCOLHER. Um flex item
@@ -50,7 +58,7 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
         cima da lista.
       */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <TopBar />
+        <TopBar showUpdateNotice={showSidebarUpdateNotice} />
         <main
           id="conteudo-principal"
           tabIndex={-1}

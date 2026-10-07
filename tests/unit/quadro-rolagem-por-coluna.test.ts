@@ -5,6 +5,7 @@ describe("rolagem vertical por coluna no quadro", () => {
   it("mede o espaço real do quadro sem manter a estimativa fixa na página", () => {
     const route = readFileSync("app/app/pipelines/[id]/page.tsx", "utf8");
     const page = readFileSync("app/app/pipelines/[id]/_client.tsx", "utf8");
+    const filters = readFileSync("components/kanban/FilterBar.tsx", "utf8");
     const board = readFileSync("components/kanban/KanbanBoard.tsx", "utf8");
     const card = readFileSync("components/kanban/KanbanCard.tsx", "utf8");
 
@@ -12,8 +13,13 @@ describe("rolagem vertical por coluna no quadro", () => {
     expect(page).toContain("min-h-[600px]");
     expect(page).toContain("md:min-h-0");
     expect(page).not.toContain("h-[calc(100dvh");
-    expect(page).toMatch(/<header className="[^"]*\bshrink-0\b/);
+    expect(page).toContain('<h1 className="sr-only">');
+    expect(page).not.toContain("<header className=");
     expect(page).toContain('<div className="shrink-0">\n        <FilterBar');
+    expect(page).toMatch(
+      /<Button onClick=\{\(\) => setNewOpen\(true\)\} disabled=\{!data\} size="sm">/,
+    );
+    expect(filters).toContain('className="ml-auto flex flex-wrap items-center gap-2"');
 
     expect(board).toContain("useAlturaAteORodape<HTMLDivElement>()");
     const dragScrollProps = board.match(/<DragScroll([\s\S]*?)>/)?.[1];

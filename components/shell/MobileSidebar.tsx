@@ -19,7 +19,7 @@ import { List } from "@/lib/ui/icons";
  * navegação é uma gaveta temporária: abrir/fechar não escreve esse cookie, para
  * não trocar a preferência que a pessoa escolheu no laptop.
  */
-export function MobileSidebar() {
+export function MobileSidebar({ showUpdateNotice }: { showUpdateNotice: boolean }) {
   const t = useT();
   const [open, setOpen] = useState(false);
 
@@ -44,6 +44,7 @@ export function MobileSidebar() {
         <SidebarContent
           collapsed={false}
           showCollapseControl={false}
+          showUpdateNotice={showUpdateNotice}
           onNavigate={() => setOpen(false)}
         />
       </SheetContent>

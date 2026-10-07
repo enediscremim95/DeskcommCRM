@@ -221,8 +221,6 @@ export function FilterBar({ filters, onChange, leads, extra }: FilterBarProps) {
         {t("Apenas atrasados")}
       </label>
 
-      {extra}
-
       {(filters.search ||
         filters.owner ||
         filters.tag ||
@@ -239,6 +237,8 @@ export function FilterBar({ filters, onChange, leads, extra }: FilterBarProps) {
           {t("Limpar filtros")}
         </Button>
       )}
+
+      {extra ? <div className="ml-auto flex flex-wrap items-center gap-2">{extra}</div> : null}
     </div>
   );
 }

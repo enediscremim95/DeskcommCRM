@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 
 import { LeadPageClient } from "@/components/leads/LeadPageClient";
-import { Voltar } from "@/components/navigation/Voltar";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { listSelectableChannels } from "@/lib/channels/selectable";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
@@ -65,23 +64,20 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
   if (!pipeline) notFound();
 
   return (
-    <div className="flex min-h-0 flex-col gap-4">
-      <Voltar href={`/app/pipelines/${lead.pipeline_id}`}>Voltar ao funil</Voltar>
-      <LeadPageClient
-        key={lead.updated_at}
-        lead={lead as Lead}
-        pipelineName={pipeline.name}
-        stageName={stageResult.data?.name ?? "Etapa não informada"}
-        fieldDefs={camposDoFunil(pipeline.settings ?? null)}
-        contact={contactResult.data}
-        conversationId={conversationResult.data?.id ?? null}
-        hasConnectedChannel={channelResult.some((channel) => channel.status === "WORKING")}
-        canReplyInConversation={channelResult.some(
-          (channel) =>
-            channel.status === "WORKING" &&
-            channel.id === conversationResult.data?.channel_session_id,
-        )}
-      />
-    </div>
+    <LeadPageClient
+      key={lead.updated_at}
+      lead={lead as Lead}
+      pipelineName={pipeline.name}
+      stageName={stageResult.data?.name ?? "Etapa não informada"}
+      fieldDefs={camposDoFunil(pipeline.settings ?? null)}
+      contact={contactResult.data}
+      conversationId={conversationResult.data?.id ?? null}
+      hasConnectedChannel={channelResult.some((channel) => channel.status === "WORKING")}
+      canReplyInConversation={channelResult.some(
+        (channel) =>
+          channel.status === "WORKING" &&
+          channel.id === conversationResult.data?.channel_session_id,
+      )}
+    />
   );
 }

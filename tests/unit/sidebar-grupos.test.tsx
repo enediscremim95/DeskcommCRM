@@ -33,10 +33,8 @@ vi.mock("@/components/connections/ConnectionHealthDot", () => ({
 vi.mock("@/app/actions/shell/toggleSidebar", () => ({
   toggleSidebar: vi.fn(),
 }));
-// Busca a versão via react-query; sem QueryClientProvider ele lança, e o
-// rodapé de versão não é o que estes testes examinam.
 vi.mock("@/components/shell/VersionFooter", () => ({
-  VersionFooter: () => null,
+  VersionFooter: () => <span data-testid="version-footer">Nova versão</span>,
 }));
 
 function comoPapel(role: ActiveOrg["role"]) {
@@ -108,6 +106,24 @@ describe("Sidebar agrupado", () => {
     // Fora da <nav> que rola.
     const nav = screen.getByRole("navigation", { name: "Navegação principal" });
     expect(nav.contains(config)).toBe(false);
+    expect(nav).toHaveClass("min-h-0", "overflow-y-auto");
+    expect(config.parentElement).toHaveClass("shrink-0");
+
+    const recolher = screen.getByRole("button", { name: "Recolher sidebar" });
+    const itensDoRodape = Array.from(config.parentElement!.children);
+    expect(itensDoRodape.indexOf(recolher)).toBeLessThan(itensDoRodape.indexOf(config));
+  });
+
+  it("mostra o aviso de atualização quando a configuração está ligada", () => {
+    comoPapel("admin");
+    render(<Sidebar collapsed={false} showUpdateNotice />);
+    expect(screen.getByTestId("version-footer")).toBeInTheDocument();
+  });
+
+  it("não monta o aviso de atualização quando SIDEBAR_UPDATE_NOTICE=off", () => {
+    comoPapel("admin");
+    render(<Sidebar collapsed={false} showUpdateNotice={false} />);
+    expect(screen.queryByTestId("version-footer")).not.toBeInTheDocument();
   });
 
   it("não deixa cabeçalho órfão quando a permissão esvazia o grupo", () => {

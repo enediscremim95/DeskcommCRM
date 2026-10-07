@@ -206,7 +206,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const shell = (
     <VoiceCallProvider>
-      <AppShell sidebarCollapsed={collapsed}>{children}</AppShell>
+      <AppShell
+        sidebarCollapsed={collapsed}
+        showSidebarUpdateNotice={env.SIDEBAR_UPDATE_NOTICE !== "off"}
+      >
+        {children}
+      </AppShell>
     </VoiceCallProvider>
   );
   const organizationsSignature = assinaturaDosAcessosAsOrganizacoes(
