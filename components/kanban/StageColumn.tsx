@@ -220,7 +220,7 @@ export function StageColumn({
             {hasMore && (
               <div
                 ref={loadMoreRef}
-                className="flex min-h-10 items-center justify-center px-2 py-2 text-center text-[11px] text-text-muted"
+                className="flex min-h-10 shrink-0 items-center justify-center px-2 py-2 text-center text-[11px] text-text-muted"
               >
                 {loadError ? (
                   <div className="flex flex-col items-center gap-1.5">
@@ -241,7 +241,7 @@ export function StageColumn({
               </div>
             )}
             {leads.length === 0 && !snapshot.isDraggingOver && (
-              <div className="flex h-16 items-center justify-center rounded-md border border-dashed border-border text-[11px] text-text-subtle">
+              <div className="flex h-16 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-[11px] text-text-subtle">
                 {t("vazio")}
               </div>
             )}
