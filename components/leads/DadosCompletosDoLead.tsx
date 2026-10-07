@@ -61,8 +61,109 @@ function estaVazio(valor: unknown): boolean {
   return texto === "-" || texto === "";
 }
 
+type EntradaDoLead = [chave: string, valor: unknown];
+
+const CHAVES_DE_ORIGEM = new Set([
+  "origem",
+  "source",
+  "pagina",
+  "pageurl",
+  "landingpage",
+  "utmsource",
+  "utmmedium",
+  "utmcampaign",
+  "utmcontent",
+  "utmterm",
+  "campaign",
+  "campaignname",
+  "adname",
+  "adsetname",
+  "campaignid",
+  "adsetid",
+  "adid",
+  "gclid",
+  "fbclid",
+  "cliquedofacebook",
+  "webhooksourceid",
+]);
+
+const CHAVES_TECNICAS = new Set([
+  "fbclid",
+  "cliquedofacebook",
+  "gclid",
+  "cliquedogoogle",
+  "webhooksourceid",
+  "fontedecaptacao",
+  "externalid",
+  "identificadorexterno",
+  "campaignid",
+  "adsetid",
+  "adid",
+]);
+
+function normalizarChave(chave: string): string {
+  return chave
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function normalizarValor(valor: unknown): string {
+  return valorLegivel(valor).trim().toLocaleLowerCase("pt-BR");
+}
+
+function grupoConhecido(chave: string): "fbclid" | "pagina" | null {
+  const normalizada = normalizarChave(chave);
+  if (normalizada === "fbclid" || normalizada === "cliquedofacebook") return "fbclid";
+  if (["pagina", "pageurl", "landingpage"].includes(normalizada)) return "pagina";
+  return null;
+}
+
+function ehCampoDeOrigem(chave: string): boolean {
+  return CHAVES_DE_ORIGEM.has(normalizarChave(chave));
+}
+
+function ehIdentificadorTecnico(chave: string, valor: unknown): boolean {
+  if (CHAVES_TECNICAS.has(normalizarChave(chave))) return true;
+  if (typeof valor !== "string") return false;
+
+  const texto = valor.trim();
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const codigoOpaco = texto.length > 24 && /^[\p{L}\p{N}]+$/u.test(texto);
+  return uuid.test(texto) || codigoOpaco;
+}
+
+function semRepeticao(entradas: EntradaDoLead[]): EntradaDoLead[] {
+  const valores = new Set<string>();
+  return entradas.filter(([, valor]) => {
+    const valorNormalizado = normalizarValor(valor);
+    if (valores.has(valorNormalizado)) return false;
+    valores.add(valorNormalizado);
+    return true;
+  });
+}
+
+function paginaSemRastreamento(
+  chave: string,
+  valor: unknown,
+): { valor: unknown; valorCompleto?: string } {
+  if (grupoConhecido(chave) !== "pagina" || typeof valor !== "string") return { valor };
+
+  const completo = valor.trim();
+  if (!/^https?:\/\//i.test(completo)) return { valor };
+  try {
+    const url = new URL(completo);
+    url.search = "";
+    url.hash = "";
+    return { valor: url.toString(), valorCompleto: completo };
+  } catch {
+    return { valor };
+  }
+}
+
 /** Botão discreto que copia o valor inteiro — para o que não cabe na linha. */
-function BotaoCopiar({ texto }: { texto: string }) {
+export function BotaoCopiar({ texto }: { texto: string }) {
   const t = useT();
   const [copiado, setCopiado] = useState(false);
 
@@ -95,11 +196,36 @@ function BotaoCopiar({ texto }: { texto: string }) {
  * no tooltip e num botão de copiar — em painel estreito é isso ou partir
  * "ferrernelson33@yahoo.com" em quatro linhas.
  */
-function ValorDeTexto({ texto, nowrap }: { texto: string; nowrap?: boolean }) {
+function ValorDeTexto({
+  texto,
+  nowrap,
+  valorCompleto,
+}: {
+  texto: string;
+  nowrap?: boolean;
+  valorCompleto?: string;
+}) {
   const apresentacao = apresentacaoDoValor(texto);
 
   if (nowrap) {
     return <span className="whitespace-nowrap tabular-nums">{texto}</span>;
+  }
+
+  if (valorCompleto) {
+    return (
+      <span className="flex min-w-0 items-center gap-1">
+        <a
+          className="min-w-0 truncate hover:underline"
+          href={valorCompleto}
+          title={valorCompleto}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {texto}
+        </a>
+        <BotaoCopiar texto={valorCompleto} />
+      </span>
+    );
   }
 
   if (apresentacao === "email" || apresentacao === "url") {
@@ -151,6 +277,8 @@ function ValorDeTexto({ texto, nowrap }: { texto: string; nowrap?: boolean }) {
 interface CampoProps {
   rotulo: string;
   valor: unknown;
+  /** Exibe uma versão curta, mas abre, descreve e copia o valor completo. */
+  valorCompleto?: string;
   /** Data e hora não quebram no meio: "20/09/2026, 17:20" numa linha só. */
   nowrap?: boolean;
 }
@@ -161,7 +289,7 @@ interface CampoProps {
  * em cima e o valor embaixo, inteiro; a partir de 28rem os dois dividem a
  * linha. Rótulo nunca é cortado com reticências.
  */
-export function Campo({ rotulo, valor, nowrap }: CampoProps) {
+export function Campo({ rotulo, valor, valorCompleto, nowrap }: CampoProps) {
   const texto = valorLegivel(valor);
   const objeto = typeof valor === "object" && valor !== null && !Array.isArray(valor);
 
@@ -174,7 +302,7 @@ export function Campo({ rotulo, valor, nowrap }: CampoProps) {
         {objeto ? (
           <span className="block font-mono text-xs break-all whitespace-pre-wrap">{texto}</span>
         ) : (
-          <ValorDeTexto texto={texto} nowrap={nowrap} />
+          <ValorDeTexto texto={texto} nowrap={nowrap} valorCompleto={valorCompleto} />
         )}
       </dd>
     </div>
@@ -285,6 +413,7 @@ export function SecaoRecolhivel({
 }
 
 function Historico({ itens, fieldDefs }: { itens: unknown[]; fieldDefs: CustomFieldDef[] }) {
+  const t = useT();
   return (
     <ol className="space-y-2 border-l border-border pl-4">
       {itens.map((item, indice) => {
@@ -307,7 +436,9 @@ function Historico({ itens, fieldDefs }: { itens: unknown[]; fieldDefs: CustomFi
                   key={chave}
                   className="grid min-w-0 gap-x-2 @sm:grid-cols-[minmax(6rem,0.35fr)_1fr]"
                 >
-                  <dt className="text-xs text-text-muted">{rotuloDoCampo(chave, fieldDefs)}</dt>
+                  <dt className="text-xs text-text-muted">
+                    {t(rotuloDoCampo(chave, fieldDefs))}
+                  </dt>
                   <dd className="min-w-0 break-words whitespace-pre-wrap">{valorLegivel(valor)}</dd>
                 </div>
               ))}
@@ -341,7 +472,6 @@ function ordenarCampos(campos: Array<[string, unknown]>, fieldDefs: CustomFieldD
  */
 export function DadosCompletosDoLead({
   lead,
-  pipelineName,
   stageName,
   fieldDefs = [],
   conversationId,
@@ -354,25 +484,50 @@ export function DadosCompletosDoLead({
     t,
   );
   const historico = historicoEstruturado(lead.custom_fields?.historico);
-  const campos = ordenarCampos(
-    Object.entries(lead.custom_fields ?? {}).filter(
-      ([chave, valor]) => chave !== "historico" && !estaVazio(valor),
-    ),
-    fieldDefs,
+  const camposBrutos = Object.entries(lead.custom_fields ?? {}).filter(
+    ([chave, valor]) => chave !== "historico" && !estaVazio(valor),
   );
   // A campanha costuma chegar grudada na URL da página ("?utm_campaign=..."),
   // então ela também vira linha com nome, e não um endereço cortado na tela.
-  const origem = origemComUtms(
-    lead.source_metadata as Record<string, unknown> | null,
-    Object.values(lead.custom_fields ?? {}),
-  ).filter(([, valor]) => !estaVazio(valor));
+  const origemBruta = semRepeticao([
+    ...origemComUtms(
+      lead.source_metadata as Record<string, unknown> | null,
+      Object.values(lead.custom_fields ?? {}),
+    ).filter(([, valor]) => !estaVazio(valor)),
+    ...camposBrutos.filter(([chave]) => ehCampoDeOrigem(chave)),
+  ]).filter(
+    ([chave, valor]) =>
+      !(
+        ["origem", "source"].includes(normalizarChave(chave)) &&
+        normalizarValor(valor) === normalizarValor(lead.source)
+      ),
+  );
+  const valoresDaOrigem = new Set(origemBruta.map(([, valor]) => normalizarValor(valor)));
+  const camposSemOrigem = camposBrutos.filter(
+    ([chave, valor]) =>
+      !ehCampoDeOrigem(chave) && !valoresDaOrigem.has(normalizarValor(valor)),
+  );
+  const camposTecnicos = camposSemOrigem.filter(([chave, valor]) =>
+    ehIdentificadorTecnico(chave, valor),
+  );
+  const campos = ordenarCampos(
+    camposSemOrigem.filter(([chave, valor]) => !ehIdentificadorTecnico(chave, valor)),
+    fieldDefs,
+  );
+  const origem = origemBruta.filter(([chave, valor]) => !ehIdentificadorTecnico(chave, valor));
+  const valoresTecnicosJaRepresentados = new Set(
+    [lead.source, lead.external_id]
+      .filter((valor): valor is string => Boolean(valor))
+      .map((valor) => normalizarValor(valor)),
+  );
+  const identificadoresTecnicos = semRepeticao([
+    ...origemBruta.filter(([chave, valor]) => ehIdentificadorTecnico(chave, valor)),
+    ...camposTecnicos,
+  ]).filter(([, valor]) => !valoresTecnicosJaRepresentados.has(normalizarValor(valor)));
 
   const negocio: CampoProps[] = [
     { rotulo: t("Título"), valor: lead.title },
-    { rotulo: t("Funil"), valor: pipelineName ?? t("Não informado") },
-    { rotulo: t("Etapa"), valor: stageName ?? t("Não informado") },
     { rotulo: t("Valor"), valor: dinheiroLegivel(lead.value_cents, lead.currency, locale) },
-    { rotulo: t("Origem"), valor: lead.source },
     { rotulo: t("Responsável"), valor: lead.owner_agent?.name ?? null },
     { rotulo: t("Tags"), valor: lead.tags },
     { rotulo: t("Descrição"), valor: lead.description },
@@ -386,7 +541,12 @@ export function DadosCompletosDoLead({
   ].filter((campo) => !estaVazio(campo.valor));
 
   const sistema: CampoProps[] = [
+    { rotulo: t("Canal de entrada"), valor: lead.source },
     { rotulo: t("Identificador externo"), valor: lead.external_id },
+    ...identificadoresTecnicos.map(([chave, valor]) => ({
+      rotulo: t(rotuloDoCampo(chave, fieldDefs)),
+      valor,
+    })),
     { rotulo: t("Atribuído em"), valor: dataLegivel(lead.assigned_at, locale), nowrap: true },
     { rotulo: t("Criado em"), valor: dataLegivel(lead.created_at, locale), nowrap: true },
     { rotulo: t("Atualizado em"), valor: dataLegivel(lead.updated_at, locale), nowrap: true },
@@ -414,11 +574,6 @@ export function DadosCompletosDoLead({
               <Link href={`/app/contacts/${lead.contact_id}`}>{t("Ver contato")}</Link>
             </Button>
           )}
-          <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
-            <Link href={`/app/pipelines/${lead.pipeline_id}?lead=${lead.id}`}>
-              {t("Abrir no quadro")}
-            </Link>
-          </Button>
           {(conversationId ?? lead.conversa?.id) && (
             <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
               <Link href={`/app/inbox?id=${conversationId ?? lead.conversa?.id}`}>
@@ -446,7 +601,7 @@ export function DadosCompletosDoLead({
         {campos.length > 0 ? (
           <dl className="grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
             {campos.map(([chave, valor]) => (
-              <Campo key={chave} rotulo={rotuloDoCampo(chave, fieldDefs)} valor={valor} />
+              <Campo key={chave} rotulo={t(rotuloDoCampo(chave, fieldDefs))} valor={valor} />
             ))}
           </dl>
         ) : (
@@ -462,8 +617,12 @@ export function DadosCompletosDoLead({
       >
         {origem.length > 0 ? (
           <dl className="grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
-            {origem.map(([chave, valor]) => (
-              <Campo key={chave} rotulo={rotuloDoCampo(chave)} valor={valor} />
+            {origem.map(([chave, valor], indice) => (
+              <Campo
+                key={`${chave}:${indice}`}
+                rotulo={t(rotuloDoCampo(chave))}
+                {...paginaSemRastreamento(chave, valor)}
+              />
             ))}
           </dl>
         ) : (
@@ -490,8 +649,8 @@ export function DadosCompletosDoLead({
       {sistema.length > 0 ? (
         <SecaoRecolhivel sectionKey="sistema" titulo={t("Sistema")} defaultOpen={false}>
           <dl className="grid grid-cols-1 gap-x-6 @3xl:grid-cols-2">
-            {sistema.map((campo) => (
-              <Campo key={campo.rotulo} {...campo} />
+            {sistema.map((campo, indice) => (
+              <Campo key={`${campo.rotulo}:${indice}`} {...campo} />
             ))}
           </dl>
         </SecaoRecolhivel>

@@ -12,8 +12,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BotaoCopiar, dinheiroLegivel } from "@/components/leads/DadosCompletosDoLead";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import type {
   GrupoDeNegociosDuplicados,
@@ -53,49 +56,153 @@ function texto(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function linhasDeContexto(negocio: NegocioDuplicado, t: Tradutor): Array<[string, string]> {
+function primeiroTexto(meta: Record<string, unknown>, chaves: string[]): string | null {
+  for (const chave of chaves) {
+    const valor = texto(meta[chave]);
+    if (valor) return valor;
+  }
+  return null;
+}
+
+function chaveNormalizada(chave: string): string {
+  return chave
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function valorTecnico(valor: unknown): string | null {
+  if (valor == null || valor === "") return null;
+  if (typeof valor === "string") return valor.trim() || null;
+  return JSON.stringify(valor) ?? String(valor);
+}
+
+function ehDetalheTecnico(chave: string, valor: string): boolean {
+  const normalizada = chaveNormalizada(chave);
+  return (
+    /(?:url|link|uuid|fbclid|gclid|clid|tracking|token|pixel)/.test(normalizada) ||
+    /(?:^|_)(?:id|ids)$/.test(chave.toLocaleLowerCase("pt-BR")) ||
+    /^https?:\/\//i.test(valor) ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(valor)
+  );
+}
+
+function detalhesTecnicos(
+  negocio: NegocioDuplicado,
+  t: Tradutor,
+): Array<[rotulo: string, valor: string]> {
+  const encontrados: Array<[string, string]> = [[t("ID do negócio"), negocio.id]];
+  for (const [chave, bruto] of [
+    ...Object.entries(negocio.source_metadata ?? {}),
+    ...Object.entries(negocio.custom_fields ?? {}),
+  ]) {
+    const valor = valorTecnico(bruto);
+    if (valor && ehDetalheTecnico(chave, valor)) encontrados.push([chave, valor]);
+  }
+  const vistos = new Set<string>();
+  return encontrados.filter(([rotulo, valor]) => {
+    const assinatura = `${rotulo}:${valor}`;
+    if (vistos.has(assinatura)) return false;
+    vistos.add(assinatura);
+    return true;
+  });
+}
+
+function linhasDeContexto(
+  negocio: NegocioDuplicado,
+  t: Tradutor,
+  locale: string,
+): Array<[string, string]> {
   const meta = negocio.source_metadata ?? {};
   const linhas: Array<[string, string | null]> = [
-    [t("Origem"), texto(meta.origin) ?? texto(meta.source) ?? negocio.source],
-    [t("Página"), texto(meta.page_url) ?? texto(meta.page) ?? texto(meta.url)],
-    [t("Campanha"), texto(meta.utm_campaign) ?? texto(meta.campaign)],
-    [t("Conjunto"), texto(meta.utm_content) ?? texto(meta.adset_name)],
+    [
+      t("Origem"),
+      primeiroTexto(meta, ["page_name", "landing_page_name", "form_name", "origin", "source"]) ??
+        negocio.source,
+    ],
+    [t("Campanha"), primeiroTexto(meta, ["campaign_name", "utm_campaign", "campaign"])],
+    [t("Conjunto"), primeiroTexto(meta, ["adset_name", "utm_content"])],
+    [
+      t("Valor"),
+      negocio.value_cents === null ? null : dinheiroLegivel(negocio.value_cents, "BRL", locale),
+    ],
   ];
-  for (const [chave, valor] of Object.entries(negocio.custom_fields ?? {})) {
-    if (valor == null || valor === "") continue;
-    linhas.push([chave, typeof valor === "string" ? valor : JSON.stringify(valor)]);
-  }
   return linhas.filter((item): item is [string, string] => Boolean(item[1]));
 }
 
 function Cartao({ negocio, vazio }: { negocio: NegocioDuplicado; vazio?: boolean }) {
   const t = useT();
-  const contexto = linhasDeContexto(negocio, t);
+  const locale = useTagDeIdioma();
+  const contexto = linhasDeContexto(negocio, t, locale);
+  const tecnicos = detalhesTecnicos(negocio, t);
+  const criadoEm = new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+    .format(new Date(negocio.created_at))
+    .replace(",", "");
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3 flex items-start justify-between gap-3">
+    <div
+      className="flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card p-4"
+      data-testid={`candidato-${negocio.id}`}
+    >
+      <div className="mb-4 flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate font-medium text-foreground">{negocio.title}</p>
-          <p className="text-xs text-muted-foreground">{negocio.pipeline_name}</p>
+          <p className="line-clamp-2 font-medium text-foreground" title={negocio.title}>
+            {negocio.title}
+          </p>
+          <p className="mt-1 truncate text-xs text-muted-foreground" title={negocio.pipeline_name}>
+            {negocio.pipeline_name}
+          </p>
         </div>
-        <span className={`rounded-full px-2 py-1 text-xs ${vazio ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary"}`}>
+        <Badge variant={vazio ? "neutral" : "success"} className="shrink-0">
           {vazio ? t("Sem contexto") : t("Fica")}
-        </span>
+        </Badge>
       </div>
-      {contexto.length > 0 ? (
-        <dl className="space-y-2 text-sm">
-          {contexto.map(([rotulo, valor]) => (
-            <div key={`${rotulo}:${valor}`} className="grid grid-cols-[88px_1fr] gap-2">
-              <dt className="text-muted-foreground">{rotulo}</dt>
-              <dd className="break-words text-foreground">{valor}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          {t("Sem origem, campanha, campos, valor ou marcadores.")}
+      <div className="min-w-0 flex-1" data-testid="resumo-do-candidato">
+        <p className="mb-3 text-xs text-muted-foreground">
+          <span>{t("Criado em")}: </span>
+          <time dateTime={negocio.created_at}>{criadoEm}</time>
         </p>
-      )}
+        {contexto.length > 0 ? (
+          <dl className="space-y-2 text-sm">
+            {contexto.map(([rotulo, valor]) => (
+              <div key={`${rotulo}:${valor}`} className="grid min-w-0 gap-0.5">
+                <dt className="text-xs text-muted-foreground">{rotulo}</dt>
+                <dd className="min-w-0 truncate text-foreground" title={valor}>
+                  {valor}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t("Sem dados adicionais para decidir.")}</p>
+        )}
+      </div>
+
+      {tecnicos.length > 0 ? (
+        <details className="mt-4 border-t border-border pt-3" data-testid="detalhes-tecnicos">
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+            {t("Detalhes técnicos")}
+          </summary>
+          <dl className="mt-3 space-y-3 text-xs">
+            {tecnicos.map(([rotulo, valor]) => (
+              <div key={`${rotulo}:${valor}`} className="min-w-0">
+                <dt className="text-muted-foreground">{rotulo}</dt>
+                <dd className="mt-0.5 flex min-w-0 items-start gap-1 text-foreground">
+                  <span className="min-w-0 flex-1 font-mono break-all" title={valor}>
+                    {valor}
+                  </span>
+                  <BotaoCopiar texto={valor} />
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -192,15 +299,28 @@ export function NegociosDuplicadosClient() {
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-8 p-4 sm:p-6 lg:p-8">
-      <header>
+      <header className="space-y-1">
         <h1 className="text-2xl font-semibold text-foreground">{t("Negócios duplicados")}</h1>
-        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          {t("Confira os negócios abertos do mesmo contato e funil. Nada é juntado sem sua confirmação.")}
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          {t("Compare os negócios abertos do mesmo contato e funil.")}
         </p>
+        {!carregando ? (
+          <p className="pt-2 text-sm font-medium text-foreground">
+            {t(
+              grupos.length === 1
+                ? "{{count}} grupo para conferir"
+                : "{{count}} grupos para conferir",
+            ).replace("{{count}}", String(grupos.length))}
+          </p>
+        ) : null}
       </header>
 
       {carregando ? (
-        <div className="space-y-3"><Skeleton className="h-48 w-full" /><Skeleton className="h-48 w-full" /></div>
+        <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
       ) : grupos.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
           {t("Nenhum negócio duplicado para conferir.")}
@@ -208,8 +328,11 @@ export function NegociosDuplicadosClient() {
       ) : (
         <section className="space-y-5" aria-label={t("Negócios para conferir")}>
           {grupos.map((grupo) => (
-            <article key={grupo.group_key} className="rounded-xl border border-border bg-surface p-4 sm:p-5">
-              <div className="mb-4">
+            <article
+              key={grupo.group_key}
+              className="min-w-0 overflow-hidden rounded-xl border border-border bg-surface"
+            >
+              <div className="p-4 pb-0 sm:p-5 sm:pb-0">
                 <h2 className="font-medium text-foreground">
                   {grupo.survivor.contact_name ?? t("Contato sem nome")}
                 </h2>
@@ -219,15 +342,30 @@ export function NegociosDuplicadosClient() {
                     : t("O negócio com origem e campanha fica. Os vazios podem ser absorvidos.")}
                 </p>
               </div>
-              {grupo.absorbed.map((absorvido) => (
-                <div key={absorvido.id} className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_auto] lg:items-center">
-                  <Cartao negocio={grupo.survivor} />
-                  <Cartao negocio={absorvido} vazio />
-                  <Button onClick={() => setSelecao({ survivor: grupo.survivor, absorbed: absorvido })}>
-                    {t("Juntar")}
-                  </Button>
+              <div
+                className="grid min-w-0 gap-3 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-3"
+                data-testid={`candidatos-${grupo.group_key}`}
+              >
+                <Cartao negocio={grupo.survivor} />
+                {grupo.absorbed.map((absorvido) => (
+                  <Cartao key={absorvido.id} negocio={absorvido} vazio />
+                ))}
+              </div>
+              <footer className="flex flex-col gap-3 border-t border-border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                <p className="text-xs text-muted-foreground">
+                  {t("Nada é juntado sem sua confirmação.")}
+                </p>
+                <div className="flex flex-wrap justify-end gap-2">
+                  {grupo.absorbed.map((absorvido) => (
+                    <Button
+                      key={absorvido.id}
+                      onClick={() => setSelecao({ survivor: grupo.survivor, absorbed: absorvido })}
+                    >
+                      {t("Juntar")}
+                    </Button>
+                  ))}
                 </div>
-              ))}
+              </footer>
             </article>
           ))}
         </section>

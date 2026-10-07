@@ -266,17 +266,6 @@ export function LeadPageClient({
               <h1 className="min-w-0 text-lg leading-tight font-semibold text-text">
                 {leadAtual.title}
               </h1>
-              {podeExcluir ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 text-destructive hover:text-destructive"
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  <Trash size={15} aria-hidden />
-                  {t("Excluir")}
-                </Button>
-              ) : null}
             </div>
 
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
@@ -412,6 +401,19 @@ export function LeadPageClient({
                   fieldDefs={fieldDefs}
                 />
               </section>
+            ) : null}
+            {podeExcluir ? (
+              <div className="mt-8 border-t border-border pt-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash size={15} aria-hidden />
+                  {t("Excluir")}
+                </Button>
+              </div>
             ) : null}
           </div>
         </aside>

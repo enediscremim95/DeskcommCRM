@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NegociosDuplicadosClient } from "./NegociosDuplicadosClient";
@@ -120,5 +120,47 @@ describe("tela de negócios duplicados", () => {
         expect.objectContaining({ action: expect.objectContaining({ label: "Desfazer" }) }),
       ),
     );
+  });
+
+  it("mantém textos técnicos longos recolhidos e os candidatos dentro da grade responsiva", async () => {
+    const fbclid = `fbclid-${"x".repeat(143)}`;
+    const pageUrl = `https://exemplo.com/pagina?${"utm_source=facebook&".repeat(16)}fim=1`;
+    const grupoLongo = {
+      ...grupo,
+      survivor: {
+        ...grupo.survivor,
+        source_metadata: {
+          ...grupo.survivor.source_metadata,
+          page_name: "Página de captura",
+          campaign_name: "Campanha principal",
+          fbclid,
+          page_url: pageUrl,
+        },
+      },
+    };
+    mocks.fetch.mockImplementation((input: RequestInfo | URL) =>
+      String(input).endsWith("/api/v1/leads/duplicates") ? resposta([grupoLongo]) : resposta([]),
+    );
+
+    render(<NegociosDuplicadosClient />);
+
+    const grid = await screen.findByTestId("candidatos-contato:funil");
+    expect(grid).toHaveClass("grid", "gap-3", "min-w-0", "md:grid-cols-2", "xl:grid-cols-3");
+    const cards = within(grid).getAllByTestId(/candidato-/);
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(card).toHaveClass("h-full", "min-w-0", "overflow-hidden");
+      expect(card.className).not.toMatch(/(?:^|\s)(?:min-)?w-\[[^\]]+\]/);
+    }
+
+    const survivor = within(grid).getByTestId(`candidato-${SURVIVOR}`);
+    const corpo = within(survivor).getByTestId("resumo-do-candidato");
+    expect(corpo).not.toHaveTextContent(fbclid);
+    expect(corpo).not.toHaveTextContent(pageUrl);
+    expect(within(corpo).getByTitle("Campanha principal")).toHaveClass("truncate");
+
+    const detalhes = within(survivor).getByTestId("detalhes-tecnicos");
+    expect(within(detalhes).getByText(fbclid)).toHaveClass("break-all");
+    expect(within(detalhes).getByText(pageUrl)).toHaveClass("break-all");
   });
 });

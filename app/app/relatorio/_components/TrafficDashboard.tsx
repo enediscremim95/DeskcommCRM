@@ -1625,6 +1625,11 @@ export function TrafficDashboard() {
   const [visiblePriorityMetrics, setVisiblePriorityMetrics] = useState<
     PriorityMetricColumn[] | null
   >(null);
+  const [mostrarMetricasCrm, setMostrarMetricasCrm] = useState(false);
+  const restauracaoMetricasCrm = useRef(0);
+  const chaveMetricasCrm = report
+    ? `traffic-report-crm-metrics:${report.organization_key}:${report.viewer_key}`
+    : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1664,6 +1669,36 @@ export function TrafficDashboard() {
       controller.abort();
     };
   }, [activeOrg?.orgId, window, t]);
+
+  useEffect(() => {
+    const versao = ++restauracaoMetricasCrm.current;
+    if (!chaveMetricasCrm) return;
+    const timeout = globalThis.window.setTimeout(() => {
+      try {
+        const salva = globalThis.window.localStorage.getItem(chaveMetricasCrm) === "visible";
+        if (versao === restauracaoMetricasCrm.current) setMostrarMetricasCrm(salva);
+      } catch {
+        if (versao === restauracaoMetricasCrm.current) setMostrarMetricasCrm(false);
+      }
+    }, 0);
+    return () => globalThis.window.clearTimeout(timeout);
+  }, [chaveMetricasCrm]);
+
+  function alternarMetricasCrm() {
+    restauracaoMetricasCrm.current += 1;
+    setMostrarMetricasCrm((visiveis) => {
+      const proximas = !visiveis;
+      if (chaveMetricasCrm) {
+        try {
+          if (proximas) globalThis.window.localStorage.setItem(chaveMetricasCrm, "visible");
+          else globalThis.window.localStorage.removeItem(chaveMetricasCrm);
+        } catch {
+          // A tela continua interativa mesmo quando o navegador bloqueia armazenamento.
+        }
+      }
+      return proximas;
+    });
+  }
 
   // "Dados até dd/mm/aaaa" (painel antigo): a data da última sincronização que
   // a resposta já traz, sem hora, porque é o que o cliente quer saber.
@@ -1913,42 +1948,41 @@ export function TrafficDashboard() {
             const crmFunnelStages: FunnelStage[] = [
               {
                 key: "crm-entered",
-                label: localText(idioma, "Entraram no CRM", "Ingresaron al CRM"),
+                label: t("Entraram no CRM"),
                 value: richCrm.leads_entered,
                 rate:
                   lastTrafficValue > 0 ? (richCrm.leads_entered / lastTrafficValue) * 100 : null,
                 cost:
                   richCrm.leads_entered > 0 ? group.summary.spend / richCrm.leads_entered : null,
-                asSource: localText(idioma, "que entraram no CRM", "que ingresaron al CRM"),
-                asTarget: localText(idioma, "entraram no CRM", "ingresaron al CRM"),
-                costLabel: localText(idioma, "por lead no CRM", "por lead en el CRM"),
+                asSource: t("que entraram no CRM"),
+                asTarget: t("entraram no CRM"),
+                costLabel: t("por lead no CRM"),
               },
               {
                 key: "crm-service",
-                label: localText(idioma, "Em atendimento", "En atención"),
+                label: t("Em atendimento"),
                 value: richCrm.in_service,
                 rate:
                   richCrm.leads_entered > 0
                     ? (richCrm.in_service / richCrm.leads_entered) * 100
                     : null,
                 cost: richCrm.in_service > 0 ? group.summary.spend / richCrm.in_service : null,
-                asSource: localText(idioma, "em atendimento", "en atención"),
-                asTarget: localText(idioma, "foram atendidos", "fueron atendidos"),
-                costLabel: localText(idioma, "por atendimento", "por atención"),
+                asSource: t("em atendimento"),
+                asTarget: t("foram atendidos"),
+                costLabel: t("por atendimento"),
               },
               {
                 key: "crm-won",
-                label: localText(idioma, "Vendas fechadas", "Ventas cerradas"),
+                label: t("Vendas fechadas"),
                 value: richCrm.closed_won,
                 rate:
                   richCrm.in_service > 0 ? (richCrm.closed_won / richCrm.in_service) * 100 : null,
                 cost: richCrm.closed_won > 0 ? group.summary.spend / richCrm.closed_won : null,
-                asSource: localText(idioma, "que fecharam", "que cerraron"),
-                asTarget: localText(idioma, "fecharam venda", "cerraron venta"),
-                costLabel: localText(idioma, "por venda", "por venta"),
+                asSource: t("que fecharam"),
+                asTarget: t("fecharam venda"),
+                costLabel: t("por venda"),
               },
             ];
-            const funnelStages: FunnelStage[] = [...trafficStages, ...crmFunnelStages];
             const kanbanFunnelStages: FunnelStage[] = (report.kanban_stages ?? []).map((stage) => ({
               key: `kanban:${stage.id}`,
               label: stage.name,
@@ -1965,16 +1999,12 @@ export function TrafficDashboard() {
             const funnelStageGroups: FunnelStageGroup[] = [
               {
                 key: "report",
-                label: localText(
-                  idioma,
-                  "Métricas do anúncio e do relatório",
-                  "Métricas del anuncio y del informe",
-                ),
-                stages: funnelStages,
+                label: t("Métricas do anúncio e da página"),
+                stages: trafficStages,
               },
               {
                 key: "kanban",
-                label: localText(idioma, "Etapas do Kanban", "Etapas del Kanban"),
+                label: t("Etapas do Kanban"),
                 stages: kanbanFunnelStages,
               },
             ];
@@ -2244,13 +2274,12 @@ export function TrafficDashboard() {
 
                 <ConversionFunnel
                   eyebrow={t("Funil de desempenho")}
-                  title={localText(
-                    idioma,
-                    "Do alcance à venda fechada",
-                    "Del alcance a la venta cerrada",
-                  )}
-                  stages={funnelStages}
+                  title={t("Do alcance à venda fechada")}
+                  stages={trafficStages}
                   stageGroups={funnelStageGroups}
+                  crmStages={crmFunnelStages}
+                  crmMetricsVisible={mostrarMetricasCrm}
+                  onToggleCrmMetrics={alternarMetricasCrm}
                   idioma={idioma}
                   currency={group.currency}
                   organizationKey={report.organization_key}
@@ -2259,16 +2288,12 @@ export function TrafficDashboard() {
                   summary={[
                     { label: t("Investimento"), value: money(group.summary.spend, group.currency) },
                     {
-                      label: localText(idioma, "Vendas fechadas", "Ventas cerradas"),
+                      label: t("Vendas fechadas"),
                       value: number(richCrm.closed_won),
                       emphasis: true,
                     },
                     {
-                      label: localText(
-                        idioma,
-                        "Custo por venda fechada",
-                        "Costo por venta cerrada",
-                      ),
+                      label: t("Custo por venda fechada"),
                       value:
                         costPerClosed == null
                           ? t("sem dado")

@@ -17,6 +17,7 @@ interface Props {
   leadId: string;
   contactId: string | null;
   podeEditar: boolean;
+  modo?: "completo" | "somenteLeitura";
 }
 
 function prazoLegivel(iso: string | null, tag: string, semPrazo: string): string {
@@ -29,7 +30,7 @@ function prazoLegivel(iso: string | null, tag: string, semPrazo: string): string
  * O componente recebe o lead explicitamente para nunca adivinhar qual negócio
  * de um contato com mais de um funil deve receber o follow-up.
  */
-export function FollowupsDoLead({ leadId, contactId, podeEditar }: Props) {
+export function FollowupsDoLead({ leadId, contactId, podeEditar, modo = "completo" }: Props) {
   const t = useT();
   const tag = useTagDeIdioma();
   const [formAberto, setFormAberto] = useState(false);
@@ -38,6 +39,9 @@ export function FollowupsDoLead({ leadId, contactId, podeEditar }: Props) {
     lead_id: leadId,
   });
   const followups = tarefas.filter((tarefa) => tarefa.due_date !== null);
+  const somenteLeitura = modo === "somenteLeitura";
+
+  if (somenteLeitura && !carregando && !falhou && followups.length === 0) return null;
 
   function abrir() {
     setAberturas((atual) => atual + 1);
@@ -59,7 +63,7 @@ export function FollowupsDoLead({ leadId, contactId, podeEditar }: Props) {
             {t("Próximos contatos deste negócio. Quando vencem, aparecem no Radar.")}
           </p>
         </div>
-        {podeEditar ? (
+        {podeEditar && !somenteLeitura ? (
           <Button type="button" size="sm" variant="default" onClick={abrir}>
             <Plus size={14} aria-hidden />
             {t("Follow-up")}
@@ -73,7 +77,7 @@ export function FollowupsDoLead({ leadId, contactId, podeEditar }: Props) {
           {t("Não foi possível carregar os follow-ups.")}
         </p>
       ) : null}
-      {!carregando && !falhou && followups.length === 0 ? (
+      {!somenteLeitura && !carregando && !falhou && followups.length === 0 ? (
         <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
           {t("Nenhum follow-up marcado para este negócio.")}
         </p>
@@ -149,16 +153,18 @@ export function FollowupsDoLead({ leadId, contactId, podeEditar }: Props) {
         </ul>
       ) : null}
 
-      <FormularioDeTarefa
-        key={aberturas}
-        aberto={formAberto}
-        aoMudarAbertura={setFormAberto}
-        aoSalvar={salvar}
-        leadId={leadId}
-        contactId={contactId}
-        exigirPrazo
-        tituloDaCriacao="Novo follow-up"
-      />
+      {!somenteLeitura ? (
+        <FormularioDeTarefa
+          key={aberturas}
+          aberto={formAberto}
+          aoMudarAbertura={setFormAberto}
+          aoSalvar={salvar}
+          leadId={leadId}
+          contactId={contactId}
+          exigirPrazo
+          tituloDaCriacao="Novo follow-up"
+        />
+      ) : null}
     </section>
   );
 }

@@ -1978,6 +1978,45 @@ describe("colunas da tabela de campanhas", () => {
     );
   });
 
+  it("abre as métricas do CRM sob demanda, persiste a escolha e calcula o gargalo só com etapas visíveis", async () => {
+    const response = baseResponse([], ["spend"]);
+    response.data.crm = { leads_entered: 4, in_service: 3, closed_won: 0 };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(response));
+    const user = userEvent.setup();
+
+    const first = render(<TrafficDashboard />);
+    const funnel = await screen.findByRole("list", { name: "Do alcance à venda fechada" });
+
+    expect(within(funnel).queryByText("Entraram no CRM")).not.toBeInTheDocument();
+    expect(within(funnel).queryByText("Em atendimento")).not.toBeInTheDocument();
+    expect(within(funnel).queryByText("Vendas fechadas")).not.toBeInTheDocument();
+    expect(within(funnel).getByText("menor passagem do funil").parentElement).toHaveTextContent(
+      "50 clicaram",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Adicionar métricas do CRM" }));
+
+    expect(within(funnel).getByText("Entraram no CRM")).toBeInTheDocument();
+    expect(within(funnel).getByText("Em atendimento")).toBeInTheDocument();
+    expect(within(funnel).getByText("Vendas fechadas")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ocultar métricas do CRM" })).toBeInTheDocument();
+    expect(within(funnel).getByText("menor passagem do funil").parentElement).toHaveTextContent(
+      "0 fecharam venda",
+    );
+    expect(localStorage.getItem("traffic-report-crm-metrics:org-1:viewer-1")).toBe("visible");
+
+    first.unmount();
+    render(<TrafficDashboard />);
+    expect(
+      await screen.findByRole("button", { name: "Ocultar métricas do CRM" }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("list", { name: "Do alcance à venda fechada" })).getByText(
+        "Entraram no CRM",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("esconde controles de edição no modo apresentação e os devolve ao sair", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json(
