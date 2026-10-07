@@ -34,6 +34,18 @@ describe("rolagem vertical por coluna no quadro", () => {
     expect(card).toContain("data-quadro-card");
   });
 
+  it("impede que os cards encolham dentro da coluna rolável", () => {
+    const card = readFileSync("components/kanban/KanbanCard.tsx", "utf8");
+    const rootClasses = card.match(
+      /data-quadro-card[\s\S]*?className=\{cn\(\s*"([^"]+)"/,
+    )?.[1];
+
+    // Sem shrink-0, o overflow-hidden reduz o card a 16 px no flex vertical da coluna.
+    expect(rootClasses?.split(" ")).toEqual(
+      expect.arrayContaining(["overflow-hidden", "shrink-0"]),
+    );
+  });
+
   it("mantém o cabeçalho da etapa fixo e rola no próprio Droppable", () => {
     const column = readFileSync("components/kanban/StageColumn.tsx", "utf8");
 
@@ -51,6 +63,12 @@ describe("rolagem vertical por coluna no quadro", () => {
         "overscroll-contain",
         "[scrollbar-gutter:stable]",
       ]),
+    );
+    expect(column).toContain(
+      'className="flex min-h-10 shrink-0 items-center justify-center',
+    );
+    expect(column).toContain(
+      'className="flex h-16 shrink-0 items-center justify-center',
     );
   });
 
