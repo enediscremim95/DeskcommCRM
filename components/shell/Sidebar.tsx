@@ -19,6 +19,7 @@ const CHAVE_GRUPOS_FECHADOS = "sidebar-grupos-fechados";
 interface SidebarContentProps {
   collapsed: boolean;
   showCollapseControl?: boolean;
+  showUpdateNotice?: boolean;
   onNavigate?: () => void;
 }
 
@@ -33,6 +34,7 @@ interface SidebarContentProps {
 export function SidebarContent({
   collapsed,
   showCollapseControl = true,
+  showUpdateNotice = true,
   onNavigate,
 }: SidebarContentProps) {
   // A barra lateral aparece em TODA tela — traduzi-la aqui é o que faz a
@@ -173,7 +175,7 @@ export function SidebarContent({
         histórico. Se a dobra estourar, a composição precisa ser medida outra
         vez contra a decisão vigente do produto.
       */}
-      <nav className="flex-1 space-y-2 overflow-y-auto p-2" aria-label={t("Navegação principal")}>
+      <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2" aria-label={t("Navegação principal")}>
         {grupos.map(({ group, items }) => {
           const tituloId = `nav-grupo-${group.id}`;
           // Recolhido o sidebar inteiro (rail de 64px), o grupo sempre mostra
@@ -272,27 +274,7 @@ export function SidebarContent({
           );
         })}
       </nav>
-      <div className="border-t p-2">
-        {rodape && (
-          <Link
-            href={rodape.href}
-            title={collapsed ? t(rodape.label) : undefined}
-            aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
-            onClick={onNavigate}
-            className={cn(
-              "mb-1 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
-              !showCollapseControl && "min-h-11 py-2",
-              pathname.startsWith(rodape.href)
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-              collapsed && "justify-center px-2",
-            )}
-          >
-            <Gear size={18} aria-hidden />
-            {!collapsed && <span className="truncate">{t(rodape.label)}</span>}
-          </Link>
-        )}
-        <VersionFooter collapsed={collapsed} onNavigate={onNavigate} />
+      <div className="shrink-0 border-t p-2">
         {showCollapseControl && (
           <button
             type="button"
@@ -312,12 +294,38 @@ export function SidebarContent({
             {!collapsed && <span>{t("Recolher")}</span>}
           </button>
         )}
+        {rodape && (
+          <Link
+            href={rodape.href}
+            title={collapsed ? t(rodape.label) : undefined}
+            aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
+            onClick={onNavigate}
+            className={cn(
+              "mt-1 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+              !showCollapseControl && "min-h-11 py-2",
+              pathname.startsWith(rodape.href)
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              collapsed && "justify-center px-2",
+            )}
+          >
+            <Gear size={18} aria-hidden />
+            {!collapsed && <span className="truncate">{t(rodape.label)}</span>}
+          </Link>
+        )}
+        {showUpdateNotice ? <VersionFooter collapsed={collapsed} onNavigate={onNavigate} /> : null}
       </div>
     </>
   );
 }
 
-export function Sidebar({ collapsed }: { collapsed: boolean }) {
+export function Sidebar({
+  collapsed,
+  showUpdateNotice = true,
+}: {
+  collapsed: boolean;
+  showUpdateNotice?: boolean;
+}) {
   return (
     <aside
       className={cn(
@@ -344,7 +352,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         collapsed ? "w-16" : "w-60",
       )}
     >
-      <SidebarContent collapsed={collapsed} />
+      <SidebarContent collapsed={collapsed} showUpdateNotice={showUpdateNotice} />
     </aside>
   );
 }

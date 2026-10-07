@@ -122,18 +122,7 @@ export function PipelinePageClient({
       data-refetch-divergencias={seguranca.divergencias}
       data-refetch-em={seguranca.ultimaVerificacao ?? ""}
     >
-      {/* `flex-col` no mobile: nome de funil comprido (é texto livre, sem
-          limite curto) + botão na mesma linha sem quebra empurrava o botão pra
-          fora da viewport em telas estreitas. De `sm:` pra cima volta a ser
-          uma linha só, como sempre foi. */}
-      <header className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="min-w-0 truncate text-2xl font-semibold tracking-tight">
-          {data?.pipeline.name ?? initialName}
-        </h1>
-        <Button onClick={() => setNewOpen(true)} disabled={!data} className="shrink-0">
-          <Plus size={16} className="mr-2" /> {t("Novo Lead")}
-        </Button>
-      </header>
+      <h1 className="sr-only">{data?.pipeline.name ?? initialName}</h1>
       {podeEditarEtapas && (
         <Sheet open={etapasOpen} onOpenChange={mudarEtapasOpen}>
           <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
@@ -166,11 +155,16 @@ export function PipelinePageClient({
           onChange={setFilters}
           leads={data?.leads ?? []}
           extra={
-            podeEditarEtapas ? (
-              <Button variant="outline" size="sm" onClick={() => mudarEtapasOpen(true)}>
-                <PencilSimple size={14} className="mr-1.5" /> {t("Editar etapas")}
+            <>
+              {podeEditarEtapas ? (
+                <Button variant="outline" size="sm" onClick={() => mudarEtapasOpen(true)}>
+                  <PencilSimple size={14} className="mr-1.5" /> {t("Editar etapas")}
+                </Button>
+              ) : null}
+              <Button onClick={() => setNewOpen(true)} disabled={!data} size="sm">
+                <Plus size={14} className="mr-1.5" /> {t("Novo Lead")}
               </Button>
-            ) : null
+            </>
           }
         />
       </div>

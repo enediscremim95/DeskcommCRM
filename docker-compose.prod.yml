@@ -36,6 +36,8 @@ services:
     pull_policy: ${APP_PULL_POLICY:-always}
     restart: unless-stopped
     env_file: .env
+    environment:
+      SIDEBAR_UPDATE_NOTICE: ${SIDEBAR_UPDATE_NOTICE:-}
     depends_on:
       srh:
         condition: service_started

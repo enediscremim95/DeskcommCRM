@@ -983,6 +983,7 @@ export const DICIONARIO: Traducoes = {
   "Nova versão": { es: "Nueva versión" },
   disponível: { es: "disponible" },
   "Abrir navegação": { es: "Abrir navegación" },
+  "Voltar ao funil": { es: "Volver al embudo" },
   "Buscar telas": { es: "Buscar pantallas" },
   "Buscar telas do sistema…": { es: "Buscar pantallas del sistema…" },
   Telas: { es: "Pantallas" },

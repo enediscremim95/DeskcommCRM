@@ -363,6 +363,9 @@ const schema = z.object({
   // O <PublicEnvScript/> injeta os valores em runtime.
   APP_NAME: z.string().optional().default(""),
   APP_LOGO_URL: z.string().optional().default(""),
+  // Ausente ou qualquer valor diferente de "off" preserva o aviso atual.
+  // É server-only: o layout converte em booleano antes de cruzar para o client.
+  SIDEBAR_UPDATE_NOTICE: z.string().optional().default(""),
   /**
    * Cor da marca — um hex (`#506d48`), do qual `lib/branding/` deriva a rampa
    * inteira. Vazio = o produto se pinta com a cor dele.

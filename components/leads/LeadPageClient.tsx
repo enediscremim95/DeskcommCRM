@@ -31,7 +31,7 @@ import type { Message } from "@/lib/types/messaging";
 import type { Stage } from "@/lib/kanban/types";
 import { apiClient } from "@/lib/api/client";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
-import { ChatCircle, Gear, Phone, Trash } from "@/lib/ui/icons";
+import { CaretLeft, ChatCircle, Gear, Phone, Trash } from "@/lib/ui/icons";
 import { DadosCompletosDoLead } from "./DadosCompletosDoLead";
 import { OutrosNegociosDoContato } from "./OutrosNegociosDoContato";
 import { FollowupsDoLead } from "./FollowupsDoLead";
@@ -241,7 +241,7 @@ export function LeadPageClient({
   return (
     <OpenConversationProvider conversationId={conversationId}>
       <div
-        className="grid min-h-[calc(100dvh-8.5rem)] overflow-hidden rounded-xl border border-border bg-surface shadow-xs lg:h-[calc(100dvh-8.5rem)] lg:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]"
+        className="grid min-h-[calc(100dvh-5.5rem)] overflow-hidden rounded-xl border border-border bg-surface shadow-xs lg:h-[calc(100dvh-5.5rem)] lg:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]"
         data-testid="lead-page-workspace"
         data-realtime-status={timeline.realtimeStatus.toLowerCase()}
         data-refetch-divergencias={timeline.seguranca.divergencias}
@@ -249,9 +249,19 @@ export function LeadPageClient({
         {/* ── Esquerda: o negócio, a etapa e a pessoa ─────────────────────── */}
         <aside className="min-w-0 overflow-y-auto border-b border-border bg-surface-elevated/40 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:border-r lg:border-b-0">
           <header className="border-b border-border bg-surface px-4 pt-4 pb-4">
-            <p className="truncate text-[11px] font-medium tracking-[0.08em] text-text-muted uppercase">
-              {pipelineName}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="min-w-0 truncate text-[11px] font-medium tracking-[0.08em] text-text-muted uppercase">
+                {pipelineName}
+              </p>
+              <Link
+                href={`/app/pipelines/${leadAtual.pipeline_id}`}
+                title={t("Voltar ao funil")}
+                className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-text-muted transition-colors hover:text-text"
+              >
+                <CaretLeft size={13} aria-hidden />
+                {t("Voltar ao funil")}
+              </Link>
+            </div>
             <div className="mt-1 flex items-start justify-between gap-3">
               <h1 className="min-w-0 text-lg leading-tight font-semibold text-text">
                 {leadAtual.title}

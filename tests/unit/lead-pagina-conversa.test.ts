@@ -10,6 +10,8 @@ describe("página completa do lead", () => {
   it("renderiza a tela do lead em vez de redirecionar ao quadro", () => {
     expect(pagina).toContain("<LeadPageClient");
     expect(pagina).not.toContain("redirect(`/app/pipelines/");
+    expect(pagina).not.toContain("<Voltar");
+    expect(cliente).toContain('t("Voltar ao funil")');
   });
 
   it("reaproveita ChatThread e Composer na mesma superfície", () => {

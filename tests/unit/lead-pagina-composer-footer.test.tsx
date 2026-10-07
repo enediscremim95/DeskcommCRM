@@ -170,11 +170,15 @@ describe("rodapé da conversa na página do lead", () => {
     );
 
     const workspace = screen.getByTestId("lead-page-workspace");
-    expect(workspace).toHaveClass("lg:h-[calc(100dvh-8.5rem)]");
+    expect(workspace).toHaveClass("lg:h-[calc(100dvh-5.5rem)]");
 
     const [leadDetails, conversation] = Array.from(workspace.children);
     expect(leadDetails).toHaveClass("lg:h-full", "lg:min-h-0", "lg:overflow-y-auto");
     expect(conversation).toHaveClass("lg:h-full", "lg:min-h-0");
+
+    const voltar = screen.getByRole("link", { name: "Voltar ao funil" });
+    expect(voltar).toHaveAttribute("href", "/app/pipelines/pipeline-1");
+    expect(screen.getByText("Funil principal").closest("header")).toContainElement(voltar);
   });
 
   it("mantém o chat flexível e limita avisos e compositor no rodapé", () => {
