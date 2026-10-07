@@ -81,6 +81,14 @@ async function comoServico(statement: string, args: unknown[]) {
   }
 }
 
+async function negocioVazio(leadId: string): Promise<boolean> {
+  const result = await comoServico(
+    "select public.fn_negocio_vazio_para_juncao($1,$2) vazio",
+    [ORG, leadId],
+  );
+  return result.rows[0]!.vazio as boolean;
+}
+
 async function comoGerente(statement: string, args: unknown[]) {
   const client = await pool.connect();
   try {
@@ -146,6 +154,71 @@ afterAll(async () => {
 });
 
 describe("junção automática de duplicados recentes", () => {
+  it("considera vazio o cartão que só tem registros automáticos sem trabalho humano", async () => {
+    const lead = await negocio({
+      contact: await contato(),
+      source: "whatsapp",
+      createdAt: new Date(Date.now() - 60_000),
+    });
+    await pool.query(
+      `insert into crm_lead_activities(
+         organization_id,lead_id,source_module,type,actor_kind
+       ) values
+         ($1,$2,'canal.ingest','lead_created','system'),
+         ($1,$2,'crm','lead_cooled','system'),
+         ($1,$2,'canal.ingest','lead_merged','system')`,
+      [ORG, lead],
+    );
+
+    expect(await negocioVazio(lead)).toBe(true);
+  });
+
+  it("nota, tarefa, valor, dono humano e tipo desconhecido mantêm o cartão não vazio", async () => {
+    const leads = await Promise.all(
+      Array.from({ length: 5 }, async () =>
+        negocio({
+          contact: await contato(),
+          source: "whatsapp",
+          createdAt: new Date(Date.now() - 60_000),
+        }),
+      ),
+    );
+    const [comNota, comTarefa, comValor, comDono, comTipoDesconhecido] = leads as [
+      string,
+      string,
+      string,
+      string,
+      string,
+    ];
+
+    await pool.query(
+      `insert into crm_lead_activities(
+         organization_id,lead_id,source_module,type,actor_kind,performed_by_user_id
+       ) values($1,$2,'crm','note','user',$3)`,
+      [ORG, comNota, GOV_MANAGER],
+    );
+    await pool.query(
+      "insert into crm_tasks(organization_id,title,lead_id) values($1,'Retornar',$2)",
+      [ORG, comTarefa],
+    );
+    await pool.query("update crm_leads set value_cents=1000 where id=$1", [comValor]);
+    await pool.query("update crm_leads set owner_user_id=$2 where id=$1", [comDono, GOV_MANAGER]);
+    await pool.query(
+      `insert into crm_lead_activities(
+         organization_id,lead_id,source_module,type,actor_kind
+       ) values($1,$2,'crm','tipo_novo_ainda_nao_classificado','system')`,
+      [ORG, comTipoDesconhecido],
+    );
+
+    await expect(Promise.all(leads.map(negocioVazio))).resolves.toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+
   it("junta somente o par seguro, preserva contexto, é idempotente e permite desfazer", async () => {
     const agora = Date.now();
 
@@ -161,6 +234,15 @@ describe("junção automática de duplicados recentes", () => {
       source: "whatsapp",
       createdAt: new Date(agora - 60_000),
     });
+    await pool.query(
+      `insert into crm_lead_activities(
+         organization_id,lead_id,source_module,type,actor_kind
+       ) values
+         ($1,$2,'canal.ingest','lead_created','system'),
+         ($1,$2,'crm','lead_cooled','system'),
+         ($1,$2,'canal.ingest','lead_merged','system')`,
+      [ORG, absorbed],
+    );
 
     const contatoForaDaJanela = await contato();
     const antigoForaDaJanela = await negocio({
@@ -323,7 +405,7 @@ describe("junção automática de duplicados recentes", () => {
     ).toBe(true);
   });
 
-  it("anon e authenticated não têm EXECUTE; service_role tem", async () => {
+  it("funções internas não expõem EXECUTE e a função de vazio é service-only", async () => {
     const privileges = await pool.query(
       `select
          has_function_privilege('anon',
@@ -331,12 +413,21 @@ describe("junção automática de duplicados recentes", () => {
          has_function_privilege('authenticated',
            'public.fn_juntar_duplicados_recentes(integer,interval,interval,uuid)', 'EXECUTE') authenticated,
          has_function_privilege('service_role',
-           'public.fn_juntar_duplicados_recentes(integer,interval,interval,uuid)', 'EXECUTE') service_role`,
+           'public.fn_juntar_duplicados_recentes(integer,interval,interval,uuid)', 'EXECUTE') service_role,
+         has_function_privilege('anon',
+           'public.fn_negocio_vazio_para_juncao(uuid,uuid)', 'EXECUTE') vazio_anon,
+         has_function_privilege('authenticated',
+           'public.fn_negocio_vazio_para_juncao(uuid,uuid)', 'EXECUTE') vazio_authenticated,
+         has_function_privilege('service_role',
+           'public.fn_negocio_vazio_para_juncao(uuid,uuid)', 'EXECUTE') vazio_service_role`,
     );
     expect(privileges.rows[0]).toEqual({
       anon: false,
       authenticated: false,
       service_role: true,
+      vazio_anon: false,
+      vazio_authenticated: false,
+      vazio_service_role: true,
     });
   });
 });
