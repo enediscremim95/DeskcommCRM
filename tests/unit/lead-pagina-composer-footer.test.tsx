@@ -7,6 +7,10 @@ import { LeadPageClient } from "@/components/leads/LeadPageClient";
 import { useContactLeads } from "@/hooks/contacts/useContactLeads";
 import type { Lead, LeadComContexto } from "@/lib/types/leads";
 
+const { mockUsePermission } = vi.hoisted(() => ({
+  mockUsePermission: vi.fn(() => true),
+}));
+
 vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: ReactNode }) => (
     <a href={href}>{children}</a>
@@ -19,7 +23,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ activeOrg: { role: "admin" }, user: { support: null } }),
-  usePermission: () => true,
+  usePermission: mockUsePermission,
 }));
 
 vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useTagDeIdioma: () => "pt-BR" }));
@@ -85,12 +89,17 @@ vi.mock("@/components/inbox/RetentionNotice", () => ({
   RetentionNotice: () => <div data-testid="retention-notice" />,
 }));
 
-vi.mock("@/components/kanban/LeadFieldsForm", () => ({ LeadFieldsForm: () => null }));
+vi.mock("@/components/kanban/LeadFieldsForm", () => ({
+  LeadFieldsForm: () => <div data-testid="lead-fields-form" />,
+}));
 vi.mock("@/components/kanban/LoseLeadDialog", () => ({ LoseLeadDialog: () => null }));
 vi.mock("@/components/leads/DadosCompletosDoLead", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/components/leads/DadosCompletosDoLead")>();
-  return { ...original, DadosCompletosDoLead: () => null };
+  return {
+    ...original,
+    DadosCompletosDoLead: () => <div data-testid="dados-completos">Dados informados</div>,
+  };
 });
 vi.mock("@/components/leads/DeleteLeadDialog", () => ({ DeleteLeadDialog: () => null }));
 vi.mock("@/components/leads/FollowupsDoLead", () => ({ FollowupsDoLead: () => null }));
@@ -152,6 +161,7 @@ function mockNegociosDoContato(data: LeadComContexto[]) {
 describe("rodapé da conversa na página do lead", () => {
   beforeEach(() => {
     localStorage.clear();
+    mockUsePermission.mockReturnValue(true);
     mockNegociosDoContato([]);
   });
 
@@ -255,5 +265,51 @@ describe("rodapé da conversa na página do lead", () => {
     expect(
       screen.queryByRole("button", { name: /Outros negócios deste contato/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("deixa Excluir depois de todas as seções da coluna, fora do cabeçalho", () => {
+    render(
+      <LeadPageClient
+        lead={lead}
+        pipelineName="Funil principal"
+        stageName="Novo"
+        fieldDefs={[]}
+        contact={null}
+        conversationId="conversation-1"
+        hasConnectedChannel
+        canReplyInConversation
+      />,
+    );
+
+    const excluir = screen.getByRole("button", { name: "Excluir" });
+    const dados = screen.getByTestId("dados-completos");
+    const formulario = screen.getByTestId("lead-fields-form");
+    const header = screen.getByText("Funil principal").closest("header");
+
+    expect(header).not.toContainElement(excluir);
+    expect(dados.compareDocumentPosition(excluir) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      formulario.compareDocumentPosition(excluir) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(excluir.parentElement).toHaveClass("mt-8", "border-t", "pt-4");
+  });
+
+  it("não mostra Excluir sem a permissão lead.delete", () => {
+    mockUsePermission.mockReturnValue(false);
+
+    render(
+      <LeadPageClient
+        lead={lead}
+        pipelineName="Funil principal"
+        stageName="Novo"
+        fieldDefs={[]}
+        contact={null}
+        conversationId="conversation-1"
+        hasConnectedChannel
+        canReplyInConversation
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Excluir" })).not.toBeInTheDocument();
   });
 });
