@@ -25107,9 +25107,17 @@ declare
   v_ids jsonb;
   v_moved jsonb := '{}'::jsonb;
   v_org_filter text;
+  v_system_call boolean := coalesce((
+    auth.uid() is null
+    and auth.role() = 'service_role'
+    and current_setting('app.juncao_negocio_actor', true) = 'sistema'
+  ), false);
+  v_reason text := nullif(current_setting('app.juncao_negocio_motivo', true), '');
 begin
-  if auth.uid() is null
-     or not public.fn_role_at_least(p_organization_id, 'manager') then
+  if not v_system_call and (
+    auth.uid() is null
+    or not public.fn_role_at_least(p_organization_id, 'manager')
+  ) then
     raise exception using errcode = '42501', message = 'insufficient_role';
   end if;
   if p_survivor is null or p_absorbed is null or p_survivor = p_absorbed then
@@ -25276,15 +25284,17 @@ begin
 
   insert into public.crm_lead_activities (
     organization_id, lead_id, contact_id, source_module, source_id,
-    type, payload, metadata, performed_at, performed_by_user_id
+    type, payload, metadata, performed_at, performed_by_user_id, actor_kind, reason
   ) values (
     p_organization_id, p_survivor, v_survivor.contact_id,
     'lead_duplicate_merge', v_log.id, 'lead_duplicate_merged',
     jsonb_build_object(
       'merge_log_id', v_log.id,
       'absorbed_lead_id', p_absorbed,
-      'message', 'Negócio duplicado juntado'
-    ), '{}'::jsonb, now(), auth.uid()
+      'message', case when v_system_call then v_reason else 'Negócio duplicado juntado' end
+    ), '{}'::jsonb, now(), auth.uid(),
+    case when v_system_call then 'system' else null end,
+    case when v_system_call then v_reason else null end
   );
 
   return jsonb_build_object(
@@ -28228,6 +28238,133 @@ revoke execute on function public.fn_contagem_por_etapa(uuid, uuid)
   from public, anon;
 grant execute on function public.fn_contagem_por_etapa(uuid, uuid)
   to authenticated;
+
+notify pgrst, 'reload schema';
+
+-- ---- junção automática de duplicados recentes (migration 0286) ----
+-- O formulário e o canal inbound usam chaves de reenvio diferentes. Este lote
+-- espera a criação terminar e chama a junção reversível da 0282. Não há
+-- trigger, HTTP nem backfill na instalação.
+create or replace function public.fn_juntar_duplicados_recentes(
+  p_lote int default 50,
+  p_janela interval default '2 minutes',
+  p_minimo_idade interval default '20 seconds',
+  p_organizacao uuid default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_limite integer;
+  v_par record;
+  v_resultado jsonb;
+  v_juntados integer := 0;
+  v_ignorados_risco integer := 0;
+begin
+  if p_janela is null or p_janela <= interval '0 seconds'
+     or p_minimo_idade is null or p_minimo_idade < interval '0 seconds' then
+    raise exception using errcode = '22023', message = 'janela_de_juncao_invalida';
+  end if;
+
+  v_limite := least(500, greatest(1, coalesce(p_lote, 50)));
+  perform pg_catalog.set_config('lock_timeout', '250ms', true);
+  perform pg_catalog.set_config('app.juncao_negocio_actor', 'sistema', true);
+  perform pg_catalog.set_config(
+    'app.juncao_negocio_motivo',
+    'junção automática: formulário e WhatsApp do mesmo contato em até 2 minutos',
+    true
+  );
+
+  for v_par in
+    with base as (
+      select l.*,
+             public.fn_negocio_vazio_para_juncao(l.organization_id, l.id) as vazio
+        from public.crm_leads l
+       where l.status = 'open'
+         and l.contact_id is not null
+         and (p_organizacao is null or l.organization_id = p_organizacao)
+    ), grupos as (
+      select organization_id, contact_id, pipeline_id,
+             count(*) filter (where vazio) as vazios,
+             count(*) filter (where not vazio) as com_contexto,
+             (array_agg(id order by created_at, id) filter (where not vazio))[1] as contextual,
+             (array_agg(id order by created_at, id))[1] as mais_antigo
+        from base
+       group by organization_id, contact_id, pipeline_id
+      having count(*) > 1
+         and count(*) filter (where vazio) > 0
+         and count(*) filter (where not vazio) <= 1
+    ), escolhas as (
+      select g.*,
+             coalesce(g.contextual, g.mais_antigo) as survivor_id
+        from grupos g
+    ), candidatos as (
+      select e.organization_id,
+             e.survivor_id,
+             x.id as absorbed_id,
+             greatest(s.created_at, x.created_at) as mais_novo_em,
+             exists (
+               select 1 from public.crm_lead_risk_states rs
+                where rs.organization_id = e.organization_id
+                  and rs.lead_id = e.survivor_id
+             ) and exists (
+               select 1 from public.crm_lead_risk_states ra
+                where ra.organization_id = e.organization_id
+                  and ra.lead_id = x.id
+             ) as risco_bloqueante
+        from escolhas e
+        join base s
+          on s.organization_id = e.organization_id and s.id = e.survivor_id
+        join base x
+          on x.organization_id = e.organization_id
+         and x.contact_id = e.contact_id
+         and x.pipeline_id = e.pipeline_id
+         and x.id <> e.survivor_id
+         and x.vazio
+       where abs(extract(epoch from (s.created_at - x.created_at)))
+               <= extract(epoch from p_janela)
+         and greatest(s.created_at, x.created_at) <= pg_catalog.clock_timestamp() - p_minimo_idade
+    )
+    select organization_id, survivor_id, absorbed_id, risco_bloqueante
+      from candidatos
+     order by risco_bloqueante, mais_novo_em, absorbed_id
+     limit v_limite
+  loop
+    if v_par.risco_bloqueante then
+      v_ignorados_risco := v_ignorados_risco + 1;
+      continue;
+    end if;
+
+    begin
+      v_resultado := public.fn_juntar_negocios(
+        v_par.organization_id,
+        v_par.survivor_id,
+        v_par.absorbed_id
+      );
+      if v_resultado->>'outcome' = 'merged' then
+        v_juntados := v_juntados + 1;
+      end if;
+    exception
+      when lock_not_available then
+        null;
+      when sqlstate '55000' then
+        v_ignorados_risco := v_ignorados_risco + 1;
+    end;
+  end loop;
+
+  return jsonb_build_object(
+    'juntados', v_juntados,
+    'ignorados_por_risco', v_ignorados_risco
+  );
+end;
+$$;
+
+revoke execute on function public.fn_juntar_duplicados_recentes(integer, interval, interval, uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_juntar_duplicados_recentes(integer, interval, interval, uuid)
+  to service_role;
 
 notify pgrst, 'reload schema';
 
