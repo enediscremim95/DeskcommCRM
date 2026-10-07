@@ -4,6 +4,8 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useT } from "@/hooks/i18n/useT";
+import { Plus, X } from "@/lib/ui/icons";
 
 import {
   ControleEdicaoRelatorio,
@@ -225,6 +227,9 @@ export function ConversionFunnel({
   viewerKey,
   sectionKey = "funnel",
   stageGroups,
+  crmStages = [],
+  crmMetricsVisible = false,
+  onToggleCrmMetrics,
 }: {
   /** Nome acessível da seção; não é mais exibido (pedido do dono, 21/09/2026). */
   title: string;
@@ -237,7 +242,11 @@ export function ConversionFunnel({
   viewerKey?: string;
   sectionKey?: string;
   stageGroups?: FunnelStageGroup[];
+  crmStages?: FunnelStage[];
+  crmMetricsVisible?: boolean;
+  onToggleCrmMetrics?: () => void;
 }) {
+  const t = useT();
   const text = (pt: string, es: string) => (idioma === "es" ? es : pt);
   const groups = useMemo(
     () =>
@@ -318,10 +327,22 @@ export function ConversionFunnel({
       availableStages.filter((stage) => selected.has(stage.key)).map((stage) => stage.key),
     );
   };
-  const visibleStages =
+  const selectedBaseStages =
     selectedKeys.join("|") === defaultSignature
       ? stages
       : recalculateFunnelStages(availableStages, selectedKeys);
+  const trafficKeys = new Set(stages.map((stage) => stage.key));
+  const stagesComCrm = [
+    ...selectedBaseStages.filter((stage) => trafficKeys.has(stage.key)),
+    ...crmStages,
+    ...selectedBaseStages.filter((stage) => !trafficKeys.has(stage.key)),
+  ];
+  const visibleStages = crmMetricsVisible
+    ? recalculateFunnelStages(
+        stagesComCrm,
+        stagesComCrm.map((stage) => stage.key),
+      )
+    : selectedBaseStages;
   const maximum = Math.max(...visibleStages.map((stage) => stage.value), 1);
   const formatCost = (value: number) =>
     currency
@@ -507,6 +528,15 @@ export function ConversionFunnel({
             </div>
           ))}
         </aside>
+
+        {crmStages.length > 0 && onToggleCrmMetrics ? (
+          <div className="flex justify-end lg:col-span-2">
+            <Button type="button" size="sm" variant="outline" onClick={onToggleCrmMetrics}>
+              {crmMetricsVisible ? <X size={14} aria-hidden /> : <Plus size={14} aria-hidden />}
+              {crmMetricsVisible ? t("Ocultar métricas do CRM") : t("Adicionar métricas do CRM")}
+            </Button>
+          </div>
+        ) : null}
       </div>
     </section>
   );

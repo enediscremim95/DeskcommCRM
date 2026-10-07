@@ -163,7 +163,7 @@ function paginaSemRastreamento(
 }
 
 /** Botão discreto que copia o valor inteiro — para o que não cabe na linha. */
-function BotaoCopiar({ texto }: { texto: string }) {
+export function BotaoCopiar({ texto }: { texto: string }) {
   const t = useT();
   const [copiado, setCopiado] = useState(false);
 

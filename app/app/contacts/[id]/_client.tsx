@@ -245,7 +245,12 @@ export function ContactDetailClient({ contactId }: Props) {
                     </div>
                   </summary>
                   <div className="space-y-4 border-t border-border p-4">
-                    <FollowupsDoLead leadId={lead.id} contactId={contactId} podeEditar={podeEditarFollowup} />
+                    <FollowupsDoLead
+                      leadId={lead.id}
+                      contactId={contactId}
+                      podeEditar={podeEditarFollowup}
+                      modo="somenteLeitura"
+                    />
                     <DadosCompletosDoLead
                       lead={lead}
                       pipelineName={lead.pipeline_name}
