@@ -242,6 +242,15 @@ describe("junção reversível de negócios duplicados", () => {
     await expect(juntar(pair)).rejects.toThrow("negocio_absorvido_tem_tarefa");
   });
 
+  it("recusa absorvido que já tem dono humano", async () => {
+    const pair = await par();
+    await pool.query("update crm_leads set owner_user_id=$2 where id=$1", [
+      pair.absorbed,
+      GOV_MANAGER,
+    ]);
+    await expect(juntar(pair)).rejects.toThrow("negocio_absorvido_tem_dono");
+  });
+
   it("recusa outro contato, outro funil, outra organização e negócio fechado", async () => {
     const contatoA = await contato();
     const contatoB = await contato();
