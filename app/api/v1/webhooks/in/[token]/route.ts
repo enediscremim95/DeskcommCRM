@@ -29,7 +29,7 @@ import {
 } from "@/lib/leads/classificacao-inicial";
 import type { CreateLeadInput } from "@/lib/schemas";
 import { mapInboundPayload, verifyInboundSignature, type FieldMap } from "@/lib/webhooks/inbound";
-import { encontrarContatoPorTelefoneComNome } from "@/lib/channels/contato-por-telefone";
+import { encontrarOuCriarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
 import {
   buildContactConsentGrant,
   buildContactConsentDenial,
@@ -511,91 +511,28 @@ async function processInbound(
   // a reconciliação abaixo existe só para quem JÁ era contato.
   let contatoNasceuAqui = false;
   if (mapped.phone) {
-    /** O que os dois caminhos (telefone e e-mail) devolvem — um tipo só. */
-    type ContatoAchado = { data: { id: string; name: string | null } | null };
-
-    // ⚠️ QUAL GRAFIA VENCE é decidido por `escolherContatoCanonico`, e não pelo
-    // banco. Isto era `.in(variantes).limit(1)` SEM `order by`: com as duas
-    // grafias do mesmo celular ainda vivas — estado que a migration `0198`
-    // admite ao chamar o próprio passo 3 de "piso de segurança para o unique" —
-    // o Postgres devolvia qualquer uma das duas. A resposta do cliente entrava
-    // no cadastro errado, o follow-up não a reconhecia, e a mesma pergunta saía
-    // de novo.
-    const selectActiveByPhone = async (): Promise<ContatoAchado> => ({
-      data: await encontrarContatoPorTelefoneComNome(admin, source.organization_id, mapped.phone!),
+    const resolvido = await encontrarOuCriarContatoPorTelefone(admin, {
+      organizationId: source.organization_id,
+      phone: mapped.phone,
+      name: mapped.name ?? mapped.phone,
+      email: mapped.email,
+      source: "webhook",
+      sourceMetadata: { webhook_source_id: source.id, ...mapped.source_metadata },
+      // Consentimento explícito só quando o Respondi confirmou concessão.
+      ...(consentDoEnvio ? { consent: consentDoEnvio } : {}),
     });
-
-    // uniq_contacts_org_email (baseline.sql) é um SEGUNDO índice único parcial,
-    // independente de uniq_contacts_org_phone — um INSERT pode colidir nele
-    // mesmo com telefone inédito (mesma pessoa manda e-mail repetido, telefone
-    // novo). email_normalized é coluna GERADA (`lower(trim(email))`), então a
-    // comparação replica exatamente essa normalização — não `email` bruto.
-    const selectActiveByEmail = (): PromiseLike<ContatoAchado> | null => {
-      if (!mapped.email) return null;
-      return admin
-        .from("contacts")
-        .select("id, name")
-        .eq("organization_id", source.organization_id)
-        .eq("email_normalized", mapped.email.trim().toLowerCase())
-        .is("is_merged_into", null)
-        .maybeSingle();
-    };
-
-    const { data: existing } = await selectActiveByPhone();
-    if (existing) {
-      contactId = existing.id as string;
-      existingContactName = existing.name as string | null;
-    } else {
-      const { data: created, error: insertErr } = await admin
-        .from("contacts")
-        .insert({
-          organization_id: source.organization_id,
-          name: mapped.name ?? mapped.phone,
-          phone_number: mapped.phone,
-          email: mapped.email,
-          source: "webhook",
-          source_metadata: { webhook_source_id: source.id, ...mapped.source_metadata },
-          // Consentimento explícito só quando o Respondi confirmou concessão —
-          // recusa NUNCA vira concessão por omissão. E a recusa agora é
-          // GRAVADA, não omitida: o DEFAULT da coluna já é `granted_at: null`,
-          // então omitir deixava "nunca perguntamos" e "disse não" com a mesma
-          // forma no banco, e quem lê para decidir envio não tinha como separar
-          // os dois (ver buildContactConsentDenial).
-          ...(consentDoEnvio ? { consent: consentDoEnvio } : {}),
-        })
-        .select("id")
-        .maybeSingle();
-      if (insertErr) {
-        if (insertErr.code === "23505") {
-          // Corrida OU duplicidade real: outro contato já existe com o mesmo
-          // TELEFONE (corrida clássica: dois POSTs concorrentes) ou com o
-          // mesmo E-MAIL (telefone inédito, e-mail repetido — o caso que
-          // órfãava o lead antes desta linha, achado em 2026-08-25 rodando os
-          // testes do fix do Respondi). Telefone primeiro — é o identificador
-          // mais confiável do produto; e-mail só como fallback, e só quando o
-          // payload realmente trouxe um.
-          const { data: winnerByPhone } = await selectActiveByPhone();
-          if (winnerByPhone) {
-            contactId = winnerByPhone.id as string;
-            existingContactName = winnerByPhone.name as string | null;
-          } else {
-            const byEmail = selectActiveByEmail();
-            const { data: winnerByEmail } = byEmail ? await byEmail : { data: null };
-            contactId = (winnerByEmail?.id as string | undefined) ?? undefined;
-            existingContactName = (winnerByEmail?.name as string | null | undefined) ?? undefined;
-          }
-        } else {
-          logger.error("[webhooks.inbound] contact insert failed", {
-            webhookSourceId: source.id,
-            organizationId: source.organization_id,
-            errorCode: insertErr.code,
-            errorMessage: insertErr.message,
-          });
-        }
-      } else {
-        contactId = (created?.id as string | undefined) ?? undefined;
-        contatoNasceuAqui = contactId !== undefined;
-      }
+    contactId = resolvido.contato?.id;
+    contatoNasceuAqui = resolvido.criado;
+    if (resolvido.contato && !resolvido.criado) {
+      existingContactName = resolvido.contato.name;
+    }
+    if (resolvido.error) {
+      logger.error("[webhooks.inbound] contact insert failed", {
+        webhookSourceId: source.id,
+        organizationId: source.organization_id,
+        errorCode: resolvido.error.code,
+        errorMessage: resolvido.error.message,
+      });
     }
   }
 

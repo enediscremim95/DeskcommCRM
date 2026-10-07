@@ -11,6 +11,36 @@ describe("normalizePhoneBR", () => {
     expect(normalizePhoneBR("3284793302")).toBe("+5532984793302");
   });
   it("fixo BR 10 dígitos", () => expect(normalizePhoneBR("1133334444")).toBe("+551133334444"));
+  it.each([
+    ["092981851977", "+5592981851977"],
+    ["041995999437", "+5541995999437"],
+    ["041988034020", "+5541988034020"],
+    ["016981493138", "+5516981493138"],
+    ["011930337966", "+5511930337966"],
+  ])("remove somente o 0 de tronco de %s", (raw, esperado) => {
+    expect(normalizePhoneBR(raw)).toBe(esperado);
+  });
+  it.each([
+    ["+557742042866 774 204 2866", "+557742042866"],
+    ["±34632230195 632230195", "+34632230195"],
+    ["+1 475 3091544 1 475 309 1544", "+14753091544"],
+  ])("remove uma cópia completa e válida de %s", (raw, esperado) => {
+    expect(normalizePhoneBR(raw)).toBe(esperado);
+  });
+  it.each([
+    "219998282287",
+    "319958814990",
+    "189818000102",
+    "999237616",
+    "981996678",
+    "992052070",
+    "115",
+  ])("não adivinha como consertar %s", (raw) => {
+    expect(normalizePhoneBR(raw)).toBeNull();
+  });
+  it("não interpreta 0 + operadora como prefixo de tronco simples", () => {
+    expect(normalizePhoneBR("01511999998888")).toBeNull();
+  });
   it("lixo → null", () => expect(normalizePhoneBR("abc")).toBeNull());
   it("vazio/não-string → null", () => {
     expect(normalizePhoneBR("")).toBeNull();
