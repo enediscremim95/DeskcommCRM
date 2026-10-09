@@ -1,14 +1,15 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { issueInvite } from "@/lib/auth/issue-invite";
 import { provisionTeamAccess } from "@/lib/auth/provision-team-access";
+import { reenviarAcessoDeEquipe } from "@/lib/auth/reenviar-acesso-de-equipe";
 import { isServiceRoleConfigured } from "@/lib/audit";
 import { isEmailConfigured } from "@/lib/email/resend";
 /**
  * POST /api/v1/team/invite — bulk-invite up to 20 emails.
  *
- * Contas novas recebem senha provisória e vínculo ativo. Contas existentes
- * preservam senha/MFA e usam o convite legado assinado. A rota de aceite
- * continua válida para convites que já estavam em andamento.
+ * Contas novas recebem senha provisória e vínculo ativo. Membros que nunca
+ * entraram recebem uma nova senha provisória; quem já entrou preserva senha e
+ * MFA. A rota de aceite continua válida para convites em andamento.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -17,8 +18,8 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 
 import { requirePermission } from "@/lib/auth/require-permission";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { inviteMemberSchema, validateRequest } from "@/lib/schemas";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -67,10 +68,6 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const admin = isServiceRoleConfigured() ? createAdminClient() : null;
   const inviterName = authUser.full_name ?? authUser.email ?? "Um colega";
-  // Emails com membership ATIVA na org — para pular o reconvite de quem já é membro.
-  // O schema `auth` NÃO é acessível via PostgREST (erro "Invalid schema: auth"), então
-  // resolvemos email↔usuário pela GoTrue admin API (getUserById) — mesmo padrão de
-  // app/api/v1/team/route.ts. N pequeno (poucos membros por org no perfil BPO).
   const memberEmails = new Set<string>();
   if (admin) {
     const { data: members } = await admin
@@ -78,9 +75,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       .select("user_id")
       .eq("organization_id", activeOrg.orgId)
       .is("revoked_at", null);
-    for (const m of members ?? []) {
-      const { data: u } = await admin.auth.admin.getUserById(m.user_id as string);
-      const memberEmail = u?.user?.email?.trim().toLowerCase();
+    for (const member of members ?? []) {
+      const { data } = await admin.auth.admin.getUserById(member.user_id as string);
+      const memberEmail = data.user?.email?.trim().toLowerCase();
       if (memberEmail) memberEmails.add(memberEmail);
     }
   }
@@ -88,9 +85,29 @@ export async function POST(req: NextRequest): Promise<Response> {
   for (const inv of input.invitations) {
     const email = inv.email.trim().toLowerCase();
 
-    // já é membro ativo → pula (não reenvia convite)
     if (memberEmails.has(email)) {
-      failed.push({ email, reason: "already_member" });
+      const reaccess = await reenviarAcessoDeEquipe({
+        organizationId: activeOrg.orgId,
+        orgName: activeOrg.name,
+        email,
+        actorUserId: authUser.id,
+        requestId,
+        idioma: authUser.idioma,
+      });
+      if (reaccess.ok) {
+        sent.push({
+          email,
+          invite_id: reaccess.inviteId,
+          expires_at: null,
+          email_dispatched: true,
+          accept_url: reaccess.loginUrl,
+        });
+      } else {
+        failed.push({
+          email,
+          reason: reaccess.reason === "ja_acessou" ? "already_member" : reaccess.reason,
+        });
+      }
       continue;
     }
 

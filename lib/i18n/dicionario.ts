@@ -8698,7 +8698,9 @@ export const DICIONARIO: Traducoes = {
   "Não é possível rebaixar o último admin do tenant.": {
     es: "No es posible degradar al último admin del tenant.",
   },
-  "Já é membro desta organização.": { es: "Ya es miembro de esta organización." },
+  "Essa pessoa já entrou; use Esqueci a senha.": {
+    es: "Esta persona ya ingresó; usa Olvidé mi contraseña.",
+  },
 
   // ─── lib/mcp/tools/pacotes.ts (níveis de risco de uma capacidade) ───
   "Só consulta": { es: "Solo consulta" },

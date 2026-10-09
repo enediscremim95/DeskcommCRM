@@ -63,6 +63,14 @@
       "sublabel": "24h, HMAC; envio após commit; link sem Resend"
     },
     {
+      "id": "reenvio-acesso",
+      "lane": "app",
+      "col": 4,
+      "type": "service",
+      "label": "reenviarAcessoDeEquipe",
+      "sublabel": "membro ativo sem login recebe nova senha; quem já entrou usa recuperação"
+    },
+    {
       "id": "aceite",
       "lane": "db",
       "col": 4,
@@ -151,6 +159,20 @@
     {
       "from": "convite",
       "to": "aceite"
+    },
+    {
+      "from": "convite",
+      "to": "reenvio-acesso",
+      "label": "membro já existe"
+    },
+    {
+      "from": "reenvio-acesso",
+      "to": "context",
+      "label": "login com novo acesso"
+    },
+    {
+      "from": "reenvio-acesso",
+      "to": "audit"
     },
     {
       "from": "criar",
