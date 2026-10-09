@@ -72,7 +72,7 @@ async function main(): Promise<void> {
   const admin = createAdminClient();
   const { data: organization, error } = await admin
     .from("organizations")
-    .select("id, name")
+    .select("id, display_name")
     .eq("slug", args.org)
     .maybeSingle();
 
@@ -94,7 +94,7 @@ async function main(): Promise<void> {
 
     const result = await reenviarAcessoDeEquipe({
       organizationId: organization.id as string,
-      orgName: organization.name as string,
+      orgName: organization.display_name as string,
       email,
       actorUserId: null,
       requestId: randomUUID(),
