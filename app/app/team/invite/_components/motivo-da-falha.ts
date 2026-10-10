@@ -7,7 +7,7 @@
  * A frase é chave de `t()`: pt-BR aqui, espanhol em `lib/i18n/dicionario.ts`.
  */
 const MOTIVOS_DE_FALHA: Record<string, string> = {
-  already_member: "Já é membro desta organização.",
+  already_member: "Essa pessoa já entrou; use Esqueci a senha.",
 };
 
 /** Código sem tradução conhecida: devolve o próprio código, nunca some da tela. */

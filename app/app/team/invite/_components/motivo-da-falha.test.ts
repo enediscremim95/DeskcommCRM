@@ -3,7 +3,9 @@ import { descreverMotivoDaFalha } from "./motivo-da-falha";
 
 describe("descreverMotivoDaFalha", () => {
   it("already_member vira frase, não código cru", () => {
-    expect(descreverMotivoDaFalha("already_member")).toBe("Já é membro desta organização.");
+    expect(descreverMotivoDaFalha("already_member")).toBe(
+      "Essa pessoa já entrou; use Esqueci a senha.",
+    );
   });
 
   it("código desconhecido não some: devolve o próprio código", () => {
