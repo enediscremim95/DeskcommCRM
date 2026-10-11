@@ -25,15 +25,24 @@ import {
   RISK_COLD_HOURS,
   type RiskBucket,
 } from "@/lib/leads/risk-radar";
+import {
+  IN_FILTER_DEFAULT_BATCH_SIZE,
+  queryInBatches,
+} from "@/lib/supabase/query-in-batches";
 
 // ponytail: teto do pool varrido (leads abertos mais frios primeiro). Escala do
 // tenant-alvo (~centenas de leads abertos) cabe nisso; se um tenant estourar, vira
 // query paginada com índice (organization_id, status, last_activity_at).
 const SCAN_CAP = 500;
-// Um `in` com 500 UUIDs gera uma URL PostgREST grande o bastante para ser
-// recusada pelo proxy antes de chegar ao banco. O Radar varre até 500 leads,
-// portanto consultas derivadas desse pool precisam sair em blocos menores.
-const IDS_POR_CONSULTA = 100;
+
+function queryInSafeBatches<T>(
+  ids: readonly string[],
+  query: (
+    lote: string[],
+  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+) {
+  return queryInBatches(ids, query, IN_FILTER_DEFAULT_BATCH_SIZE);
+}
 
 export const RADAR_MIN_HOURS_PADRAO = RISK_COLD_HOURS;
 
@@ -158,13 +167,19 @@ export async function carregaRadarDeRisco(
     const leadIds = [...new Set(tarefasDoRadar.flatMap((t) => (t.lead_id ? [t.lead_id] : [])))];
     const leadsById = new Map<string, { title: string; contact_id: string | null }>();
     if (leadIds.length > 0) {
-      const { data: taskLeads, error: taskLeadsError } = await admin
-        .from("crm_leads")
-        .select("id, title, contact_id")
-        .eq("organization_id", organizationId)
-        .in("id", leadIds);
-      if (taskLeadsError) throw new Error(`radar_task_leads_failed: ${taskLeadsError.message}`);
-      for (const lead of taskLeads ?? []) {
+      const taskLeads = await queryInSafeBatches<{
+        id: string;
+        title: string;
+        contact_id: string | null;
+      }>(leadIds, (lote) =>
+        admin
+          .from("crm_leads")
+          .select("id, title, contact_id")
+          .eq("organization_id", organizationId)
+          .in("id", lote),
+      );
+      if (taskLeads.error) throw new Error(`radar_task_leads_failed: ${taskLeads.error}`);
+      for (const lead of taskLeads.data) {
         leadsById.set(lead.id, { title: lead.title, contact_id: lead.contact_id });
       }
     }
@@ -179,15 +194,21 @@ export async function carregaRadarDeRisco(
     ];
     const contactNameById = new Map<string, string | null>();
     if (contactIds.length > 0) {
-      const { data: taskContacts, error: taskContactsError } = await admin
-        .from("contacts")
-        .select("id, name, display_name")
-        .eq("organization_id", organizationId)
-        .in("id", contactIds);
-      if (taskContactsError) {
-        throw new Error(`radar_task_contacts_failed: ${taskContactsError.message}`);
+      const taskContacts = await queryInSafeBatches<{
+        id: string;
+        name: string | null;
+        display_name: string | null;
+      }>(contactIds, (lote) =>
+        admin
+          .from("contacts")
+          .select("id, name, display_name")
+          .eq("organization_id", organizationId)
+          .in("id", lote),
+      );
+      if (taskContacts.error) {
+        throw new Error(`radar_task_contacts_failed: ${taskContacts.error}`);
       }
-      for (const contact of taskContacts ?? []) {
+      for (const contact of taskContacts.data) {
         contactNameById.set(contact.id, contact.display_name ?? contact.name ?? null);
       }
     }
@@ -228,41 +249,45 @@ export async function carregaRadarDeRisco(
   const idsNoPool = new Set(rows.map(l => l.id));
   const idsVencidosForaDoPool = [...new Set((tarefasVencidas ?? []).filter(t => t.lead_id && t.due_date).map(t => t.lead_id as string).filter(id => !idsNoPool.has(id)))];
   if (idsVencidosForaDoPool.length > 0) {
-    const { data: extras, error } = await admin
-      .from("crm_leads")
-      .select("id, title, contact_id, owner_user_id, owner_kind, owner_agent_id, stage_id, last_activity_at, created_at, pipeline_id")
-      .eq("organization_id", organizationId)
-      .eq("status", "open")
-      .in("id", idsVencidosForaDoPool);
-    if (error) throw new Error(`radar_task_leads_failed: ${error.message}`);
-    rows = [...rows, ...(extras ?? [])];
+    const extras = await queryInSafeBatches<(typeof rows)[number]>(
+      idsVencidosForaDoPool,
+      (lote) =>
+        admin
+          .from("crm_leads")
+          .select("id, title, contact_id, owner_user_id, owner_kind, owner_agent_id, stage_id, last_activity_at, created_at, pipeline_id")
+          .eq("organization_id", organizationId)
+          .eq("status", "open")
+          .in("id", lote),
+    );
+    if (extras.error) throw new Error(`radar_task_leads_failed: ${extras.error}`);
+    rows = [...rows, ...extras.data];
   }
 
   const tarefasPorLead = new Map<string, Array<{ id: string; title: string; description: string | null; due_date: string; status: string }>>();
   const leadIdsComTarefaAberta = new Set<string>();
   const leadIdsDoRadar = rows.map(l => l.id);
   if (leadIdsDoRadar.length > 0) {
-    const tarefas: Array<{
+    const tarefasResult = await queryInSafeBatches<{
       id: string;
       lead_id: string | null;
       title: string;
       description: string | null;
       due_date: string | null;
       status: string;
-    }> = [];
-    for (let i = 0; i < leadIdsDoRadar.length; i += IDS_POR_CONSULTA) {
-      const ids = leadIdsDoRadar.slice(i, i + IDS_POR_CONSULTA);
-      const { data, error } = await admin
+    }>(leadIdsDoRadar, (lote) =>
+      admin
         .from("crm_tasks")
         .select("id, lead_id, title, description, due_date, status")
         .eq("organization_id", organizationId)
         .in("status", ["pending", "in_progress"])
-        .in("lead_id", ids)
+        .in("lead_id", lote)
         .order("due_date", { ascending: true, nullsFirst: false })
-        .limit(SCAN_CAP);
-      if (error) throw new Error(`radar_tasks_failed: ${error.message}`);
-      tarefas.push(...((data ?? []) as typeof tarefas));
+        .limit(SCAN_CAP),
+    );
+    if (tarefasResult.error) {
+      throw new Error(`radar_tasks_failed: ${tarefasResult.error}`);
     }
+    const tarefas = tarefasResult.data;
     tarefas.sort((a, b) => {
       if (a.due_date === null) return 1;
       if (b.due_date === null) return -1;
@@ -289,12 +314,15 @@ export async function carregaRadarDeRisco(
   ];
   const agentNameById = new Map<string, string>();
   if (agentIds.length > 0) {
-    const { data: agents } = await admin
-      .from("ai_agents")
-      .select("id, name")
-      .eq("organization_id", organizationId)
-      .in("id", agentIds);
-    for (const a of (agents ?? []) as Array<{ id: string; name: string }>) {
+    const agents = await queryInSafeBatches<{ id: string; name: string }>(agentIds, (lote) =>
+      admin
+        .from("ai_agents")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .in("id", lote),
+    );
+    if (agents.error) throw new Error(`radar_agents_failed: ${agents.error}`);
+    for (const a of agents.data) {
       agentNameById.set(a.id, a.name);
     }
   }
@@ -306,16 +334,19 @@ export async function carregaRadarDeRisco(
   const windowByStage = new Map<string, ReturnType<typeof resolveStageWindow>>();
   const stageNameById = new Map<string, string>();
   if (stageIds.length > 0) {
-    const { data: stages } = await admin
-      .from("crm_stages")
-      .select("id, name, expected_duration_hours")
-      .eq("organization_id", organizationId)
-      .in("id", stageIds);
-    for (const s of (stages ?? []) as Array<{
+    const stages = await queryInSafeBatches<{
       id: string;
       name: string;
       expected_duration_hours: number | null;
-    }>) {
+    }>(stageIds, (lote) =>
+      admin
+        .from("crm_stages")
+        .select("id, name, expected_duration_hours")
+        .eq("organization_id", organizationId)
+        .in("id", lote),
+    );
+    if (stages.error) throw new Error(`radar_stages_failed: ${stages.error}`);
+    for (const s of stages.data) {
       windowByStage.set(s.id, resolveStageWindow(s));
       stageNameById.set(s.id, s.name);
     }
@@ -332,36 +363,51 @@ export async function carregaRadarDeRisco(
 
   if (contactIds.length > 0) {
     const [followups, convs, contacts] = await Promise.all([
-      admin
-        .from("cron_jobs")
-        .select("contact_id, next_run_at")
-        .eq("organization_id", organizationId)
-        .eq("kind", "at")
-        .eq("enabled", true)
-        .gt("next_run_at", nowIso)
-        .in("contact_id", contactIds),
-      admin
-        .from("conversations")
-        .select("id, contact_id, assignee_kind")
-        .eq("organization_id", organizationId)
-        .in("contact_id", contactIds),
-      admin
-        .from("contacts")
-        .select("id, name, display_name")
-        .eq("organization_id", organizationId)
-        .in("id", contactIds),
+      queryInSafeBatches<{ contact_id: string; next_run_at: string }>(contactIds, (lote) =>
+        admin
+          .from("cron_jobs")
+          .select("contact_id, next_run_at")
+          .eq("organization_id", organizationId)
+          .eq("kind", "at")
+          .eq("enabled", true)
+          .gt("next_run_at", nowIso)
+          .in("contact_id", lote),
+      ),
+      queryInSafeBatches<{
+        id: string;
+        contact_id: string;
+        assignee_kind: "user" | "ai" | null;
+      }>(contactIds, (lote) =>
+        admin
+          .from("conversations")
+          .select("id, contact_id, assignee_kind")
+          .eq("organization_id", organizationId)
+          .in("contact_id", lote),
+      ),
+      queryInSafeBatches<{ id: string; name: string | null; display_name: string | null }>(
+        contactIds,
+        (lote) =>
+          admin
+            .from("contacts")
+            .select("id, name, display_name")
+            .eq("organization_id", organizationId)
+            .in("id", lote),
+      ),
     ]);
 
-    for (const f of followups.data ?? []) {
+    if (followups.error) throw new Error(`radar_followups_failed: ${followups.error}`);
+    if (convs.error) throw new Error(`radar_conversations_failed: ${convs.error}`);
+    if (contacts.error) throw new Error(`radar_contacts_failed: ${contacts.error}`);
+    for (const f of followups.data) {
       const prev = followupByContact.get(f.contact_id);
       if (!prev || f.next_run_at < prev) followupByContact.set(f.contact_id, f.next_run_at);
     }
-    for (const c of convs.data ?? []) {
+    for (const c of convs.data) {
       if (!convByContact.has(c.contact_id)) {
         convByContact.set(c.contact_id, { id: c.id, assignee_kind: c.assignee_kind ?? null });
       }
     }
-    for (const p of contacts.data ?? []) {
+    for (const p of contacts.data) {
       nameByContact.set(p.id, p.display_name ?? p.name ?? null);
     }
   }
@@ -457,19 +503,39 @@ export async function carregaRadarDeRisco(
     const visibleLeads = new Set<string>();
     const visibleLeadless = new Set<string>();
     if (leadIds.length) {
-      const result = await admin.from("crm_leads").select("id").eq("organization_id", organizationId).in("id", leadIds);
+      const result = await queryInSafeBatches<{ id: string }>(leadIds, (lote) =>
+        admin
+          .from("crm_leads")
+          .select("id")
+          .eq("organization_id", organizationId)
+          .in("id", lote),
+      );
       if (result.error) throw new Error("radar_scope_leads_failed");
-      for (const lead of result.data ?? []) visibleLeads.add(lead.id);
+      for (const lead of result.data) visibleLeads.add(lead.id);
     }
     if (leadlessIds.length) {
-      const links = await admin.from("demanda_conversas").select("demanda_id,conversation_id").eq("organization_id", organizationId).in("demanda_id", leadlessIds);
+      const links = await queryInSafeBatches<{ demanda_id: string; conversation_id: string }>(
+        leadlessIds,
+        (lote) =>
+          admin
+            .from("demanda_conversas")
+            .select("demanda_id,conversation_id")
+            .eq("organization_id", organizationId)
+            .in("demanda_id", lote),
+      );
       if (links.error) throw new Error("radar_scope_links_failed");
-      const ids = [...new Set((links.data ?? []).map(link => link.conversation_id))];
+      const ids = [...new Set(links.data.map(link => link.conversation_id))];
       if (ids.length) {
-        const convs = await admin.from("conversations").select("id").eq("organization_id", organizationId).in("id", ids);
+        const convs = await queryInSafeBatches<{ id: string }>(ids, (lote) =>
+          admin
+            .from("conversations")
+            .select("id")
+            .eq("organization_id", organizationId)
+            .in("id", lote),
+        );
         if (convs.error) throw new Error("radar_scope_conversations_failed");
-        const visible = new Set((convs.data ?? []).map(c => c.id));
-        for (const link of links.data ?? []) if (visible.has(link.conversation_id)) visibleLeadless.add(link.demanda_id);
+        const visible = new Set(convs.data.map(c => c.id));
+        for (const link of links.data) if (visible.has(link.conversation_id)) visibleLeadless.add(link.demanda_id);
       }
     }
     demandasVisiveis = demandasVisiveis.filter(d => d.lead_id ? visibleLeads.has(d.lead_id) : visibleLeadless.has(d.id));

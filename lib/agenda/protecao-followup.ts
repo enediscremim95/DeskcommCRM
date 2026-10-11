@@ -2,6 +2,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Queryable } from "@/lib/agent-engine/queue/queue";
 import { agendaSettingsSchema } from "@/lib/schemas/settings";
 import { logger } from "@/lib/logger";
+import {
+  IN_FILTER_DEFAULT_BATCH_SIZE,
+  queryInBatches,
+} from "@/lib/supabase/query-in-batches";
 
 export interface CompromissoProtetor {
   id: string;
@@ -74,28 +78,39 @@ export async function protecaoAgendaSupabase(
 ): Promise<Map<string, ProtecaoAgenda>> {
   if (!contatos.length) return new Map();
   try {
-    const appointments: CompromissoProtetor[] = [];
-    let after: string | undefined;
-    // Keyset estável: uma resposta bem-sucedida pode ter sido truncada pelo
-    // max_rows do PostgREST. Só página VAZIA prova que a leitura terminou.
-    for (;;) {
-      let query = db
-        .from("calendar_appointments")
-        .select("id,contact_id,revision,starts_at,ends_at,status")
-        .eq("organization_id", org)
-        .in("contact_id", contatos)
-        .in("status", ["pending", "confirmed"])
-        .order("id", { ascending: true })
-        .limit(500);
-      if (after) query = query.gt("id", after);
-      const page = await query;
-      if (page.error) throw page.error;
-      if (!page.data?.length) break;
-      const last = page.data[page.data.length - 1]!.id;
-      if (after && last <= after) throw new Error("agenda_page_did_not_advance");
-      appointments.push(...page.data);
-      after = last;
-    }
+    const appointmentsResult = await queryInBatches<CompromissoProtetor>(
+      contatos,
+      async (lote) => {
+        const appointments: CompromissoProtetor[] = [];
+        let after: string | undefined;
+        // Cada lote tem seu próprio keyset. Uma resposta bem-sucedida pode ter
+        // sido truncada pelo max_rows do PostgREST; só página VAZIA prova fim.
+        for (;;) {
+          let query = db
+            .from("calendar_appointments")
+            .select("id,contact_id,revision,starts_at,ends_at,status")
+            .eq("organization_id", org)
+            .in("contact_id", lote)
+            .in("status", ["pending", "confirmed"])
+            .order("id", { ascending: true })
+            .limit(500);
+          if (after) query = query.gt("id", after);
+          const page = await query;
+          if (page.error) return { data: null, error: page.error };
+          if (!page.data?.length) break;
+          const last = page.data[page.data.length - 1]!.id;
+          if (after && last <= after) {
+            return { data: null, error: { message: "agenda_page_did_not_advance" } };
+          }
+          appointments.push(...(page.data as CompromissoProtetor[]));
+          after = last;
+        }
+        return { data: appointments, error: null };
+      },
+      IN_FILTER_DEFAULT_BATCH_SIZE,
+    );
+    if (appointmentsResult.error) throw new Error(appointmentsResult.error);
+    const appointments = appointmentsResult.data;
     const organization = await db.from("organizations").select("settings").eq("id", org).single();
     if (organization.error) throw organization.error;
     return new Map(

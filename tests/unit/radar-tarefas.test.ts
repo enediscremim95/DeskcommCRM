@@ -1,4 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/agenda/protecao-followup", () => ({
+  protecaoAgendaSupabase: vi.fn(async (_db, _org, contatos: string[]) =>
+    new Map(
+      contatos.map((id) => [
+        id,
+        {
+          adiar: false,
+          motivo: "sem_compromisso",
+          appointment_id: null,
+          reavaliar_em: null,
+        },
+      ]),
+    ),
+  ),
+}));
 
 import { carregaRadarDeRisco } from "@/lib/leads/radar-de-risco";
 
@@ -138,5 +154,40 @@ describe("tarefas no Radar", () => {
     expect(lotes).toHaveLength(5);
     expect(lotes.every((ids) => ids.length === 100)).toBe(true);
     expect(new Set(lotes.flat()).size).toBe(500);
+  });
+
+  it("limita a 100 todas as listas derivadas do pool completo de leads", async () => {
+    const leads = Array.from({ length: 500 }, (_, i) => ({
+      id: `lead-${i}`,
+      title: `Negócio ${i}`,
+      contact_id: `contact-${i}`,
+      owner_user_id: null,
+      owner_kind: "ai",
+      owner_agent_id: `agent-${i}`,
+      stage_id: `stage-${i}`,
+      last_activity_at: "2026-09-01T00:00:00.000Z",
+      created_at: "2026-09-01T00:00:00.000Z",
+      pipeline_id: "pipeline-1",
+    }));
+    const { client, consultas } = clienteFalso([], leads);
+
+    await carregaRadarDeRisco(client, {
+      organizationId: ORG,
+      now: new Date("2026-09-25T12:00:00.000Z"),
+    });
+
+    const filtrosDeIds = consultas.flatMap((consulta) =>
+      Object.entries(consulta.filtros)
+        .filter(([coluna, valor]) => coluna !== "status" && Array.isArray(valor))
+        .map(([coluna, valor]) => ({
+          tabela: consulta.table,
+          coluna,
+          ids: valor as string[],
+        })),
+    );
+    expect(new Set(filtrosDeIds.map((filtro) => filtro.tabela))).toEqual(
+      new Set(["crm_tasks", "ai_agents", "crm_stages", "cron_jobs", "conversations", "contacts"]),
+    );
+    expect(Math.max(...filtrosDeIds.map((filtro) => filtro.ids.length))).toBe(100);
   });
 });
