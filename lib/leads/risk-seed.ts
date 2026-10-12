@@ -3,6 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { classifyRisk, resolveStageWindow, type RiskBucket } from "@/lib/leads/risk-radar";
 import { sinceDoBucket } from "@/lib/leads/risk-since";
+import {
+  IN_FILTER_DEFAULT_BATCH_SIZE,
+  queryInBatches,
+} from "@/lib/supabase/query-in-batches";
 
 /**
  * A ESTREIA do estado de risco: grava o que JÁ existe, sem mentir sobre quando
@@ -116,11 +120,23 @@ async function coletaEClassifica(
   const stageIds = [...new Set(leads.map((l) => l.stage_id).filter(Boolean))];
   const janelaPorEstagio = new Map<string, ReturnType<typeof resolveStageWindow>>();
   if (stageIds.length > 0) {
-    const { data: stages } = await admin
-      .from("crm_stages")
-      .select("id, expected_duration_hours")
-      .eq("organization_id", organizationId)
-      .in("id", stageIds);
+    const stagesResult = await queryInBatches<{
+      id: string;
+      expected_duration_hours: number | null;
+    }>(
+      stageIds,
+      (lote) =>
+        admin
+          .from("crm_stages")
+          .select("id, expected_duration_hours")
+          .eq("organization_id", organizationId)
+          .in("id", lote),
+      IN_FILTER_DEFAULT_BATCH_SIZE,
+    );
+    if (stagesResult.error) {
+      throw new Error(`seed de risco (estágios): ${stagesResult.error}`);
+    }
+    const stages = stagesResult.data;
     for (const s of (stages ?? []) as Array<{ id: string; expected_duration_hours: number | null }>) {
       janelaPorEstagio.set(s.id, resolveStageWindow(s));
     }
@@ -132,14 +148,23 @@ async function coletaEClassifica(
   const contactIds = [...new Set(leads.map((l) => l.contact_id).filter((c): c is string => !!c))];
   const followupPorContato = new Set<string>();
   if (contactIds.length > 0) {
-    const { data: jobs } = await admin
-      .from("cron_jobs")
-      .select("contact_id")
-      .eq("organization_id", organizationId)
-      .eq("kind", "at")
-      .eq("enabled", true)
-      .gt("next_run_at", now.toISOString())
-      .in("contact_id", contactIds);
+    const jobsResult = await queryInBatches<{ contact_id: string }>(
+      contactIds,
+      (lote) =>
+        admin
+          .from("cron_jobs")
+          .select("contact_id")
+          .eq("organization_id", organizationId)
+          .eq("kind", "at")
+          .eq("enabled", true)
+          .gt("next_run_at", now.toISOString())
+          .in("contact_id", lote),
+      IN_FILTER_DEFAULT_BATCH_SIZE,
+    );
+    if (jobsResult.error) {
+      throw new Error(`seed de risco (cron_jobs): ${jobsResult.error}`);
+    }
+    const jobs = jobsResult.data;
     for (const j of (jobs ?? []) as Array<{ contact_id: string }>) {
       followupPorContato.add(j.contact_id);
     }

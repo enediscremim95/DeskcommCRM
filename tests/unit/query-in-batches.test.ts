@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { IN_FILTER_BATCH_SIZE, queryInBatches } from "@/lib/supabase/query-in-batches";
+import {
+  emLotes,
+  IN_FILTER_BATCH_SIZE,
+  queryInBatches,
+} from "@/lib/supabase/query-in-batches";
 
 describe("queryInBatches", () => {
   it("divide mais de mil ids antes que o filtro vire uma URL recusada", async () => {
@@ -23,5 +27,13 @@ describe("queryInBatches", () => {
     expect(result.data).toHaveLength(1_001);
     expect(batchSizes).toEqual([200, 200, 200, 200, 200, 1]);
     expect(Math.max(...batchSizes)).toBe(IN_FILTER_BATCH_SIZE);
+  });
+
+  it("emLotes usa 100 itens por padrão", () => {
+    expect(emLotes(Array.from({ length: 250 }, (_, index) => String(index)))).toEqual([
+      Array.from({ length: 100 }, (_, index) => String(index)),
+      Array.from({ length: 100 }, (_, index) => String(index + 100)),
+      Array.from({ length: 50 }, (_, index) => String(index + 200)),
+    ]);
   });
 });

@@ -5,6 +5,23 @@
  * query string de dezenas de KB, recusada pelo proxy antes de chegar ao banco.
  */
 export const IN_FILTER_BATCH_SIZE = 200;
+export const IN_FILTER_DEFAULT_BATCH_SIZE = 100;
+
+/** Divide uma lista em blocos pequenos o bastante para filtros na URL. */
+export function emLotes<T>(
+  itens: readonly T[],
+  tamanho = IN_FILTER_DEFAULT_BATCH_SIZE,
+): T[][] {
+  const tamanhoSeguro = Math.min(
+    Math.max(Math.trunc(tamanho) || IN_FILTER_BATCH_SIZE, 1),
+    IN_FILTER_BATCH_SIZE,
+  );
+  const lotes: T[][] = [];
+  for (let index = 0; index < itens.length; index += tamanhoSeguro) {
+    lotes.push(itens.slice(index, index + tamanhoSeguro));
+  }
+  return lotes;
+}
 
 interface BatchQueryResult<T> {
   data: T[] | null;
@@ -31,14 +48,10 @@ export async function queryInBatches<T>(
   const uniqueValues = [...new Set(values)];
   if (uniqueValues.length === 0) return { data: [], error: null };
 
-  const batchSize = Math.min(
-    Math.max(Math.trunc(requestedBatchSize) || IN_FILTER_BATCH_SIZE, 1),
-    IN_FILTER_BATCH_SIZE,
-  );
   const data: T[] = [];
 
-  for (let index = 0; index < uniqueValues.length; index += batchSize) {
-    const result = await query(uniqueValues.slice(index, index + batchSize));
+  for (const batch of emLotes(uniqueValues, requestedBatchSize)) {
+    const result = await query(batch);
     if (result.error) return { data: [], error: result.error.message };
     data.push(...(result.data ?? []));
   }
