@@ -80,7 +80,7 @@ export type TrafficSummarySource = {
     };
   };
   lead_profile?: LeadProfile | null;
-  evolution?: Array<{
+  historico?: Array<{
     currency: string;
     periods: Array<{
       from: string;
@@ -578,7 +578,7 @@ function FunnelDrawing({ group, brand, language }: { group: TrafficSummaryGroup;
   return <View style={styles.funnel}>{stages.map((stage, index) => <View key={stage.label} style={[styles.funnelStage, { width: 390 - index * 55, backgroundColor: tint(brand.accent, [0.2, 0.45, 0.72, 1][index] ?? 1) }]}><Text style={[styles.funnelValue, { color: index >= 2 ? brand.accentFg : "#17211a" }]}>{formatNumber(stage.value, language)}</Text><Text style={[styles.funnelLabel, { color: index >= 2 ? brand.accentFg : "#17211a" }]}>{stage.label}</Text></View>)}</View>;
 }
 
-function EvolutionPage({ series, brand, logoDataUri, language }: { series: NonNullable<TrafficSummarySource["evolution"]>[number]; brand: MarcaDeSaida; logoDataUri?: string | null; language: Language }) {
+function HistoricoPage({ series, brand, logoDataUri, language }: { series: NonNullable<TrafficSummarySource["historico"]>[number]; brand: MarcaDeSaida; logoDataUri?: string | null; language: Language }) {
   const width = 830;
   const top = 10;
   const bottom = 175;
@@ -735,11 +735,11 @@ export function TrafficSummaryPdf({
         />
       ))}
 
-      {(source.evolution ?? [])
+      {(source.historico ?? [])
         .filter((series) => series.periods.some((period) => period.spend != null || period.leads != null || period.cost_per_lead != null))
         .map((series) => (
-          <EvolutionPage
-            key={`evolution-${series.currency}`}
+          <HistoricoPage
+            key={`historico-${series.currency}`}
             series={series}
             brand={brand}
             logoDataUri={logoDataUri}

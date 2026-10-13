@@ -36,7 +36,7 @@ import {
   type TrafficStageRow,
 } from "@/lib/windsor/traffic-insights";
 import {
-  buildEvolutionWindows,
+  buildHistoricoWindows,
   buildLeadProfile,
 } from "@/lib/windsor/traffic-summary-model";
 
@@ -159,8 +159,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     });
   }
   const includePdfDetails = params.get("pdf_detail") === "1";
-  const evolutionWindows = buildEvolutionWindows(parsed.data);
-  const historyFrom = includePdfDetails ? evolutionWindows[0]!.from : parsed.data.from;
+  const historicoWindows = buildHistoricoWindows(parsed.data);
+  const historyFrom = includePdfDetails ? historicoWindows[0]!.from : parsed.data.from;
   const admin = createAdminClient();
   const organizationId = authz.org.orgId;
   if (
@@ -389,8 +389,8 @@ export async function GET(request: NextRequest): Promise<Response> {
   const previousByCurrency = new Map(
     previousCurrencies.map((group) => [group.currency, group] as const),
   );
-  const evolutionReports = includePdfDetails
-    ? evolutionWindows.map((period) => ({
+  const historicoReports = includePdfDetails
+    ? historicoWindows.map((period) => ({
         period,
         currencies: buildTrafficReport({
           model: typedConfig.model,
@@ -476,10 +476,10 @@ export async function GET(request: NextRequest): Promise<Response> {
         previous: previousCrm,
       },
       lead_profile: leadProfile,
-      evolution: includePdfDetails
+      historico: includePdfDetails
         ? currentCurrencies.map((group) => ({
             currency: group.currency,
-            periods: evolutionReports.map(({ period, currencies }) => {
+            periods: historicoReports.map(({ period, currencies }) => {
               const found = currencies.find((candidate) => candidate.currency === group.currency);
               return {
                 ...period,

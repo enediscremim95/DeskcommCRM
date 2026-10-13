@@ -12,7 +12,7 @@ import {
 } from "./traffic-summary-pdf";
 import {
   buildAutomaticAnalysis,
-  buildEvolutionWindows,
+  buildHistoricoWindows,
   buildLeadProfile,
   buildPlatformInvestmentShares,
 } from "./traffic-summary-model";
@@ -525,7 +525,7 @@ describe("dados do relatório em slides", () => {
   });
 
   it("cria seis janelas mensais ou seis janelas do mesmo tamanho", () => {
-    expect(buildEvolutionWindows({ from: "2026-10-01", to: "2026-10-31" })).toEqual([
+    expect(buildHistoricoWindows({ from: "2026-10-01", to: "2026-10-31" })).toEqual([
       { from: "2026-05-01", to: "2026-05-31" },
       { from: "2026-06-01", to: "2026-06-30" },
       { from: "2026-07-01", to: "2026-07-31" },
@@ -533,7 +533,7 @@ describe("dados do relatório em slides", () => {
       { from: "2026-09-01", to: "2026-09-30" },
       { from: "2026-10-01", to: "2026-10-31" },
     ]);
-    const weeks = buildEvolutionWindows({ from: "2026-10-05", to: "2026-10-11" });
+    const weeks = buildHistoricoWindows({ from: "2026-10-05", to: "2026-10-11" });
     expect(weeks).toHaveLength(6);
     expect(weeks[0]).toEqual({ from: "2026-08-31", to: "2026-09-06" });
     expect(weeks[5]).toEqual({ from: "2026-10-05", to: "2026-10-11" });

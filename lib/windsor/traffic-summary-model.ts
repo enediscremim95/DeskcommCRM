@@ -246,7 +246,7 @@ export function buildLeadProfile(
   return selected.length > 0 ? { considered_leads: considered.length, fields: selected } : null;
 }
 
-export type EvolutionWindow = { from: string; to: string };
+export type HistoricoWindow = { from: string; to: string };
 
 function utcDate(value: string): Date {
   return new Date(`${value}T12:00:00Z`);
@@ -260,7 +260,7 @@ function endOfMonth(year: number, month: number): Date {
   return new Date(Date.UTC(year, month + 1, 0, 12));
 }
 
-export function buildEvolutionWindows(window: EvolutionWindow): EvolutionWindow[] {
+export function buildHistoricoWindows(window: HistoricoWindow): HistoricoWindow[] {
   const from = utcDate(window.from);
   const to = utcDate(window.to);
   const monthMode =

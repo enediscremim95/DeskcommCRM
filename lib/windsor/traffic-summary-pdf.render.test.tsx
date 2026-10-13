@@ -154,7 +154,7 @@ describe("PDF do relatório enriquecido", () => {
             ],
           },
         ],
-        evolution: [
+        historico: [
           {
             currency: "BRL",
             periods: [
