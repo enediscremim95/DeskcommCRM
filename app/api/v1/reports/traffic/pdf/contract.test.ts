@@ -15,7 +15,10 @@ describe("contrato de autorização e isolamento do PDF", () => {
 
     expect(canonical).toContain('requireRole("viewer"');
     expect(canonical).toContain('.eq("organization_id", organizationId)');
-    expect(pdf).toContain("getTrafficReport(request)");
+    // A rota do PDF chama a rota canônica com a MESMA sessão (headers da requisição
+    // original) e só acrescenta o detalhe do PDF; o tenant nunca vem da query.
+    expect(pdf).toContain("getTrafficReport(");
+    expect(pdf).toContain("headers: request.headers");
     expect(pdf).not.toContain("organization_id=");
   });
 });
