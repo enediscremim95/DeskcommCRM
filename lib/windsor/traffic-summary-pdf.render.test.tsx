@@ -22,6 +22,8 @@ describe("PDF do relatório enriquecido", () => {
       },
       language: "pt-BR",
       source: {
+        organization_name: "Bendito Ponto",
+        model: "leads",
         window: { from: "2026-08-22", to: "2026-09-20" },
         crm: {
           leads_entered: 42,
@@ -45,8 +47,76 @@ describe("PDF do relatório enriquecido", () => {
         currencies: [
           {
             currency: "BRL",
-            summary: { spend: 3_150, reach: 48_200, impressions: 76_100, clicks: 1_860 },
-            comparison: { spend: 2_975, reach: 44_100, impressions: 70_200, clicks: 1_590 },
+            summary: {
+              spend: 3_150,
+              reach: 48_200,
+              impressions: 76_100,
+              clicks: 1_860,
+              link_clicks: 1_730,
+              leads: 42,
+              cost_per_lead: 75,
+              ctr: 2.27,
+              conversion_rate: 2.43,
+            },
+            comparison: {
+              spend: 2_975,
+              reach: 44_100,
+              impressions: 70_200,
+              clicks: 1_590,
+              link_clicks: 1_480,
+              leads: 35,
+              cost_per_lead: 85,
+              ctr: 2.11,
+              conversion_rate: 2.36,
+            },
+            platforms: [
+              {
+                platform: "meta_ads",
+                spend: 1_761.48,
+                reach: 38_200,
+                impressions: 55_000,
+                clicks: 1_100,
+                link_clicks: 1_020,
+                leads: 30,
+                cost_per_lead: 58.72,
+                ctr: 1.85,
+                conversion_rate: 2.94,
+                comparison: {
+                  spend: 1_600,
+                  reach: 35_000,
+                  impressions: 50_000,
+                  clicks: 900,
+                  link_clicks: 840,
+                  leads: 24,
+                  cost_per_lead: 66.67,
+                  ctr: 1.68,
+                  conversion_rate: 2.86,
+                },
+              },
+              {
+                platform: "google_ads",
+                spend: 1_388.52,
+                reach: 10_000,
+                impressions: 21_100,
+                clicks: 760,
+                link_clicks: 710,
+                leads: 12,
+                cost_per_lead: 115.71,
+                ctr: 3.6,
+                conversion_rate: 1.58,
+                comparison: {
+                  spend: 1_375,
+                  reach: 9_100,
+                  impressions: 20_200,
+                  clicks: 690,
+                  link_clicks: 640,
+                  leads: 11,
+                  cost_per_lead: 125,
+                  ctr: 3.42,
+                  conversion_rate: 1.59,
+                },
+              },
+            ],
             campaigns: [
               {
                 name: "Captação principal",
@@ -84,6 +154,28 @@ describe("PDF do relatório enriquecido", () => {
             ],
           },
         ],
+        evolution: [
+          {
+            currency: "BRL",
+            periods: [
+              { from: "2026-04-22", to: "2026-05-21", spend: 2_100, leads: 25, cost_per_lead: 84 },
+              { from: "2026-05-22", to: "2026-06-20", spend: 2_350, leads: 28, cost_per_lead: 83.93 },
+              { from: "2026-06-21", to: "2026-07-20", spend: null, leads: null, cost_per_lead: null },
+              { from: "2026-07-21", to: "2026-08-19", spend: 2_700, leads: 32, cost_per_lead: 84.38 },
+              { from: "2026-08-20", to: "2026-09-18", spend: 2_975, leads: 35, cost_per_lead: 85 },
+              { from: "2026-08-22", to: "2026-09-20", spend: 3_150, leads: 42, cost_per_lead: 75 },
+            ],
+          },
+        ],
+        lead_profile: {
+          considered_leads: 39,
+          fields: [
+            { key: "faixa", label: "Faixa de investimento", answered: 39, coverage_percent: 100, top_value: "R$ 229 mil a R$ 299 mil", top_count: 28, top_percent: 71.8 },
+            { key: "estado", label: "Estado", answered: 39, coverage_percent: 100, top_value: "SP", top_count: 10, top_percent: 25.6 },
+            { key: "primeiro_negocio", label: "Primeiro negócio", answered: 37, coverage_percent: 94.9, top_value: "Sim", top_count: 19, top_percent: 51.4 },
+            { key: "prazo", label: "Prazo para adquirir", answered: 35, coverage_percent: 89.7, top_value: "Até 9 meses", top_count: 16, top_percent: 45.7 },
+          ],
+        },
         delivery: {
           active_campaigns: [{ name: "Captação principal", platform: "meta_ads" }],
           invested_campaigns: [],
@@ -96,11 +188,24 @@ describe("PDF do relatório enriquecido", () => {
     const pages: string[] = [];
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 1 });
+      expect(viewport.width / viewport.height).toBeCloseTo(16 / 9, 2);
       const content = await page.getTextContent();
       pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join(" "));
     }
     const text = pages.join(" ");
 
+    expect(buffer.byteLength).toBeLessThan(3_000_000);
+    expect(document.numPages).toBeGreaterThanOrEqual(10);
+    expect(text).toContain("Bendito Ponto");
+    expect(text).toContain("Resumo");
+    expect(text).toContain("55,9%");
+    expect(text).toContain("Resultados / Todas as mídias");
+    expect(text).toContain("Evolução");
+    expect(text).toContain("Meta Ads");
+    expect(text).toContain("Google Ads");
+    expect(text).toContain("Perfil dos leads");
+    expect(text).toContain("39 pessoas com respostas consideradas no formulário");
     expect(text).toContain("+20% vs. período anterior");
     // Enxugado a pedido do dono (21/09/2026): sem campeãs, destaques, situação e leitura.
     for (const removido of [
@@ -277,7 +382,7 @@ describe("PDF do relatório enriquecido", () => {
     expect(text).toContain("Criativo preservado");
   });
 
-  it("explica quando o período não tem anúncio com entrega", async () => {
+  it("omite páginas inteiras quando não há dado para mostrar", async () => {
     const buffer = await renderTrafficSummaryPdf({
       brand: {
         nome: "Marca Exemplo",
@@ -294,10 +399,12 @@ describe("PDF do relatório enriquecido", () => {
       },
     });
     const document = await getDocument({ data: new Uint8Array(buffer) }).promise;
-    const page = await document.getPage(document.numPages);
+    expect(document.numPages).toBe(1);
+    const page = await document.getPage(1);
     const content = await page.getTextContent();
     const text = content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
 
-    expect(text).toContain("Nenhum anúncio com entrega neste período");
+    expect(text).not.toContain("Anúncios em teste");
+    expect(text).not.toContain("Todas as mídias");
   });
 });

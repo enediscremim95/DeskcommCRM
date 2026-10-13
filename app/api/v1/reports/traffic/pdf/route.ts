@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { fail } from "@/lib/api/wrappers";
@@ -57,7 +57,12 @@ export async function GET(request: NextRequest): Promise<Response> {
   // filtra toda leitura por organization_id e calcula a mesma régua exibida na tela.
   // Chamar a função diretamente evita uma segunda implementação de métricas e não
   // faz uma requisição HTTP interna que dependeria da URL pública da instalação.
-  const reportResponse = await getTrafficReport(request);
+  const reportUrl = new URL(request.url);
+  reportUrl.pathname = "/api/v1/reports/traffic";
+  reportUrl.searchParams.set("pdf_detail", "1");
+  const reportResponse = await getTrafficReport(
+    new NextRequest(reportUrl, { headers: request.headers }),
+  );
   if (!reportResponse.ok) return reportResponse;
 
   const envelope = (await reportResponse.json()) as TrafficReportEnvelope;
