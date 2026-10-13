@@ -290,8 +290,14 @@ function hasDelivery(bucket: Bucket): boolean {
     bucket.messaging_conversations,
   ].some((value) => value > 0);
 }
-function ratios(bucket: Bucket, model: DashboardModel, periodReach: number | null = null) {
+function ratios(
+  bucket: Bucket,
+  model: DashboardModel,
+  periodReach: number | null = null,
+  platform?: AdPlatform,
+) {
   const budget = budgetOf(bucket);
+  const metricClicks = platform === "google_ads" ? bucket.clicks : bucket.link_clicks;
   return {
     ...bucket,
     ...budget,
@@ -309,10 +315,9 @@ function ratios(bucket: Bucket, model: DashboardModel, periodReach: number | nul
     cost_per_messaging_conversation:
       bucket.messaging_conversations > 0 ? bucket.spend / bucket.messaging_conversations : null,
     cpm: bucket.impressions > 0 ? (bucket.spend / bucket.impressions) * 1000 : null,
-    ctr: bucket.impressions > 0 ? (bucket.link_clicks / bucket.impressions) * 100 : null,
-    cpc: bucket.link_clicks > 0 ? bucket.spend / bucket.link_clicks : null,
-    conversion_rate:
-      bucket.link_clicks > 0 ? (bucket.conversions / bucket.link_clicks) * 100 : null,
+    ctr: bucket.impressions > 0 ? (metricClicks / bucket.impressions) * 100 : null,
+    cpc: metricClicks > 0 ? bucket.spend / metricClicks : null,
+    conversion_rate: metricClicks > 0 ? (bucket.conversions / metricClicks) * 100 : null,
     roas: model === "ecommerce" && bucket.spend > 0 ? bucket.revenue / bucket.spend : null,
     average_order_value:
       model === "ecommerce" && bucket.conversions > 0 ? bucket.revenue / bucket.conversions : null,
@@ -532,6 +537,8 @@ export function buildTrafficReport(args: {
       const metaReach = reachForAccounts(group.accountIds.get("meta_ads"));
       return {
         currency,
+        // O resumo combina Meta e Google no mesmo bucket, sem uma plataforma única
+        // para escolher entre link_clicks e clicks. Mantemos a regra histórica aqui.
         summary: ratios(group.total, args.model, metaReach),
         daily: [...group.daily.entries()]
           .sort(([a], [b]) => a.localeCompare(b))
@@ -548,6 +555,7 @@ export function buildTrafficReport(args: {
             value,
             args.model,
             platform === "meta_ads" ? reachForAccounts(group.accountIds.get(platform)) : null,
+            platform,
           ),
         })),
         campaigns: [...group.campaigns.values()]
@@ -566,6 +574,7 @@ export function buildTrafficReport(args: {
               args.campaignReach?.get(
                 campaignReportKey(campaign.platform, campaign.id, campaign.name),
               ) ?? null,
+              campaign.platform,
             ),
             adsets: [...campaign.adsets.values()].map((adset) => ({
               name: adset.name,
