@@ -35,6 +35,10 @@ import {
   type TrafficLeadRow,
   type TrafficStageRow,
 } from "@/lib/windsor/traffic-insights";
+import {
+  buildHistoricoWindows,
+  buildLeadProfile,
+} from "@/lib/windsor/traffic-summary-model";
 
 export const dynamic = "force-dynamic";
 
@@ -154,6 +158,9 @@ export async function GET(request: NextRequest): Promise<Response> {
       details: parsed.error.flatten(),
     });
   }
+  const includePdfDetails = params.get("pdf_detail") === "1";
+  const historicoWindows = buildHistoricoWindows(parsed.data);
+  const historyFrom = includePdfDetails ? historicoWindows[0]!.from : parsed.data.from;
   const admin = createAdminClient();
   const organizationId = authz.org.orgId;
   if (
@@ -205,7 +212,9 @@ export async function GET(request: NextRequest): Promise<Response> {
       const result = await admin
         .from("crm_leads" as never)
         .select(
-          "id,status,stage_id,pipeline_id,lost_reason,created_at,closed_at,value_cents,currency,source,source_metadata",
+          includePdfDetails
+            ? "id,status,stage_id,pipeline_id,lost_reason,created_at,closed_at,value_cents,currency,source,source_metadata,custom_fields"
+            : "id,status,stage_id,pipeline_id,lost_reason,created_at,closed_at,value_cents,currency,source,source_metadata",
         )
         .eq("organization_id", organizationId)
         .gte("created_at", from.toISOString())
@@ -242,7 +251,7 @@ export async function GET(request: NextRequest): Promise<Response> {
           )
           .eq("organization_id", organizationId)
           .eq("sync_generation", typedConfig.published_generation)
-          .gte("occurred_on", parsed.data.from)
+          .gte("occurred_on", historyFrom)
           .lte("occurred_on", parsed.data.to)
           .order("occurred_on")
       : Promise.resolve({ data: [], error: null }),
@@ -314,6 +323,10 @@ export async function GET(request: NextRequest): Promise<Response> {
     window: previousRange,
   });
   const facts = factsResult.data;
+  const historyFacts = (facts ?? []) as unknown as StoredFact[];
+  const currentFacts = historyFacts.filter(
+    (fact) => fact.occurred_on >= parsed.data.from && fact.occurred_on <= parsed.data.to,
+  );
   const deliveryFacts = (deliveryFactsResult.data ?? []) as unknown as StoredFact[];
   const previousFacts = previousFactsResult.data;
   const storedAccounts = (accounts ?? []) as unknown as StoredAccount[];
@@ -357,7 +370,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     model: typedConfig.model,
     conversionFields: typedConfig.conversion_fields,
     accounts: storedAccounts,
-    facts: (facts ?? []) as unknown as StoredFact[],
+    facts: historyFacts,
     window: parsed.data,
     campaignReach: currentReach.campaignReach,
     accountReach: currentReach.accountReach,
@@ -376,6 +389,23 @@ export async function GET(request: NextRequest): Promise<Response> {
   const previousByCurrency = new Map(
     previousCurrencies.map((group) => [group.currency, group] as const),
   );
+  const historicoReports = includePdfDetails
+    ? historicoWindows.map((period) => ({
+        period,
+        currencies: buildTrafficReport({
+          model: typedConfig.model,
+          conversionFields: typedConfig.conversion_fields,
+          accounts: storedAccounts,
+          facts: historyFacts,
+          window: period,
+        }),
+      }))
+    : [];
+  const leadProfile = includePdfDetails
+    ? buildLeadProfile(
+        (currentLeadRowsResult.data ?? []) as Array<TrafficLeadRow & { custom_fields?: unknown }>,
+      )
+    : null;
   const typedPresetRows = presetRows as unknown as Array<{
     id: string;
     name: string;
@@ -400,6 +430,9 @@ export async function GET(request: NextRequest): Promise<Response> {
     {
       model: typedConfig.model,
       organization_key: organizationId,
+      organization_name: authz.org.name,
+      // Fase 2: persistir e editar este texto na configuração do relatório.
+      objective: null,
       viewer_key: authz.user.id,
       default_columns: {
         meta_ads:
@@ -442,11 +475,33 @@ export async function GET(request: NextRequest): Promise<Response> {
         ...crm,
         previous: previousCrm,
       },
+      lead_profile: leadProfile,
+      historico: includePdfDetails
+        ? currentCurrencies.map((group) => ({
+            currency: group.currency,
+            periods: historicoReports.map(({ period, currencies }) => {
+              const found = currencies.find((candidate) => candidate.currency === group.currency);
+              return {
+                ...period,
+                spend: found?.summary.spend ?? null,
+                leads: found?.summary.leads ?? null,
+                cost_per_lead: found?.summary.cost_per_lead ?? null,
+              };
+            }),
+          }))
+        : [],
       kanban_stages: buildTrafficKanbanStages(currentLeadRowsResult.data ?? [], stages),
-      delivery: buildTrafficDelivery((facts ?? []) as unknown as StoredFact[], deliveryFacts),
+      delivery: buildTrafficDelivery(currentFacts, deliveryFacts),
       currencies: currentCurrencies.map((group) => ({
         ...group,
         comparison: previousByCurrency.get(group.currency)?.summary ?? null,
+        platforms: group.platforms.map((platform) => ({
+          ...platform,
+          comparison:
+            previousByCurrency
+              .get(group.currency)
+              ?.platforms.find((candidate) => candidate.platform === platform.platform) ?? null,
+        })),
       })),
     },
     { requestId },

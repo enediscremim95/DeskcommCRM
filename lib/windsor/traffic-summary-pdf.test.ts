@@ -10,6 +10,12 @@ import {
   buildTrafficSummaryGroups,
   trafficVariation,
 } from "./traffic-summary-pdf";
+import {
+  buildAutomaticAnalysis,
+  buildHistoricoWindows,
+  buildLeadProfile,
+  buildPlatformInvestmentShares,
+} from "./traffic-summary-model";
 import { adDeliverySnapshots, buildTrafficReport, type StoredFact } from "./report";
 
 describe("resumo do relatório para PDF", () => {
@@ -415,5 +421,121 @@ describe("resumo do relatório para PDF", () => {
       "Maior estreitamento: visualização do anúncio para clique, com 10,0% de passagem.",
       "Conversão de lead em venda: 20,0% (2 de 10).",
     ]);
+  });
+});
+
+describe("dados do relatório em slides", () => {
+  it("calcula a participação do investimento sem misturar plataformas sem gasto", () => {
+    expect(
+      buildPlatformInvestmentShares([
+        {
+          platform: "meta_ads",
+          spend: 559.2,
+          impressions: 10_000,
+          clicks: 100,
+        },
+        {
+          platform: "google_ads",
+          spend: 440.8,
+          impressions: 5_000,
+          clicks: 200,
+        },
+      ]),
+    ).toEqual([
+      { platform: "meta_ads", spend: 559.2, percent: 55.92 },
+      { platform: "google_ads", spend: 440.8, percent: 44.08 },
+    ]);
+    expect(
+      buildPlatformInvestmentShares([
+        { platform: "meta_ads", spend: 0, impressions: 0, clicks: 0 },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("gera análise determinística para variações extremas, estabilidade e anterior vazio", () => {
+    const extreme = buildAutomaticAnalysis({
+      currency: "BRL",
+      language: "pt-BR",
+      current: {
+        spend: 500,
+        impressions: 10_000,
+        clicks: 300,
+        leads: 50,
+        cost_per_lead: 10,
+        ctr: 3,
+      },
+      previous: {
+        spend: 1_000,
+        impressions: 8_000,
+        clicks: 160,
+        leads: 10,
+        cost_per_lead: 100,
+        ctr: 2,
+      },
+    });
+    expect(extreme).toEqual([
+      "O investimento caiu 50% e o número de pessoas interessadas subiu 400%.",
+      "O custo por pessoa interessada caiu 90%, para R$ 10,00.",
+      "A taxa de clique melhorou 50%.",
+    ]);
+
+    const stable = buildAutomaticAnalysis({
+      currency: "BRL",
+      language: "pt-BR",
+      current: { spend: 0, impressions: 0, clicks: 0, leads: 0, cost_per_lead: null },
+      previous: { spend: 0, impressions: 0, clicks: 0, leads: 0, cost_per_lead: null },
+    });
+    expect(stable).toEqual([
+      "O investimento e o número de pessoas interessadas ficaram estáveis em relação ao período anterior.",
+    ]);
+
+    const withoutPrevious = buildAutomaticAnalysis({
+      currency: "BRL",
+      language: "pt-BR",
+      current: { spend: 120, impressions: 1_000, clicks: 40, leads: 6, cost_per_lead: 20 },
+      previous: null,
+    });
+    expect(withoutPrevious).toHaveLength(2);
+    expect(withoutPrevious.join(" ")).toContain("Não há comparação com o período anterior");
+  });
+
+  it("seleciona até quatro campos categóricos com maior cobertura e exige cinco pessoas", () => {
+    const leads = Array.from({ length: 6 }, (_, index) => ({
+      custom_fields: {
+        faixa_de_investimento: index < 4 ? "R$ 229 mil a R$ 299 mil" : "Acima de R$ 300 mil",
+        estado: index < 5 ? "SP" : "PR",
+        primeiro_negocio: index < 3 ? "Sim" : "Não",
+        prazo: index < 4 ? "Até 9 meses" : "Mais de 9 meses",
+        cidade: index === 5 ? undefined : "São Paulo",
+        email: `pessoa${index}@example.com`,
+      },
+    }));
+    const profile = buildLeadProfile(leads);
+    expect(profile?.considered_leads).toBe(6);
+    expect(profile?.fields).toHaveLength(4);
+    expect(profile?.fields.map((field) => field.key)).toEqual([
+      "estado",
+      "faixa_de_investimento",
+      "prazo",
+      "primeiro_negocio",
+    ]);
+    expect(profile?.fields[0]).toMatchObject({ top_value: "SP", top_count: 5 });
+    expect(profile?.fields.some((field) => field.key === "email")).toBe(false);
+    expect(buildLeadProfile(leads.slice(0, 4))).toBeNull();
+  });
+
+  it("cria seis janelas mensais ou seis janelas do mesmo tamanho", () => {
+    expect(buildHistoricoWindows({ from: "2026-10-01", to: "2026-10-31" })).toEqual([
+      { from: "2026-05-01", to: "2026-05-31" },
+      { from: "2026-06-01", to: "2026-06-30" },
+      { from: "2026-07-01", to: "2026-07-31" },
+      { from: "2026-08-01", to: "2026-08-31" },
+      { from: "2026-09-01", to: "2026-09-30" },
+      { from: "2026-10-01", to: "2026-10-31" },
+    ]);
+    const weeks = buildHistoricoWindows({ from: "2026-10-05", to: "2026-10-11" });
+    expect(weeks).toHaveLength(6);
+    expect(weeks[0]).toEqual({ from: "2026-08-31", to: "2026-09-06" });
+    expect(weeks[5]).toEqual({ from: "2026-10-05", to: "2026-10-11" });
   });
 });
