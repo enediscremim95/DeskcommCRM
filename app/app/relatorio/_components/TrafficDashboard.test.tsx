@@ -696,7 +696,8 @@ describe("colunas da tabela de campanhas", () => {
       ["ctr", "cpc"],
     );
     response.data.currencies[0]!.platforms = [
-      { ...googleMetrics, platform: "google_ads" },
+      // `metrics` tem tipos literais (spend: 50); o fixture do Google troca os valores.
+      { ...googleMetrics, platform: "google_ads" } as never,
     ];
     vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(response));
 
