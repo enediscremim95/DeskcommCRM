@@ -670,6 +670,57 @@ describe("colunas da tabela de campanhas", () => {
     expect(localStorage.getItem("traffic-campaign-status-filter:google_ads")).toBe("paused");
   });
 
+  it("mostra e recalcula CTR, CPC e taxa de conversão do Google com clicks", async () => {
+    const googleMetrics = {
+      ...metrics,
+      spend: 353.07,
+      impressions: 1909,
+      clicks: 122,
+      link_clicks: 0,
+      conversions: 5,
+      leads: 5,
+      ctr: (122 / 1909) * 100,
+      cpc: 353.07 / 122,
+      conversion_rate: (5 / 122) * 100,
+    };
+    const response = baseResponse(
+      [
+        {
+          ...googleMetrics,
+          name: "Pesquisa Bendito Ponto",
+          platform: "google_ads",
+          campaign_status: "ENABLED",
+          adsets: [],
+        },
+      ],
+      ["ctr", "cpc"],
+    );
+    response.data.currencies[0]!.platforms = [
+      // `metrics` tem tipos literais (spend: 50); o fixture do Google troca os valores.
+      { ...googleMetrics, platform: "google_ads" } as never,
+    ];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(response));
+
+    render(<TrafficDashboard />);
+
+    const heading = await screen.findByRole("heading", { name: "Google Ads" });
+    const googleSection = heading.closest("section")!;
+    const ctrCard = within(googleSection)
+      .getAllByText("CTR")
+      .find((element) => element.tagName === "P")?.parentElement;
+    const cpcCard = within(googleSection)
+      .getAllByText("CPC")
+      .find((element) => element.tagName === "P")?.parentElement;
+    const conversionCard = within(googleSection).getByText("Taxa de conv. site").parentElement;
+    expect(ctrCard).toHaveTextContent("6,39%");
+    expect(cpcCard).toHaveTextContent(/R\$\s*2,89/);
+    expect(conversionCard).toHaveTextContent("4,1%");
+
+    const totalRow = within(googleSection).getByText("Total").closest("tr")!;
+    expect(totalRow).toHaveTextContent("6,39%");
+    expect(totalRow).toHaveTextContent(/R\$\s*2,89/);
+  });
+
   it("não deixa a restauração atrasada do filtro salvo desfazer o clique atual", async () => {
     localStorage.setItem("traffic-campaign-status-filter:meta_ads", "all");
     const pending: Array<() => void> = [];

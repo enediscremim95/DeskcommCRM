@@ -50,6 +50,51 @@ describe("relatório de tráfego", () => {
     expect(result[1]?.summary.spend).toBe(20);
   });
 
+  it("usa clicks do Google Ads nos indicadores da plataforma e da campanha", () => {
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "google", account_name: "Google", platform: "google_ads", currency: "BRL" },
+      ],
+      facts: [
+        fact({
+          account_id: "google",
+          platform: "google_ads",
+          impressions: 1909,
+          clicks: 122,
+          link_clicks: 0,
+          spend: 353.07,
+          conversions: { actions_lead: 5 },
+        }),
+      ],
+    });
+
+    const google = group?.platforms.find((platform) => platform.platform === "google_ads");
+    expect(google?.ctr).toBeCloseTo(6.39, 2);
+    expect(google?.cpc).toBeCloseTo(2.894, 3);
+    expect(google?.conversion_rate).toBeCloseTo(4.1, 2);
+    expect(group?.campaigns[0]?.ctr).toBeCloseTo(6.39, 2);
+    expect(group?.campaigns[0]?.cpc).toBeCloseTo(2.894, 3);
+    expect(group?.campaigns[0]?.conversion_rate).toBeCloseTo(4.1, 2);
+  });
+
+  it("continua usando link_clicks do Meta quando clicks tem outro valor", () => {
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
+      facts: [fact({ clicks: 122, link_clicks: 40 })],
+    });
+
+    const meta = group?.platforms.find((platform) => platform.platform === "meta_ads");
+    expect(meta?.ctr).toBe(4);
+    expect(meta?.cpc).toBe(2.5);
+    expect(meta?.conversion_rate).toBe(10);
+  });
+
   it("soma somente as conversões configuradas e calcula e-commerce", () => {
     const [group] = buildTrafficReport({
       model: "ecommerce",

@@ -559,7 +559,7 @@ function campaignStatus(status: string | null | undefined) {
   };
 }
 
-function summarizeCampaigns(campaigns: Campaign[]): Metrics {
+function summarizeCampaigns(campaigns: Campaign[], platform?: AdPlatform): Metrics {
   const sum = (key: keyof Metrics) =>
     campaigns.reduce((total, campaign) => {
       const value = campaign[key];
@@ -577,6 +577,7 @@ function summarizeCampaigns(campaigns: Campaign[]): Metrics {
   const impressions = sum("impressions");
   const clicks = sum("clicks");
   const linkClicks = sum("link_clicks");
+  const metricClicks = platform === "google_ads" ? clicks : linkClicks;
   const reaches = campaigns
     .map((campaign) => campaign.reach)
     .filter((value): value is number => value != null);
@@ -617,9 +618,9 @@ function summarizeCampaigns(campaigns: Campaign[]): Metrics {
     cost_per_conversion: conversions > 0 ? spend / conversions : null,
     cost_per_lead: leads > 0 ? spend / leads : null,
     cpm: impressions > 0 ? (spend / impressions) * 1000 : null,
-    ctr: impressions > 0 ? (linkClicks / impressions) * 100 : null,
-    cpc: linkClicks > 0 ? spend / linkClicks : null,
-    conversion_rate: linkClicks > 0 ? (conversions / linkClicks) * 100 : null,
+    ctr: impressions > 0 ? (metricClicks / impressions) * 100 : null,
+    cpc: metricClicks > 0 ? spend / metricClicks : null,
+    conversion_rate: metricClicks > 0 ? (conversions / metricClicks) * 100 : null,
     roas: spend > 0 ? revenue / spend : null,
     average_order_value: conversions > 0 ? revenue / conversions : null,
     video_views: sum("video_views"),
@@ -923,15 +924,18 @@ function CampaignTable({
     [idioma, selectableCampaigns, sortDirection, sortKey],
   );
   const visibleTotal = useMemo(
-    () => summarizeCampaigns(visibleCampaigns.map(({ campaign }) => campaign)),
-    [visibleCampaigns],
+    () => summarizeCampaigns(visibleCampaigns.map(({ campaign }) => campaign), platform),
+    [platform, visibleCampaigns],
   );
   const selectedCampaigns = useMemo(
     () =>
       campaignsWithKeys.filter(({ key }) => selectedKeys.has(key)).map(({ campaign }) => campaign),
     [campaignsWithKeys, selectedKeys],
   );
-  const selectedTotal = useMemo(() => summarizeCampaigns(selectedCampaigns), [selectedCampaigns]);
+  const selectedTotal = useMemo(
+    () => summarizeCampaigns(selectedCampaigns, platform),
+    [platform, selectedCampaigns],
+  );
   const selectedVisibleCount = selectableCampaigns.filter(({ key }) =>
     selectedKeys.has(key),
   ).length;
