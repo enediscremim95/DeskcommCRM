@@ -203,6 +203,28 @@ export function buildTrafficSummaryGroups(source: TrafficSummarySource): Traffic
 const PAGE_SIZE: [number, number] = [960, 540];
 const CONTENT_WIDTH = 888;
 
+function platformHasDelivery(platform: PlatformMetrics): boolean {
+  return [
+    platform.spend,
+    platform.reach,
+    platform.impressions,
+    platform.clicks,
+    platform.link_clicks,
+    platform.leads,
+  ].some((value) => (value ?? 0) > 0);
+}
+
+export function hasMultipleDeliveredPlatforms(source: TrafficSummarySource): boolean {
+  const delivered = new Set(
+    source.currencies.flatMap((currency) =>
+      (currency.platforms ?? [])
+        .filter(platformHasDelivery)
+        .map((platform) => platform.platform),
+    ),
+  );
+  return delivered.size >= 2;
+}
+
 function parseHex(color: string): [number, number, number] | null {
   const hex = /^#?([0-9a-f]{6})$/i.exec(color.trim())?.[1];
   return hex ? [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)] : null;
@@ -512,12 +534,17 @@ const styles = StyleSheet.create({
   adCreative: { width: 58, paddingRight: 6 },
   adThumbnail: { width: 42, height: 42, objectFit: "cover", borderRadius: 4 },
   adIdentity: { flex: 1, paddingRight: 6 },
-  adName: { fontSize: 8, fontWeight: "bold" },
-  adCampaign: { marginTop: 2, fontSize: 6.5, color: "#66736a" },
-  adMovement: { marginTop: 2, fontSize: 6.5, fontWeight: "bold" },
-  adPage: { width: 190, paddingRight: 6, fontSize: 6.5 },
+  adName: { fontSize: 8, lineHeight: 1.1, fontWeight: "bold", maxLines: 2, textOverflow: "ellipsis" },
+  adCampaign: { marginTop: 1, fontSize: 6.5, lineHeight: 1.1, color: "#66736a", maxLines: 2, textOverflow: "ellipsis" },
+  adMovement: { marginTop: 1, fontSize: 6.5, lineHeight: 1.1, fontWeight: "bold" },
+  adPage: { width: 190, paddingRight: 6, fontSize: 6.5, lineHeight: 1.1, maxLines: 2, textOverflow: "ellipsis" },
   adMoney: { width: 82, textAlign: "right", paddingRight: 6, fontSize: 7 },
   adLeads: { width: 50, textAlign: "right", paddingRight: 6, fontSize: 7 },
+  adsPage: { paddingTop: 120 },
+  adsPageHeader: { position: "absolute", top: 28, left: 36, right: 36, marginBottom: 0, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  adsTableHeader: { position: "absolute", top: 92, left: 36, right: 36 },
+  adsTableRow: { height: 52, minHeight: 52, flexShrink: 0 },
+  adCreativeFallback: { fontSize: 6.5, lineHeight: 1.1, maxLines: 2, textOverflow: "ellipsis" },
   profileIntro: { color: "#66736a", fontSize: 10, marginBottom: 24 },
   profileGrid: { flexDirection: "row", flexWrap: "wrap", gap: 18 },
   profileCard: { width: 204, minHeight: 145, borderRadius: 10, padding: 16, backgroundColor: "#f4f7f5" },
@@ -619,13 +646,31 @@ function movementLabel(movement: TrafficAdMovement, language: Language): string 
   if (movement === "paused") return text(language, "Pausou no período", "Se pausó en el período");
   return null;
 }
+function AdsPageHeader({ brand, logoDataUri, language }: { brand: MarcaDeSaida; logoDataUri?: string | null; language: Language }) {
+  return <View style={styles.adsPageHeader} fixed>
+    <View>
+      <Text style={styles.pageTitle}>{text(language, "Anúncios em teste", "Anuncios en prueba")}</Text>
+      <Text
+        style={styles.pageSubtitle}
+        render={({ subPageNumber, subPageTotalPages }) => text(
+          language,
+          `Página ${subPageNumber} de ${subPageTotalPages}`,
+          `Página ${subPageNumber} de ${subPageTotalPages}`,
+        )}
+      />
+    </View>
+    <BrandMark brand={brand} logoDataUri={logoDataUri} />
+  </View>;
+}
+function AdsTableHeader({ language }: { language: Language }) {
+  return <View style={[styles.adsHeader, styles.adsTableHeader]} fixed><Text style={[styles.adsHeaderText, styles.adCreative]}>{text(language, "Criativo", "Creativo")}</Text><Text style={[styles.adsHeaderText, styles.adIdentity]}>{text(language, "Anúncio / campanha", "Anuncio / campaña")}</Text><Text style={[styles.adsHeaderText, styles.adPage]}>{text(language, "Página de destino", "Página de destino")}</Text><Text style={[styles.adsHeaderText, styles.adMoney]}>{text(language, "Gasto", "Gasto")}</Text><Text style={[styles.adsHeaderText, styles.adLeads]}>Leads</Text><Text style={[styles.adsHeaderText, styles.adMoney]}>CPL</Text></View>;
+}
 function AdsTable({ ads, brand, language }: { ads: TrafficAdInTest[]; brand: MarcaDeSaida; language: Language }) {
-  return <View><View style={styles.adsHeader}><Text style={[styles.adsHeaderText, styles.adCreative]}>{text(language, "Criativo", "Creativo")}</Text><Text style={[styles.adsHeaderText, styles.adIdentity]}>{text(language, "Anúncio / campanha", "Anuncio / campaña")}</Text><Text style={[styles.adsHeaderText, styles.adPage]}>{text(language, "Página de destino", "Página de destino")}</Text><Text style={[styles.adsHeaderText, styles.adMoney]}>{text(language, "Gasto", "Gasto")}</Text><Text style={[styles.adsHeaderText, styles.adLeads]}>Leads</Text><Text style={[styles.adsHeaderText, styles.adMoney]}>CPL</Text></View>{ads.map((ad) => {
+  return <View>{ads.map((ad) => {
     const movement = movementLabel(ad.movement, language);
-    return <View key={ad.key} style={styles.adRow}><View style={styles.adCreative}>{ad.thumbnail_data_uri ? <Image src={ad.thumbnail_data_uri} style={styles.adThumbnail} /> : <Text style={{ fontSize: 6.5 }}>{limparNomeParaPdf(ad.name)}</Text>}</View><View style={styles.adIdentity}><Text style={styles.adName}>{limparNomeParaPdf(ad.name)}</Text><Text style={styles.adCampaign}>{limparNomeParaPdf(ad.campaign)}</Text>{movement ? <Text style={[styles.adMovement, { color: brand.accent }]}>{movement}</Text> : null}</View><Text style={styles.adPage}>{ad.pages.length > 0 ? ad.pages.join("\n") : text(language, "Sem página informada", "Sin página informada")}</Text><Text style={styles.adMoney}>{formatMoney(ad.spend, ad.currency, language)}</Text><Text style={styles.adLeads}>{formatNumber(ad.leads, language)}</Text><Text style={styles.adMoney}>{formatMoney(ad.cost_per_lead, ad.currency, language)}</Text></View>;
+    return <View key={ad.key} style={[styles.adRow, styles.adsTableRow]} wrap={false}><View style={styles.adCreative}>{ad.thumbnail_data_uri ? <Image src={ad.thumbnail_data_uri} style={styles.adThumbnail} /> : <Text style={styles.adCreativeFallback}>{limparNomeParaPdf(ad.name)}</Text>}</View><View style={styles.adIdentity}><Text style={styles.adName}>{limparNomeParaPdf(ad.name)}</Text><Text style={styles.adCampaign}>{limparNomeParaPdf(ad.campaign)}</Text>{movement ? <Text style={[styles.adMovement, { color: brand.accent }]}>{movement}</Text> : null}</View><Text style={styles.adPage}>{ad.pages.length > 0 ? ad.pages.join("\n") : text(language, "Sem página informada", "Sin página informada")}</Text><Text style={styles.adMoney}>{formatMoney(ad.spend, ad.currency, language)}</Text><Text style={styles.adLeads}>{formatNumber(ad.leads, language)}</Text><Text style={styles.adMoney}>{formatMoney(ad.cost_per_lead, ad.currency, language)}</Text></View>;
   })}</View>;
 }
-function chunks<T>(items: T[], size: number): T[][] { return Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size)); }
 function bestCreatives(ads: TrafficAdInTest[]): TrafficAdInTest[] {
   return [...ads].filter((ad) => ad.leads > 0).sort((a, b) => b.leads - a.leads || (a.cost_per_lead ?? Number.POSITIVE_INFINITY) - (b.cost_per_lead ?? Number.POSITIVE_INFINITY) || b.spend - a.spend).slice(0, 3);
 }
@@ -662,6 +707,7 @@ export function TrafficSummaryPdf({
     source.crm.in_service > 0 ||
     source.crm.closed_won > 0 ||
     (source.crm.closed_lost ?? 0) > 0;
+  const showPlatformPages = hasMultipleDeliveredPlatforms(source);
 
   return (
     <Document>
@@ -747,9 +793,9 @@ export function TrafficSummaryPdf({
           />
         ))}
 
-      {source.currencies.flatMap((currencyGroup) =>
+      {showPlatformPages ? source.currencies.flatMap((currencyGroup) =>
         (currencyGroup.platforms ?? [])
-          .filter((platform) => platform.spend > 0 || platform.impressions > 0 || (platform.leads ?? 0) > 0)
+          .filter(platformHasDelivery)
           .map((platform) => (
             <MetricsPage
               key={`${currencyGroup.currency}-${platform.platform}`}
@@ -764,7 +810,7 @@ export function TrafficSummaryPdf({
               language={language}
             />
           )),
-      )}
+      ) : null}
 
       {hasCrm && primaryGroup ? (
         <CrmPage
@@ -835,17 +881,13 @@ export function TrafficSummaryPdf({
         </Page>
       ) : null}
 
-      {chunks(ads, 8).map((pageAds, index) => (
-        <Page key={`ads-${index}`} size={PAGE_SIZE} style={styles.page}>
-          <PageHeader
-            title={text(language, "Anúncios em teste", "Anuncios en prueba")}
-            subtitle={text(language, `Página ${index + 1} de ${Math.ceil(ads.length / 8)}`, `Página ${index + 1} de ${Math.ceil(ads.length / 8)}`)}
-            brand={brand}
-            logoDataUri={logoDataUri}
-          />
-          <AdsTable ads={pageAds} brand={brand} language={language} />
+      {ads.length > 0 ? (
+        <Page size={PAGE_SIZE} style={[styles.page, styles.adsPage]} wrap>
+          <AdsPageHeader brand={brand} logoDataUri={logoDataUri} language={language} />
+          <AdsTableHeader language={language} />
+          <AdsTable ads={ads} brand={brand} language={language} />
         </Page>
-      ))}
+      ) : null}
 
       {source.lead_profile && source.lead_profile.considered_leads >= 5 && source.lead_profile.fields.length > 0 ? (
         <Page size={PAGE_SIZE} style={styles.page}>

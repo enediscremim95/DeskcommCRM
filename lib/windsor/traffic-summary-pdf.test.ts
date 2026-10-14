@@ -8,6 +8,7 @@ import {
   buildTrafficHighlights,
   buildTrafficPriorityMetricCards,
   buildTrafficSummaryGroups,
+  hasMultipleDeliveredPlatforms,
   trafficVariation,
 } from "./traffic-summary-pdf";
 import {
@@ -425,6 +426,34 @@ describe("resumo do relatório para PDF", () => {
 });
 
 describe("dados do relatório em slides", () => {
+  it("só cria páginas individuais quando duas plataformas entregaram no período", () => {
+    const source = {
+      window: { from: "2026-09-14", to: "2026-10-13" },
+      crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
+      currencies: [
+        {
+          currency: "BRL",
+          summary: { spend: 100, reach: 1_000, impressions: 1_200, clicks: 100 },
+          platforms: [
+            { platform: "meta_ads" as const, spend: 100, reach: 1_000, impressions: 1_200, clicks: 100 },
+          ],
+        },
+      ],
+    };
+
+    expect(hasMultipleDeliveredPlatforms(source)).toBe(false);
+    expect(hasMultipleDeliveredPlatforms({
+      ...source,
+      currencies: [{
+        ...source.currencies[0]!,
+        platforms: [
+          ...source.currencies[0]!.platforms,
+          { platform: "google_ads" as const, spend: 25, reach: 0, impressions: 300, clicks: 20 },
+        ],
+      }],
+    })).toBe(true);
+  });
+
   it("calcula a participação do investimento sem misturar plataformas sem gasto", () => {
     expect(
       buildPlatformInvestmentShares([
