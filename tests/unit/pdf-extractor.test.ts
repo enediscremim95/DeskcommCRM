@@ -23,6 +23,37 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const raiz = process.cwd();
 const fixture = (nome: string) => readFileSync(join(raiz, "tests/fixtures", nome));
 
+function pdfMinimoComPaginas(pageCount: number): Buffer {
+  const objects: string[] = [];
+  const pageIds = Array.from({ length: pageCount }, (_, index) => 3 + index);
+  const firstContentId = 3 + pageCount;
+  objects.push("<< /Type /Catalog /Pages 2 0 R >>");
+  objects.push(`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageCount} >>`);
+  for (let index = 0; index < pageCount; index += 1) {
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1 1] /Resources << >> /Contents ${firstContentId + index} 0 R >>`,
+    );
+  }
+  for (let index = 0; index < pageCount; index += 1) {
+    objects.push("<< /Length 0 >>\nstream\n\nendstream");
+  }
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`)
+    .join("");
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf);
+}
+
 afterEach(() => {
   vi.resetModules();
 });
@@ -73,10 +104,14 @@ describe("extractPdfText", () => {
   it("lança PdfExtractError quando o PDF tem cabeçalho válido mas corpo corrompido", async () => {
     // Pior que o buffer aleatório: começa com %PDF-, então passa por qualquer
     // checagem de assinatura e só morre dentro da engine.
-    const { extractPdfText, PdfExtractError } = await import("@/lib/ai/rag/extractors/pdf");
-    await expect(extractPdfText(fixture("sample-corrompido.pdf"))).rejects.toBeInstanceOf(
-      PdfExtractError,
+    const { extractPdfText, PdfExtractIsolationError } = await import(
+      "@/lib/ai/rag/extractors/pdf"
     );
+    await expect(extractPdfText(fixture("sample-corrompido.pdf"))).rejects.toBeInstanceOf(
+      PdfExtractIsolationError,
+    );
+    // O chamador continua executando depois que o isolado recusou o arquivo.
+    expect(1 + 1).toBe(2);
   });
 
   it("diz o que fazer quando o binário nativo do canvas falta", async () => {
@@ -87,18 +122,53 @@ describe("extractPdfText", () => {
     // Na VPS o erro nasce no IMPORT do módulo. Aqui ele nasce no getDocument, e é
     // fiel ao que importa: o branch decide pela MENSAGEM, não pelo ponto de origem.
     // (Mockar o factory para lançar não serve — o vitest reembrulha e a mensagem some.)
-    vi.doMock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
-      GlobalWorkerOptions: {},
-      getDocument: () => {
-        throw new Error("DOMMatrix is not defined");
-      },
-    }));
-    vi.resetModules();
-
     const { extractPdfText, PdfExtractError } = await import("@/lib/ai/rag/extractors/pdf");
-    await expect(extractPdfText(fixture("sample-text.pdf"))).rejects.toThrow(PdfExtractError);
-    await expect(extractPdfText(fixture("sample-text.pdf"))).rejects.toThrow(/@napi-rs\/canvas/);
-    vi.doUnmock("pdfjs-dist/legacy/build/pdf.mjs");
+    const runIsolated = vi.fn(async () => {
+      throw new Error("DOMMatrix is not defined");
+    });
+    await expect(
+      extractPdfText(fixture("sample-text.pdf"), { runIsolated }),
+    ).rejects.toThrow(PdfExtractError);
+    await expect(
+      extractPdfText(fixture("sample-text.pdf"), { runIsolated }),
+    ).rejects.toThrow(/@napi-rs\/canvas/);
+  });
+
+  it("pula PDF acima do teto sem abrir o isolado", async () => {
+    const { extractPdfText, PDF_MAX_BYTES } = await import(
+      "@/lib/ai/rag/extractors/pdf"
+    );
+    const runIsolated = vi.fn(async () => "não deveria abrir");
+
+    await expect(
+      extractPdfText(Buffer.alloc(PDF_MAX_BYTES + 1), { runIsolated }),
+    ).rejects.toMatchObject({
+      name: "PdfExtractLimitError",
+      code: "pdf_too_large",
+      message: "PDF grande demais para extrair texto",
+    });
+    expect(runIsolated).not.toHaveBeenCalled();
+  });
+
+  it("pula PDF acima do teto de páginas antes de extrair cada página", async () => {
+    const { extractPdfText, PDF_MAX_PAGES } = await import("@/lib/ai/rag/extractors/pdf");
+
+    await expect(extractPdfText(pdfMinimoComPaginas(PDF_MAX_PAGES + 1))).rejects.toMatchObject({
+      name: "PdfExtractLimitError",
+      code: "pdf_too_many_pages",
+    });
+  });
+
+  it("transfere a posse do buffer e não o retém no processo principal", async () => {
+    const { extractPdfText } = await import("@/lib/ai/rag/extractors/pdf");
+    const original = fixture("sample-text.pdf");
+    const standalone = Buffer.from(
+      original.buffer.slice(original.byteOffset, original.byteOffset + original.byteLength),
+    );
+    expect(standalone.buffer.byteLength).toBe(standalone.byteLength);
+
+    expect(await extractPdfText(standalone)).toBe("DeskcommCRM RAG fixture");
+    expect(standalone.byteLength).toBe(0);
   });
 
   it("tem uma engine só: pdf-parse não volta como dependência", async () => {

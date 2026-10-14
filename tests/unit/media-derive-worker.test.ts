@@ -69,6 +69,11 @@ vi.mock("@/lib/messaging/media/derive", () => ({
   deriveMediaText: vi.fn(async () => "transcrição do áudio real"),
 }));
 
+vi.mock("@/lib/ai/rag/extractors/pdf", () => ({
+  extractPdfText: vi.fn(async () => "texto do PDF"),
+  PDF_MEDIA_MAX_TEXT_CHARS: 8_000,
+}));
+
 vi.mock("@/lib/messaging/media/waha-source", () => ({
   fetchWahaMedia: fetchWahaMediaMock,
 }));
@@ -88,6 +93,7 @@ vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
 }));
 
 import { deriveMessageMedia } from "@/workers/media-derive-worker";
+import { extractPdfText } from "@/lib/ai/rag/extractors/pdf";
 import { deriveMediaText } from "@/lib/messaging/media/derive";
 
 function eventRow(attempts = 0) {
@@ -110,6 +116,7 @@ describe("deriveMessageMedia", () => {
     updateEqMock.mockReset();
     messageRow.media_derived_status = null;
     messageRow.type = "audio";
+    messageRow.media_mime = "audio/ogg";
     messageRow.media_url = null;
     messageRow.media_storage_path = "org1/conv1/msg1.ogg";
     messageRow.metadata = {};
@@ -118,6 +125,7 @@ describe("deriveMessageMedia", () => {
       mime: "audio/ogg",
     });
     vi.mocked(deriveMediaText).mockReset().mockResolvedValue("transcrição do áudio real");
+    vi.mocked(extractPdfText).mockReset().mockResolvedValue("texto do PDF");
   });
 
   it("deriva pelo provider em memória e limpa o ponteiro quando o Storage está desligado", async () => {
@@ -168,5 +176,25 @@ describe("deriveMessageMedia", () => {
     expect(updateEqMock).toHaveBeenCalledWith(
       expect.objectContaining({ media_derived_status: "failed" }),
     );
+  });
+
+  it("falha de PDF é terminal, marca derivado indisponível e não retenta", async () => {
+    messageRow.type = "document";
+    messageRow.media_mime = "application/pdf";
+    vi.mocked(extractPdfText).mockRejectedValue(
+      new Error("PDF grande demais para extrair texto"),
+    );
+
+    const r = await deriveMessageMedia(eventRow());
+
+    expect(r).toEqual({
+      consumer_key: "media_derive_v1",
+      status: "skipped",
+      detail: "PDF grande demais para extrair texto",
+    });
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({ media_derived_status: "failed" }),
+    );
+    expect(deriveMediaText).not.toHaveBeenCalled();
   });
 });

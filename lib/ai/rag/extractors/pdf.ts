@@ -1,98 +1,278 @@
 /**
- * PDF text extractor for the RAG ingestion pipeline.
+ * Extração de texto de PDF fora do processo principal.
  *
- * UMA engine: pdfjs-dist (build `legacy`, que é a que roda em Node).
- * Uma tentativa só. Se ela falhar, lança PdfExtractError — não há segunda.
- *
- * Este arquivo já teve duas tentativas (pdf-parse como primária, pdfjs como
- * fallback) e elas NÃO eram duas engines. O pdf-parse@1 vendoriza quatro cópias
- * completas do pdf.js da Mozilla dentro de si — 29 dos 29 MB do pacote estão em
- * `lib/` — e fixa a `v1.10.100`, de 2018. Ou seja: era o MESMO pdf.js duas vezes,
- * com 7 majors de distância, e a cópia velha rodava PRIMEIRO.
- *
- * Medido na issue #238: a v1.10.100 falha com "bad XRef entry" na própria fixture
- * deste repo (`tests/fixtures/sample-text.pdf`) e com "Illegal character: 41" num
- * PDF gerado pelo @react-pdf/renderer. A "primária" já estava morta há tempos e
- * quem extraía era o fallback — o teste verde media o caminho de baixo achando que
- * media o de cima. Redundância que não é redundante é código morto, e este arquivo
- * já pagou por isso uma vez (issue #102, no comentário lá embaixo).
+ * `pdfjs-dist` interpreta estruturas controladas pelo arquivo. Um PDF corrompido
+ * já levou o heap do worker principal ao limite e derrubou a fila inteira. A
+ * engine roda, por isso, num Worker com heap próprio, timeout e transferência de
+ * posse do ArrayBuffer. Se o isolado morrer, só aquela extração falha.
  */
+import { Worker } from "node:worker_threads";
 
-import type * as PdfjsDist from "pdfjs-dist";
+/** Mesmo teto aceito pela tela de materiais de conhecimento. */
+export const PDF_MAX_BYTES = 20 * 1024 * 1024;
+/** A spec de RAG promete ingestão de documentos de até 50 páginas. */
+export const PDF_MAX_PAGES = 50;
+/** Teto defensivo do texto completo usado pelo RAG. */
+export const PDF_MAX_TEXT_CHARS = 1_000_000;
+/** O derivado de mensagem nunca usa mais que isto. */
+export const PDF_MEDIA_MAX_TEXT_CHARS = 8_000;
+export const PDF_EXTRACTION_TIMEOUT_MS = 30_000;
+export const PDF_ISOLATE_MAX_OLD_GENERATION_MB = 96;
+
+export type PdfExtractErrorCode =
+  | "pdf_too_large"
+  | "pdf_too_many_pages"
+  | "pdf_isolate_timeout"
+  | "pdf_isolate_memory"
+  | "pdf_missing_canvas"
+  | "pdf_image_only"
+  | "pdf_extract_failed";
 
 export class PdfExtractError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
+  constructor(
+    message: string,
+    public readonly cause?: unknown,
+    public readonly code: PdfExtractErrorCode = "pdf_extract_failed",
+  ) {
     super(message);
     this.name = "PdfExtractError";
   }
 }
 
-/**
- * Extrai texto puro de um buffer de PDF usando pdfjs-dist.
- * Lança `PdfExtractError` se o arquivo for ilegível ou não tiver texto algum.
+/** Limite deliberado: o evento deve terminar como pulado, não ser retentado. */
+export class PdfExtractLimitError extends PdfExtractError {
+  constructor(message: string, code: "pdf_too_large" | "pdf_too_many_pages") {
+    super(message, undefined, code);
+    this.name = "PdfExtractLimitError";
+  }
+}
+
+export class PdfExtractIsolationError extends PdfExtractError {
+  constructor(
+    message: string,
+    code: Exclude<PdfExtractErrorCode, "pdf_too_large" | "pdf_too_many_pages">,
+    cause?: unknown,
+  ) {
+    super(message, cause, code);
+    this.name = "PdfExtractIsolationError";
+  }
+}
+
+interface PdfWorkerResult {
+  kind: "ok" | "limit" | "error";
+  text?: string;
+  code?: PdfExtractErrorCode;
+  detail?: string;
+}
+
+export type PdfIsolatedRunner = (buffer: Buffer, maxTextChars: number) => Promise<string>;
+
+export interface PdfExtractDependencies {
+  runIsolated?: PdfIsolatedRunner;
+  maxTextChars?: number;
+}
+
+/*
+ * JavaScript puro e autocontido para funcionar tanto no worker TSX quanto no
+ * Next standalone. Um arquivo auxiliar relativo sumiria do caminho ao ser
+ * empacotado em `.next/standalone`; `eval` mantém a fronteira dentro do módulo.
  */
-export async function extractPdfText(buffer: Buffer): Promise<string> {
+const PDF_WORKER_SOURCE = String.raw`
+const { parentPort } = require("node:worker_threads");
+
+parentPort.once("message", async ({ bytes, maxPages, maxChars }) => {
+  let document = null;
+  let loadingTask = null;
+  let result;
   try {
-    const pdfjsLib = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as typeof PdfjsDist;
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes) });
+    document = await loadingTask.promise;
 
-    // NÃO mexa em GlobalWorkerOptions.workerSrc aqui (issue #102).
-    //
-    // Havia um `workerSrc = ""` nesta linha, com a intenção de "desligar o worker
-    // em Node". O efeito era o oposto: string vazia é falsy, e o getter
-    // `PDFWorker.workerSrc` lança `No "GlobalWorkerOptions.workerSrc" specified.`
-    // ANTES de ler um byte do arquivo — ou seja, a extração inteira era inalcançável,
-    // e o erro chegava ao usuário como a mensagem genérica lá de baixo.
-    //
-    // Em Node o pdf.js já se auto-configura; as três linhas sobrescreviam justamente
-    // o que a lib tinha preparado. Medido nas versões 4.10.38 e 6.2.108: com
-    // `workerSrc = ""` falha nas duas; sem tocar, extrai nas duas.
-    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
-    const pdfDocument = await loadingTask.promise;
+    if (document.numPages > maxPages) {
+      result = {
+        kind: "limit",
+        code: "pdf_too_many_pages",
+        detail: "PDF tem páginas demais para extrair texto",
+      };
+    } else {
+      let combined = "";
+      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        try {
+          const content = await page.getTextContent();
+          const pageText = content.items
+            .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : "") : ""))
+            .join("")
+            .trim();
+          if (pageText.length > 0) {
+            combined += (combined.length > 0 ? "\n\n" : "") + pageText;
+            if (combined.length >= maxChars) break;
+          }
+        } finally {
+          page.cleanup();
+        }
+      }
 
-    const pageTexts: string[] = [];
-    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
-      const page = await pdfDocument.getPage(pageNum);
-      const content = await page.getTextContent();
-
-      // A quebra de linha vem do `hasEOL` do próprio pdf.js, não de comparar o Y do
-      // `transform`. Medido na issue #238 com um PDF que tem "10,00" + um "2"
-      // sobrescrito na MESMA linha visual: agrupar por `transform[5]` (o que o
-      // pdf-parse fazia) devolve `"Assinatura R$ 10,00\n2 \npor mes"` — três linhas
-      // onde há uma —, enquanto `hasEOL` devolve `"Assinatura R$ 10,002 por mes"`.
-      // O sobrescrito muda o Y sem terminar a linha; só a engine sabe disso.
-      const pageText = content.items
-        .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : "") : ""))
-        .join("")
-        .trim();
-      if (pageText.length > 0) pageTexts.push(pageText);
+      combined = combined.slice(0, maxChars).trim();
+      result = combined.length > 0
+        ? { kind: "ok", text: combined }
+        : {
+            kind: "error",
+            code: "pdf_image_only",
+            detail: "pdfjs-dist extracted no text (possibly image-only PDF)",
+          };
     }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    result = /DOMMatrix|@napi-rs\/canvas/.test(detail)
+      ? { kind: "error", code: "pdf_missing_canvas", detail }
+      : { kind: "error", code: "pdf_extract_failed", detail };
+  } finally {
+    try {
+      if (document) await document.destroy();
+      else if (loadingTask) await loadingTask.destroy();
+    } catch {}
+  }
+  parentPort.postMessage(result);
+});
+`;
 
-    const combined = pageTexts.join("\n\n").trim();
-    if (combined.length === 0) {
-      throw new PdfExtractError("pdfjs-dist extracted no text (possibly image-only PDF)");
-    }
-    return combined;
-  } catch (err) {
-    if (err instanceof PdfExtractError) throw err;
+function transferableBytes(buffer: Buffer): ArrayBuffer {
+  const source = buffer.buffer;
+  if (
+    source instanceof ArrayBuffer &&
+    buffer.byteOffset === 0 &&
+    buffer.byteLength === source.byteLength
+  ) {
+    return source;
+  }
 
-    // O pdfjs 6 faz `new DOMMatrix()` no topo do módulo e depende do
-    // `@napi-rs/canvas` (optionalDependency) para o polyfill. Sem esse binário —
-    // plataforma sem binding publicado, registry corporativo sem os artefatos, ou
-    // instalação com optional deps podadas — ele estoura no IMPORT, antes de ler o
-    // arquivo. A versão 4 só avisava e extraía o texto assim mesmo.
-    //
-    // Sem esta mensagem, quem instalou vê "DOMMatrix is not defined" e não tem como
-    // ligar isso a uma dependência que ele nem sabe que existe. O diagnóstico custa
-    // 4 linhas; a caçada custa uma tarde.
-    if (err instanceof Error && /DOMMatrix|@napi-rs\/canvas/.test(err.message)) {
-      throw new PdfExtractError(
-        "Extração de PDF indisponível: o binário nativo @napi-rs/canvas não foi instalado " +
-          "nesta plataforma. Reinstale as dependências SEM podar as opcionais " +
-          "(`pnpm install`, não `--no-optional`). Até lá, PDFs não são lidos.",
-        err,
+  // Buffers pequenos podem compartilhar o slab do Node, que não deve ser
+  // transferido inteiro. A cópia fica com o isolado; nenhuma referência global
+  // a ela permanece no processo principal.
+  return Uint8Array.from(buffer).buffer;
+}
+
+function isolatedErrorFromWorker(result: PdfWorkerResult): PdfExtractError {
+  const code = result.code ?? "pdf_extract_failed";
+  if (code === "pdf_too_many_pages") {
+    return new PdfExtractLimitError(
+      result.detail ?? "PDF tem páginas demais para extrair texto",
+      code,
+    );
+  }
+  if (code === "pdf_missing_canvas") {
+    return new PdfExtractIsolationError(
+      "Extração de PDF indisponível: o binário nativo @napi-rs/canvas não foi instalado nesta plataforma. " +
+        "Reinstale as dependências sem podar as opcionais.",
+      code,
+    );
+  }
+  return new PdfExtractIsolationError(
+    result.detail ?? "pdfjs-dist failed to extract text from the PDF",
+    code === "pdf_image_only" ? code : "pdf_extract_failed",
+  );
+}
+
+export function runPdfExtractionIsolated(
+  buffer: Buffer,
+  maxTextChars = PDF_MAX_TEXT_CHARS,
+): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const worker = new Worker(PDF_WORKER_SOURCE, {
+      eval: true,
+      resourceLimits: {
+        maxOldGenerationSizeMb: PDF_ISOLATE_MAX_OLD_GENERATION_MB,
+        maxYoungGenerationSizeMb: 16,
+        stackSizeMb: 4,
+      },
+    });
+    let settled = false;
+
+    const finish = (outcome: { text: string } | { error: PdfExtractError }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      worker.removeAllListeners();
+      void worker.terminate();
+      if ("text" in outcome) resolve(outcome.text);
+      else reject(outcome.error);
+    };
+
+    const timer = setTimeout(() => {
+      finish({
+        error: new PdfExtractIsolationError(
+          "Extração isolada de PDF excedeu o tempo limite",
+          "pdf_isolate_timeout",
+        ),
+      });
+    }, PDF_EXTRACTION_TIMEOUT_MS);
+
+    worker.once("message", (result: PdfWorkerResult) => {
+      if (result.kind === "ok" && typeof result.text === "string") {
+        finish({ text: result.text });
+      } else {
+        finish({ error: isolatedErrorFromWorker(result) });
+      }
+    });
+    worker.once("error", (error: Error & { code?: string }) => {
+      const outOfMemory = error.code === "ERR_WORKER_OUT_OF_MEMORY" || /heap|memory/i.test(error.message);
+      finish({
+        error: new PdfExtractIsolationError(
+          outOfMemory
+            ? "Extração isolada de PDF excedeu o limite de memória"
+            : "Extração isolada de PDF falhou",
+          outOfMemory ? "pdf_isolate_memory" : "pdf_extract_failed",
+          error,
+        ),
+      });
+    });
+    worker.once("exit", (code) => {
+      if (code !== 0) {
+        finish({
+          error: new PdfExtractIsolationError(
+            `Extração isolada de PDF terminou inesperadamente (código ${code})`,
+            "pdf_extract_failed",
+          ),
+        });
+      }
+    });
+
+    const bytes = transferableBytes(buffer);
+    worker.postMessage(
+      { bytes, maxPages: PDF_MAX_PAGES, maxChars: maxTextChars },
+      [bytes],
+    );
+  });
+}
+
+/** Extrai texto puro sem executar `pdfjs-dist` no processo chamador. */
+export async function extractPdfText(
+  buffer: Buffer,
+  dependencies: PdfExtractDependencies = {},
+): Promise<string> {
+  if (buffer.byteLength > PDF_MAX_BYTES) {
+    throw new PdfExtractLimitError("PDF grande demais para extrair texto", "pdf_too_large");
+  }
+
+  const runIsolated = dependencies.runIsolated ?? runPdfExtractionIsolated;
+  try {
+    return await runIsolated(buffer, dependencies.maxTextChars ?? PDF_MAX_TEXT_CHARS);
+  } catch (error) {
+    if (error instanceof PdfExtractError) throw error;
+    if (error instanceof Error && /DOMMatrix|@napi-rs\/canvas/.test(error.message)) {
+      throw new PdfExtractIsolationError(
+        "Extração de PDF indisponível: o binário nativo @napi-rs/canvas não foi instalado nesta plataforma. " +
+          "Reinstale as dependências sem podar as opcionais.",
+        "pdf_missing_canvas",
+        error,
       );
     }
-
-    throw new PdfExtractError("pdfjs-dist failed to extract text from the PDF", err);
+    throw new PdfExtractIsolationError(
+      "pdfjs-dist failed to extract text from the PDF",
+      "pdf_extract_failed",
+      error,
+    );
   }
 }

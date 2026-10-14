@@ -33,7 +33,16 @@ const nextConfig: NextConfig = {
    * sem exigir que alguém lembre de editar esta linha.
    */
   outputFileTracingIncludes: {
-    "/**": ["./node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/**"],
+    "/**": [
+      "./node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/**",
+      // O extrator importa pdfjs dentro de um Worker criado por string para o
+      // heap hostil não alcançar o servidor. O file tracer não enxerga imports
+      // que vivem nessa string, então o standalone precisa carregar o pacote e
+      // o binding opcional de canvas explicitamente.
+      "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/**",
+      "./node_modules/.pnpm/@napi-rs+canvas@*/node_modules/@napi-rs/canvas/**",
+      "./node_modules/.pnpm/@napi-rs+canvas-*@*/node_modules/@napi-rs/**",
+    ],
   },
   reactStrictMode: true,
   poweredByHeader: false,

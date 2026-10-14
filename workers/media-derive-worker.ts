@@ -7,7 +7,7 @@
 import { generateText } from "ai";
 import type pg from "pg";
 
-import { extractPdfText } from "@/lib/ai/rag/extractors/pdf";
+import { extractPdfText, PDF_MEDIA_MAX_TEXT_CHARS } from "@/lib/ai/rag/extractors/pdf";
 import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
 import { resolveOrgLlmConfig, type LlmEdgeConfig } from "@/lib/agent-engine/edge/llm/credentials";
 import { createDefaultRegistry } from "@/lib/agent-engine/edge/llm/providers";
@@ -153,6 +153,37 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       });
       buffer = media.buffer;
       effectiveMime = media.mime;
+    }
+
+    const baseMime = effectiveMime.split(";")[0]!.trim().toLowerCase();
+    if (msg.type === "document" && baseMime === "application/pdf") {
+      let text: string;
+      try {
+        text = await extractPdfText(buffer, { maxTextChars: PDF_MEDIA_MAX_TEXT_CHARS });
+      } catch (err) {
+        // PDF ilegível, grande demais, com páginas demais, timeout ou OOM do
+        // isolado é terminal para ESTA mídia. Retentar o mesmo binário só
+        // recriaria o laço que derrubou o worker em produção.
+        const detail = err instanceof Error ? err.message : String(err);
+        buffer = Buffer.alloc(0);
+        await markFailed();
+        logger.warn("[media-derive] PDF ficou indisponível para derivação", {
+          message_id: msg.id,
+          detail,
+        });
+        return { consumer_key, status: "skipped", detail };
+      }
+
+      // A posse do ArrayBuffer foi transferida ao isolado. Remova também a
+      // referência local antes de tocar no banco para o binário não sobreviver
+      // à extração durante uma ida lenta ao Storage/PostgREST.
+      buffer = Buffer.alloc(0);
+      await clearTransientPointer({
+        media_derived_text: text,
+        media_derived_status: "ready",
+        media_mime: effectiveMime,
+      });
+      return { consumer_key, status: "ok" };
     }
 
     // Credencial BYOK da org p/ visão (imagem).
