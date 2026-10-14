@@ -18,7 +18,6 @@ import { useDeleteNote } from "@/hooks/inbox/useDeleteNote";
 import { useDebugToggle } from "@/hooks/ai/useDebugToggle";
 import { useActiveOrg, usePermission, useUser } from "@/hooks/auth/AuthProvider";
 import type { Message, Note } from "@/lib/types/messaging";
-import { apiClient } from "@/lib/api/client";
 
 type EstadoHistorico = "parado" | "carregando" | "store_desligado";
 
@@ -124,9 +123,22 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
   useEffect(() => {
     if (!conversationId || suporteSomenteLeitura) return;
     let vigente = true;
-    void apiClient.post<{
-      data: { status: string; inseridas?: number };
-    }>(`/api/v1/conversations/${conversationId}/historico`, {}, { timeoutMs: 20_000 })
+    // `fetch` simples, não o `apiClient`: o histórico é um extra e nunca pode
+    // recarregar a página. O `apiClient` recarrega em `no_active_org`, e uma
+    // conversa aberta no instante da troca de organização cairia nisso.
+    const abortar = new AbortController();
+    const prazo = setTimeout(() => abortar.abort(), 20_000);
+    void fetch(`/api/v1/conversations/${conversationId}/historico`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+      credentials: "same-origin",
+      signal: abortar.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("historico_indisponivel");
+        return (await res.json()) as { data: { status: string; inseridas?: number } };
+      })
       .then(async (resposta) => {
         if (!vigente) return;
         if (resposta.data.status === "store_desligado") {
@@ -144,6 +156,8 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
       });
     return () => {
       vigente = false;
+      clearTimeout(prazo);
+      abortar.abort();
     };
     // `q` muda a cada render; a operação pertence apenas ao id aberto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
