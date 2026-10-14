@@ -146,6 +146,9 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
           return;
         }
         setHistorico({ conversationId, status: "parado" });
+        // Nada entrou, nada a reler: reler à toa, no meio de uma troca de
+        // organização, bate na organização antiga e recarrega a página.
+        if (!resposta.data.inseridas) return;
         await Promise.all([
           q.refetch(),
           queryClient.invalidateQueries({ queryKey: ["conversations"] }),
@@ -156,8 +159,9 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
       });
     return () => {
       vigente = false;
+      // Sem `abort()` aqui: cancelar um POST já enviado não prova que o servidor
+      // terminou. Só o prazo de 20 s corta, e o `vigente` descarta o resultado.
       clearTimeout(prazo);
-      abortar.abort();
     };
     // `q` muda a cada render; a operação pertence apenas ao id aberto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
