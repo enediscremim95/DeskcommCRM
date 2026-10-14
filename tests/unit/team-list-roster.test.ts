@@ -16,6 +16,11 @@ import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthUser } from "@/lib/auth/types";
 
+const routeMocks = vi.hoisted(() => ({
+  isServiceRoleConfigured: vi.fn(() => false),
+  getUserById: vi.fn(),
+}));
+
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: vi.fn(),
   resolveActiveOrg: vi.fn(),
@@ -26,10 +31,12 @@ vi.mock("@/lib/auth/server", () => ({
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 // admin.ts valida env no load; a rota só o chama quando isServiceRoleConfigured()
 // (mockado false) — mock evita a validação de env no import.
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({ auth: { admin: { getUserById: routeMocks.getUserById } } }),
+}));
 vi.mock("@/lib/audit", () => ({
   audit: vi.fn(async () => undefined),
-  isServiceRoleConfigured: () => false,
+  isServiceRoleConfigured: routeMocks.isServiceRoleConfigured,
   hashEmail: (e: string) => e,
 }));
 
@@ -71,9 +78,7 @@ function makeSupabaseStub(rows: Array<Record<string, unknown>>, spy: QuerySpy) {
     },
     // requireRole resolve o role efetivo do banco.
     rpc: async (fn: string) =>
-      fn === "fn_user_role_in_org"
-        ? { data: "manager", error: null }
-        : { data: null, error: null },
+      fn === "fn_user_role_in_org" ? { data: "manager", error: null } : { data: null, error: null },
   };
 }
 
@@ -95,6 +100,7 @@ function managerSession(rows: Array<Record<string, unknown>>, spy: QuerySpy) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  routeMocks.isServiceRoleConfigured.mockReturnValue(false);
 });
 
 describe("GET /api/v1/team — roster completo para manager (G6-06)", () => {
@@ -106,9 +112,13 @@ describe("GET /api/v1/team — roster completo para manager (G6-06)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: Array<{ user_id: string; role: string }> };
     expect(body.data).toHaveLength(5);
-    expect(body.data.map((m) => m.role).sort()).toEqual(
-      ["admin", "agent", "agent", "manager", "viewer"],
-    );
+    expect(body.data.map((m) => m.role).sort()).toEqual([
+      "admin",
+      "agent",
+      "agent",
+      "manager",
+      "viewer",
+    ]);
   });
 
   it("a query é org-scoped e NÃO filtra por user_id (o roster vem só da RLS)", async () => {
@@ -118,5 +128,60 @@ describe("GET /api/v1/team — roster completo para manager (G6-06)", () => {
     await GET(new NextRequest("http://localhost/api/v1/team"));
     expect(spy.eqCalls).toContainEqual(["organization_id", ORG_ID]);
     expect(spy.eqCalls.some(([col]) => col === "user_id")).toBe(false);
+  });
+
+  it("marca o login como desconhecido quando o service role não está configurado", async () => {
+    const spy: QuerySpy = { eqCalls: [] };
+    managerSession(ROSTER, spy);
+    const { GET } = await import("@/app/api/v1/team/route");
+
+    const res = await GET(new NextRequest("http://localhost/api/v1/team"));
+    const body = (await res.json()) as {
+      data: Array<{ last_sign_in_at: string | null; last_sign_in_known: boolean }>;
+    };
+
+    expect(body.data).toHaveLength(5);
+    expect(body.data.every((member) => member.last_sign_in_at === null)).toBe(true);
+    expect(body.data.every((member) => member.last_sign_in_known === false)).toBe(true);
+    expect(routeMocks.getUserById).not.toHaveBeenCalled();
+  });
+
+  it("distingue login ausente de login realizado quando o Auth confirma o usuário", async () => {
+    const spy: QuerySpy = { eqCalls: [] };
+    managerSession(ROSTER.slice(0, 2), spy);
+    routeMocks.isServiceRoleConfigured.mockReturnValue(true);
+    routeMocks.getUserById
+      .mockResolvedValueOnce({
+        data: {
+          user: {
+            email: "viewer@example.com",
+            user_metadata: { full_name: "Viewer" },
+            last_sign_in_at: null,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          user: {
+            email: "agent@example.com",
+            user_metadata: {},
+            last_sign_in_at: "2026-10-13T12:00:00Z",
+          },
+        },
+      });
+    const { GET } = await import("@/app/api/v1/team/route");
+
+    const res = await GET(new NextRequest("http://localhost/api/v1/team"));
+    const body = (await res.json()) as {
+      data: Array<{ last_sign_in_at: string | null; last_sign_in_known: boolean }>;
+    };
+
+    expect(body.data).toEqual([
+      expect.objectContaining({ last_sign_in_at: null, last_sign_in_known: true }),
+      expect.objectContaining({
+        last_sign_in_at: "2026-10-13T12:00:00Z",
+        last_sign_in_known: true,
+      }),
+    ]);
   });
 });

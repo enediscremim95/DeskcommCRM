@@ -10,6 +10,7 @@ import { useTeamMembers, type TeamMember } from "@/hooks/team/useTeamMembers";
 import { useChangeRole } from "@/hooks/team/useChangeRole";
 import { useReactivateMember } from "@/hooks/team/useReactivateMember";
 import { useRevokeMember } from "@/hooks/team/useRevokeMember";
+import { useInviteMembers } from "@/hooks/team/useInviteMembers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,6 +51,34 @@ interface Props {
   canManage: boolean;
 }
 
+export type TeamMemberStatus = "revoked" | "active" | "access_sent" | "accepted" | "pending";
+
+export function getTeamMemberStatus(
+  member: Pick<TeamMember, "revoked_at" | "accepted_at" | "last_sign_in_at" | "last_sign_in_known">,
+): TeamMemberStatus {
+  if (member.revoked_at) return "revoked";
+  if (!member.accepted_at) return "pending";
+  if (member.last_sign_in_at) return "active";
+  if (member.last_sign_in_known) return "access_sent";
+  return "accepted";
+}
+
+export function canResendTeamAccess(
+  member: Pick<
+    TeamMember,
+    "user_id" | "email" | "revoked_at" | "accepted_at" | "last_sign_in_at" | "last_sign_in_known"
+  >,
+  currentUserId: string,
+  canManage: boolean,
+): boolean {
+  return (
+    canManage &&
+    member.user_id !== currentUserId &&
+    Boolean(member.email) &&
+    getTeamMemberStatus(member) === "access_sent"
+  );
+}
+
 export function TeamMembersClient({ currentUserId, canManage }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
@@ -57,6 +86,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
   const changeRole = useChangeRole();
   const revoke = useRevokeMember();
   const reativar = useReactivateMember();
+  const reenviarAcesso = useInviteMembers();
 
   const [interfaceMember, setInterfaceMember] = useState<TeamMember | null>(null);
   const [revokeDialog, setRevokeDialog] = useState<TeamMember | null>(null);
@@ -151,16 +181,16 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                   )}
                 </TableCell>
                 <TableCell>
-                  {/*
-                    "Revogado" vem ANTES dos outros dois: quem foi revogado tem
-                    `accepted_at` preenchido (ele aceitou um dia), e sem esta
-                    ordem apareceria como "Aceito" — dizendo o contrário do que
-                    é. Até 2026-09-10 a linha nem chegava aqui: a rota filtrava
-                    revogado fora e a pessoa simplesmente sumia da equipe.
-                  */}
-                  {m.revoked_at ? (
+                  {getTeamMemberStatus(m) === "revoked" ? (
                     <Badge variant="destructive">{t("Revogado")}</Badge>
-                  ) : m.accepted_at ? (
+                  ) : getTeamMemberStatus(m) === "active" ? (
+                    <Badge variant="default">{t("Ativo")}</Badge>
+                  ) : getTeamMemberStatus(m) === "access_sent" ? (
+                    <div title={t("Acesso enviado, ainda não entrou")}>
+                      <Badge variant="secondary">{t("Acesso enviado")}</Badge>
+                      <p className="mt-1 text-xs text-muted-foreground">{t("ainda não entrou")}</p>
+                    </div>
+                  ) : getTeamMemberStatus(m) === "accepted" ? (
                     <Badge variant="default">{t("Aceito")}</Badge>
                   ) : (
                     <Badge variant="outline">{t("Pendente")}</Badge>
@@ -181,6 +211,28 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {canResendTeamAccess(m, currentUserId, canManage) ? (
+                            <DropdownMenuItem
+                              disabled={reenviarAcesso.isPending}
+                              onClick={async () => {
+                                if (!m.email) return;
+                                try {
+                                  const result = await reenviarAcesso.mutateAsync({
+                                    invitations: [{ email: m.email, role: m.role as Role }],
+                                  });
+                                  if (result.data.sent.some((sent) => sent.email === m.email)) {
+                                    toast.success(t("Acesso reenviado."));
+                                  } else {
+                                    toast.error(t("Não foi possível reenviar o acesso."));
+                                  }
+                                } catch {
+                                  /* showApiError já foi disparado pelo hook */
+                                }
+                              }}
+                            >
+                              {t("Reenviar acesso")}
+                            </DropdownMenuItem>
+                          ) : null}
                           {/*
                             Revogar e reativar são exclusivos: oferecer os dois
                             na mesma linha convidaria ao clique errado. Sem o

@@ -32,6 +32,7 @@ interface MemberDto extends MembershipRow {
   email: string | null;
   full_name: string | null;
   last_sign_in_at: string | null;
+  last_sign_in_known: boolean;
 }
 
 export async function GET(_req: NextRequest): Promise<Response> {
@@ -66,6 +67,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
       email: null,
       full_name: null,
       last_sign_in_at: null,
+      last_sign_in_known: false,
     }));
     return ok(degraded, { requestId });
   }
@@ -80,6 +82,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
         email: u?.email ?? null,
         full_name: (u?.user_metadata?.full_name as string | undefined) ?? null,
         last_sign_in_at: u?.last_sign_in_at ?? null,
+        // `null` só significa "nunca entrou" quando o Auth confirmou que o
+        // usuário existe. Sem essa certeza, a UI preserva o estado legado.
+        last_sign_in_known: Boolean(u),
       };
     }),
   );

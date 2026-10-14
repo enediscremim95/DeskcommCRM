@@ -6558,6 +6558,12 @@ export const DICIONARIO: Traducoes = {
   },
   "Confirmar alteração": { es: "Confirmar cambio" },
   "Aceito": { es: "Aceptado" },
+  "Acesso enviado": { es: "Acceso enviado" },
+  "Acesso enviado, ainda não entrou": { es: "Acceso enviado, todavía no ingresó" },
+  "ainda não entrou": { es: "todavía no ingresó" },
+  "Reenviar acesso": { es: "Reenviar acceso" },
+  "Acesso reenviado.": { es: "Acceso reenviado." },
+  "Não foi possível reenviar o acesso.": { es: "No se pudo reenviar el acceso." },
   "Revogar acesso": { es: "Revocar acceso" },
   "você": { es: "tú" },
   "perderá acesso à empresa. Você poderá devolver o acesso depois.": {

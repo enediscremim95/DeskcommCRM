@@ -6,7 +6,7 @@
  * confirmação antes do PATCH e seletor ausente sem a capacidade (canManage=false).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -27,7 +27,7 @@ vi.mock("sonner", () => ({
 
 import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
-import { TeamMembersClient } from "./TeamMembersClient";
+import { canResendTeamAccess, getTeamMemberStatus, TeamMembersClient } from "./TeamMembersClient";
 
 // Polyfills que o Radix Select exige e o jsdom não tem.
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -55,6 +55,7 @@ function members(): TeamMember[] {
       email: "admin@example.com",
       full_name: "Admin",
       last_sign_in_at: null,
+      last_sign_in_known: false,
     },
     {
       user_id: AGENT_ID,
@@ -66,6 +67,7 @@ function members(): TeamMember[] {
       email: "agente@example.com",
       full_name: "Agente",
       last_sign_in_at: null,
+      last_sign_in_known: true,
     },
   ];
 }
@@ -94,6 +96,7 @@ describe("TeamMembersClient — seletor de papel (G2-02)", () => {
     renderClient({ canManage: false });
     expect(await screen.findByText("agente@example.com")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ações" })).not.toBeInTheDocument();
     expect(screen.getByText("agent")).toBeInTheDocument();
     expect(screen.getByText("Personalizada")).toBeInTheDocument();
   });
@@ -149,6 +152,117 @@ describe("TeamMembersClient — seletor de papel (G2-02)", () => {
     // Rollback: volta ao papel original após o erro.
     await waitFor(() => expect(trigger).toHaveTextContent("agent"));
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+});
+
+describe("TeamMembersClient — status de acesso", () => {
+  const base = {
+    revoked_at: null,
+    accepted_at: "2026-01-02T00:00:00Z",
+    last_sign_in_at: null,
+    last_sign_in_known: true,
+  };
+
+  it.each([
+    [
+      "revogado prevalece sobre login e aceite",
+      { ...base, revoked_at: "2026-02-01T00:00:00Z", last_sign_in_at: "2026-01-03T00:00:00Z" },
+      "revoked",
+    ],
+    ["ativo exige aceite e login", { ...base, last_sign_in_at: "2026-01-03T00:00:00Z" }, "active"],
+    ["acesso enviado identifica quem nunca entrou", base, "access_sent"],
+    [
+      "pendente prevalece sem aceite",
+      { ...base, accepted_at: null, last_sign_in_at: "2026-01-03T00:00:00Z" },
+      "pending",
+    ],
+    [
+      "aceito é preservado quando o login é desconhecido",
+      { ...base, last_sign_in_known: false },
+      "accepted",
+    ],
+  ] as const)("%s", (_descricao, member, expected) => {
+    expect(getTeamMemberStatus(member)).toBe(expected);
+  });
+
+  it("mostra o detalhe de quem recebeu acesso e ainda não entrou", async () => {
+    renderClient();
+
+    const agentRow = (await screen.findByText("agente@example.com")).closest("tr");
+    expect(agentRow).not.toBeNull();
+    expect(within(agentRow!).getByText("Acesso enviado")).toBeInTheDocument();
+    expect(within(agentRow!).getByText("ainda não entrou")).toBeInTheDocument();
+  });
+});
+
+describe("TeamMembersClient — reenvio de acesso", () => {
+  it("oferece e executa o reenvio só na linha de outro membro que nunca entrou", async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: {
+        sent: [
+          {
+            email: "agente@example.com",
+            invite_id: "invite-1",
+            expires_at: null,
+            email_dispatched: true,
+            accept_url: "https://example.com/login",
+          },
+        ],
+        failed: [],
+      },
+    });
+    const user = userEvent.setup();
+    renderClient();
+
+    const selfRow = (await screen.findByText("admin@example.com")).closest("tr");
+    const agentRow = screen.getByText("agente@example.com").closest("tr");
+    expect(selfRow).not.toBeNull();
+    expect(agentRow).not.toBeNull();
+    expect(within(selfRow!).queryByRole("button", { name: "Ações" })).not.toBeInTheDocument();
+
+    await user.click(within(agentRow!).getByRole("button", { name: "Ações" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Reenviar acesso" }));
+
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/team/invite", {
+      invitations: [{ email: "agente@example.com", role: "agent" }],
+    });
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Acesso reenviado."));
+  });
+
+  it("não oferece reenvio para membro que já entrou", async () => {
+    const rows = members();
+    rows[1]!.last_sign_in_at = "2026-01-03T00:00:00Z";
+    vi.mocked(apiClient.get).mockResolvedValue({ data: rows });
+    const user = userEvent.setup();
+    renderClient();
+
+    const agentRow = (await screen.findByText("agente@example.com")).closest("tr");
+    expect(agentRow).not.toBeNull();
+    await user.click(within(agentRow!).getByRole("button", { name: "Ações" }));
+
+    expect(screen.queryByRole("menuitem", { name: "Reenviar acesso" })).not.toBeInTheDocument();
+    expect(canResendTeamAccess(rows[1]!, ADMIN_ID, true)).toBe(false);
+  });
+
+  it("mostra erro quando a rota não consegue reenviar o acesso", async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: {
+        sent: [],
+        failed: [{ email: "agente@example.com", reason: "email_send_failed" }],
+      },
+    });
+    const user = userEvent.setup();
+    renderClient();
+
+    const agentRow = (await screen.findByText("agente@example.com")).closest("tr");
+    expect(agentRow).not.toBeNull();
+    await user.click(within(agentRow!).getByRole("button", { name: "Ações" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Reenviar acesso" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Não foi possível reenviar o acesso."),
+    );
     expect(toast.success).not.toHaveBeenCalled();
   });
 });
