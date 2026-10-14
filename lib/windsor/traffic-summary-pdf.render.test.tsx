@@ -8,9 +8,107 @@ import {
   buildTrafficAdsInTest,
   renderTrafficSummaryPdf,
   TrafficSummaryPdf,
+  type TrafficSummarySource,
 } from "./traffic-summary-pdf";
 
+const BRAND = {
+  nome: "Marca Exemplo",
+  logoUrl: null,
+  accent: "#506d48",
+  accentFg: "#ffffff",
+  origens: { nome: "organizacao" as const, cor: "organizacao" as const },
+};
+
+const THUMBNAIL_DATA_URI = [
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAE",
+  "AAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+].join("");
+
+function sourceWithAds(adCount: number, platformCount = 1): TrafficSummarySource {
+  return {
+    organization_name: "Cliente de prova",
+    window: { from: "2026-09-14", to: "2026-10-13" },
+    crm: { leads_entered: 0, in_service: 0, closed_won: 0 },
+    currencies: [{
+      currency: "BRL",
+      summary: { spend: 1_000, reach: 10_000, impressions: 12_000, clicks: 500, leads: 0 },
+      platforms: [
+        { platform: "meta_ads", spend: 700, reach: 8_000, impressions: 9_000, clicks: 400, leads: 0 },
+        ...(platformCount >= 2 ? [{ platform: "google_ads" as const, spend: 300, reach: 2_000, impressions: 3_000, clicks: 100, leads: 0 }] : []),
+      ],
+      campaigns: adCount > 0 ? [{
+        name: "Campanha de aquisição com um nome deliberadamente longo para ocupar no máximo duas linhas na tabela",
+        platform: "meta_ads",
+        campaign_status: "ACTIVE",
+        leads: 0,
+        cost_per_lead: null,
+        conversion_rate: null,
+        adsets: [{
+          name: "Conjunto de prova",
+          ads: Array.from({ length: adCount }, (_, index) => ({
+            name: `LINHA-${String(index + 1).padStart(2, "0")} anúncio com nome longo que precisa ser truncado sem aumentar a altura`,
+            spend: 100 - index,
+            impressions: 1_000 - index,
+            leads: 0,
+            cost_per_lead: null,
+            thumbnail_url: `https://cdn.example/criativo-${index + 1}.png`,
+            destination_urls: [`https://cliente.example/oferta-com-endereco-longo-${index + 1}`],
+            first_delivery_on: "2026-09-20",
+            last_delivery_on: "2026-10-13",
+          })),
+        }],
+      }] : [],
+    }],
+  };
+}
+
+async function renderFixture(source: TrafficSummarySource): Promise<Buffer> {
+  const ads = buildTrafficAdsInTest(source).map((ad) => ({ ...ad, thumbnail_data_uri: THUMBNAIL_DATA_URI }));
+  return (await renderToBuffer(
+    <TrafficSummaryPdf source={source} brand={BRAND} language="pt-BR" adsInTest={ads} />,
+  )) as Buffer;
+}
+
+async function extractPageTexts(buffer: Buffer): Promise<string[]> {
+  const document = await getDocument({ data: new Uint8Array(buffer) }).promise;
+  const pages: string[] = [];
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber);
+    const content = await page.getTextContent();
+    pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join(" "));
+  }
+  return pages;
+}
+
 describe("PDF do relatório enriquecido", () => {
+  it("omite a página repetida com uma plataforma e mantém as duas páginas com duas", async () => {
+    const onePlatformPages = await extractPageTexts(await renderFixture(sourceWithAds(0, 1)));
+    const twoPlatformPages = await extractPageTexts(await renderFixture(sourceWithAds(0, 2)));
+
+    expect(onePlatformPages.some((page) => page.trimStart().startsWith("Meta Ads "))).toBe(false);
+    expect(twoPlatformPages.some((page) => page.trimStart().startsWith("Meta Ads "))).toBe(true);
+    expect(twoPlatformPages.some((page) => page.trimStart().startsWith("Google Ads "))).toBe(true);
+    expect(onePlatformPages.some((page) => page.includes("Resultados / Todas as mídias"))).toBe(true);
+  });
+
+  it("pagina 17 e 3 anúncios sem página vazia, linha partida ou linha repetida", async () => {
+    for (const [adCount, expectedPages] of [[17, 3], [3, 1]] as const) {
+      const pages = await extractPageTexts(await renderFixture(sourceWithAds(adCount)));
+      const adsPages = pages.filter((page) => page.includes("Anúncios em teste"));
+
+      expect(adsPages).toHaveLength(expectedPages);
+      adsPages.forEach((page, index) => {
+        expect(page).toContain(`Página ${index + 1} de ${expectedPages}`);
+        expect(page).toContain("CRIATIVO");
+        expect(page).toMatch(/LINHA-\d{2}/);
+      });
+      for (let index = 1; index <= adCount; index += 1) {
+        const marker = `LINHA-${String(index).padStart(2, "0")}`;
+        expect(adsPages.join(" ").split(marker)).toHaveLength(2);
+      }
+    }
+  });
+
   it("renderiza variações, pontos de melhoria e o que está rodando, sem nota explicativa", async () => {
     const buffer = await renderTrafficSummaryPdf({
       brand: {
