@@ -24,20 +24,34 @@ export function sinceDoBucket(
   bucket: RiskBucket,
   lastActivityAt: Date,
   window: StageWindow,
+  detectedAt: Date,
 ): Date {
   const h = (horas: number): Date =>
     new Date(lastActivityAt.getTime() + horas * 3_600_000);
+  let inicio: Date;
   switch (bucket) {
     case "critico":
-      return h(window.criticalHours);
+      inicio = h(window.criticalHours);
+      break;
     case "em_risco":
     // `em_voo` é "esfriou, mas a IA prometeu voltar": ele CRUZOU o limiar de
     // frio como qualquer outro, e o que muda é haver follow-up agendado — não
     // o instante da travessia.
     case "em_voo":
-      return h(window.coldHours);
+      inicio = h(window.coldHours);
+      break;
     case "em_dia":
       // Ainda não cruzou nada. O estado começou na última interação.
-      return lastActivityAt;
+      inicio = lastActivityAt;
+      break;
   }
+
+  // Agenda e presença podem FORÇAR `em_voo`/`critico` antes de a janela de
+  // silêncio vencer. Nesse ramo, o limiar calculado é futuro e não representa
+  // quando o estado começou. O máximo semanticamente possível é o instante da
+  // detecção. O trigger do banco repete este clamp com o relógio do próprio
+  // banco, fechando também a deriva de segundos entre processo e Postgres.
+  return inicio.getTime() > detectedAt.getTime()
+    ? new Date(detectedAt.getTime())
+    : inicio;
 }

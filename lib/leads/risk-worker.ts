@@ -6,6 +6,7 @@ import { calculaBucketsAtuais, type EstadoCalculado } from "@/lib/leads/risk-see
 import { propoeReativacao } from "@/lib/leads/reactivation";
 import type { RiskBucket } from "@/lib/leads/risk-radar";
 import type { ActivityType } from "@/lib/leads/activity-vocabulary";
+import { logger } from "@/lib/logger";
 
 /**
  * O OBSERVADOR DA TRAVESSIA — a peça que faz "esfriando" acontecer sem ninguém
@@ -116,8 +117,6 @@ export async function observaTravessias(
       }
       continue;
     }
-    r.travessias += 1;
-
     const linha = narra(de, e.bucket);
     const { error: upErr } = await admin.from("crm_lead_risk_states").upsert(
       {
@@ -125,16 +124,28 @@ export async function observaTravessias(
         organization_id: organizationId,
         bucket: e.bucket,
         since: e.since.toISOString(),
-        // `detected_at` OMITIDO de propósito: o default `now()` do banco é o
-        // mesmo relógio que ancora `since` (via `last_activity_at`). Com o
-        // relógio do processo aqui, um negócio tocado 2s antes da passada
-        // produzia `since > detected_at` e o worker INTEIRO abortava na
-        // constraint. Ver o cabeçalho de `risk-seed.ts`.
+        // `detected_at` OMITIDO de propósito: o trigger carimba com `now()` do
+        // banco e limita `since` ao mesmo instante. O cálculo já impede o limiar
+        // futuro quando agenda/presença força o bucket; o trigger fecha também
+        // a deriva de segundos entre processo e Postgres.
         cold_hours: e.coldHours,
       },
       { onConflict: "lead_id" },
     );
-    if (upErr) throw new Error(`observador de risco (gravação): ${upErr.message}`);
+    if (upErr) {
+      // Um dado inconsistente precisa ficar visível com o ID que permite
+      // corrigi-lo, mas não pode congelar os outros negócios da organização.
+      // A linha segue sem estado gravado e será tentada de novo no próximo tick.
+      logger.error("[risk-worker] negócio falhou ao gravar estado", {
+        organizationId,
+        leadId: e.leadId,
+        bucket: e.bucket,
+        since: e.since.toISOString(),
+        error: upErr.message,
+      });
+      continue;
+    }
+    r.travessias += 1;
 
     if (e.bucket === "em_risco" || e.bucket === "critico") {
       const proposta = await propoeReativacao(admin, {
