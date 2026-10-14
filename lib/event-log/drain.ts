@@ -9,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { dispatchEvent, getRegisteredHandlers, type EventRow } from "@/lib/event-log/dispatcher";
 import { logger } from "@/lib/logger";
 
-const MAX_ATTEMPTS = 5;
+export const EVENT_LOG_MAX_ATTEMPTS = 5;
 
 /** Depois disto, um evento em `processing` é considerado órfão e volta à fila. */
 const PROCESSING_STALE_MS = 10 * 60 * 1000;
@@ -35,6 +35,78 @@ function backoffAt(attempts: number): string {
   return new Date(Date.now() + minutes * 60_000).toISOString();
 }
 
+interface StuckEventRow {
+  id: string;
+  attempts: number;
+  last_error: string | null;
+  updated_at: string;
+}
+
+export interface StuckEventRecoverySummary {
+  requeued: number;
+  dead: number;
+}
+
+/**
+ * Recupera leases abandonados por qualquer consumidor do `event_log`.
+ *
+ * Uma queda conta como tentativa. Sem isso, o mesmo evento pode derrubar o
+ * processo, voltar a `pending` com o mesmo contador e repetir para sempre.
+ */
+export async function recoverStuckEvents(
+  admin: SupabaseClient,
+  now = new Date(),
+): Promise<StuckEventRecoverySummary> {
+  const summary = { requeued: 0, dead: 0 };
+  const cutoff = new Date(now.getTime() - PROCESSING_STALE_MS).toISOString();
+  const { data, error } = await admin
+    .from("event_log")
+    .select("id, attempts, last_error, updated_at")
+    .eq("status", "processing")
+    .lt("updated_at", cutoff);
+
+  if (error) {
+    logger.error("[event-log.drain] falha ao procurar eventos presos", { error: error.message });
+    return summary;
+  }
+
+  for (const raw of data ?? []) {
+    const row = raw as unknown as StuckEventRow;
+    const attempts = Math.max(0, row.attempts) + 1;
+    const dead = attempts >= EVENT_LOG_MAX_ATTEMPTS;
+    const recoveryError = dead
+      ? `derrubou o processo repetidamente; encerrado após ${attempts} tentativas`
+      : `processamento interrompido pela queda do processo; tentativa ${attempts}/${EVENT_LOG_MAX_ATTEMPTS}`;
+    const lastError = row.last_error
+      ? `${row.last_error}; ${recoveryError}`
+      : recoveryError;
+
+    // CAS pelo estado e pelo instante do claim. Se outro dreno já recuperou a
+    // linha, esta atualização não toca nada e não conta duas tentativas.
+    const { data: recovered } = await admin
+      .from("event_log")
+      .update({
+        status: dead ? "dead" : "pending",
+        attempts,
+        last_error: lastError,
+        next_attempt_at: null,
+        updated_at: now.toISOString(),
+      })
+      .eq("id", row.id)
+      .eq("status", "processing")
+      .eq("updated_at", row.updated_at)
+      .select("id");
+
+    if (!recovered?.length) continue;
+    summary[dead ? "dead" : "requeued"] += 1;
+  }
+
+  if (summary.requeued || summary.dead) {
+    logger.warn("[event-log.drain] eventos presos em processing recuperados", summary);
+  }
+  return summary;
+}
+
 export async function drainEventLog(
   admin: SupabaseClient,
   opts: { limit?: number } = {},
@@ -49,44 +121,12 @@ export async function drainEventLog(
     pulados: [],
   };
 
+  const nowIso = new Date().toISOString();
+  const recovered = await recoverStuckEvents(admin, new Date(nowIso));
+  summary.dead += recovered.dead;
+
   const handledTypes = [...new Set(getRegisteredHandlers().flatMap((h) => h.events))];
   if (!handledTypes.length) return summary;
-
-  const nowIso = new Date().toISOString();
-
-  // ─── EVENTO PRESO EM `processing` VOLTA PARA A FILA ────────────────────────
-  //
-  // A linha é marcada `processing` ANTES de o handler rodar, e NADA no produto
-  // a devolvia: um handler que não retorna — processo derrubado no meio, OOM,
-  // ida a um serviço externo sem timeout — deixava o evento preso para SEMPRE.
-  // Não é hipótese: foi medido nesta frente com o Redis do debounce apontando
-  // para uma porta sem ninguém escutando. O evento ficou `processing`,
-  // `attempts=0`, `consumed_by` vazio, e o material que a pessoa cadastrou
-  // nunca foi preparado — sem erro em lugar nenhum, e sem uma segunda chance.
-  //
-  // `job_queue` tem reaper desde sempre; o `event_log` não tinha. É o
-  // invariante 4 do Sistema Vivo (nenhuma demanda sem próximo passo) aplicado à
-  // fila de eventos.
-  //
-  // A janela é generosa de propósito: o handler mais lento do registry é um
-  // turno de agente, e reclamar cedo demais faria DOIS workers agirem sobre o
-  // mesmo evento — trocar um evento parado por um efeito em dobro.
-  //
-  // `updated_at` é confiável como "quando alguém tocou esta linha": o trigger
-  // `trg_event_log_touch` (BEFORE UPDATE) o reescreve em toda atualização, então
-  // a linha carrega o instante do CLAIM enquanto o handler não volta.
-  const limiteDePresos = new Date(Date.now() - PROCESSING_STALE_MS).toISOString();
-  const { data: reclamados } = await admin
-    .from("event_log")
-    .update({ status: "pending", updated_at: nowIso })
-    .eq("status", "processing")
-    .lt("updated_at", limiteDePresos)
-    .select("id");
-  if (reclamados?.length) {
-    logger.warn("[event-log.drain] eventos presos em processing devolvidos à fila", {
-      quantidade: reclamados.length,
-    });
-  }
 
   const { data: rows, error } = await admin
     .from("event_log")
@@ -158,7 +198,7 @@ export async function drainEventLog(
       summary.retried += 1;
     } else if (errors.length) {
       const attempts = row.attempts + 1;
-      const dead = attempts >= MAX_ATTEMPTS;
+      const dead = attempts >= EVENT_LOG_MAX_ATTEMPTS;
       await admin
         .from("event_log")
         .update({

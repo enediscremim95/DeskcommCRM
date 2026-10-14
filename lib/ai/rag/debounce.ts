@@ -13,11 +13,10 @@
  * tenta de novo com backoff e a promise simplesmente não volta.
  *
  * O efeito NÃO é "a indexação demora". `drainEventLog` marca a linha como
- * `processing` ANTES de chamar o handler, e não existe reaper que devolva
- * `processing` para `pending` no `event_log` (existe para `job_queue`, não para
- * este). Um handler que não retorna deixa o evento preso para SEMPRE: o
- * material nunca é preparado, nada aparece na tela, e nem tentar de novo
- * resolve — a linha não volta para a fila.
+ * `processing` ANTES de chamar o handler. Hoje o reaper de `lib/event-log/drain`
+ * recupera a linha, conta a queda como tentativa e encerra em `dead` quando ela
+ * se repete; sem timeout aqui, porém, uma instância ainda ficaria ocupada até a
+ * janela do reaper, atrasando o material e os eventos seguintes.
  *
  * Medido na prova de tela desta frente: com o Redis do `.env.e2e` apontando
  * para uma porta sem ninguém escutando, o evento ficou `processing`,
@@ -111,8 +110,8 @@ export async function acquireDebounce(key: string, ttlSec: number): Promise<bool
     //
     // O timeout é NOSSO e não do SDK: o cliente da Upstash tenta de novo com
     // backoff e, sem corrida contra um relógio, a promise não volta. Ver o
-    // cabeçalho — handler que não retorna deixa o evento preso em `processing`
-    // para sempre.
+    // cabeçalho — sem este teto, o handler prende a instância até o reaper
+    // recuperar o lease abandonado.
     const result = await Promise.race([
       redis.set(key, "1", { nx: true, ex: ttlSec }),
       new Promise<never>((_, reject) =>
