@@ -3,7 +3,9 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import type { Locale } from "date-fns";
-import { useEffect, useMemo, useRef } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useT } from "@/hooks/i18n/useT";
 import { format, isToday, isYesterday } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -16,6 +18,9 @@ import { useDeleteNote } from "@/hooks/inbox/useDeleteNote";
 import { useDebugToggle } from "@/hooks/ai/useDebugToggle";
 import { useActiveOrg, usePermission, useUser } from "@/hooks/auth/AuthProvider";
 import type { Message, Note } from "@/lib/types/messaging";
+import { apiClient } from "@/lib/api/client";
+
+type EstadoHistorico = "parado" | "carregando" | "store_desligado";
 
 interface Props {
   conversationId: string | null;
@@ -76,6 +81,14 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
   const deleteNote = useDeleteNote(conversationId ?? "");
   const podeExcluir = usePermission("resource.delete");
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
+  const queryClient = useQueryClient();
+  const [historico, setHistorico] = useState<{ conversationId: string | null; status: EstadoHistorico }>({
+    conversationId: null,
+    status: "parado",
+  });
+  const estadoHistorico: EstadoHistorico = !conversationId
+    ? "parado"
+    : historico.conversationId === conversationId ? historico.status : "carregando";
 
   const messages: Message[] = useMemo(() => q.data?.pages.flatMap((p) => p.data) ?? [], [q.data]);
 
@@ -101,6 +114,50 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
   useEffect(() => {
     paginasVistas.current = 0;
   }, [conversationId]);
+
+  // Não segura a abertura: a primeira página já renderiza enquanto o servidor
+  // aprofunda o fio. O cancelamento lógico impede uma conversa anterior de
+  // mudar o aviso da conversa que o usuário abriu depois.
+  useEffect(() => {
+    if (!conversationId) return;
+    let vigente = true;
+    void apiClient.post<{
+      data: { status: string; inseridas?: number };
+    }>(`/api/v1/conversations/${conversationId}/historico`, {}, { timeoutMs: 20_000 })
+      .then(async (resposta) => {
+        if (!vigente) return;
+        if (resposta.data.status === "store_desligado") {
+          setHistorico({ conversationId, status: "store_desligado" });
+          return;
+        }
+        setHistorico({ conversationId, status: "parado" });
+        await Promise.all([
+          q.refetch(),
+          queryClient.invalidateQueries({ queryKey: ["conversations"] }),
+        ]);
+      })
+      .catch(() => {
+        if (vigente) setHistorico({ conversationId, status: "parado" });
+      });
+    return () => {
+      vigente = false;
+    };
+    // `q` muda a cada render; a operação pertence apenas ao id aberto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, queryClient]);
+
+  const avisoHistorico = estadoHistorico === "carregando" ? (
+    <p className="px-4 py-2 text-center text-xs text-muted-foreground">
+      {t("Carregando conversas anteriores…")}
+    </p>
+  ) : estadoHistorico === "store_desligado" ? (
+    <p className="mx-4 my-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-center text-xs text-amber-950">
+      {t("O histórico só aparece depois de reconectar o WhatsApp.")} {" "}
+      <Link className="font-medium underline" href="/app/connections">
+        {t("Ir para Conexões")}
+      </Link>
+    </p>
+  ) : null;
 
   // Rola ao fim na primeira carga e quando chega mensagem/nota nova — mas NÃO
   // quando o crescimento veio do "Carregar mais antigas".
@@ -196,8 +253,9 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
     return (
       <div
         {...sinalDoCanal}
-        className="flex h-full items-center justify-center text-sm text-muted-foreground"
+        className="flex h-full flex-col items-center justify-center text-sm text-muted-foreground"
       >
+        {avisoHistorico}
         {t("Nenhuma mensagem nesta conversa.")}
       </div>
     );
@@ -215,6 +273,7 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
 
   return (
     <div {...sinalDoCanal} className="flex h-full flex-col">
+      {avisoHistorico}
       <div ref={scrollerRef} className="flex-1 overflow-y-auto py-2">
         {q.hasNextPage && (
           <div className="flex justify-center py-2">

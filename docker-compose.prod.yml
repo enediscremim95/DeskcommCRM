@@ -38,6 +38,7 @@ services:
     env_file: .env
     environment:
       SIDEBAR_UPDATE_NOTICE: ${SIDEBAR_UPDATE_NOTICE:-}
+      HISTORICO_WHATSAPP_ENABLED: ${HISTORICO_WHATSAPP_ENABLED:-true}
     depends_on:
       srh:
         condition: service_started

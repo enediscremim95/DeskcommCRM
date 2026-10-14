@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Histórico de conversas do WhatsApp",
+    "subtitle": "Importação silenciosa, tenant explícito e projeção temporal monotônica",
+    "output": "historico-whatsapp.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "canal", "label": "Canal" },
+    { "id": "aplicacao", "label": "Aplicação" },
+    { "id": "dados", "label": "Dados" },
+    { "id": "operador", "label": "Operador" }
+  ],
+  "mainPath": ["store", "cron", "contato", "mensagem", "lista", "inbox"],
+  "nodes": [
+    { "id": "store", "lane": "canal", "col": 0, "type": "external", "label": "Store NOWEB", "sublabel": "store habilitado no pareamento" },
+    { "id": "cron", "lane": "aplicacao", "col": 1, "type": "queue", "label": "Importação recente", "sublabel": "30 dias, 20 chats por rodada, 200 mensagens por chat" },
+    { "id": "contato", "lane": "dados", "col": 2, "type": "table", "label": "Contato existente", "sublabel": "telefone, nono dígito ou LID no mesmo tenant" },
+    { "id": "mensagem", "lane": "dados", "col": 3, "type": "table", "label": "Mensagem histórica", "sublabel": "metadata.historico bloqueia efeitos ao vivo" },
+    { "id": "lista", "lane": "dados", "col": 4, "type": "lib", "label": "Projeção monotônica", "sublabel": "maior timestamp real vence, sem tocar no lead" },
+    { "id": "inbox", "lane": "operador", "col": 5, "type": "frontend", "label": "Conversa aberta", "sublabel": "aprofundamento assíncrono ou aviso de reconexão" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "store", "to": "cron", "label": "pagina chats e mensagens sem baixar mídia" },
+    { "id": "e2", "from": "cron", "to": "contato", "label": "aceita somente cadastro já existente" },
+    { "id": "e3", "from": "contato", "to": "mensagem", "label": "grava com organization_id e session_id resolvidos" },
+    { "id": "e4", "from": "mensagem", "to": "lista", "label": "RPC restrita atualiza o último fato" },
+    { "id": "e5", "from": "lista", "to": "inbox", "label": "refetch mostra fio e ordenação corrigidos" },
+    { "id": "e6", "from": "inbox", "to": "store", "label": "abertura pede até 200 mensagens anteriores" }
+  ],
+  "cards": [
+    { "dot": "green", "title": "Silêncio garantido", "items": ["sem event_log", "sem demanda ou roteamento", "sem lead, IA, follow-up ou notificação"] },
+    { "dot": "amber", "title": "Limites", "items": ["mídia antiga vira placeholder", "um chat com falha não interrompe os demais", "sessão antiga exige novo QR para o histórico completo"] }
+  ]
+}

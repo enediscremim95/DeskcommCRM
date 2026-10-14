@@ -264,8 +264,9 @@ export function verifyHmacSha512(
   }
 }
 
-function previewFromMessage(p: WahaPayload): string {
-  if (p.body) return p.body.slice(0, 280);
+export function previewFromMessage(p: WahaPayload): string {
+  const texto = bodyOf(p);
+  if (texto) return texto.slice(0, 280);
   const t = resolveMessageType(p);
   return t !== "text" ? `[${t}]` : "";
 }
@@ -383,7 +384,7 @@ function notifyNameOf(p: WahaPayload): string | null {
 }
 
 /** Corpo textual: WAHA nem sempre preenche `body` em cartões de contato NOWEB. */
-function bodyOf(p: WahaPayload): string | null {
+export function bodyOf(p: WahaPayload): string | null {
   if (p.body) return p.body;
   const msg = p._data?.message;
   if (!msg || typeof msg !== "object") return null;
@@ -396,6 +397,28 @@ function bodyOf(p: WahaPayload): string | null {
     const o = cm as { vcard?: string; displayName?: string };
     if (o.vcard) return o.vcard;
     if (o.displayName) return o.displayName;
+  }
+  const registro = msg as Record<string, unknown>;
+  const candidatos: unknown[] = [
+    registro.imageMessage,
+    registro.videoMessage,
+    registro.documentMessage,
+    registro.extendedTextMessage,
+  ];
+  const embrulhada = registro.documentWithCaptionMessage;
+  if (embrulhada && typeof embrulhada === "object") {
+    const interna = (embrulhada as Record<string, unknown>).message;
+    if (interna && typeof interna === "object") {
+      candidatos.push((interna as Record<string, unknown>).documentMessage);
+    }
+  }
+  for (const candidato of candidatos) {
+    if (!candidato || typeof candidato !== "object") continue;
+    const item = candidato as Record<string, unknown>;
+    const texto = typeof item.caption === "string"
+      ? item.caption
+      : typeof item.text === "string" ? item.text : null;
+    if (texto?.trim()) return texto;
   }
   return null;
 }

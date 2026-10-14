@@ -519,6 +519,7 @@ export const AUDIT_ACTIONS = [
   "traffic_dashboard.column_preset_updated",
   "traffic_dashboard.column_preset_defaulted",
   "traffic_dashboard.column_preset_deleted",
+  "conversation.history_imported",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
