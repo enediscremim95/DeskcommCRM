@@ -6,7 +6,9 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { env } from "@/lib/env";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAllPages } from "@/lib/supabase/fetch-all-pages";
 import { fetchWindsorCampaignReach } from "@/lib/windsor/client";
 import { buildWindsorUrl, WINDSOR_REQUEST_TIMEOUT_MS } from "@/lib/windsor/request";
 import {
@@ -244,38 +246,74 @@ export async function GET(request: NextRequest): Promise<Response> {
       .select("account_id,account_name,platform,currency")
       .eq("organization_id", organizationId),
     typedConfig.published_generation
-      ? admin
-          .from("traffic_dashboard_facts" as never)
-          .select(
-            "account_id,platform,occurred_on,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,reach,clicks,link_clicks,spend,conversions,revenue,video_views,video_p25,video_p50,video_p75,video_p95,thumbnail_url,story_id,campaign_status,destination_urls",
-          )
-          .eq("organization_id", organizationId)
-          .eq("sync_generation", typedConfig.published_generation)
-          .gte("occurred_on", historyFrom)
-          .lte("occurred_on", parsed.data.to)
-          .order("occurred_on")
+      ? fetchAllPages<StoredFact & { id: string }>(
+          (from, to) =>
+            admin
+              .from("traffic_dashboard_facts" as never)
+              .select(
+                "id,account_id,platform,occurred_on,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,reach,clicks,link_clicks,spend,conversions,revenue,video_views,video_p25,video_p50,video_p75,video_p95,thumbnail_url,story_id,campaign_status,destination_urls",
+              )
+              .eq("organization_id", organizationId)
+              .eq("sync_generation", typedConfig.published_generation)
+              .gte("occurred_on", historyFrom)
+              .lte("occurred_on", parsed.data.to)
+              .order("occurred_on")
+              .order("id")
+              .range(from, to),
+          {
+            resource: "traffic_report.history_facts",
+            logContext: { request_id: requestId },
+          },
+        ).then(
+          (data) => ({ data, error: null }),
+          (error: unknown) => ({ data: null, error }),
+        )
       : Promise.resolve({ data: [], error: null }),
     typedConfig.published_generation
-      ? admin
-          .from("traffic_dashboard_facts" as never)
-          .select(
-            "account_id,platform,occurred_on,campaign_id,campaign_name,campaign_status,adset_id,adset_name,ad_id,ad_name,impressions,destination_urls,spend",
-          )
-          .eq("organization_id", organizationId)
-          .eq("sync_generation", typedConfig.published_generation)
-          .order("occurred_on", { ascending: false })
+      ? fetchAllPages<StoredFact & { id: string }>(
+          (from, to) =>
+            admin
+              .from("traffic_dashboard_facts" as never)
+              .select(
+                "id,account_id,platform,occurred_on,campaign_id,campaign_name,campaign_status,adset_id,adset_name,ad_id,ad_name,impressions,destination_urls,spend",
+              )
+              .eq("organization_id", organizationId)
+              .eq("sync_generation", typedConfig.published_generation)
+              .order("occurred_on", { ascending: false })
+              .order("id")
+              .range(from, to),
+          {
+            resource: "traffic_report.delivery_facts",
+            logContext: { request_id: requestId },
+          },
+        ).then(
+          (data) => ({ data, error: null }),
+          (error: unknown) => ({ data: null, error }),
+        )
       : Promise.resolve({ data: [], error: null }),
     typedConfig.published_generation
-      ? admin
-          .from("traffic_dashboard_facts" as never)
-          .select(
-            "account_id,platform,occurred_on,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,reach,clicks,link_clicks,spend,conversions,revenue,video_views,video_p25,video_p50,video_p75,video_p95,thumbnail_url,story_id",
-          )
-          .eq("organization_id", organizationId)
-          .eq("sync_generation", typedConfig.published_generation)
-          .gte("occurred_on", previousRange.from)
-          .lte("occurred_on", previousRange.to)
-          .order("occurred_on")
+      ? fetchAllPages<StoredFact & { id: string }>(
+          (from, to) =>
+            admin
+              .from("traffic_dashboard_facts" as never)
+              .select(
+                "id,account_id,platform,occurred_on,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,reach,clicks,link_clicks,spend,conversions,revenue,video_views,video_p25,video_p50,video_p75,video_p95,thumbnail_url,story_id",
+              )
+              .eq("organization_id", organizationId)
+              .eq("sync_generation", typedConfig.published_generation)
+              .gte("occurred_on", previousRange.from)
+              .lte("occurred_on", previousRange.to)
+              .order("occurred_on")
+              .order("id")
+              .range(from, to),
+          {
+            resource: "traffic_report.previous_facts",
+            logContext: { request_id: requestId },
+          },
+        ).then(
+          (data) => ({ data, error: null }),
+          (error: unknown) => ({ data: null, error }),
+        )
       : Promise.resolve({ data: [], error: null }),
     admin
       .from("crm_stages" as never)
@@ -297,6 +335,14 @@ export async function GET(request: NextRequest): Promise<Response> {
   const factError = factsResult.error;
   const deliveryFactError = deliveryFactsResult.error;
   const previousFactError = previousFactsResult.error;
+  const paginatedFactError = factError ?? deliveryFactError ?? previousFactError;
+  if (paginatedFactError) {
+    logger.error("traffic_report.facts_read_failed", {
+      request_id: requestId,
+      error:
+        paginatedFactError instanceof Error ? paginatedFactError.message : "unknown_paginated_error",
+    });
+  }
   if (
     accountError ||
     factError ||
