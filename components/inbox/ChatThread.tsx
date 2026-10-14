@@ -86,7 +86,10 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
     conversationId: null,
     status: "parado",
   });
-  const estadoHistorico: EstadoHistorico = !conversationId
+  // Suporte somente leitura não escreve nada, nem o histórico: o servidor
+  // recusaria, e a tentativa já contaria como escrita.
+  const suporteSomenteLeitura = currentUser?.support?.access_mode === "support_readonly";
+  const estadoHistorico: EstadoHistorico = !conversationId || suporteSomenteLeitura
     ? "parado"
     : historico.conversationId === conversationId ? historico.status : "carregando";
 
@@ -119,7 +122,7 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
   // aprofunda o fio. O cancelamento lógico impede uma conversa anterior de
   // mudar o aviso da conversa que o usuário abriu depois.
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId || suporteSomenteLeitura) return;
     let vigente = true;
     void apiClient.post<{
       data: { status: string; inseridas?: number };
@@ -144,7 +147,7 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
     };
     // `q` muda a cada render; a operação pertence apenas ao id aberto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, queryClient]);
+  }, [conversationId, queryClient, suporteSomenteLeitura]);
 
   const avisoHistorico = estadoHistorico === "carregando" ? (
     <p className="px-4 py-2 text-center text-xs text-muted-foreground">
