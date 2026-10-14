@@ -26,14 +26,15 @@ async function handle(req: NextRequest): Promise<Response> {
       habilitado: env.HISTORICO_WHATSAPP_ENABLED.trim().toLowerCase() !== "false",
     });
     for (const [organizationId, inseridas] of Object.entries(resultado.efeitosPorOrganizacao)) {
-      if (inseridas <= 0) continue;
-      void audit({
-        action: "conversation.history_imported",
-        organizationId,
-        bypassedRls: true,
-        requestId,
-        metadata: { actor: "sistema", mensagens_inseridas: inseridas },
-      });
+      if (inseridas > 0) {
+        void audit({
+          action: "conversation.history_imported",
+          organizationId,
+          bypassedRls: true,
+          requestId,
+          metadata: { actor: "sistema", mensagens_inseridas: inseridas },
+        });
+      }
     }
     return ok(resultado, { requestId });
   } catch (err) {

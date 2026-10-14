@@ -810,6 +810,11 @@ export const DICIONARIO: Traducoes = {
   "Abrir lead e responder": { es: "Abrir lead y responder" },
   "Abrir o lead e responder no WhatsApp": { es: "Abrir el lead y responder por WhatsApp" },
   "WhatsApp": { es: "WhatsApp" },
+  "Carregando conversas anteriores…": { es: "Cargando conversaciones anteriores…" },
+  "O histórico só aparece depois de reconectar o WhatsApp.": {
+    es: "El historial solo aparece después de volver a conectar WhatsApp.",
+  },
+  "Ir para Conexões": { es: "Ir a Conexiones" },
   "WhatsApp não conectado — envio de mensagens desabilitado.": { es: "WhatsApp no conectado — envío de mensajes deshabilitado." },
   "Carregando conversa…": { es: "Cargando conversación…" },
   "WhatsApp não conectado. O histórico continua disponível, mas o envio está bloqueado.": { es: "WhatsApp no conectado. El historial sigue disponible, pero el envío está bloqueado." },

@@ -5,6 +5,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { aprofundarHistorico } from "@/lib/channels/historico";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,9 @@ interface RouteCtx {
 }
 
 export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;

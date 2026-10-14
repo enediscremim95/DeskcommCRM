@@ -3,11 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
+  requireSupportWrite: vi.fn(),
   aprofundar: vi.fn(),
   audit: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.requireRole }));
+vi.mock("@/lib/impersonate/support", () => ({
+  requireSupportWrite: mocks.requireSupportWrite,
+}));
 vi.mock("@/lib/channels/historico", () => ({ aprofundarHistorico: mocks.aprofundar }));
 vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 
@@ -16,6 +20,7 @@ import { POST } from "./route";
 describe("POST /conversations/:id/historico", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.requireSupportWrite.mockResolvedValue(null);
     mocks.requireRole.mockResolvedValue({
       ok: true,
       user: { id: "user-1" },
