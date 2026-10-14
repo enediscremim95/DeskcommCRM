@@ -28655,6 +28655,27 @@ grant execute on function public.fn_juntar_negocios(uuid, uuid, uuid)
 
 notify pgrst, 'reload schema';
 
+-- ---- since do risco nunca no futuro (migration 0288) ----
+-- Agenda/presença podem forçar um bucket antes do limiar de silêncio. O
+-- instante do estado é limitado à detecção no mesmo relógio do banco, sem
+-- afrouxar o CHECK `since <= detected_at`.
+create or replace function public.fn_carimba_detected_at()
+  returns trigger
+  language plpgsql
+  set search_path to 'public', 'pg_temp'
+as $function$
+begin
+  new.detected_at := now();
+  if new.since > new.detected_at then
+    new.since := new.detected_at;
+  end if;
+  new.updated_at := now();
+  return new;
+end$function$;
+
+comment on function public.fn_carimba_detected_at() is
+  'Carimba a detecção no relógio do banco e limita since ao mesmo instante: agenda/presença podem forçar um bucket antes do limiar de silêncio, mas um estado nunca começa depois de ser detectado.';
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

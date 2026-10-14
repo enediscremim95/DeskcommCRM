@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const agenda = vi.hoisted(() => ({
   protecaoAgendaSupabase: vi.fn(async () => new Map()),
@@ -9,6 +9,10 @@ vi.mock("@/lib/agenda/protecao-followup", () => agenda);
 import { calculaBucketsAtuais } from "@/lib/leads/risk-seed";
 
 describe("seed de risco em organizações grandes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("limita stages e cron_jobs a 100 ids e lança se um lote de cron_jobs falhar", async () => {
     const leads = Array.from({ length: 2_500 }, (_, index) => ({
       id: `lead-${index}`,
@@ -68,5 +72,60 @@ describe("seed de risco em organizações grandes", () => {
     expect(filtrosGrandes.length).toBeGreaterThan(3);
     expect(Math.max(...filtrosGrandes.map((lote) => lote.ids.length))).toBe(100);
     expect(agenda.protecaoAgendaSupabase).not.toHaveBeenCalled();
+  });
+
+  it("limita à detecção o `since` que a agenda faria nascer no futuro", async () => {
+    const now = new Date("2026-10-14T12:00:00.000Z");
+    agenda.protecaoAgendaSupabase.mockResolvedValueOnce(
+      new Map([
+        [
+          "contact-1",
+          {
+            adiar: true,
+            motivo: "agendado",
+            appointment_id: "appointment-1",
+            reavaliar_em: "2026-10-15T12:00:00.000Z",
+          },
+        ],
+      ]),
+    );
+    const admin = {
+      from: (tabela: string) => {
+        const q = {
+          select: () => q,
+          eq: () => q,
+          gt: () => q,
+          in: () => q,
+          then: (resolve: (value: unknown) => unknown) => {
+            if (tabela === "crm_leads") {
+              return Promise.resolve({
+                data: [
+                  {
+                    id: "lead-1",
+                    stage_id: "stage-1",
+                    contact_id: "contact-1",
+                    last_activity_at: "2026-10-14T11:00:00.000Z",
+                    created_at: "2026-10-14T11:00:00.000Z",
+                  },
+                ],
+                error: null,
+              }).then(resolve);
+            }
+            if (tabela === "crm_stages") {
+              return Promise.resolve({
+                data: [{ id: "stage-1", expected_duration_hours: 24 }],
+                error: null,
+              }).then(resolve);
+            }
+            return Promise.resolve({ data: [], error: null }).then(resolve);
+          },
+        };
+        return q;
+      },
+    };
+
+    const [estado] = await calculaBucketsAtuais(admin as never, "org", now);
+
+    expect(estado).toMatchObject({ bucket: "em_voo", since: now });
   });
 });

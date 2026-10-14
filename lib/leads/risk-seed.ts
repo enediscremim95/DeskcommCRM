@@ -20,7 +20,9 @@ import {
  *     que ausência. Da estreia em diante, só TRAVESSIA REAL emite.
  *
  *  2. `since` NO PASSADO (ver `risk-since.ts`). Com `since = now`, o histórico
- *     diria para sempre que cinquenta negócios esfriaram no mesmo minuto.
+ *     diria para sempre que cinquenta negócios esfriaram no mesmo minuto. Se
+ *     agenda/presença força um bucket antes da janela, o limite honesto vira o
+ *     instante da detecção, nunca o limiar futuro.
  *
  *  3. UM item de caixa agregado, com dono e AÇÃO NOMEADA — não cinquenta itens,
  *     e não zero. O `event_log` sozinho é rastro de máquina: registra que
@@ -35,7 +37,8 @@ import {
  */
 
 /**
- * ⚠️ `detected_at` NÃO É ENVIADO — vem do default `now()` do BANCO.
+ * ⚠️ `detected_at` NÃO É ENVIADO — o trigger o carimba com `now()` do BANCO e
+ * limita `since` ao mesmo instante.
  *
  * ⚠️ DOIS RELÓGIOS NA MESMA DECISÃO É DEFEITO, e este custou uma quebra real: o
  * `since` deriva de `last_activity_at`, que o trigger carimba com o `now()` do
@@ -47,9 +50,13 @@ import {
  *
  * A constraint estava CERTA: ela pegou a incoerência que eu não teria visto.
  * O conserto é ancorar os dois no MESMO relógio, e ele é o do banco, porque é o
- * banco que carimba os fatos com que a decisão é tomada. `since` já era do
- * banco (deriva de `last_activity_at`); `detected_at` passa a ser também, por
- * omissão.
+ * banco que carimba os fatos com que a decisão é tomada. No caso normal,
+ * `since` deriva de `last_activity_at`; `detected_at` vem do trigger.
+ *
+ * A agenda revelou um segundo ramo: ela pode forçar `em_voo` ou `critico` num
+ * negócio ainda fresco. Aí `last_activity_at + janela` é FUTURO, não o começo
+ * real do estado. O cálculo limita ao instante da detecção, e o trigger repete
+ * o limite no relógio do banco para não reabrir a deriva de segundos.
  *
  * O relógio do processo continua CLASSIFICANDO (o `now` de `classifyRisk`), e
  * isso é aceitável por uma razão que vale escrever: a classificação compara
@@ -194,7 +201,7 @@ async function coletaEClassifica(
       leadId: l.id,
       contactId: l.contact_id,
       bucket,
-      since: sinceDoBucket(bucket, lastActivityAt, window),
+      since: sinceDoBucket(bucket, lastActivityAt, window, now),
       coldHours: window.coldHours,
     });
   }
