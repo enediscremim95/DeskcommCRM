@@ -35,10 +35,13 @@ describe("desfecho do evento de persistência de mídia", () => {
         select: () => {
           const query = {
             eq: () => query,
+            lt: () => query,
             or: () => query,
             in: () => query,
             order: () => query,
             limit: async () => ({ data: [EVENTO], error: null }),
+            then: (resolve: (result: { data: never[]; error: null }) => void) =>
+              resolve({ data: [], error: null }),
           };
           return query;
         },

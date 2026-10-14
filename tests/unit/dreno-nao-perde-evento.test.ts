@@ -44,12 +44,14 @@ interface Chamada {
  * Dublê que REGISTRA o que foi pedido. Devolve linhas só para o `select` do
  * dreno; os `update` devolvem o que o código precisa para seguir.
  */
-function dublarAdmin(linhas: Array<Record<string, unknown>>) {
+function dublarAdmin(
+  linhas: Array<Record<string, unknown>>,
+  presos: Array<Record<string, unknown>> = [],
+) {
   const chamadas: Chamada[] = [];
 
   function cadeia(tabela: string) {
     const registro: Chamada = { tabela, op: "select", filtros: [] };
-    let ehUpdateDeReclamacao = false;
     let ehClaim = false;
 
     const self: Record<string, unknown> = {
@@ -63,7 +65,6 @@ function dublarAdmin(linhas: Array<Record<string, unknown>>) {
         registro.op = "update";
         registro.payload = payload;
         chamadas.push(registro);
-        ehUpdateDeReclamacao = payload.status === "pending" && payload.updated_at !== undefined;
         ehClaim = payload.status === "processing";
         return self;
       },
@@ -87,11 +88,13 @@ function dublarAdmin(linhas: Array<Record<string, unknown>>) {
       limit: () => self,
       then: (resolve: (r: unknown) => void) => {
         if (registro.op === "update") {
-          // Reclamação de órfão devolve lista vazia; claim devolve a linha.
-          resolve({ data: ehClaim ? [{ id: "e1" }] : ehUpdateDeReclamacao ? [] : [{ id: "e1" }] });
+          resolve({ data: [{ id: ehClaim ? "e1" : "preso-1" }], error: null });
           return;
         }
-        resolve({ data: linhas, error: null });
+        const consultaPresos = registro.filtros.some(
+          ([tipo, col, val]) => tipo === "eq" && col === "status" && val === "processing",
+        );
+        resolve({ data: consultaPresos ? presos : linhas, error: null });
       },
     };
     return self;
@@ -113,6 +116,13 @@ const LINHA = {
   created_at: new Date().toISOString(),
 };
 
+const PRESO = {
+  id: "preso-1",
+  attempts: 0,
+  last_error: null,
+  updated_at: "2026-10-13T20:00:00.000Z",
+};
+
 beforeEach(() => {
   handlers.mockReset();
   dispatch.mockReset();
@@ -122,7 +132,7 @@ beforeEach(() => {
 describe("drainEventLog — evento preso volta para a fila", () => {
   it("devolve `processing` velho para `pending` ANTES de selecionar", async () => {
     dispatch.mockResolvedValue([{ consumer_key: "k", status: "ok" }]);
-    const { admin, chamadas } = dublarAdmin([]);
+    const { admin, chamadas } = dublarAdmin([], [PRESO]);
 
     await drainEventLog(admin as never);
 
@@ -135,22 +145,63 @@ describe("drainEventLog — evento preso volta para a fila", () => {
     expect(reclamacao, "nada devolve evento preso em processing").toBeDefined();
     // A janela existe: sem ela, a reclamação pegaria o evento que ESTÁ sendo
     // processado agora e dois workers agiriam sobre o mesmo evento.
+    const buscaDePresos = chamadas.find(
+      (c) =>
+        c.op === "select" &&
+        c.filtros.some(
+          ([tipo, col, val]) => tipo === "eq" && col === "status" && val === "processing",
+        ),
+    );
+    expect(buscaDePresos, "não procurou eventos presos em processing").toBeDefined();
     expect(
-      reclamacao!.filtros.some(([tipo, col]) => tipo === "lt" && col === "updated_at"),
-      "reclamou sem janela de tempo — trocaria evento parado por efeito em dobro",
+      buscaDePresos!.filtros.some(([tipo, col]) => tipo === "lt" && col === "updated_at"),
+      "procurou sem janela de tempo — trocaria evento parado por efeito em dobro",
     ).toBe(true);
+    expect(reclamacao!.payload).toEqual(
+      expect.objectContaining({
+        attempts: 1,
+        last_error: expect.stringContaining("processamento interrompido pela queda do processo"),
+      }),
+    );
   });
 
-  it("a reclamação acontece ANTES da seleção, senão o evento devolvido só rodaria no próximo tique", async () => {
+  it("a recuperação termina ANTES da seleção de pendentes, senão o evento só rodaria no próximo tique", async () => {
     dispatch.mockResolvedValue([{ consumer_key: "k", status: "ok" }]);
-    const { admin, chamadas } = dublarAdmin([]);
+    const { admin, chamadas } = dublarAdmin([], [PRESO]);
 
     await drainEventLog(admin as never);
 
     const iReclama = chamadas.findIndex((c) => c.op === "update" && c.payload?.status === "pending");
-    const iSeleciona = chamadas.findIndex((c) => c.op === "select");
+    const iSeleciona = chamadas.findIndex(
+      (c) =>
+        c.op === "select" &&
+        c.filtros.some(
+          ([tipo, col, val]) => tipo === "eq" && col === "status" && val === "pending",
+        ),
+    );
     expect(iReclama).toBeGreaterThanOrEqual(0);
     expect(iSeleciona).toBeGreaterThan(iReclama);
+  });
+
+  it("manda o reincidente para `dead` com last_error, sem perder o evento sem rastro", async () => {
+    dispatch.mockResolvedValue([{ consumer_key: "k", status: "ok" }]);
+    const reincidente = { ...PRESO, attempts: 4, last_error: "queda anterior" };
+    const { admin, chamadas } = dublarAdmin([], [reincidente]);
+
+    const resumo = await drainEventLog(admin as never);
+
+    const encerramento = chamadas.find(
+      (c) => c.op === "update" && c.payload?.status === "dead",
+    );
+    expect(resumo.dead).toBe(1);
+    expect(encerramento, "evento reincidente sumiu sem ir para dead").toBeDefined();
+    expect(encerramento!.payload).toEqual(
+      expect.objectContaining({
+        attempts: 5,
+        last_error: expect.stringContaining("queda anterior"),
+      }),
+    );
+    expect(String(encerramento!.payload?.last_error)).toContain("encerrado após 5 tentativas");
   });
 });
 
