@@ -21,7 +21,7 @@ type StageConversion = {
   is_won: boolean;
 };
 
-type GoogleKeyword = {
+type SlideKeyword = {
   keyword: string;
   impressions: number | null;
   clicks: number | null;
@@ -40,7 +40,7 @@ type SlideMetricGroup = {
   ctr: number | null;
   conversion: number | null;
   meta: SlidePlatform;
-  google: SlidePlatform & { keywords: GoogleKeyword[] };
+  google: SlidePlatform & { keywords: SlideKeyword[] };
   history: Array<{
     label: string;
     investment: number | null;
@@ -119,7 +119,6 @@ type SlideData = {
 
 type SourceWithSlideDetails = TrafficSummarySource & {
   crm: TrafficSummarySource["crm"] & { stage_conversion?: StageConversion[] };
-  google_keywords?: GoogleKeyword[];
 };
 
 const DASH = "—";
@@ -400,14 +399,16 @@ async function slideData(args: {
     const metaRaw = currencyGroup.platforms?.find((item) => item.platform === "meta_ads");
     const googleRaw = currencyGroup.platforms?.find((item) => item.platform === "google_ads");
     const history = source.historico?.find((item) => item.currency === currencyGroup.currency);
-    const googleKeywords = (source.google_keywords ?? []).map((keyword) => ({
-      keyword: escapeHtml(keyword.keyword),
-      impressions: finite(keyword.impressions),
-      clicks: finite(keyword.clicks),
-      conversions: finite(keyword.conversions),
-      ctr: finite(keyword.ctr),
-      cost_per_conversion: finite(keyword.cost_per_conversion),
-    }));
+    const googleKeywords = (source.google_keywords ?? [])
+      .filter((keyword) => keyword.currency === currencyGroup.currency)
+      .map((keyword) => ({
+        keyword: escapeHtml(keyword.keyword),
+        impressions: finite(keyword.impressions),
+        clicks: finite(keyword.clicks),
+        conversions: finite(keyword.conversions),
+        ctr: finite(keyword.ctr),
+        cost_per_conversion: finite(keyword.cost_per_conversion),
+      }));
     return {
       currency: escapeHtml(currencyGroup.currency),
       investment: summaryInvestment,

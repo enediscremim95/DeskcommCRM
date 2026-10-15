@@ -4,7 +4,10 @@ import { z } from "zod";
 
 import { fail } from "@/lib/api/wrappers";
 import { marcaDaSaida } from "@/lib/branding/saida";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { AccountRow } from "@/lib/windsor/account-fetch";
+import { fetchGoogleKeywords } from "@/lib/windsor/google-keywords";
 import { renderTrafficSummarySlides } from "@/lib/windsor/traffic-summary-slides";
 import type { TrafficSummarySource } from "@/lib/windsor/traffic-summary-pdf";
 
@@ -72,8 +75,9 @@ export async function GET(request: NextRequest): Promise<Response> {
     return fail("internal_error", "Não foi possível montar o relatório.", 500, { requestId });
   }
 
-  // O service role só lê a organização já resolvida pela sessão na rota canônica.
-  const { data: organization, error: organizationError } = await createAdminClient()
+  // O service role só lê dados da organização já resolvida pela sessão na rota canônica.
+  const admin = createAdminClient();
+  const { data: organization, error: organizationError } = await admin
     .from("organizations")
     .select("slug")
     .eq("id", envelope.data.organization_key)
@@ -84,9 +88,30 @@ export async function GET(request: NextRequest): Promise<Response> {
     });
   }
 
+  let googleKeywords: Awaited<ReturnType<typeof fetchGoogleKeywords>> = [];
+  try {
+    const { data: accountRows, error: accountError } = await admin
+      .from("traffic_dashboard_accounts" as never)
+      .select("organization_id,account_id,platform,account_name,currency")
+      .eq("organization_id", envelope.data.organization_key)
+      .eq("platform", "google_ads");
+    if (accountError) throw new Error("traffic_google_accounts_read_failed");
+    googleKeywords = await fetchGoogleKeywords(
+      (accountRows ?? []) as unknown as AccountRow[],
+      { from: parsed.data.from, to: parsed.data.to },
+    );
+  } catch {
+    logger.warn("traffic_report.google_keywords_unavailable", {
+      request_id: requestId,
+      organization_id: envelope.data.organization_key,
+      error_code: "windsor_google_keywords_unavailable",
+    });
+  }
+
+  const source = { ...envelope.data, google_keywords: googleKeywords };
   const brand = await marcaDaSaida(envelope.data.organization_key);
   const html = await renderTrafficSummarySlides({
-    source: envelope.data,
+    source,
     brand,
     language: parsed.data.language,
     organizationSlug: organization?.slug ?? null,

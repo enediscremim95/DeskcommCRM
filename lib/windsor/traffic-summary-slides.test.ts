@@ -163,6 +163,57 @@ describe("renderTrafficSummarySlides", () => {
     expect(html).toContain('"topValue":"Pequeno"');
   });
 
+  it("mantém palavras-chave separadas no grupo da própria moeda", async () => {
+    const brl = source().currencies[0]!;
+    const html = await renderTrafficSummarySlides({
+      source: source({
+        currencies: [
+          brl,
+          {
+            ...brl,
+            currency: "USD",
+          },
+        ],
+        google_keywords: [
+          {
+            currency: "BRL",
+            keyword: "palavra em real",
+            impressions: 100,
+            clicks: 10,
+            conversions: 2,
+            ctr: 10,
+            cost_per_conversion: 25,
+          },
+          {
+            currency: "USD",
+            keyword: "palavra em dólar",
+            impressions: 50,
+            clicks: 5,
+            conversions: 1,
+            ctr: 10,
+            cost_per_conversion: 30,
+          },
+        ],
+      }),
+      brand,
+      language: "pt-BR",
+      organizationSlug: "cliente-generico",
+    });
+    const serialized = html.match(/const D = (.+);\nconst ICON =/);
+    expect(serialized?.[1]).toBeDefined();
+    const data = JSON.parse(serialized![1]!) as {
+      groups: Array<{ currency: string; google: { keywords: Array<{ keyword: string }> } }>;
+    };
+
+    expect(data.groups.map((group) => [
+      group.currency,
+      group.google.keywords.map((keyword) => keyword.keyword),
+    ])).toEqual([
+      ["BRL", ["palavra em real"]],
+      ["USD", ["palavra em dólar"]],
+    ]);
+  });
+
   it.each(["bendito-ponto", "cliente-generico"])(
     "não injeta marca de terceiro nem imagem quebrada para %s sem logo",
     async (organizationSlug) => {

@@ -44,6 +44,7 @@ async function request(
   legacyAccountId?: string,
   selection?: AccountSelection,
   dateRange?: DateRange,
+  timeoutOverrideMs?: number,
 ): Promise<WindsorRow[]> {
   if (!env.WINDSOR_API_KEY) {
     throw new WindsorUnavailableError("windsor_not_configured", "WINDSOR_API_KEY não está configurada nesta instalação.");
@@ -56,7 +57,9 @@ async function request(
     selection,
     dateRange,
   );
-  const timeoutMs = selection ? WINDSOR_REQUEST_TIMEOUT_MS : WINDSOR_LEGACY_REQUEST_TIMEOUT_MS;
+  const timeoutMs =
+    timeoutOverrideMs ??
+    (selection ? WINDSOR_REQUEST_TIMEOUT_MS : WINDSOR_LEGACY_REQUEST_TIMEOUT_MS);
 
   let response: Response;
   try {
@@ -118,6 +121,14 @@ export const fetchWindsorAccountRows = (
   platform: AdPlatform,
   days: 30 | 90 = 90,
 ) => withTodayFallback(fields, days, undefined, { accountId, platform });
+
+export const fetchWindsorAccountRowsForRange = (
+  fields: readonly string[],
+  accountId: string,
+  platform: AdPlatform,
+  range: DateRange,
+  timeoutMs = WINDSOR_REQUEST_TIMEOUT_MS,
+) => request(fields, "", undefined, { accountId, platform }, range, timeoutMs);
 
 export const fetchWindsorCampaignReach = (
   accountId: string,
