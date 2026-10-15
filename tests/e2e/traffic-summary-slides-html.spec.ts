@@ -25,8 +25,17 @@ const source = {
     closed_lost: 3,
     stage_conversion: [
       { name: "Novo", volume: 20, from_previous: null, from_top: 100, is_won: false },
+      { name: "Carrinho abandonado", volume: 0, from_previous: 0, from_top: 0, is_won: false },
       { name: "Atendimento", volume: 8, from_previous: 40, from_top: 40, is_won: false },
+      { name: "Aguardando pagamento", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+      { name: "Reunião", volume: 5, from_previous: 62.5, from_top: 25, is_won: false },
+      { name: "Pago", volume: 0, from_previous: 0, from_top: 0, is_won: true },
+      { name: "Proposta", volume: 3, from_previous: 60, from_top: 15, is_won: false },
+      { name: "Em separação", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+      { name: "Enviado", volume: 0, from_previous: 0, from_top: 0, is_won: false },
       { name: "Venda", volume: 2, from_previous: 25, from_top: 10, is_won: true },
+      { name: "Entregue", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+      { name: "Pós-venda", volume: 0, from_previous: 0, from_top: 0, is_won: false },
     ],
   },
   lead_profile: {
@@ -40,6 +49,15 @@ const source = {
         top_value: "Empreendedor",
         top_count: 7,
         top_percent: 70,
+      },
+      {
+        key: "capital",
+        label: "Capital",
+        answered: 9,
+        coverage_percent: 75,
+        top_value: "Até 150 mil",
+        top_count: 5,
+        top_percent: 55.56,
       },
     ],
   },
@@ -222,7 +240,17 @@ test("cenário completo fica com 13 slides sem divisores, fechamento ou encerram
   await expect(page.locator(".chev-legend")).toHaveCount(0);
   expect(titles).not.toContain("Fechamento do período");
   expect(titles).not.toContain("Foco de acompanhamento");
+  expect(titles).toContain("Preenchimento do formulário");
+  expect(titles).toContain("Perfil dos leads");
   await expect(page.getByText("viram até o fim", { exact: true })).toHaveCount(1);
+
+  const funnel = page.locator("section.slide.content").filter({
+    has: page.locator("h2.title", { hasText: /^Do lead ao fechamento$/ }),
+  });
+  await expect(funnel).toHaveCount(1);
+  await expect(funnel.locator(".fun-row")).toHaveCount(5);
+  await expect(funnel).toContainText("Venda");
+  await expect(funnel).not.toContainText("Carrinho abandonado");
 
   const allMedia = page.locator("section.slide.content").filter({
     has: page.locator("h2.title", { hasText: /^Todas as mídias$/ }),

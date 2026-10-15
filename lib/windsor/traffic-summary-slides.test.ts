@@ -89,6 +89,37 @@ function source(overrides: Partial<TrafficSummarySource> = {}): TrafficSummarySo
   } as unknown as TrafficSummarySource;
 }
 
+type StageInput = {
+  name: string;
+  volume: number;
+  from_previous: number | null;
+  from_top: number | null;
+  is_won: boolean;
+};
+
+function crmWithStages(stageConversion: StageInput[]): TrafficSummarySource["crm"] {
+  return {
+    leads_entered: 20,
+    in_service: 8,
+    closed_won: 2,
+    closed_lost: 3,
+    stages: [],
+    stage_conversion: stageConversion,
+  } as unknown as TrafficSummarySource["crm"];
+}
+
+function serializedFunnel(html: string): {
+  stages: Array<{ name: string; volume: number; from_previous: number | null }>;
+} | undefined {
+  const serialized = html.match(/const D = (.+);\nconst ICON =/);
+  expect(serialized?.[1]).toBeDefined();
+  return (JSON.parse(serialized![1]!) as {
+    funnel?: {
+      stages: Array<{ name: string; volume: number; from_previous: number | null }>;
+    };
+  }).funnel;
+}
+
 describe("renderTrafficSummarySlides", () => {
   it("serializa dados reais com escape seguro e preserva o formato autocontido", async () => {
     const html = await renderTrafficSummarySlides({
@@ -127,7 +158,28 @@ describe("renderTrafficSummarySlides", () => {
     expect(html).not.toContain("Do lead ao fechamento");
   });
 
-  it("inclui perfil e etapas reais do CRM", async () => {
+  it("omite os dois slides de perfil quando há só um campo com resposta", async () => {
+    const html = await renderTrafficSummarySlides({
+      source: source({
+        lead_profile: {
+          considered_leads: 12,
+          fields: [
+            { key: "porte", label: "Porte", answered: 10, coverage_percent: 83.33, top_value: "Pequeno", top_count: 6, top_percent: 60 },
+          ],
+        },
+      }),
+      brand,
+      language: "pt-BR",
+      organizationSlug: "cliente-generico",
+    });
+
+    expect(html).not.toContain('"profile":{');
+    expect(html).not.toContain("Preenchimento do formulário");
+    expect(html).not.toContain("Perfil dos leads");
+    expect(html).not.toContain('"topValue":"Pequeno"');
+  });
+
+  it("inclui os dois slides de perfil com dois campos e mantém etapas reais do CRM", async () => {
     const html = await renderTrafficSummarySlides({
       source: source({
         crm: {
@@ -149,6 +201,7 @@ describe("renderTrafficSummarySlides", () => {
           considered_leads: 12,
           fields: [
             { key: "porte", label: "Porte", answered: 10, coverage_percent: 83.33, top_value: "Pequeno", top_count: 6, top_percent: 60 },
+            { key: "capital", label: "Capital", answered: 9, coverage_percent: 75, top_value: "Até 150 mil", top_count: 5, top_percent: 55.56 },
           ],
         },
       }),
@@ -159,6 +212,84 @@ describe("renderTrafficSummarySlides", () => {
 
     expect(html).toContain('"name":"Reunião"');
     expect(html).toContain('"topValue":"Pequeno"');
+    expect(html).toContain('"topValue":"Até 150 mil"');
+    expect(html).toContain("Preenchimento do formulário");
+    expect(html).toContain("Perfil dos leads");
+  });
+
+  it("filtra 12 etapas para as 5 com volume antes de paginar e recalcula a conversão mostrada", async () => {
+    const html = await renderTrafficSummarySlides({
+      source: source({
+        crm: crmWithStages([
+          { name: "Novo", volume: 20, from_previous: null, from_top: 100, is_won: false },
+          { name: "Carrinho abandonado", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+          { name: "Atendimento", volume: 8, from_previous: null, from_top: 40, is_won: false },
+          { name: "Aguardando pagamento", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+          { name: "Reunião", volume: 4, from_previous: null, from_top: 20, is_won: false },
+          { name: "Em separação", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+          { name: "Proposta", volume: 2, from_previous: null, from_top: 10, is_won: false },
+          { name: "Enviado", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+          { name: "Venda", volume: 1, from_previous: null, from_top: 5, is_won: true },
+          { name: "Entregue", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+          { name: "Pós-venda", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+          { name: "Stand by", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+        ]),
+      }),
+      brand,
+      language: "pt-BR",
+      organizationSlug: "cliente-generico",
+    });
+
+    const funnel = serializedFunnel(html);
+    expect(funnel?.stages).toEqual([
+      { name: "Novo", volume: 20, from_previous: null },
+      { name: "Atendimento", volume: 8, from_previous: 40 },
+      { name: "Reunião", volume: 4, from_previous: 50 },
+      { name: "Proposta", volume: 2, from_previous: 50 },
+      { name: "Venda", volume: 1, from_previous: 50 },
+    ]);
+    expect(Math.ceil((funnel?.stages.length ?? 0) / 6)).toBe(1);
+  });
+
+  it("mantém somente a última etapa de venda zerada quando nenhuma venda tem volume", async () => {
+    const html = await renderTrafficSummarySlides({
+      source: source({
+        crm: crmWithStages([
+          { name: "Novo", volume: 10, from_previous: null, from_top: 100, is_won: false },
+          { name: "Venda antiga", volume: 0, from_previous: 0, from_top: 0, is_won: true },
+          { name: "Contrato", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+          { name: "Venda final", volume: 0, from_previous: 0, from_top: 0, is_won: true },
+        ]),
+      }),
+      brand,
+      language: "pt-BR",
+      organizationSlug: "cliente-generico",
+    });
+
+    expect(serializedFunnel(html)?.stages).toEqual([
+      { name: "Novo", volume: 10, from_previous: null },
+      { name: "Venda final", volume: 0, from_previous: 0 },
+    ]);
+  });
+
+  it("não mantém venda zerada extra quando uma etapa de venda tem volume", async () => {
+    const html = await renderTrafficSummarySlides({
+      source: source({
+        crm: crmWithStages([
+          { name: "Novo", volume: 10, from_previous: null, from_top: 100, is_won: false },
+          { name: "Venda", volume: 2, from_previous: 20, from_top: 20, is_won: true },
+          { name: "Venda antiga", volume: 0, from_previous: 0, from_top: 0, is_won: true },
+        ]),
+      }),
+      brand,
+      language: "pt-BR",
+      organizationSlug: "cliente-generico",
+    });
+
+    expect(serializedFunnel(html)?.stages).toEqual([
+      { name: "Novo", volume: 10, from_previous: null },
+      { name: "Venda", volume: 2, from_previous: 20 },
+    ]);
   });
 
   it("remove divisores, fechamento, encerramento, variações fixas e objetivo genérico", async () => {

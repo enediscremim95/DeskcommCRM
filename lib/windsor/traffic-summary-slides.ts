@@ -13,12 +13,16 @@ import { text, type TrafficSummaryLanguage } from "@/lib/windsor/traffic-summary
 
 import slideModel from "./assets/traffic-summary-slides-model.json";
 
-type StageConversion = {
+type SourceStage = {
+  name: string;
+  volume: number;
+  is_won: boolean;
+};
+
+type SlideStage = {
   name: string;
   volume: number;
   from_previous: number | null;
-  from_top: number | null;
-  is_won: boolean;
 };
 
 type SlideKeyword = {
@@ -90,7 +94,7 @@ type SlideProfile = {
 };
 
 type SlideFunnel = {
-  stages: StageConversion[];
+  stages: SlideStage[];
 };
 
 type SlideData = {
@@ -108,7 +112,7 @@ type SlideData = {
 };
 
 type SourceWithSlideDetails = TrafficSummarySource & {
-  crm: TrafficSummarySource["crm"] & { stage_conversion?: StageConversion[] };
+  crm: TrafficSummarySource["crm"] & { stage_conversion?: SourceStage[] };
 };
 
 const DASH = "—";
@@ -387,15 +391,31 @@ async function slideData(args: {
     .map((stage) => ({
       name: escapeHtml(stage.name),
       volume: stage.volume,
-      from_previous: finite(stage.from_previous),
-      from_top: finite(stage.from_top),
       is_won: stage.is_won,
     }));
-  const hasFunnel = rawStages.some((stage) => stage.volume > 0);
+  const hasWonWithVolume = rawStages.some((stage) => stage.is_won && stage.volume > 0);
+  let fallbackWonIndex = -1;
+  if (!hasWonWithVolume) {
+    rawStages.forEach((stage, index) => {
+      if (stage.is_won) fallbackWonIndex = index;
+    });
+  }
+  const funnelStages = rawStages
+    .filter((stage, index) => stage.volume > 0 || index === fallbackWonIndex)
+    .map((stage, index, stages) => {
+      const previous = index > 0 ? stages[index - 1] : null;
+      return {
+        name: stage.name,
+        volume: stage.volume,
+        from_previous:
+          previous && previous.volume > 0 ? (stage.volume / previous.volume) * 100 : null,
+      };
+    });
+  const hasFunnel = funnelStages.length > 0;
   const profile =
     source.lead_profile &&
     source.lead_profile.considered_leads >= 5 &&
-    source.lead_profile.fields.length > 0
+    source.lead_profile.fields.length >= 2
       ? {
           considered: source.lead_profile.considered_leads,
           fields: source.lead_profile.fields.map((field) => ({
@@ -443,7 +463,7 @@ async function slideData(args: {
   }
   if (hasFunnel) {
     data.funnel = {
-      stages: rawStages,
+      stages: funnelStages,
     };
   }
   return data;
@@ -686,16 +706,14 @@ function slidesRuntime(
   }
 
   if (D.funnel) {
-    const chunks: StageConversion[][] = [];
+    const chunks: SlideStage[][] = [];
     for (let index = 0; index < D.funnel.stages.length; index += 6) chunks.push(D.funnel.stages.slice(index, index + 6));
     chunks.forEach((stages, chunkIndex) => {
       const top = D.funnel!.stages[0]?.volume ?? 0;
-      const rows = stages.map((stage, index) => {
-        const absoluteIndex = chunkIndex * 6 + index;
-        const previous = absoluteIndex > 0 ? D.funnel!.stages[absoluteIndex - 1] : null;
+      const rows = stages.map((stage) => {
         const group = D.groups[0];
         const cost = group?.investment != null && stage.volume > 0 ? group.investment / stage.volume : null;
-        return `<div class="fun-row"><span class="lb">${stage.name}</span><span class="nv">${fInt(stage.volume)}</span><div class="tr">${stage.volume > 0 && top > 0 ? `<div class="fl" style="width:${((stage.volume / top) * 100).toFixed(1)}%"></div>` : ""}</div><span class="rt">${previous && previous.volume > 0 ? fPct((stage.volume / previous.volume) * 100, 1) : DASH}</span><span class="cost">${group ? fMoney(cost, group.currency) : DASH}</span></div>`;
+        return `<div class="fun-row"><span class="lb">${stage.name}</span><span class="nv">${fInt(stage.volume)}</span><div class="tr">${stage.volume > 0 && top > 0 ? `<div class="fl" style="width:${((stage.volume / top) * 100).toFixed(1)}%"></div>` : ""}</div><span class="rt">${stage.from_previous != null ? fPct(stage.from_previous, 1) : DASH}</span><span class="cost">${group ? fMoney(cost, group.currency) : DASH}</span></div>`;
       }).join("");
       const suffix = chunks.length > 1 ? ` · ${chunkIndex + 1}/${chunks.length}` : "";
       S.push(content(`${D.labels.leadToClose}${suffix}`, `<div class="card fun"><div class="fun-head"><span>${D.labels.stage}</span><span>${D.labels.volume}</span><span></span><span>${D.labels.conversion}</span><span>${D.labels.stageCost}</span></div>${rows}</div>`));
