@@ -462,7 +462,7 @@ describe("colunas da tabela de campanhas", () => {
     const user = userEvent.setup();
     render(<TrafficDashboard />);
     const downloadButton = await screen.findByRole("button", { name: "Baixar relatório" });
-    expect(screen.getByRole("button", { name: "Baixar PDF" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Baixar PDF" })).not.toBeInTheDocument();
     await waitFor(() => expect(downloadButton).toBeEnabled());
     const appendChild = document.body.appendChild.bind(document.body);
     let downloadLink: HTMLAnchorElement | null = null;
