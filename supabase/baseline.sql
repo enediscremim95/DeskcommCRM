@@ -28737,6 +28737,90 @@ end$function$;
 comment on function public.fn_carimba_detected_at() is
   'Carimba a detecção no relógio do banco e limita since ao mesmo instante: agenda/presença podem forçar um bucket antes do limiar de silêncio, mas um estado nunca começa depois de ser detectado.';
 
+-- ---- leitura barata de crm_leads para atendentes (migration 0290) ----
+-- Os auxiliares são InitPlans na policy: o JSONB de configuração é lido uma
+-- vez por consulta, sem retirar fn_can_view_lead da reserva de compatibilidade.
+create or replace function public.fn_orgs_atendente_leitura_total()
+returns uuid[]
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select array(
+    with contexto as (
+      select public.fn_support_context() as suporte
+    )
+    select uo.organization_id
+      from public.user_organizations uo
+      join public.organizations o on o.id = uo.organization_id
+      cross join contexto c
+     where uo.user_id = auth.uid()
+       and uo.revoked_at is null
+       and uo.role = 'agent'
+       and coalesce(o.settings->>'visibility_mode', 'own_and_unassigned') = 'all'
+       and not (
+         coalesce(c.suporte->>'status' = 'active', false)
+         and uo.organization_id = nullif(c.suporte->>'organization_id', '')::uuid
+       )
+     order by uo.organization_id
+  );
+$$;
+
+create or replace function public.fn_orgs_atendente_leitura_sem_dono()
+returns uuid[]
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select array(
+    with contexto as (
+      select public.fn_support_context() as suporte
+    )
+    select uo.organization_id
+      from public.user_organizations uo
+      join public.organizations o on o.id = uo.organization_id
+      cross join contexto c
+     where uo.user_id = auth.uid()
+       and uo.revoked_at is null
+       and uo.role = 'agent'
+       and coalesce(o.settings->>'visibility_mode', 'own_and_unassigned')
+           in ('own_and_unassigned', 'all')
+       and not (
+         coalesce(c.suporte->>'status' = 'active', false)
+         and uo.organization_id = nullif(c.suporte->>'organization_id', '')::uuid
+       )
+     order by uo.organization_id
+  );
+$$;
+
+revoke execute on function public.fn_orgs_atendente_leitura_total() from public, anon;
+revoke execute on function public.fn_orgs_atendente_leitura_sem_dono() from public, anon;
+grant execute on function public.fn_orgs_atendente_leitura_total() to authenticated;
+grant execute on function public.fn_orgs_atendente_leitura_sem_dono() to authenticated;
+
+drop policy if exists "crm_leads_select" on public.crm_leads;
+create policy "crm_leads_select" on public.crm_leads
+  for select using (
+    (select public.fn_is_platform_admin())
+    or organization_id = any(((select public.fn_orgs_leitura_total()))::uuid[])
+    or (
+      organization_id in (select public.fn_user_org_ids())
+      and (
+        owner_user_id = (select auth.uid())
+        or organization_id = any(((select public.fn_orgs_atendente_leitura_total()))::uuid[])
+        or (
+          owner_user_id is null
+          and organization_id = any(((select public.fn_orgs_atendente_leitura_sem_dono()))::uuid[])
+        )
+        or public.fn_can_view_lead(organization_id, owner_user_id)
+      )
+    )
+  );
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$
