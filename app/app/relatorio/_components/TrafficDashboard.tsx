@@ -1839,14 +1839,6 @@ export function TrafficDashboard() {
               >
                 {downloading === "slides" ? t("Preparando relatório…") : t("Baixar relatório")}
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void downloadSummary("pdf")}
-                disabled={!report || loading || downloading !== null}
-              >
-                {downloading === "pdf" ? t("Preparando PDF…") : t("Baixar PDF")}
-              </Button>
               {preset === "custom" && (
                 <>
                   <div className="space-y-1">
