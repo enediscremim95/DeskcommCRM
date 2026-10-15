@@ -9194,6 +9194,7 @@ export const DICIONARIO: Traducoes = {
   "O último dado confirmado foi preservado. Avise quem administra a plataforma.": { es: "Se conservaron los últimos datos confirmados. Avisa a quien administra la plataforma." },
   "Pessoas alcançadas": { es: "Personas alcanzadas" },
   "Preparando PDF…": { es: "Preparando PDF…" },
+  "Preparando relatório…": { es: "Preparando informe…" },
   "Ticket médio": { es: "Ticket promedio" },
   "Total": { es: "Total" },
   "Tráfego": { es: "Tráfico" },

@@ -147,7 +147,9 @@ export async function DELETE(
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requirePermission("resource.delete", { requestId, resource: "contacts" });
+  // Excluir contato é apagar a pessoa do lead (o negócio fica sem contato). Decisão do
+  // dono de 25/09: o admin não exclui leads; só o gerente. Mesma capacidade nomeada.
+  const authz = await requirePermission("lead.delete", { requestId, resource: "contacts" });
   if (!authz.ok) return authz.response;
   const user = authz.user;
   const activeOrg = authz.org;

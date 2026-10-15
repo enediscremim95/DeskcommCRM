@@ -270,6 +270,7 @@ export type TrafficAdMovement = "new" | "active" | "paused" | null;
 export type TrafficAdInTest = {
   key: string;
   currency: string;
+  platform: "meta_ads" | "google_ads";
   name: string;
   campaign: string;
   spend: number;
@@ -300,6 +301,7 @@ export function buildTrafficAdsInTest(source: TrafficSummarySource): TrafficAdIn
     ads.push({
       key: `${currencyIndex}:${campaignIndex}:${adsetIndex}:${adIndex}`,
       currency: currencyGroup.currency,
+      platform: campaign.platform ?? "meta_ads",
       name: ad.name,
       campaign: campaign.name,
       spend: ad.spend,

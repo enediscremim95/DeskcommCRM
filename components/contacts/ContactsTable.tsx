@@ -110,7 +110,8 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const del = useDeleteContact();
-  const podeExcluir = usePermission("resource.delete");
+  // Só o gerente exclui contato (e lead): o admin não, por decisão do dono.
+  const podeExcluir = usePermission("lead.delete");
   const [alvo, setAlvo] = useState<Contact | null>(null);
   const [abrindo, setAbrindo] = useState<string | null>(null);
   const router = useRouter();

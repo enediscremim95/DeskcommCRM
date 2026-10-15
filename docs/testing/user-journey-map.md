@@ -2034,6 +2034,7 @@ A spec `organizacoes-criacao-convite-e-cache.spec.ts` cobre criação padrão co
 | W11 | Cliente consulta as predefinições liberadas | Viewer troca entre predefinições da própria organização e plataforma sem receber controles ou permissão de escrita |
 | W12 | Organização atualiza sem criar preset | `campaign_metric_columns` continua sendo o fallback, filtrado por plataforma, até o dono marcar uma nova predefinição como padrão |
 | W13 | Organização já tinha predefinições | A atualização conserva a linha original no Meta e cria uma cópia idempotente no Google, removendo apenas métricas sem dado nessa plataforma |
+| W14 | Cliente baixa o relatório do período | O botão principal entrega HTML autocontido com a marca e os dados do tenant, preserva moedas separadas, omite seções sem dados e funciona em 375, 768 e 1280 px; o PDF continua disponível como opção secundária |
 
 Prova atual: normalizador e agregador têm testes unitários focados; migration segue a
 tripla migration + baseline + MANIFEST. A execução Playwright com Windsor real não é
@@ -2048,6 +2049,12 @@ plataforma; o invariante
 escrita direta negada e FK composta contra padrão cross-tenant. A prova
 Playwright ficou pendente nesta execução porque o ambiente exige carregar
 credenciais sintéticas E2E, explicitamente fora do escopo autorizado.
+
+Relatório em slides: `traffic-summary-slides.test.ts` prova os dados, o escape
+contra fechamento de `script`, a omissão e a renumeração das seções;
+`slides/route.test.ts` e `slides/contract.test.ts` provam cabeçalhos,
+autorização e isolamento; `traffic-summary-slides-html.spec.ts` abre o arquivo
+gerado em Chromium nas três larguras e mede fluxo, palco e navegação.
 
 ## Apoio humano no WhatsApp Web [P0]
 
