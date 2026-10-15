@@ -160,6 +160,9 @@ const schema = z.object({
   // derrubaria a ingestão de mensagens. Ligue se usa WAHA Plus ou um proxy que
   // assine — aí a verificação passa a ser obrigatória.
   WAHA_WEBHOOK_REQUIRE_SIGNATURE: z.string().optional().default("false"),
+  // Kill switch operacional. Ausente mantém a capacidade ligada nos clones já
+  // instalados; somente a grafia explícita "false" desliga a varredura.
+  HISTORICO_WHATSAPP_ENABLED: z.string().optional().default("true"),
 
   // ─── Chamada de voz WhatsApp (WaCalls, spec 18) ───
   //

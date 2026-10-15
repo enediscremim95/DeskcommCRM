@@ -3,7 +3,9 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import type { Locale } from "date-fns";
-import { useEffect, useMemo, useRef } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useT } from "@/hooks/i18n/useT";
 import { format, isToday, isYesterday } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -16,6 +18,8 @@ import { useDeleteNote } from "@/hooks/inbox/useDeleteNote";
 import { useDebugToggle } from "@/hooks/ai/useDebugToggle";
 import { useActiveOrg, usePermission, useUser } from "@/hooks/auth/AuthProvider";
 import type { Message, Note } from "@/lib/types/messaging";
+
+type EstadoHistorico = "parado" | "carregando" | "store_desligado";
 
 interface Props {
   conversationId: string | null;
@@ -76,6 +80,23 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
   const deleteNote = useDeleteNote(conversationId ?? "");
   const podeExcluir = usePermission("resource.delete");
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
+  const queryClient = useQueryClient();
+  const [historico, setHistorico] = useState<{
+    conversationId: string | null;
+    status: EstadoHistorico;
+  }>({
+    conversationId: null,
+    status: "parado",
+  });
+  // Suporte somente leitura não escreve nada, nem o histórico: o servidor
+  // recusaria, e a tentativa já contaria como escrita.
+  const suporteSomenteLeitura = currentUser?.support?.access_mode === "support_readonly";
+  const estadoHistorico: EstadoHistorico =
+    !conversationId || suporteSomenteLeitura
+      ? "parado"
+      : historico.conversationId === conversationId
+        ? historico.status
+        : "carregando";
 
   const messages: Message[] = useMemo(() => q.data?.pages.flatMap((p) => p.data) ?? [], [q.data]);
 
@@ -101,6 +122,76 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
   useEffect(() => {
     paginasVistas.current = 0;
   }, [conversationId]);
+
+  // Não segura a abertura: a primeira página já renderiza enquanto o servidor
+  // aprofunda o fio. O cancelamento lógico impede uma conversa anterior de
+  // mudar o aviso da conversa que o usuário abriu depois.
+  useEffect(() => {
+    if (!conversationId || suporteSomenteLeitura) return;
+    let vigente = true;
+    // `fetch` simples, não o `apiClient`: o histórico é um extra e nunca pode
+    // recarregar a página. O `apiClient` recarrega em `no_active_org`, e uma
+    // conversa aberta no instante da troca de organização cairia nisso.
+    const abortar = new AbortController();
+    let prazo: ReturnType<typeof setTimeout> | undefined;
+    // Quem só passa pela conversa (ou troca de organização logo em seguida)
+    // não dispara nada: o histórico espera a conversa ficar aberta um instante.
+    const espera = setTimeout(() => {
+      prazo = setTimeout(() => abortar.abort(), 20_000);
+      void fetch(`/api/v1/conversations/${conversationId}/historico`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        credentials: "same-origin",
+        signal: abortar.signal,
+      })
+        .then(async (res) => {
+          if (!res.ok) throw new Error("historico_indisponivel");
+          return (await res.json()) as { data: { status: string; inseridas?: number } };
+        })
+        .then(async (resposta) => {
+          if (!vigente) return;
+          if (resposta.data.status === "store_desligado") {
+            setHistorico({ conversationId, status: "store_desligado" });
+            return;
+          }
+          setHistorico({ conversationId, status: "parado" });
+          // Nada entrou, nada a reler: reler à toa, no meio de uma troca de
+          // organização, bate na organização antiga e recarrega a página.
+          if (!resposta.data.inseridas) return;
+          await Promise.all([
+            q.refetch(),
+            queryClient.invalidateQueries({ queryKey: ["conversations"] }),
+          ]);
+        })
+        .catch(() => {
+          if (vigente) setHistorico({ conversationId, status: "parado" });
+        });
+    }, 1_200);
+    return () => {
+      vigente = false;
+      // Sem `abort()` aqui: cancelar um POST já enviado não prova que o servidor
+      // terminou. Só o prazo de 20 s corta, e o `vigente` descarta o resultado.
+      clearTimeout(espera);
+      if (prazo) clearTimeout(prazo);
+    };
+    // `q` muda a cada render; a operação pertence apenas ao id aberto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, queryClient, suporteSomenteLeitura]);
+
+  const avisoHistorico =
+    estadoHistorico === "carregando" ? (
+      <p className="px-4 py-2 text-center text-xs text-muted-foreground">
+        {t("Carregando conversas anteriores…")}
+      </p>
+    ) : estadoHistorico === "store_desligado" ? (
+      <p className="mx-4 my-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-center text-xs text-amber-950">
+        {t("O histórico só aparece depois de reconectar o WhatsApp.")}{" "}
+        <Link className="font-medium underline" href="/app/connections">
+          {t("Ir para Conexões")}
+        </Link>
+      </p>
+    ) : null;
 
   // Rola ao fim na primeira carga e quando chega mensagem/nota nova — mas NÃO
   // quando o crescimento veio do "Carregar mais antigas".
@@ -196,8 +287,9 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
     return (
       <div
         {...sinalDoCanal}
-        className="flex h-full items-center justify-center text-sm text-muted-foreground"
+        className="flex h-full flex-col items-center justify-center text-sm text-muted-foreground"
       >
+        {avisoHistorico}
         {t("Nenhuma mensagem nesta conversa.")}
       </div>
     );
@@ -215,6 +307,7 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
 
   return (
     <div {...sinalDoCanal} className="flex h-full flex-col">
+      {avisoHistorico}
       <div ref={scrollerRef} className="flex-1 overflow-y-auto py-2">
         {q.hasNextPage && (
           <div className="flex justify-center py-2">

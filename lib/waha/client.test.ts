@@ -34,7 +34,7 @@ import type { AddressInfo } from "node:net";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { TETO_PADRAO_MS, TETO_DE_MIDIA_MS, WahaClient } from "./client";
+import { NOWEB_STORE, TETO_PADRAO_MS, TETO_DE_MIDIA_MS, WahaClient } from "./client";
 
 /** Sockets aceitos e deixados pendurados — o modo de falha caro. */
 let mudo: Server;
@@ -232,6 +232,11 @@ describe("o corpo devolvido pelo WAHA nunca entra na exceção", () => {
     ["getSessionQr", (c) => c.getSessionQr("sessao")],
     ["sendMessage", (c) => c.sendMessage("sessao", "5511999@c.us", "oi")],
     ["checkContactExists", (c) => c.checkContactExists("sessao", "5511999999999")],
+    ["listChats", (c) => c.listChats("sessao", { limit: 20, offset: 0 })],
+    [
+      "getChatMessages",
+      (c) => c.getChatMessages("sessao", "5511999@c.us", { limit: 200, offset: 0, downloadMedia: false }),
+    ],
     [
       "sendContactVcard",
       (c) =>
@@ -291,7 +296,10 @@ describe("sessões: conflito conhecido só converge com identidade e pós-condi�
   type Step = { method: string; path: string; status: number; body?: unknown };
   const name = "qa/session";
   const sessionPath = "/api/sessions/qa%2Fsession";
-  const config = { ignore: { status: true, broadcast: true, channels: true, groups: true } };
+  const config = {
+    ignore: { status: true, broadcast: true, channels: true, groups: true },
+    noweb: { store: NOWEB_STORE },
+  };
   const session = (status = "STOPPED", extra: Record<string, unknown> = {}) =>
     ({ name, status, config, engine: { engine: "NOWEB" }, ...extra });
   const duplicate = { statusCode: 422, error: "Unprocessable Entity", message: `Session '${name}' already exists. Use PUT to update it.` };
@@ -327,6 +335,23 @@ describe("sessões: conflito conhecido só converge com identidade e pós-condi�
 
   it("create 422 conhecido + GET compatível + start + GET correto converge sem PUT", async () => {
     await receive([create(422, duplicate), read(), start, read(session("SCAN_QR_CODE"))], async (c) => {
+      await expect(c.startSession(name)).resolves.toMatchObject({ status: "SCAN_QR_CODE" });
+    });
+  });
+
+  it("sessão existente sem store converge antes de iniciar", async () => {
+    const legada = session("STOPPED", {
+      config: { ignore: { status: true, broadcast: true, channels: true, groups: true } },
+    });
+    await receive([
+      create(422, duplicate),
+      read(legada),
+      read(legada),
+      { method: "PUT", path: sessionPath, status: 200, body: {} },
+      read(session("STOPPED")),
+      start,
+      read(session("SCAN_QR_CODE")),
+    ], async (c) => {
       await expect(c.startSession(name)).resolves.toMatchObject({ status: "SCAN_QR_CODE" });
     });
   });

@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 import { describeWahaServer, type WahaServerCapabilities } from "@/lib/channels/waha-server";
+import { wahaPayloadSchema, type WahaPayload } from "@/lib/waha/envelope";
 
 import { logger } from "@/lib/logger";
 import { classificarFalhaDeAlcance, explicarFalhaDeAlcance } from "@/lib/net/alcance";
@@ -53,6 +54,62 @@ export const CONVERSAS_IGNORADAS = {
   /** Ver o parágrafo acima: o CRM já os descarta na entrada. */
   groups: true,
 } as const;
+
+/**
+ * O nome das chaves segue o contrato do WAHA 2026.7.2: `fullSync`, em camelCase.
+ * O histórico completo só é sincronizado durante o pareamento. Acrescentar esta
+ * configuração a uma sessão já autenticada preserva as mensagens futuras, mas
+ * exige logout e novo QR para recuperar o passado completo.
+ */
+export const NOWEB_STORE = { enabled: true, fullSync: true } as const;
+
+export type WahaHistoryResult<T> =
+  | { status: "ok"; data: T }
+  | { status: "store_desligado" };
+
+export interface WahaChatSummary {
+  id: string;
+  timestamp?: number | null;
+  [key: string]: unknown;
+}
+
+const wahaChatSummarySchema = z.looseObject({ id: z.string(), timestamp: z.number().nullish() });
+const chatsSchema = z.array(wahaChatSummarySchema);
+const chatMessagesSchema = z.array(wahaPayloadSchema);
+
+function registro(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function storeAtual(config: Record<string, unknown> | null | undefined): boolean {
+  const noweb = registro(config?.noweb);
+  const store = registro(noweb?.store);
+  return store?.enabled === true && store?.fullSync === true;
+}
+
+function filtrosAtuais(config: Record<string, unknown> | null | undefined): boolean {
+  const ignore = registro(config?.ignore);
+  return Boolean(ignore) && Object.entries(CONVERSAS_IGNORADAS)
+    .every(([key, value]) => ignore![key] === value) && storeAtual(config);
+}
+
+function erroDeStoreDesligado(status: number, body: unknown): boolean {
+  if (status !== 400) return false;
+  const envelope = registro(body);
+  const texto = typeof body === "string"
+    ? body
+    : typeof envelope?.message === "string" ? envelope.message : "";
+  const normalizado = texto.toLowerCase();
+  return normalizado.includes("store") &&
+    (normalizado.includes("full_sync") || normalizado.includes("fullsync"));
+}
+
+function inteiroEntre(value: number, minimo: number, maximo: number): number {
+  if (!Number.isFinite(value)) return minimo;
+  return Math.min(maximo, Math.max(minimo, Math.trunc(value)));
+}
 
 /**
  * Teto de relógio das chamadas ao WAHA.
@@ -244,24 +301,32 @@ export class WahaClient {
     const res = await this.fetchComTeto(`${this.baseUrl}/api/sessions`, {
       method: "POST",
       headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ name, start: false, config: { ignore: CONVERSAS_IGNORADAS } }),
+      body: JSON.stringify({
+        name,
+        start: false,
+        config: { ignore: CONVERSAS_IGNORADAS, noweb: { store: NOWEB_STORE } },
+      }),
     });
     if (!res.ok && !knownSessionConflict(await res.json().catch(() => null), res.status, "create", name)) {
       throw new WahaSessionError("create", res.status);
     }
     // 404 não é conflito de create, mesmo que use envelope reconhecido.
     if (!res.ok && res.status !== 422) throw new WahaSessionError("create", res.status);
-    const session = await this.sessionAfter(name, "create", res.status);
+    let session = await this.sessionAfter(name, "create", res.status);
     if (!session || !(await this.compatibleSession(session))) throw new WahaSessionError("create", res.status);
+    // `connectWahaChannel` usa a porta granular create + startExisting. Convergir
+    // aqui cobre também logout + novo QR, não apenas o atalho startSession.
+    if (!res.ok && !filtrosAtuais(session.config)) {
+      await this.convergirConfigDaSessao(name);
+      session = (await this.sessionAfter(name, "create", res.status)) ?? session;
+    }
     return { created: res.ok, session };
   }
 
   /** Compatível com os callers: cria se necessário e inicia, confirmando GET. */
   async startSession(name: string): Promise<{ qr?: string; status: string }> {
     const creation = await this.createSession(name);
-    const ignore = creation.session.config?.ignore;
-    const filtersCurrent = ignore && typeof ignore === "object" && Object.entries(CONVERSAS_IGNORADAS)
-      .every(([key, value]) => (ignore as Record<string, unknown>)[key] === value);
+    const filtersCurrent = filtrosAtuais(creation.session.config);
     if (!creation.created && !filtersCurrent) await this.convergirConfigDaSessao(name);
     return this.startExistingSession(name);
   }
@@ -336,9 +401,9 @@ export class WahaClient {
    * só roda dentro de `startSession`, que já é o momento em que a sessão está
    * sendo (re)iniciada de propósito.
    *
-   * NÃO lança: é melhoria de custo, não condição de envio. Uma versão do WAHA
-   * que não conheça a rota faria toda reconexão falhar por causa de uma
-   * economia — trocar mensagem por byte é o negócio errado.
+   * NÃO lança: filtro e store não podem derrubar o envio ao vivo. Se o store
+   * não convergir, a leitura do histórico devolve `store_desligado` e a tela
+   * orienta a reconexão, sem fingir que a conversa vazia está correta.
    */
   async convergirConfigDaSessao(name: string): Promise<void> {
     const url = `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`;
@@ -358,7 +423,13 @@ export class WahaClient {
       const sessao = parsed.data;
       if (!sessao.config) return;
 
-      const config = { ...sessao.config, ignore: CONVERSAS_IGNORADAS };
+      const noweb = registro(sessao.config.noweb) ?? {};
+      const store = registro(noweb.store) ?? {};
+      const config = {
+        ...sessao.config,
+        ignore: CONVERSAS_IGNORADAS,
+        noweb: { ...noweb, store: { ...store, ...NOWEB_STORE } },
+      };
       // Já está como queremos: não reiniciar a sessão à toa. Este caminho roda
       // em TODA reconexão, e um restart desnecessário por rodada seria pior que
       // o gasto que ele evita.
@@ -366,12 +437,7 @@ export class WahaClient {
       // à ORDEM das chaves, então o dia em que o WAHA devolver o mesmo objeto
       // com as chaves noutra sequência, esta guarda passa a dizer "mudou" e a
       // sessão reinicia a cada reconexão — sem que nada tenha mudado.
-      const jaConvergida =
-        typeof sessao.config.ignore === "object" &&
-        sessao.config.ignore !== null &&
-        Object.entries(CONVERSAS_IGNORADAS).every(
-          ([k, v]) => (sessao.config!.ignore as Record<string, unknown>)[k] === v,
-        );
+      const jaConvergida = filtrosAtuais(sessao.config);
       if (jaConvergida) return;
 
       const res = await this.fetchComTeto(url, {
@@ -405,6 +471,42 @@ export class WahaClient {
     });
     if (!res.ok) throw new Error(`waha_${res.status}`);
     return (await res.json()) as { qr?: string; status: string };
+  }
+
+  private async historico<T>(url: URL, schema: z.ZodType<T>): Promise<WahaHistoryResult<T>> {
+    const res = await this.fetchComTeto(url, { headers: { "X-Api-Key": this.apiKey } });
+    const body: unknown = await res.json().catch(() => null);
+    if (erroDeStoreDesligado(res.status, body)) return { status: "store_desligado" };
+    if (!res.ok) throw new Error(`waha_history_${res.status}`);
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) throw new Error("waha_history_invalid_response");
+    return { status: "ok", data: parsed.data };
+  }
+
+  async listChats(
+    session: string,
+    options: { limit: number; offset: number },
+  ): Promise<WahaHistoryResult<WahaChatSummary[]>> {
+    const url = new URL(`${this.baseUrl}/api/${encodeURIComponent(session)}/chats`);
+    url.searchParams.set("limit", String(inteiroEntre(options.limit, 1, 200)));
+    url.searchParams.set("offset", String(inteiroEntre(options.offset, 0, Number.MAX_SAFE_INTEGER)));
+    url.searchParams.set("sortBy", "messageTimestamp");
+    url.searchParams.set("sortOrder", "desc");
+    return this.historico(url, chatsSchema);
+  }
+
+  async getChatMessages(
+    session: string,
+    chatId: string,
+    options: { limit: number; offset: number; downloadMedia: false },
+  ): Promise<WahaHistoryResult<WahaPayload[]>> {
+    const url = new URL(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages`,
+    );
+    url.searchParams.set("limit", String(inteiroEntre(options.limit, 1, 200)));
+    url.searchParams.set("offset", String(inteiroEntre(options.offset, 0, Number.MAX_SAFE_INTEGER)));
+    url.searchParams.set("downloadMedia", String(options.downloadMedia));
+    return this.historico(url, chatMessagesSchema);
   }
 
   /**

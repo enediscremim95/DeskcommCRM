@@ -97,6 +97,27 @@ export async function encontrarContatoPorTelefone(
   return (linha as { id: string; phone_number: string } | null) ?? null;
 }
 
+/**
+ * Reencontra um contato pelo identificador opaco do canal, sem jamais criá-lo.
+ * O filtro de organização é obrigatório porque o client administrativo ignora RLS.
+ */
+export async function encontrarContatoPorLid(
+  admin: SupabaseClient,
+  orgId: string,
+  rawLid: string,
+): Promise<{ id: string; phone_number: string | null; wa_lid: string | null } | null> {
+  const lid = rawLid.slice(0, rawLid.indexOf("@") === -1 ? undefined : rawLid.indexOf("@"));
+  if (!lid || !/^[0-9]+$/.test(lid)) return null;
+  const { data } = await admin
+    .from("contacts")
+    .select("id, phone_number, wa_lid")
+    .eq("organization_id", orgId)
+    .eq("wa_lid", lid)
+    .is("is_merged_into", null)
+    .maybeSingle();
+  return (data as { id: string; phone_number: string | null; wa_lid: string | null } | null) ?? null;
+}
+
 /** Como `encontrarContatoPorTelefone`, mas trazendo o nome de quem já existia. */
 export async function encontrarContatoPorTelefoneComNome(
   admin: SupabaseClient,

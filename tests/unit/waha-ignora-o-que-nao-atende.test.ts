@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CONVERSAS_IGNORADAS, WahaClient } from "@/lib/waha/client";
+import { CONVERSAS_IGNORADAS, NOWEB_STORE, WahaClient } from "@/lib/waha/client";
 
 /**
  * O CRM PAGAVA POR CONVERSA QUE ELE MESMO DESCARTA.
@@ -98,12 +98,17 @@ describe("sessão que JÁ existe é corrigida — sem levar a config junto", () 
     const cfg = (put?.corpo as { config?: Record<string, unknown> })?.config;
     expect(cfg?.webhooks, "o PUT apagou os webhooks da sessão").toEqual(WEBHOOKS);
     expect(cfg?.ignore).toEqual(CONVERSAS_IGNORADAS);
+    expect((cfg?.noweb as { store?: unknown } | undefined)?.store).toEqual(NOWEB_STORE);
   });
 
   it("não reescreve quando já está como queremos", async () => {
     // Este caminho roda em TODA reconexão, e o PUT REINICIA a sessão. Um
     // restart por rodada seria pior que o gasto que ele evita.
-    const vistos = comSessao({ webhooks: WEBHOOKS, ignore: { ...CONVERSAS_IGNORADAS } });
+    const vistos = comSessao({
+      webhooks: WEBHOOKS,
+      ignore: { ...CONVERSAS_IGNORADAS },
+      noweb: { store: { ...NOWEB_STORE } },
+    });
     await new WahaClient("http://w", "k").startSession("s1");
     expect(vistos.some((v) => v.metodo === "PUT"), "reiniciou a sessão à toa").toBe(false);
   });

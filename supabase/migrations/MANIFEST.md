@@ -253,6 +253,8 @@ aplica.
 
 | `20260918210000` | `0248_integracoes_por_organizacao` | O dono da instalação libera WhatsApp, n8n e Windsor por organização; reconexão por QR tem permissão separada e workflows n8n ficam vinculados a uma única organização. Ausência de configuração nega acesso. |
 
+| `20261014130000` | `0289_historico_whatsapp_silencioso` | Importa mensagens antigas como contexto silencioso: o marcador `metadata.historico` impede `event_log`, abertura de demanda e roteamento, enquanto uma função restrita à `service_role` atualiza a projeção da conversa de forma monotônica pelo horário real. Sessões pareadas antes do store exigem novo QR para o histórico completo. |
+
 ## Reproducibility
 
 Migrations were applied directly via the Supabase MCP `apply_migration` tool during the autonomous bootstrap session. The SQL of each migration is also embedded in the corresponding spec under `docs/specs/0X-spec-*.md` and the database keeps them in `supabase_migrations.schema_migrations`.
