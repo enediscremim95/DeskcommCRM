@@ -1,4 +1,7 @@
-import type { LoseLeadInput } from "@/lib/schemas/leads";
+import {
+  CANONICAL_LOST_REASONS,
+  type LoseLeadInput,
+} from "@/lib/schemas/leads";
 
 const ROTULOS_DOS_MOTIVOS = {
   requested_by_customer: "Cliente solicitou cancelamento",
@@ -13,6 +16,50 @@ const ROTULOS_DOS_MOTIVOS = {
 
 type Traduz = (texto: string) => string;
 
+export interface OpcaoDeMotivoDaPerda {
+  value: string;
+  label: string;
+}
+
+/** Lê a lista configurada no funil sem confiar na forma do jsonb. */
+export function motivosDePerdaConfigurados(settings: unknown): string[] {
+  if (!settings || typeof settings !== "object") return [];
+  const motivos = (settings as { lost_reasons?: unknown }).lost_reasons;
+  if (!Array.isArray(motivos)) return [];
+  return motivos.filter(
+    (motivo): motivo is string => typeof motivo === "string" && motivo.length > 0,
+  );
+}
+
+/** Lista do funil quando existe; caso contrário, a lista canônica atual. */
+export function opcoesDeMotivoDaPerda(
+  motivosConfigurados?: readonly string[] | null,
+): OpcaoDeMotivoDaPerda[] {
+  const motivos = motivosConfigurados?.length
+    ? motivosConfigurados
+    : CANONICAL_LOST_REASONS;
+  return motivos.map((motivo) => ({
+    value: motivo,
+    label:
+      motivo in ROTULOS_DOS_MOTIVOS
+        ? ROTULOS_DOS_MOTIVOS[motivo as keyof typeof ROTULOS_DOS_MOTIVOS]
+        : motivo,
+  }));
+}
+
+/** `other` legado e os rótulos configuráveis equivalentes pedem detalhe. */
+export function motivoPedeDetalhe(motivo: string): boolean {
+  const normalizado = motivo
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLocaleLowerCase("pt-BR")
+    .replace(/\s+/g, " ");
+  return (
+    normalizado === "other" || normalizado === "outro" || normalizado === "outro motivo"
+  );
+}
+
 /**
  * Monta o contrato da rota sem confundir categoria com texto livre.
  * O detalhe só pertence a `other`; trocar de opção antes de confirmar não
@@ -22,9 +69,9 @@ export function entradaDePerda(
   motivo: string,
   detalhe: string,
 ): LoseLeadInput {
-  const detalheLimpo = motivo === "other" ? detalhe.trim() : "";
+  const detalheLimpo = motivoPedeDetalhe(motivo) ? detalhe.trim() : "";
   return {
-    lost_reason: motivo === "other" ? "other" : motivo,
+    lost_reason: motivo,
     lost_reason_detail: detalheLimpo || null,
   };
 }

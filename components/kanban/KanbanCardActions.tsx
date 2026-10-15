@@ -29,9 +29,10 @@ import type { NovaTarefa } from "@/lib/tarefas/tipos";
 interface KanbanCardActionsProps {
   lead: Lead;
   pipelineId: string;
+  lostReasons?: string[];
 }
 
-export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) {
+export function KanbanCardActions({ lead, pipelineId, lostReasons }: KanbanCardActionsProps) {
   const t = useT();
   const [loseOpen, setLoseOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -177,6 +178,7 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
         onOpenChange={setLoseOpen}
         leadId={lead.id}
         pipelineId={pipelineId}
+        lostReasons={lostReasons}
       />
       <EditLeadDialog
         open={editOpen}

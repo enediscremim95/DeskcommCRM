@@ -4,6 +4,7 @@ import { LeadPageClient } from "@/components/leads/LeadPageClient";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { listSelectableChannels } from "@/lib/channels/selectable";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { motivosDePerdaConfigurados } from "@/lib/leads/motivo-da-perda";
 import { createClient } from "@/lib/supabase/server";
 import type { Lead } from "@/lib/types/leads";
 
@@ -69,6 +70,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       lead={lead as Lead}
       pipelineName={pipeline.name}
       stageName={stageResult.data?.name ?? "Etapa não informada"}
+      lostReasons={motivosDePerdaConfigurados(pipeline.settings)}
       fieldDefs={camposDoFunil(pipeline.settings ?? null)}
       contact={contactResult.data}
       conversationId={conversationResult.data?.id ?? null}

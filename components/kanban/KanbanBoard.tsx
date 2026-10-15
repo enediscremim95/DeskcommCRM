@@ -20,6 +20,7 @@ import type { BoardStagePage, Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { motivosDePerdaConfigurados } from "@/lib/leads/motivo-da-perda";
 
 interface KanbanBoardProps {
   pipelineId: string;
@@ -132,6 +133,13 @@ export function KanbanBoard({
     const raw = (pipelineProp ?? queryResult.data?.pipeline)?.settings?.canonical_tags;
     return Array.isArray(raw) ? raw.filter((t): t is string => typeof t === "string") : [];
   }, [pipelineProp, queryResult.data?.pipeline]);
+  const lostReasons = useMemo(
+    () =>
+      motivosDePerdaConfigurados(
+        (pipelineProp ?? queryResult.data?.pipeline)?.settings,
+      ),
+    [pipelineProp, queryResult.data?.pipeline],
+  );
 
   // Compatibilidade com links antigos do quadro. A URL canônica agora é a tela
   // inteira do lead; abrir um `?lead=` antigo só encaminha para ela.
@@ -287,6 +295,7 @@ export function KanbanBoard({
                 reactivations={reactivations}
                 pulses={pulsesProp ?? queryResult.pulses}
                 canonicalTags={canonicalTags}
+                lostReasons={lostReasons}
                 canMove={podeMover}
                 selectedLeadIds={selectedLeadIds}
                 onSelectMany={handleSelectMany}

@@ -17,6 +17,7 @@ import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { encerraDemanda } from "@/lib/leads/encerramento";
+import { motivoPedeDetalhe } from "@/lib/leads/motivo-da-perda";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { loseLeadSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
@@ -53,7 +54,7 @@ export async function POST(
         leadId,
         desfecho: "lost",
         motivo: input.lost_reason,
-        detalhe: input.lost_reason === "other" ? input.lost_reason_detail : null,
+        detalhe: motivoPedeDetalhe(input.lost_reason) ? input.lost_reason_detail : null,
       },
     );
     return ok(lead, { requestId });

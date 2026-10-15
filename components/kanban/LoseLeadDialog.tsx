@@ -13,26 +13,19 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useLoseLead } from "@/hooks/kanban/useUpdateLead";
-import { CANONICAL_LOST_REASONS } from "@/lib/schemas/leads";
-import { entradaDePerda } from "@/lib/leads/motivo-da-perda";
+import {
+  entradaDePerda,
+  motivoPedeDetalhe,
+  opcoesDeMotivoDaPerda,
+} from "@/lib/leads/motivo-da-perda";
 import type { Lead } from "@/lib/types/leads";
-
-const REASON_LABELS: Record<(typeof CANONICAL_LOST_REASONS)[number], string> = {
-  requested_by_customer: "Cliente solicitou cancelamento",
-  price: "Preço",
-  no_response: "Sem resposta do cliente",
-  product_unavailable: "Produto indisponível",
-  cancelled_by_store: "Cancelado pela loja",
-  cancelled_by_customer: "Cancelado pelo cliente",
-  payment_failed: "Falha no pagamento",
-  other: "Outro motivo",
-};
 
 interface LoseLeadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   leadId: string;
   pipelineId: string;
+  lostReasons?: string[];
   onBeforeSubmit?: () => void;
   onLost?: (lead: Lead) => void;
   onError?: () => void;
@@ -45,6 +38,7 @@ export function LoseLeadDialog({
   onOpenChange,
   leadId,
   pipelineId,
+  lostReasons,
   onBeforeSubmit,
   onLost,
   onError,
@@ -53,6 +47,7 @@ export function LoseLeadDialog({
   const [reasonCode, setReasonCode] = useState<string>("");
   const [otherText, setOtherText] = useState("");
   const mutation = useLoseLead(pipelineId);
+  const reasonOptions = opcoesDeMotivoDaPerda(lostReasons);
 
   const input = entradaDePerda(reasonCode, otherText);
   const disabled = !reasonCode || otherText.length > MAX_LEN || mutation.isPending;
@@ -85,23 +80,23 @@ export function LoseLeadDialog({
         <div className="grid gap-3">
           <Label>{t("Motivo")}</Label>
           <div className="grid grid-cols-1 gap-1.5">
-            {CANONICAL_LOST_REASONS.map((code) => (
+            {reasonOptions.map((reason) => (
               <label
-                key={code}
+                key={reason.value}
                 className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent"
               >
                 <input
                   type="radio"
                   name="lost-reason"
-                  value={code}
-                  checked={reasonCode === code}
+                  value={reason.value}
+                  checked={reasonCode === reason.value}
                   onChange={(e) => setReasonCode(e.target.value)}
                 />
-                <span>{t(REASON_LABELS[code])}</span>
+                <span>{reason.value === reason.label ? reason.label : t(reason.label)}</span>
               </label>
             ))}
           </div>
-          {reasonCode === "other" && (
+          {motivoPedeDetalhe(reasonCode) && (
             <div className="grid gap-1.5">
               <Label htmlFor="lost-reason-other">{t("Detalhe (opcional)")}</Label>
               <Textarea
