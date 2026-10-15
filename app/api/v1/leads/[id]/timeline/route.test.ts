@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as TimelineQueryTypes from "@/lib/leads/timeline-query";
 import { loadAuthUser } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
+import type { TimelineItem } from "@/lib/types/contacts";
 
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
@@ -12,7 +13,7 @@ vi.mock("@/lib/leads/timeline-query", async (importOriginal) => {
   return {
     ...actual,
     comNomeDoAtor: vi.fn(async (_supabase, rows) =>
-      rows.map((row) => ({ ...row, actor_user_name: "Ana SDR" })),
+      rows.map((row: TimelineItem) => ({ ...row, actor_user_name: "Ana SDR" })),
     ),
   };
 });

@@ -85,8 +85,10 @@ describe("AnotacoesDoLead", () => {
     expect(screen.getByText("Beatriz Gerente")).toBeVisible();
     expect(screen.getByText("15/10/2026, 12:30")).toBeVisible();
     const items = screen.getAllByRole("listitem");
-    expect(within(items[0]).getByText("Está capitalizado")).toBeVisible();
-    expect(within(items[1]).getByText("Lead respondeu")).toBeVisible();
+    const [primeiro, segundo] = items;
+    if (!primeiro || !segundo) throw new Error("Esperava duas anotações na lista");
+    expect(within(primeiro).getByText("Está capitalizado")).toBeVisible();
+    expect(within(segundo).getByText("Lead respondeu")).toBeVisible();
   });
 
   it("cria uma anotação e a coloca no topo da lista", async () => {
