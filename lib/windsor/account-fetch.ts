@@ -52,7 +52,7 @@ export const WINDSOR_SUMMARY_FIELDS_BY_PLATFORM: Record<AdPlatform, readonly str
   google_ads: WINDSOR_FIELDS_BY_PLATFORM.google_ads,
 };
 
-const ACCOUNT_FETCH_CONCURRENCY = 3;
+export const ACCOUNT_FETCH_CONCURRENCY = 3;
 export const WINDSOR_FETCH_DEADLINE_MS = 450_000;
 
 export interface AccountRow {
@@ -93,7 +93,7 @@ export function filterRowsForAccount(rows: WindsorRow[], account: AccountRow): W
     .map((row) => ({ ...row, account_id: account.account_id }));
 }
 
-async function mapWithConcurrency<T>(
+export async function mapWithConcurrency<T>(
   items: T[],
   limit: number,
   worker: (item: T) => Promise<void>,

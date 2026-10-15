@@ -16,6 +16,8 @@ describe("contrato multi-tenant do relatório em slides", () => {
     expect(slides).toContain("getTrafficReport(");
     expect(slides).toContain("{ headers: request.headers }");
     expect(slides).toContain('.eq("id", envelope.data.organization_key)');
+    expect(slides).toContain('.eq("organization_id", envelope.data.organization_key)');
+    expect(slides).toContain('.eq("platform", "google_ads")');
     expect(slides).not.toMatch(/searchParams\.get\(["']organization/i);
     expect(slides).not.toMatch(/organization(?:_id|Id)\s*:\s*params\./);
   });

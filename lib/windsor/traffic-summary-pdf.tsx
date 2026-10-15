@@ -38,6 +38,7 @@ import {
   type TrafficMetricSnapshot,
   type TrafficSummaryLanguage,
 } from "@/lib/windsor/traffic-summary-model";
+import type { GoogleKeyword } from "@/lib/windsor/google-keywords";
 import type { DashboardModel } from "@/lib/windsor/types";
 
 type Language = TrafficSummaryLanguage;
@@ -90,6 +91,7 @@ export type TrafficSummarySource = {
       cost_per_lead: number | null;
     }>;
   }>;
+  google_keywords?: GoogleKeyword[];
   currencies: Array<{
     currency: string;
     summary: ReportMetrics;
