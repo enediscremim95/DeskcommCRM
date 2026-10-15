@@ -325,7 +325,7 @@ function labels(language: TrafficSummaryLanguage) {
     notInformed: localized("não informada", "no informada"),
     results: localized("Resultados", "Resultados"),
     allMedia: localized("Todas as mídias", "Todos los medios"),
-    monthlyEvolution: localized("Todas as mídias — evolução mensal", "Todos los medios — evolución mensual"),
+    monthlyEvolution: localized("Todas as mídias: evolução mensal", "Todos los medios: evolución mensual"),
     investment: localized("Investimento", "Inversión"),
     impressions: localized("Impressões", "Impresiones"),
     clicks: localized("Cliques", "Clics"),
@@ -335,22 +335,22 @@ function labels(language: TrafficSummaryLanguage) {
     variationPrevious: localized("Variação em relação ao mês anterior", "Variación frente al mes anterior"),
     investedValue: localized("Valor investido", "Valor invertido"),
     sales: localized("Vendas", "Ventas"),
-    reachDelivery: localized("Meta Ads — alcance e entrega", "Meta Ads — alcance y entrega"),
+    reachDelivery: localized("Meta Ads: alcance e entrega", "Meta Ads: alcance y entrega"),
     reach: localized("Alcance", "Alcance"),
     uniquePeople: localized("pessoas únicas que viram o anúncio", "personas únicas que vieron el anuncio"),
     frequency: localized("Frequência", "Frecuencia"),
     impressionsPerPerson: localized("média de exibições por pessoa", "promedio de exhibiciones por persona"),
     cpmCaption: localized("custo por 1.000 exibições", "costo por 1.000 impresiones"),
     cpcCaption: localized("custo por clique", "costo por clic"),
-    videoRetention: localized("Meta Ads — retenção de vídeo", "Meta Ads — retención de video"),
+    videoRetention: localized("Meta Ads: retenção de vídeo", "Meta Ads: retención de video"),
     stoppedToWatch: localized("pararam para assistir", "se detuvieron a mirar"),
     watchedToEnd: localized("viram até o fim", "vieron hasta el final"),
     videoMilestones: localized("Visualizações por marco do vídeo", "Visualizaciones por hito del video"),
-    creativeRanking: localized("Meta Ads — ranking de criativos", "Meta Ads — ranking de creativos"),
+    creativeRanking: localized("Meta Ads: ranking de criativos", "Meta Ads: ranking de creativos"),
     creative: localized("Criativo", "Creativo"),
     noImage: localized("imagem não disponível", "imagen no disponible"),
     metaAttribution: localized("Leads e CPL conforme atribuição do Meta Ads", "Leads y CPL según la atribución de Meta Ads"),
-    googleKeywords: localized("Google Ads — melhores palavras", "Google Ads — mejores palabras"),
+    googleKeywords: localized("Google Ads: melhores palavras", "Google Ads: mejores palabras"),
     keyword: localized("Palavra-chave", "Palabra clave"),
     conversions: localized("Conversões", "Conversiones"),
     costPerConversion: localized("Custo / conv.", "Costo / conv."),
@@ -654,7 +654,7 @@ function slidesRuntime(
       svg += `<text x="${center}" y="${T + plotHeight + 22}" text-anchor="middle" fill="#2E2B3F" font-size="14">${period.label}</text>`;
       if (period.investment != null) {
         const height = (period.investment / maxLeft) * plotHeight;
-        svg += `<rect x="${center - band * 0.2}" y="${T + plotHeight - height}" width="${band * 0.4}" height="${height}" fill="#7F8D7A"/>`;
+        svg += `<rect x="${center - Math.min(band * 0.4, 72) / 2}" y="${T + plotHeight - height}" width="${Math.min(band * 0.4, 72)}" height="${height}" fill="#7F8D7A"/>`;
       }
     });
     const line = (values: Array<number | null>, max: number, color: string) => {
