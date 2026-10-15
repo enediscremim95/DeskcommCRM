@@ -1620,7 +1620,7 @@ export function TrafficDashboard() {
   const [report, setReport] = useState<ReportResponse["data"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<"slides" | "pdf" | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [selectedColumns, setSelectedColumns] = useState<
     Record<AdPlatform, CampaignMetricColumn[]>
@@ -1730,8 +1730,8 @@ export function TrafficDashboard() {
     setWindow(next);
   }
 
-  async function downloadSummary() {
-    setDownloading(true);
+  async function downloadSummary(format: "slides" | "pdf") {
+    setDownloading(format);
     setDownloadError(null);
     try {
       const query = new URLSearchParams({
@@ -1739,8 +1739,8 @@ export function TrafficDashboard() {
         to: window.to,
         language: idioma,
       });
-      const response = await fetch(`/api/v1/reports/traffic/pdf?${query.toString()}`, {
-        headers: { accept: "application/pdf" },
+      const response = await fetch(`/api/v1/reports/traffic/${format}?${query.toString()}`, {
+        headers: { accept: format === "slides" ? "text/html" : "application/pdf" },
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as {
@@ -1754,7 +1754,9 @@ export function TrafficDashboard() {
       const match = disposition.match(/filename="([^"]+)"/i);
       const link = document.createElement("a");
       link.href = url;
-      link.download = match?.[1] ?? `relatorio-resumido-${window.from}-a-${window.to}.pdf`;
+      link.download =
+        match?.[1] ??
+        `relatorio-resumido-${window.from}-a-${window.to}.${format === "slides" ? "html" : "pdf"}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -1764,7 +1766,7 @@ export function TrafficDashboard() {
         cause instanceof Error ? cause.message : t("Não foi possível baixar o relatório."),
       );
     } finally {
-      setDownloading(false);
+      setDownloading(null);
     }
   }
 
@@ -1832,10 +1834,18 @@ export function TrafficDashboard() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={downloadSummary}
-                disabled={!report || loading || downloading}
+                onClick={() => void downloadSummary("slides")}
+                disabled={!report || loading || downloading !== null}
               >
-                {downloading ? t("Preparando PDF…") : t("Baixar relatório")}
+                {downloading === "slides" ? t("Preparando relatório…") : t("Baixar relatório")}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void downloadSummary("pdf")}
+                disabled={!report || loading || downloading !== null}
+              >
+                {downloading === "pdf" ? t("Preparando PDF…") : t("Baixar PDF")}
               </Button>
               {preset === "custom" && (
                 <>

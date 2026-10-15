@@ -414,16 +414,16 @@ describe("colunas da tabela de campanhas", () => {
     expect(screen.queryByText("Campanha do período inteiro")).not.toBeInTheDocument();
   });
 
-  it("baixa o PDF do período atual mesmo para quem não gerencia predefinições", async () => {
+  it("baixa os slides do período e mantém o PDF disponível", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
-      if (url.includes("/api/v1/reports/traffic/pdf?")) {
-        return new Response(new TextEncoder().encode("pdf"), {
+      if (url.includes("/api/v1/reports/traffic/slides?")) {
+        return new Response("<!doctype html>", {
           status: 200,
           headers: {
             "Content-Disposition":
-              'attachment; filename="relatorio-resumido-2026-09-01-a-2026-09-30.pdf"',
-            "Content-Type": "application/pdf",
+              'attachment; filename="relatorio-organizacao-2026-09-01-a-2026-09-30.html"',
+            "Content-Type": "text/html; charset=utf-8",
           },
         });
       }
@@ -462,6 +462,7 @@ describe("colunas da tabela de campanhas", () => {
     const user = userEvent.setup();
     render(<TrafficDashboard />);
     const downloadButton = await screen.findByRole("button", { name: "Baixar relatório" });
+    expect(screen.getByRole("button", { name: "Baixar PDF" })).toBeInTheDocument();
     await waitFor(() => expect(downloadButton).toBeEnabled());
     const appendChild = document.body.appendChild.bind(document.body);
     let downloadLink: HTMLAnchorElement | null = null;
@@ -478,19 +479,21 @@ describe("colunas da tabela de campanhas", () => {
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/reports/traffic/pdf?"),
-        expect.objectContaining({ headers: { accept: "application/pdf" } }),
+        expect.stringContaining("/api/v1/reports/traffic/slides?"),
+        expect.objectContaining({ headers: { accept: "text/html" } }),
       ),
     );
-    const pdfUrl = String(fetchMock.mock.calls.find(([url]) => String(url).includes("/pdf?"))?.[0]);
-    expect(pdfUrl).toContain("from=");
-    expect(pdfUrl).toContain("to=");
-    expect(pdfUrl).toContain("language=pt-BR");
+    const slidesUrl = String(
+      fetchMock.mock.calls.find(([url]) => String(url).includes("/slides?"))?.[0],
+    );
+    expect(slidesUrl).toContain("from=");
+    expect(slidesUrl).toContain("to=");
+    expect(slidesUrl).toContain("language=pt-BR");
     await waitFor(() => expect(click).toHaveBeenCalledOnce());
     expect(downloadLink).not.toBeNull();
     expect(downloadLink).toHaveAttribute(
       "download",
-      "relatorio-resumido-2026-09-01-a-2026-09-30.pdf",
+      "relatorio-organizacao-2026-09-01-a-2026-09-30.html",
     );
   });
 
