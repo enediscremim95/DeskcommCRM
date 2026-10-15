@@ -1,7 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { deduplicateRows, discoverAccounts, normalizeFacts, repairMojibake } from "./normalizer";
+import {
+  deduplicateRows,
+  discoverAccounts,
+  escolherImagemDoCriativo,
+  normalizeFacts,
+  repairMojibake,
+} from "./normalizer";
+
+const LINK_PREVIEW = "https://external-fra3-1.xx.fbcdn.net/emg1/v/t13/123?url=https%3A%2F%2Fbendito-ponto-franquia.pages.dev%2Fimg%2Fog-image.jpg&fb_obo=1&utld=bendito-ponto-franquia.pages.dev";
 
 describe("normalizador Windsor", () => {
+  it("descarta a prévia do link e usa a mídia real do Instagram", () => {
+    expect(escolherImagemDoCriativo({
+      thumbnail_url: LINK_PREVIEW,
+      effective_instagram_media__media_url: "https://scontent.cdninstagram.com/criativo.jpg",
+    })).toBe("https://scontent.cdninstagram.com/criativo.jpg");
+  });
+
+  it("mantém thumbnail legítimo de vídeo", () => {
+    expect(escolherImagemDoCriativo({
+      thumbnail_url: "https://scontent.xx.fbcdn.net/video-thumbnail.jpg",
+      effective_instagram_media__media_url: "https://scontent.cdninstagram.com/frame.jpg",
+    })).toBe("https://scontent.xx.fbcdn.net/video-thumbnail.jpg");
+  });
+
+  it("usa a mídia do Instagram quando não há thumbnail", () => {
+    expect(escolherImagemDoCriativo({
+      effective_instagram_media__media_url: "https://scontent.cdninstagram.com/imagem.jpg",
+      image_url: "https://scontent.xx.fbcdn.net/fallback.jpg",
+    })).toBe("https://scontent.cdninstagram.com/imagem.jpg");
+  });
+
+  it("devolve null quando todas as fontes estão vazias", () => {
+    expect(escolherImagemDoCriativo({})).toBeNull();
+  });
+
   it("não inventa moeda ao descobrir contas", () => {
     expect(discoverAccounts([
       { account_id: "act_1", account_name: "Meta sem moeda", data_source: "facebook" },

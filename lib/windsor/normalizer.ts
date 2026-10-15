@@ -22,6 +22,36 @@ function text(row: WindsorRow, ...keys: string[]): string {
   }
   return "";
 }
+
+function isLinkPreview(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const isFacebookExternalProxy = /^external-[^.]+\.xx\.fbcdn\.net$/i.test(url.hostname);
+    if (!isFacebookExternalProxy) return false;
+    if (url.pathname.startsWith("/emg1/") || url.searchParams.has("utld")) return true;
+    const target = url.searchParams.get("url");
+    if (!target) return false;
+    try {
+      return new URL(target).hostname !== url.hostname;
+    } catch {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+}
+
+export function escolherImagemDoCriativo(row: WindsorRow): string | null {
+  const thumbnail = text(row, "thumbnail_url");
+  if (thumbnail && !isLinkPreview(thumbnail)) return thumbnail;
+
+  const instagramMedia = text(row, "effective_instagram_media__media_url");
+  if (instagramMedia) return instagramMedia;
+
+  const image = text(row, "image_url");
+  return image && !isLinkPreview(image) ? image : null;
+}
+
 function numeric(row: WindsorRow, ...keys: string[]): number {
   for (const key of keys) {
     const value = row[key];
@@ -160,7 +190,7 @@ export function normalizeFacts(rows: WindsorRow[], configuredPlatform: AdPlatfor
       video_p50: numeric(row, "video_p50_watched_actions_video_view"),
       video_p75: numeric(row, "video_p75_watched_actions_video_view"),
       video_p95: numeric(row, "video_p95_watched_actions_video_view"),
-      thumbnail_url: text(row, "thumbnail_url", "image_url") || null,
+      thumbnail_url: escolherImagemDoCriativo(row),
       story_id: text(row, "effective_object_story_id") || null,
       campaign_status: text(row, "campaign_effective_status", "campaign_status") || null,
       destination_urls: stringList(

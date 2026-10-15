@@ -894,13 +894,10 @@ export async function renderTrafficSummarySlides(args: {
   imageDependencies?: ThumbnailDependencies;
 }): Promise<string> {
   const dependencies = args.imageDependencies ?? {};
-  const isBendito = args.organizationSlug === "bendito-ponto";
-  const [genericLogo, creatives] = await Promise.all([
-    isBendito ? Promise.resolve(null) : resolvedLogo(args.brand, dependencies),
+  const [logo, creatives] = await Promise.all([
+    resolvedLogo(args.brand, dependencies),
     preloadPdfThumbnails(buildTrafficAdsInTest(args.source), dependencies),
   ]);
-  const logo = isBendito ? slideModel.benditoLogo : genericLogo;
-  const badge = isBendito ? slideModel.benditoBadge : genericLogo;
   const data = await slideData({
     source: args.source as SourceWithSlideDetails,
     language: args.language,
@@ -926,7 +923,7 @@ export async function renderTrafficSummarySlides(args: {
 const D = ${safeJson(data)};
 const ICON = ${safeJson(slideModel.icons)};
 const LOGO = ${safeJson(safeDataImage(logo))};
-const BADGE = ${safeJson(safeDataImage(badge))};
+const BADGE = ${safeJson(safeDataImage(logo))};
 const DASH = ${safeJson(DASH)};
 (${runtime})(D, ICON, LOGO, BADGE);
 </script>

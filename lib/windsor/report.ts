@@ -1,4 +1,5 @@
 import type { AdPlatform, DashboardModel } from "./types";
+import { escolherImagemDoCriativo } from "./normalizer";
 
 export interface StoredFact {
   account_id: string;
@@ -393,6 +394,7 @@ export function buildTrafficReport(args: {
                   name: string;
                   total: Bucket;
                   thumbnail_url: string | null;
+                  thumbnail_occurred_on: string | null;
                   story_id: string | null;
                   destination_urls: Set<string>;
                   first_delivery_on: string | null;
@@ -491,12 +493,14 @@ export function buildTrafficReport(args: {
     const adName = fact.ad_name || "Sem anúncio";
     const adKey = fact.ad_id ?? adName;
     let ad = adset.ads.get(adKey);
+    const thumbnail = escolherImagemDoCriativo({ thumbnail_url: fact.thumbnail_url });
     if (!ad) {
       const delivery = args.adDeliverySnapshots?.get(adDeliveryKey(fact));
       ad = {
         name: adName,
         total: empty(),
-        thumbnail_url: fact.thumbnail_url,
+        thumbnail_url: thumbnail,
+        thumbnail_occurred_on: thumbnail ? fact.occurred_on : null,
         story_id: fact.story_id,
         destination_urls: new Set(fact.destination_urls ?? []),
         first_delivery_on: delivery?.first_delivery_on ?? null,
@@ -504,7 +508,13 @@ export function buildTrafficReport(args: {
       };
       adset.ads.set(adKey, ad);
     }
-    if (!ad.thumbnail_url && fact.thumbnail_url) ad.thumbnail_url = fact.thumbnail_url;
+    if (
+      thumbnail &&
+      (ad.thumbnail_occurred_on == null || fact.occurred_on >= ad.thumbnail_occurred_on)
+    ) {
+      ad.thumbnail_url = thumbnail;
+      ad.thumbnail_occurred_on = fact.occurred_on;
+    }
     if (!ad.story_id && fact.story_id) ad.story_id = fact.story_id;
     for (const destinationUrl of fact.destination_urls ?? []) {
       ad.destination_urls.add(destinationUrl);

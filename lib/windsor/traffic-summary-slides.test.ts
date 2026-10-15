@@ -163,15 +163,19 @@ describe("renderTrafficSummarySlides", () => {
     expect(html).toContain('"topValue":"Pequeno"');
   });
 
-  it("carrega os dois assets locais somente para o slug Bendito Ponto", async () => {
-    const html = await renderTrafficSummarySlides({
-      source: source({ organization_name: "Bendito Ponto" }),
-      brand,
-      language: "pt-BR",
-      organizationSlug: "bendito-ponto",
-    });
+  it.each(["bendito-ponto", "cliente-generico"])(
+    "não injeta marca de terceiro nem imagem quebrada para %s sem logo",
+    async (organizationSlug) => {
+      const html = await renderTrafficSummarySlides({
+        source: source({ organization_name: "Organização sem logo" }),
+        brand,
+        language: "pt-BR",
+        organizationSlug,
+      });
 
-    expect(html).toMatch(/const LOGO = "data:image\/png;base64,/);
-    expect(html).toMatch(/const BADGE = "data:image\/png;base64,/);
-  });
+      expect(html.toLocaleLowerCase("pt-BR")).not.toContain("kroebel");
+      expect(html).toContain("const LOGO = null;");
+      expect(html).toContain("const BADGE = null;");
+    },
+  );
 });

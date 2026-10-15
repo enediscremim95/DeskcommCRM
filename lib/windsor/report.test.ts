@@ -34,6 +34,8 @@ const fact = (overrides: Partial<StoredFact>): StoredFact => ({
   ...overrides,
 });
 
+const LINK_PREVIEW = "https://external-fra3-1.xx.fbcdn.net/emg1/v/t13/123?url=https%3A%2F%2Fbendito-ponto-franquia.pages.dev%2Fimg%2Fog-image.jpg&fb_obo=1&utld=bendito-ponto-franquia.pages.dev";
+
 describe("relatório de tráfego", () => {
   it("mantém moedas separadas e agrega por plataforma", () => {
     const result = buildTrafficReport({
@@ -313,6 +315,37 @@ describe("relatório de tráfego", () => {
       first_delivery_on: "2026-09-01",
       last_delivery_on: "2026-09-18",
     });
+  });
+
+  it("não publica prévia de link gravada em fatos antigos", () => {
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
+      facts: [fact({ thumbnail_url: LINK_PREVIEW })],
+    });
+
+    expect(group?.campaigns[0]?.adsets[0]?.ads[0]?.thumbnail_url).toBeNull();
+  });
+
+  it("usa a miniatura válida do fato mais recente independentemente da ordem", () => {
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts: [
+        { account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" },
+      ],
+      facts: [
+        fact({ occurred_on: "2026-09-18", thumbnail_url: "https://cdn.example/nova.jpg" }),
+        fact({ occurred_on: "2026-09-17", thumbnail_url: "https://cdn.example/antiga.jpg" }),
+        fact({ occurred_on: "2026-09-19", thumbnail_url: LINK_PREVIEW }),
+      ],
+    });
+
+    expect(group?.campaigns[0]?.adsets[0]?.ads[0]?.thumbnail_url)
+      .toBe("https://cdn.example/nova.jpg");
   });
 
   it("restringe campanha, detalhes, total e retenção à janela escolhida sem duplicar anúncios", () => {
