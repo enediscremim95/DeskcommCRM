@@ -157,11 +157,20 @@ describe("Atendente não exclui recursos", () => {
     }
   });
 
+  it("a rota DELETE de contato exige lead.delete, não a permissão geral do admin", () => {
+    const source = readFileSync(join(ROOT, "app/api/v1/contacts/[id]/route.ts"), "utf8");
+    const deleteHandler = source.slice(source.indexOf("export async function DELETE"));
+    expect(deleteHandler).toContain('requirePermission("lead.delete"');
+    expect(deleteHandler).not.toContain('requirePermission("resource.delete"');
+  });
+
   it("as telas operacionais consultam a mesma permissão para esconder exclusões", () => {
     const leadFiles = [
       "components/kanban/BulkActionBar.tsx",
       "components/kanban/KanbanCardActions.tsx",
       "components/leads/LeadPageClient.tsx",
+      // Excluir contato é apagar a pessoa do lead: só o gerente, como o lead.
+      "components/contacts/ContactsTable.tsx",
     ];
     for (const file of leadFiles) {
       expect(readFileSync(join(ROOT, file), "utf8"), file).toContain(
@@ -169,7 +178,6 @@ describe("Atendente não exclui recursos", () => {
       );
     }
     const resourceFiles = [
-      "components/contacts/ContactsTable.tsx",
       "components/inbox/ChatThread.tsx",
       "components/inbox/ContactTagsEditor.tsx",
       "components/inbox/ConversationTagsEditor.tsx",
