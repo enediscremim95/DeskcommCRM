@@ -1,5 +1,4 @@
 import type { MarcaDeSaida } from "@/lib/branding/saida";
-import type { GoogleKeyword } from "@/lib/windsor/google-keywords";
 import {
   fetchPdfThumbnailDataUri,
   preloadPdfThumbnails,
@@ -22,6 +21,15 @@ type StageConversion = {
   is_won: boolean;
 };
 
+type SlideKeyword = {
+  keyword: string;
+  impressions: number | null;
+  clicks: number | null;
+  conversions: number | null;
+  ctr: number | null;
+  cost_per_conversion: number | null;
+};
+
 type SlideMetricGroup = {
   currency: string;
   investment: number | null;
@@ -32,7 +40,7 @@ type SlideMetricGroup = {
   ctr: number | null;
   conversion: number | null;
   meta: SlidePlatform;
-  google: SlidePlatform & { keywords: GoogleKeyword[] };
+  google: SlidePlatform & { keywords: SlideKeyword[] };
   history: Array<{
     label: string;
     investment: number | null;
