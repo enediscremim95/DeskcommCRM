@@ -1,5 +1,4 @@
 import type { MarcaDeSaida } from "@/lib/branding/saida";
-import type { GoogleKeyword } from "@/lib/windsor/google-keywords";
 import {
   fetchPdfThumbnailDataUri,
   preloadPdfThumbnails,
@@ -22,6 +21,15 @@ type StageConversion = {
   is_won: boolean;
 };
 
+type SlideKeyword = {
+  keyword: string;
+  impressions: number | null;
+  clicks: number | null;
+  conversions: number | null;
+  ctr: number | null;
+  cost_per_conversion: number | null;
+};
+
 type SlideMetricGroup = {
   currency: string;
   investment: number | null;
@@ -30,7 +38,7 @@ type SlideMetricGroup = {
   leads: number | null;
   cpl: number | null;
   meta: SlidePlatform;
-  google: SlidePlatform & { keywords: GoogleKeyword[] };
+  google: SlidePlatform & { keywords: SlideKeyword[] };
   history: Array<{
     label: string;
     investment: number | null;
@@ -656,10 +664,10 @@ function slidesRuntime(
       clicks: fInt(google.clicks),
       leads: fInt(google.leads),
       cpl: fMoney(google.cpl, group.currency),
-    }), undefined, {
+    }, undefined, {
       ctr: fPct(google.ctr),
       conv: fPct(google.conversion),
-    }));
+    })));
     if (google.keywords.length > 0) {
       const keywordRows = google.keywords.slice(0, 5).map((keyword) => `<tr><td>${keyword.keyword}</td><td>${fInt(keyword.impressions)}</td><td>${fInt(keyword.clicks)}</td><td>${fInt(keyword.conversions)}</td><td>${fPct(keyword.ctr)}</td><td>${fMoney(keyword.cost_per_conversion, group.currency)}</td></tr>`);
       S.push(content(`${D.labels.googleKeywords}${suffix}`, table([D.labels.keyword, D.labels.impressions, D.labels.clicks, D.labels.conversions, "CTR", D.labels.costPerConversion], keywordRows)));
