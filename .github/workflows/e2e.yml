@@ -622,6 +622,7 @@ jobs:
       # usuário MFA exclusivos desta execução.
       SPECS_PARTE_4: >-
         navegacao.spec.ts
+        traffic-summary-slides-html.spec.ts
 
       FORA_DO_CI: >-
         vps-fresh-onboarding.spec.ts
