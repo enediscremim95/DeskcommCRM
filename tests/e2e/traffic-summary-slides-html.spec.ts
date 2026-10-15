@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import type { MarcaDeSaida } from "../../lib/branding/saida";
+import type { ThumbnailDependencies } from "../../lib/windsor/pdf-thumbnails";
 import { renderTrafficSummarySlides } from "../../lib/windsor/traffic-summary-slides";
 import type { TrafficSummarySource } from "../../lib/windsor/traffic-summary-pdf";
 
@@ -24,8 +25,17 @@ const source = {
     closed_lost: 3,
     stage_conversion: [
       { name: "Novo", volume: 20, from_previous: null, from_top: 100, is_won: false },
+      { name: "Carrinho abandonado", volume: 0, from_previous: 0, from_top: 0, is_won: false },
       { name: "Atendimento", volume: 8, from_previous: 40, from_top: 40, is_won: false },
+      { name: "Aguardando pagamento", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+      { name: "Reunião", volume: 5, from_previous: 62.5, from_top: 25, is_won: false },
+      { name: "Pago", volume: 0, from_previous: 0, from_top: 0, is_won: true },
+      { name: "Proposta", volume: 3, from_previous: 60, from_top: 15, is_won: false },
+      { name: "Em separação", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+      { name: "Enviado", volume: 0, from_previous: 0, from_top: 0, is_won: false },
       { name: "Venda", volume: 2, from_previous: 25, from_top: 10, is_won: true },
+      { name: "Entregue", volume: 0, from_previous: 0, from_top: 0, is_won: false },
+      { name: "Pós-venda", volume: 0, from_previous: 0, from_top: 0, is_won: false },
     ],
   },
   lead_profile: {
@@ -39,6 +49,15 @@ const source = {
         top_value: "Empreendedor",
         top_count: 7,
         top_percent: 70,
+      },
+      {
+        key: "capital",
+        label: "Capital",
+        answered: 9,
+        coverage_percent: 75,
+        top_value: "Até 150 mil",
+        top_count: 5,
+        top_percent: 55.56,
       },
     ],
   },
@@ -101,7 +120,98 @@ const source = {
   ],
 } as unknown as TrafficSummarySource;
 
-async function openGeneratedHtml(page: Page, width: number): Promise<string[]> {
+const emptyOptionalSource = {
+  ...source,
+  objective: "",
+  google_keywords: [
+    {
+      currency: "BRL",
+      keyword: "   ",
+      impressions: null,
+      clicks: null,
+      conversions: null,
+      ctr: null,
+      cost_per_conversion: null,
+    },
+  ],
+  currencies: source.currencies.map((group) => ({
+    ...group,
+    platforms: group.platforms?.map((platform) =>
+      platform.platform === "meta_ads"
+        ? {
+            ...platform,
+            video_views: 0,
+            video_p25: null,
+            video_p50: 0,
+            video_p75: null,
+            video_p95: 0,
+          }
+        : platform,
+    ),
+  })),
+} as unknown as TrafficSummarySource;
+
+const completeSource = {
+  ...source,
+  google_keywords: [
+    {
+      currency: "BRL",
+      keyword: "crm para vendas",
+      impressions: 200,
+      clicks: 20,
+      conversions: 4,
+      ctr: 10,
+      cost_per_conversion: 25,
+    },
+  ],
+  currencies: source.currencies.map((group) => ({
+    ...group,
+    campaigns: [
+      {
+        platform: "meta_ads",
+        name: "Campanha real",
+        campaign_status: "ACTIVE",
+        adsets: [
+          {
+            name: "Conjunto real",
+            ads: [
+              {
+                name: "Anúncio real",
+                spend: 100,
+                impressions: 1_000,
+                leads: 5,
+                cost_per_lead: 20,
+                thumbnail_url: "https://images.example/anuncio.png",
+                destination_urls: [],
+                first_delivery_on: null,
+                last_delivery_on: null,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  })),
+} as unknown as TrafficSummarySource;
+
+const imageDependencies: ThumbnailDependencies = {
+  lookupFn: async () => [{ address: "1.1.1.1", family: 4 }],
+  fetchFn: async () =>
+    new Response(
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+      { status: 200, headers: { "content-type": "image/png" } },
+    ),
+};
+
+async function openGeneratedHtml(
+  page: Page,
+  width: number,
+  generatedSource: TrafficSummarySource = source,
+  dependencies?: ThumbnailDependencies,
+): Promise<string[]> {
   const browserErrors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") browserErrors.push(message.text());
@@ -109,14 +219,78 @@ async function openGeneratedHtml(page: Page, width: number): Promise<string[]> {
   page.on("pageerror", (error) => browserErrors.push(error.message));
   await page.setViewportSize({ width, height: width === 1280 ? 720 : 900 });
   const html = await renderTrafficSummarySlides({
-    source,
+    source: generatedSource,
     brand,
     language: "pt-BR",
     organizationSlug: "organizacao-de-teste",
+    imageDependencies: dependencies,
   });
   await page.setContent(html, { waitUntil: "load" });
   return browserErrors;
 }
+
+test("cenário completo fica com 13 slides sem divisores, fechamento ou encerramento", async ({ page }) => {
+  const browserErrors = await openGeneratedHtml(page, 1280, completeSource, imageDependencies);
+  const titles = await page.locator("h2.title").allTextContents();
+
+  await expect(page.locator(".slide")).toHaveCount(13);
+  await expect(page.locator(".slide.divider")).toHaveCount(0);
+  await expect(page.locator(".slide.closing")).toHaveCount(0);
+  await expect(page.locator(".chev-var")).toHaveCount(0);
+  await expect(page.locator(".chev-legend")).toHaveCount(0);
+  expect(titles).not.toContain("Fechamento do período");
+  expect(titles).not.toContain("Foco de acompanhamento");
+  expect(titles).toContain("Preenchimento do formulário");
+  expect(titles).toContain("Perfil dos leads");
+  await expect(page.getByText("viram até o fim", { exact: true })).toHaveCount(1);
+
+  const funnel = page.locator("section.slide.content").filter({
+    has: page.locator("h2.title", { hasText: /^Do lead ao fechamento$/ }),
+  });
+  await expect(funnel).toHaveCount(1);
+  await expect(funnel.locator(".fun-row")).toHaveCount(5);
+  await expect(funnel).toContainText("Venda");
+  await expect(funnel).not.toContainText("Carrinho abandonado");
+
+  const allMedia = page.locator("section.slide.content").filter({
+    has: page.locator("h2.title", { hasText: /^Todas as mídias$/ }),
+  });
+  const meta = page.locator("section.slide.content").filter({
+    has: page.locator("h2.title", { hasText: /^Meta Ads$/ }),
+  });
+  const google = page.locator("section.slide.content").filter({
+    has: page.locator("h2.title", { hasText: /^Google Ads$/ }),
+  });
+  await expect(allMedia.locator(".pills")).toHaveCount(0);
+  await expect(meta.locator(".pills")).toHaveCount(0);
+  await expect(google.locator(".pills")).toContainText("CTR = 5,00%");
+  await expect(google.locator(".pills")).toContainText("2,00% clique → lead");
+
+  const ranking = page.locator("section.slide.content").filter({
+    has: page.locator("h2.title", { hasText: /^Meta Ads: ranking de criativos$/ }),
+  });
+  await expect(ranking.locator(".frame")).toHaveCount(1);
+  await expect(ranking.locator(".frame img")).toHaveCount(1);
+  await expect(ranking).not.toContainText("imagem não disponível");
+
+  const keywords = page.locator("section.slide.content").filter({
+    has: page.locator("h2.title", { hasText: /^Google Ads: melhores palavras$/ }),
+  });
+  await expect(keywords.locator("tbody tr")).toHaveCount(1);
+  expect(browserErrors).toEqual([]);
+});
+
+test("omite ranking, vídeo e palavras-chave quando estão vazios", async ({ page }) => {
+  const browserErrors = await openGeneratedHtml(page, 1280, emptyOptionalSource);
+  const titles = await page.locator("h2.title").allTextContents();
+
+  expect(titles).not.toContain("Meta Ads: ranking de criativos");
+  expect(titles).not.toContain("Meta Ads: retenção de vídeo");
+  expect(titles).not.toContain("Google Ads: melhores palavras");
+  await expect(page.locator(".obj")).toHaveCount(0);
+  await expect(page.getByText("Segmentação: não informada", { exact: true })).toHaveCount(0);
+  expect(browserErrors).toEqual([]);
+});
 
 for (const width of [375, 768] as const) {
   test(`abre em fluxo a ${width}px sem estouro horizontal`, async ({ page }) => {
