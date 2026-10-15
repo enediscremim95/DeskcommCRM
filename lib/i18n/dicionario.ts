@@ -9713,6 +9713,7 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível carregar as anotações.": { es: "No se pudieron cargar las notas." },
   "Nenhuma anotação ainda": { es: "Todavía no hay notas" },
   "Autor não identificado": { es: "Autor no identificado" },
+  Apagar: { es: "Eliminar" },
   "Apagar anotação": { es: "Eliminar nota" },
   "Apagar esta anotação?": { es: "¿Eliminar esta nota?" },
   "O texto será removido do histórico do negócio e não poderá ser recuperado.": {

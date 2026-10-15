@@ -382,13 +382,6 @@ export function LeadPageClient({
           </header>
 
           <div className="space-y-6 p-4">
-            {podeAnotar ? (
-              <AnotacoesDoLead
-                leadId={leadAtual.id}
-                currentUserId={user.id}
-                canManage={podeGerenciarAnotacoes}
-              />
-            ) : null}
             <ProximasTarefasDoLead
               leadId={leadAtual.id}
               contactId={leadAtual.contact_id}
@@ -422,6 +415,13 @@ export function LeadPageClient({
                   fieldDefs={fieldDefs}
                 />
               </section>
+            ) : null}
+            {podeAnotar ? (
+              <AnotacoesDoLead
+                leadId={leadAtual.id}
+                currentUserId={user.id}
+                canManage={podeGerenciarAnotacoes}
+              />
             ) : null}
             {podeExcluir ? (
               <div className="mt-8 border-t border-border pt-4">

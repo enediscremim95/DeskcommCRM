@@ -106,6 +106,10 @@ describe("Atendente não exclui recursos", () => {
         "app/api/v1/conversations/[id]/snooze/route.ts",
         "cancela somente o lembrete temporário da conversa",
       ],
+      [
+        "app/api/v1/leads/[id]/notes/[noteId]/route.ts",
+        "atendente apaga apenas a própria anotação; gerente apaga qualquer uma; nunca editar",
+      ],
       ["app/api/v1/notifications/push/route.ts", "remove a assinatura push do próprio navegador"],
       ["app/api/v1/voice/calls/[id]/route.ts", "encerra a própria chamada ativa"],
     ]);
