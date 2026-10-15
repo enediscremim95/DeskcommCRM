@@ -32,6 +32,7 @@ interface KanbanCardProps {
   lead: Lead;
   index: number;
   pipelineId: string;
+  lostReasons?: string[];
   canMove?: boolean;
   isSelected?: boolean;
   /**
@@ -138,6 +139,7 @@ export function KanbanCard({
   lead,
   index,
   pipelineId,
+  lostReasons,
   canMove = false,
   isSelected,
   isSelecting = false,
@@ -318,7 +320,11 @@ export function KanbanCard({
             >
               <Info size={16} aria-hidden />
             </button>
-            <KanbanCardActions lead={lead} pipelineId={pipelineId} />
+            <KanbanCardActions
+              lead={lead}
+              pipelineId={pipelineId}
+              lostReasons={lostReasons}
+            />
           </div>
 
           {/* ② título — o elemento ativável, em destaque. Duas linhas no máximo;

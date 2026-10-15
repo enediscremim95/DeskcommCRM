@@ -84,6 +84,38 @@ describe("POST /api/v1/leads/[id]/lose", () => {
     );
   });
 
+  it("grava literalmente motivo configurado no funil", async () => {
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request(JSON.stringify({ lost_reason: "Região indisponível" })),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(encerraDemanda).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ motivo: "Região indisponível", detalhe: null }),
+    );
+  });
+
+  it("mantém detalhe para Outro configurado no funil", async () => {
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request(JSON.stringify({ lost_reason: "Outro motivo", lost_reason_detail: "Caso raro" })),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(encerraDemanda).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ motivo: "Outro motivo", detalhe: "Caso raro" }),
+    );
+  });
+
   it("não associa detalhe livre a um motivo da lista", async () => {
     const { POST } = await import("./route");
 

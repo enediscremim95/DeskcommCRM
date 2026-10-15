@@ -54,6 +54,7 @@ interface Props {
   lead: Lead;
   pipelineName: string;
   stageName: string;
+  lostReasons?: string[];
   fieldDefs: CustomFieldDef[];
   contact: ContactSummary | null;
   conversationId: string | null;
@@ -82,6 +83,7 @@ export function LeadPageClient({
   lead,
   pipelineName,
   stageName,
+  lostReasons = [],
   fieldDefs,
   contact,
   conversationId,
@@ -539,6 +541,7 @@ export function LeadPageClient({
         onOpenChange={setLoseOpen}
         leadId={leadAtual.id}
         pipelineId={leadAtual.pipeline_id}
+        lostReasons={lostReasons}
         onBeforeSubmit={() => {
           if (!etapaPerdida) return;
           rollbackPerda.current = leadAtual;

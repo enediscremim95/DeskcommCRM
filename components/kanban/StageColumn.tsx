@@ -26,6 +26,8 @@ interface StageColumnProps {
   reactivations?: Map<string, { proposalId: string; expiresAt: string }>;
   /** `settings.canonical_tags` do pipeline — a única tag que fica no card. */
   canonicalTags?: string[];
+  /** `settings.lost_reasons` do pipeline; vazio mantém a lista canônica. */
+  lostReasons?: string[];
   canMove?: boolean;
   selectedLeadIds?: Set<string>;
   /** leadId → quantos eventos remotos já chegaram (muda = pulsa de novo). */
@@ -73,6 +75,7 @@ export function StageColumn({
   coolingIds,
   reactivations,
   canonicalTags,
+  lostReasons,
   canMove = false,
   selectedLeadIds,
   pulses,
@@ -207,6 +210,7 @@ export function StageColumn({
                 lead={lead}
                 index={idx}
                 pipelineId={pipelineId}
+                lostReasons={lostReasons}
                 canMove={canMove}
                 isSelected={selectedLeadIds?.has(lead.id)}
                 isSelecting={(selectedLeadIds?.size ?? 0) > 0}
