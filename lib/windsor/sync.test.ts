@@ -139,7 +139,13 @@ describe("sincronização Windsor por conta", () => {
   it("combina métricas fragmentadas e miniatura sem data pelo anúncio", async () => {
     const fetcher = vi.fn(async (fields: readonly string[]) => {
       if (fields.includes("thumbnail_url")) {
-        return [{ account_id: "act_1", ad_id: "ad-1", ad_name: "Anúncio", thumbnail_url: "https://img.test/1.jpg" }];
+        return [{
+          account_id: "act_1",
+          ad_id: "ad-1",
+          ad_name: "Anúncio",
+          thumbnail_url: "https://external-fra3-1.xx.fbcdn.net/emg1/v/t13/123?utld=cliente.test",
+          effective_instagram_media__media_url: "https://scontent.cdninstagram.com/criativo.jpg",
+        }];
       }
       return [{
         account_id: "act_1", date: "2026-09-18", campaign_id: "camp-1", adset_id: "set-1",
@@ -156,7 +162,7 @@ describe("sincronização Windsor por conta", () => {
     expect(result?.rows?.find((row) => row.ad_id === "ad-1")).toMatchObject({
       spend: 10,
       actions_lead: 2,
-      thumbnail_url: "https://img.test/1.jpg",
+      effective_instagram_media__media_url: "https://scontent.cdninstagram.com/criativo.jpg",
     });
   });
 
@@ -164,8 +170,10 @@ describe("sincronização Windsor por conta", () => {
     expect(WINDSOR_FIELDS_BY_PLATFORM.google_ads).toContain("conversion_value");
     expect(WINDSOR_FIELDS_BY_PLATFORM.google_ads).not.toContain("thumbnail_url");
     expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("thumbnail_url");
+    expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("effective_instagram_media__media_url");
     expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("ad_id");
     expect(WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads).not.toContain("ad_id");
+    expect(WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads).not.toContain("effective_instagram_media__media_url");
     expect(WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads).not.toContain("website_destination_url");
     expect(WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.meta_ads).toContain("adset_id");
     expect(WINDSOR_FIELDS_BY_PLATFORM.meta_ads).toContain("campaign_daily_budget");

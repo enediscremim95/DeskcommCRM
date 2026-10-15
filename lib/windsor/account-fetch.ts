@@ -26,7 +26,10 @@ const META_DETAIL_FIELDS = {
     "video_p25_watched_actions_video_view", "video_p50_watched_actions_video_view",
     "video_p75_watched_actions_video_view", "video_p95_watched_actions_video_view",
   ],
-  media: ["account_id", "ad_id", "ad_name", "thumbnail_url", "image_url", "effective_object_story_id"],
+  media: [
+    "account_id", "ad_id", "ad_name", "thumbnail_url", "effective_instagram_media__media_url",
+    "image_url", "effective_object_story_id",
+  ],
 } as const;
 
 export const WINDSOR_FIELDS_BY_PLATFORM: Record<AdPlatform, readonly string[]> = {
@@ -42,7 +45,8 @@ export const WINDSOR_FIELDS_BY_PLATFORM: Record<AdPlatform, readonly string[]> =
 
 export const WINDSOR_SUMMARY_FIELDS_BY_PLATFORM: Record<AdPlatform, readonly string[]> = {
   meta_ads: [...new Set(WINDSOR_FIELDS_BY_PLATFORM.meta_ads.filter((field) => ![
-    "ad_id", "ad_name", "thumbnail_url", "image_url", "effective_object_story_id",
+    "ad_id", "ad_name", "thumbnail_url", "effective_instagram_media__media_url", "image_url",
+    "effective_object_story_id",
     "website_destination_url",
   ].includes(field)))],
   google_ads: WINDSOR_FIELDS_BY_PLATFORM.google_ads,
