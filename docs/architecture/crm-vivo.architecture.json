@@ -19,7 +19,7 @@
   "nodes": [
     { "id": "card", "lane": "humano", "col": 3, "type": "frontend", "label": "Card do Kanban", "sublabel": "5 elementos · altura constante" },
     { "id": "slot", "lane": "humano", "col": 2, "type": "frontend", "label": "O slot (faixa ③)", "sublabel": "aguardando > esfriando > normal" },
-    { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Tela do lead", "sublabel": "dados + timeline única + resposta" },
+    { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Tela do lead", "sublabel": "dados + anotações + timeline única + resposta" },
     { "id": "radar", "lane": "humano", "col": 5, "type": "frontend", "label": "Radar de Risco", "sublabel": "alertas acionáveis · tarefas até 24h · leads sem próximo passo" },
     { "id": "filtro", "lane": "humano", "col": 3, "type": "frontend", "label": "Filtro Responsável", "sublabel": "user: e agent: no mesmo eixo" },
     { "id": "chat", "lane": "humano", "col": 5, "type": "frontend", "label": "ChatThread + Composer", "sublabel": "mensagens, notas e eventos do negócio" },
@@ -31,6 +31,7 @@
     { "id": "emissor", "lane": "barramento", "col": 1, "type": "service", "label": "emitLeadActivity", "sublabel": "estado e obrigação, não trabalho de máquina" },
     { "id": "vocab", "lane": "barramento", "col": 3, "type": "service", "label": "activity-vocabulary", "sublabel": "forma = gente/agente/máquina · texto = o resto" },
     { "id": "timelineapi", "lane": "barramento", "col": 3, "type": "api", "label": "GET /leads/:id/timeline", "sublabel": "por NEGÓCIO — lead sem contato existe" },
+    { "id": "notesapi", "lane": "barramento", "col": 4, "type": "api", "label": "POST/DELETE /leads/:id/notes", "sublabel": "texto imutável · autor ou gerente apaga" },
     { "id": "resolver", "lane": "barramento", "col": 1, "type": "service", "label": "resolveActiveLeadForContact", "sublabel": "ambíguo ⇒ não adivinha" },
     { "id": "reenvio", "lane": "barramento", "col": 4, "type": "service", "label": "Janela curta de reenvio", "sublabel": "opt-in por fonte · canal protegido · corrida no banco" },
     { "id": "contactleadsapi", "lane": "barramento", "col": 4, "type": "api", "label": "GET /contacts/:id/leads", "sublabel": "org ativa · todos os funis · sem lista fixa de campos" },
@@ -124,7 +125,9 @@
     { "id": "e66", "from": "mensagens", "to": "automacao", "label": "outbound humano posterior ao gatilho encerra a regra", "route": "highlight" },
     { "id": "e67", "from": "reenvio", "to": "leads", "label": "fonte marcada ou canal alimenta · demais criam" },
     { "id": "e68", "from": "leads", "to": "reenvio", "label": "fonte opta pela janela · prazo vencido cria novo card" },
-    { "id": "e69", "from": "reenvio", "to": "atividades", "label": "lead_merged visível na timeline" }
+    { "id": "e69", "from": "reenvio", "to": "atividades", "label": "lead_merged visível na timeline" },
+    { "id": "e70", "from": "dossie", "to": "notesapi", "label": "cria ou apaga anotação" },
+    { "id": "e71", "from": "notesapi", "to": "atividades", "label": "type note · texto imutável" }
   ],
   "cards": [
     {

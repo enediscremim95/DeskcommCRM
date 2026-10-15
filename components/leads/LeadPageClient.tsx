@@ -41,6 +41,7 @@ import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
 import { LeadQualification } from "./LeadQualification";
 import { ProximasTarefasDoLead } from "./ProximasTarefasDoLead";
 import { stageAgeTooltip } from "@/lib/kanban/card-state";
+import { AnotacoesDoLead } from "./AnotacoesDoLead";
 
 interface ContactSummary {
   id: string;
@@ -107,6 +108,10 @@ export function LeadPageClient({
   );
   const podeConfigurar = roleAtLeast(activeOrg?.role, "admin") && !supportReadonly;
   const podeExcluir = usePermission("lead.delete") && !supportReadonly;
+  const podeAnotar = Boolean(!supportReadonly && (podeEditar || user.is_platform_admin));
+  const podeGerenciarAnotacoes = Boolean(
+    !supportReadonly && (roleAtLeast(activeOrg?.role, "manager") || user.is_platform_admin),
+  );
   const timeline = useLeadTimeline(lead.id, lead.contact_id);
   const conversation = useConversation(conversationId, Boolean(conversationId));
   const selectedConversation = conversation.data ?? null;
@@ -131,24 +136,31 @@ export function LeadPageClient({
 
   const contextItems = useMemo<ThreadContextItem[]>(
     () =>
-      timeline.itens.map((item) => ({
-        id: item.id,
-        ts: item.performed_at,
-        label: t(activityLabel(item.type)),
-        detail: [
-          actorName(
-            item.actor_kind ?? null,
-            {
-              agente: item.actor_agent_name ?? null,
-              usuario: item.actor_user_name ?? null,
-            },
-            t,
-          ),
-          item.reason ? t(item.reason) : null,
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      })),
+      timeline.itens.map((item) => {
+        const noteText =
+          item.type === "note" && typeof item.payload.text === "string"
+            ? item.payload.text.trim().slice(0, 200)
+            : null;
+        return {
+          id: item.id,
+          ts: item.performed_at,
+          label: t(activityLabel(item.type)),
+          detail: [
+            noteText,
+            actorName(
+              item.actor_kind ?? null,
+              {
+                agente: item.actor_agent_name ?? null,
+                usuario: item.actor_user_name ?? null,
+              },
+              t,
+            ),
+            item.reason ? t(item.reason) : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        };
+      }),
     [timeline.itens, t],
   );
 
@@ -370,6 +382,13 @@ export function LeadPageClient({
           </header>
 
           <div className="space-y-6 p-4">
+            {podeAnotar ? (
+              <AnotacoesDoLead
+                leadId={leadAtual.id}
+                currentUserId={user.id}
+                canManage={podeGerenciarAnotacoes}
+              />
+            ) : null}
             <ProximasTarefasDoLead
               leadId={leadAtual.id}
               contactId={leadAtual.contact_id}
