@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
+// O módulo importa o cliente Windsor (só de servidor); o teste injeta o fetcher.
+vi.mock("./client", () => ({ fetchWindsorAccountRowsForRange: vi.fn() }));
+
 import type { AccountRow } from "./account-fetch";
 import {
   aggregateGoogleKeywords,
