@@ -1,4 +1,5 @@
 import type { MarcaDeSaida } from "@/lib/branding/saida";
+import type { GoogleKeyword } from "@/lib/windsor/google-keywords";
 import {
   fetchPdfThumbnailDataUri,
   preloadPdfThumbnails,
