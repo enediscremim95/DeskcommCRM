@@ -1,5 +1,4 @@
-import "server-only";
-
+// Só roda no servidor: importa ./client, que já carrega "server-only".
 import {
   ACCOUNT_FETCH_CONCURRENCY,
   filterRowsForAccount,
