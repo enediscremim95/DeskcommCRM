@@ -28,8 +28,6 @@ type SlideMetricGroup = {
   clicks: number | null;
   leads: number | null;
   cpl: number | null;
-  ctr: number | null;
-  conversion: number | null;
   meta: SlidePlatform;
   google: SlidePlatform & { keywords: GoogleKeyword[] };
   history: Array<{
@@ -67,8 +65,8 @@ type SlidePlatform = {
 type SlideCreative = {
   name: string;
   leads: number;
-  cpl: number | null;
-  image: string | null;
+  cpl: number;
+  image: string;
 };
 
 type SlideProfile = {
@@ -84,7 +82,6 @@ type SlideProfile = {
 
 type SlideFunnel = {
   stages: StageConversion[];
-  focus: string[];
 };
 
 type SlideData = {
@@ -96,13 +93,6 @@ type SlideData = {
   periodEnd: string;
   locale: string;
   groups: SlideMetricGroup[];
-  sections: {
-    results: string;
-    meta: string;
-    google: string;
-    profile?: string;
-    funnel?: string;
-  };
   profile?: SlideProfile;
   funnel?: SlideFunnel;
   labels: ReturnType<typeof labels>;
@@ -234,70 +224,6 @@ function platformData(platform: Record<string, unknown> | undefined): SlidePlatf
   };
 }
 
-function deterministicFocus(args: {
-  stages: StageConversion[];
-  groups: SlideMetricGroup[];
-  language: TrafficSummaryLanguage;
-}): string[] {
-  const { stages, groups, language } = args;
-  const points: string[] = [];
-  const largestDrop = stages
-    .slice(1)
-    .map((stage, index) => ({
-      from: stages[index]!,
-      to: stage,
-      drop: stages[index]!.volume - stage.volume,
-    }))
-    .filter((item) => item.drop > 0)
-    .sort((a, b) => b.drop - a.drop)[0];
-  if (largestDrop) {
-    points.push(
-      text(
-        language,
-        `Acompanhar a passagem de ${largestDrop.from.name} (${largestDrop.from.volume}) para ${largestDrop.to.name} (${largestDrop.to.volume}), a maior queda do funil no período.`,
-        `Acompañar el paso de ${largestDrop.from.name} (${largestDrop.from.volume}) a ${largestDrop.to.name} (${largestDrop.to.volume}), la mayor caída del embudo en el período.`,
-      ),
-    );
-  }
-  const last = stages.at(-1);
-  if (last) {
-    points.push(
-      last.volume > 0
-        ? text(
-            language,
-            `${last.name} registrou ${last.volume} ${last.volume === 1 ? "lead" : "leads"} no período; acompanhar a continuidade desta etapa.`,
-            `${last.name} registró ${last.volume} ${last.volume === 1 ? "lead" : "leads"} en el período; acompañar la continuidad de esta etapa.`,
-          )
-        : text(
-            language,
-            `${last.name} não registrou avanço no período; acompanhar os leads da etapa anterior até o fechamento.`,
-            `${last.name} no registró avances en el período; acompañar los leads de la etapa anterior hasta el cierre.`,
-          ),
-    );
-  }
-  const primary = groups[0];
-  if (primary?.meta.video.hook != null && primary.meta.video.body != null) {
-    points.push(
-      text(
-        language,
-        `Acompanhar a retenção dos vídeos: ${primary.meta.video.hook.toFixed(2).replace(".", ",")}% chegam ao hook e ${primary.meta.video.body.toFixed(2).replace(".", ",")}% ao corpo.`,
-        `Acompañar la retención de los videos: ${primary.meta.video.hook.toFixed(2).replace(".", ",")}% llegan al hook y ${primary.meta.video.body.toFixed(2).replace(".", ",")}% al cuerpo.`,
-      ),
-    );
-  }
-  if (primary?.meta.cpl != null && primary.google.cpl != null) {
-    const lower = primary.meta.cpl <= primary.google.cpl ? "Meta Ads" : "Google Ads";
-    points.push(
-      text(
-        language,
-        `${lower} apresentou o menor custo por lead no período; acompanhar a qualidade dos leads antes de alterar a distribuição do investimento.`,
-        `${lower} presentó el menor costo por lead en el período; acompañar la calidad de los leads antes de cambiar la distribución de la inversión.`,
-      ),
-    );
-  }
-  return points.slice(0, 4);
-}
-
 function labels(language: TrafficSummaryLanguage) {
   const localized = (pt: string, es: string) => text(language, pt, es);
   return {
@@ -311,9 +237,6 @@ function labels(language: TrafficSummaryLanguage) {
     objective: localized("OBJETIVO", "OBJETIVO"),
     digitalAds: localized("Trabalhamos a publicidade digital em:", "Trabajamos la publicidad digital en:"),
     investmentShare: localized("Participação no investimento", "Participación en la inversión"),
-    segmentation: localized("Segmentação", "Segmentación"),
-    notInformed: localized("não informada", "no informada"),
-    results: localized("Resultados", "Resultados"),
     allMedia: localized("Todas as mídias", "Todos los medios"),
     monthlyEvolution: localized("Todas as mídias: evolução mensal", "Todos los medios: evolución mensual"),
     investment: localized("Investimento", "Inversión"),
@@ -322,7 +245,6 @@ function labels(language: TrafficSummaryLanguage) {
     leads: "Leads",
     cpl: "CPL",
     clickToLead: localized("clique → lead", "clic → lead"),
-    variationPrevious: localized("Variação em relação ao mês anterior", "Variación frente al mes anterior"),
     investedValue: localized("Valor investido", "Valor invertido"),
     sales: localized("Vendas", "Ventas"),
     reachDelivery: localized("Meta Ads: alcance e entrega", "Meta Ads: alcance y entrega"),
@@ -337,14 +259,11 @@ function labels(language: TrafficSummaryLanguage) {
     watchedToEnd: localized("viram até o fim", "vieron hasta el final"),
     videoMilestones: localized("Visualizações por marco do vídeo", "Visualizaciones por hito del video"),
     creativeRanking: localized("Meta Ads: ranking de criativos", "Meta Ads: ranking de creativos"),
-    creative: localized("Criativo", "Creativo"),
-    noImage: localized("imagem não disponível", "imagen no disponible"),
     metaAttribution: localized("Leads e CPL conforme atribuição do Meta Ads", "Leads y CPL según la atribución de Meta Ads"),
     googleKeywords: localized("Google Ads: melhores palavras", "Google Ads: mejores palabras"),
     keyword: localized("Palavra-chave", "Palabra clave"),
     conversions: localized("Conversões", "Conversiones"),
     costPerConversion: localized("Custo / conv.", "Costo / conv."),
-    total: localized("Total", "Total"),
     profileSection: localized("Perfil dos leads", "Perfil de los leads"),
     formCompletion: localized("Preenchimento do formulário", "Completitud del formulario"),
     consideredPeople: localized("Pessoas consideradas", "Personas consideradas"),
@@ -353,15 +272,11 @@ function labels(language: TrafficSummaryLanguage) {
     peopleWithAnswers: localized("com respostas válidas no período", "con respuestas válidas en el período"),
     fieldsShown: localized("campos exibidos no perfil", "campos mostrados en el perfil"),
     answered: localized("respostas", "respuestas"),
-    funnelSection: localized("Funil do CRM", "Embudo del CRM"),
     leadToClose: localized("Do lead ao fechamento", "Del lead al cierre"),
     stage: localized("ETAPA", "ETAPA"),
     volume: localized("VOLUME", "VOLUMEN"),
     conversion: localized("CONVERSÃO", "CONVERSIÓN"),
     stageCost: localized("CUSTO POR ETAPA", "COSTO POR ETAPA"),
-    periodClosing: localized("Fechamento do período", "Cierre del período"),
-    costPerLead: localized("Custo por lead", "Costo por lead"),
-    monitoringFocus: localized("Foco de acompanhamento", "Foco de seguimiento"),
     monthlyPerformance: localized("RELATÓRIO MENSAL DE PERFORMANCE", "INFORME MENSUAL DE RENDIMIENTO"),
   };
 }
@@ -391,9 +306,12 @@ async function slideData(args: {
     const googleRaw = currencyGroup.platforms?.find((item) => item.platform === "google_ads");
     const history = source.historico?.find((item) => item.currency === currencyGroup.currency);
     const googleKeywords = (source.google_keywords ?? [])
-      .filter((keyword) => keyword.currency === currencyGroup.currency)
+      .filter(
+        (keyword) =>
+          keyword.currency === currencyGroup.currency && keyword.keyword.trim().length > 0,
+      )
       .map((keyword) => ({
-        keyword: escapeHtml(keyword.keyword),
+        keyword: escapeHtml(keyword.keyword.trim()),
         impressions: finite(keyword.impressions),
         clicks: finite(keyword.clicks),
         conversions: finite(keyword.conversions),
@@ -411,9 +329,6 @@ async function slideData(args: {
         (summaryInvestment != null && summaryLeads != null && summaryLeads > 0
           ? summaryInvestment / summaryLeads
           : null),
-      ctr: finite(summary.ctr) ?? positiveRatio(summaryClicks, summaryImpressions),
-      conversion:
-        finite(summary.conversion_rate) ?? positiveRatio(summaryLeads, summaryClicks),
       meta: platformData(metaRaw as unknown as Record<string, unknown> | undefined),
       google: {
         ...platformData(googleRaw as unknown as Record<string, unknown> | undefined),
@@ -430,7 +345,9 @@ async function slideData(args: {
       creatives: creatives
         .filter(
           (creative) =>
-            creative.currency === currencyGroup.currency && creative.platform === "meta_ads",
+            creative.currency === currencyGroup.currency &&
+            creative.platform === "meta_ads" &&
+            creative.leads > 0,
         )
         .sort(
           (a, b) =>
@@ -439,13 +356,20 @@ async function slideData(args: {
               (b.cost_per_lead ?? Number.POSITIVE_INFINITY) ||
             b.spend - a.spend,
         )
-        .slice(0, 3)
-        .map((creative) => ({
-          name: escapeHtml(creative.name),
-          leads: creative.leads,
-          cpl: creative.cost_per_lead,
-          image: safeDataImage(creative.thumbnail_data_uri),
-        })),
+        .map((creative) => {
+          const image = safeDataImage(creative.thumbnail_data_uri);
+          const cpl = finite(creative.cost_per_lead);
+          return image && cpl != null
+            ? {
+                name: escapeHtml(creative.name),
+                leads: creative.leads,
+                cpl,
+                image,
+              }
+            : null;
+        })
+        .filter((creative): creative is SlideCreative => creative !== null)
+        .slice(0, 3),
     } satisfies SlideMetricGroup;
   });
 
@@ -475,13 +399,7 @@ async function slideData(args: {
         }
       : undefined;
   const organizationName = source.organization_name?.trim() || "Organização";
-  const objective =
-    source.objective?.trim() ||
-    text(
-      language,
-      "RESULTADOS DE PERFORMANCE DO PERÍODO",
-      "RESULTADOS DE RENDIMIENTO DEL PERÍODO",
-    );
+  const objective = source.objective?.trim() || "";
   const localizedLabels = labels(language);
   if (!profile) {
     localizedLabels.profileSection = "";
@@ -494,15 +412,11 @@ async function slideData(args: {
     localizedLabels.answered = "";
   }
   if (!hasFunnel) {
-    localizedLabels.funnelSection = "";
     localizedLabels.leadToClose = "";
     localizedLabels.stage = "";
     localizedLabels.volume = "";
     localizedLabels.conversion = "";
     localizedLabels.stageCost = "";
-    localizedLabels.periodClosing = "";
-    localizedLabels.costPerLead = "";
-    localizedLabels.monitoringFocus = "";
   }
   const data: SlideData = {
     brand: escapeHtml(organizationName),
@@ -513,21 +427,15 @@ async function slideData(args: {
     periodEnd: formatDate(source.window.to, language),
     locale: language === "es" ? "es-ES" : "pt-BR",
     groups,
-    sections: { results: "01", meta: "02", google: "03" },
     labels: localizedLabels,
   };
-  let optionalSection = 4;
   if (profile) {
     data.profile = profile;
-    data.sections.profile = String(optionalSection).padStart(2, "0");
-    optionalSection += 1;
   }
   if (hasFunnel) {
     data.funnel = {
       stages: rawStages,
-      focus: deterministicFocus({ stages: rawStages, groups, language }).map(escapeHtml),
     };
-    data.sections.funnel = String(optionalSection).padStart(2, "0");
   }
   return data;
 }
@@ -566,12 +474,8 @@ function slidesRuntime(
   const FOOT = `<div class="foot"><span>${D.footerName}  ·  ${D.labels.monthlyPerformance}</span><span class="pn"></span></div>`;
   const content = (title: string, body: string, cls = "") =>
     `<section class="slide content ${cls}">${badge}<h2 class="title">${title}</h2><div class="body">${body}</div>${FOOT}</section>`;
-  const divider = (num: string, title: string) =>
-    `<section class="slide divider">${badge}<div class="dv"><div class="dv-num">${num}</div><h2 class="dv-title">${title}</h2></div></section>`;
   const kcard = (icon: string, label: string, value: string, caption: string, cls = "") =>
     `<div class="card kcard ${cls}"><div class="k-top"><span class="circ">${ICON[icon] ?? ""}</span><span class="k-label">${label}</span></div><div class="k-val">${value}</div><div class="k-cap">${caption}</div></div>`;
-  const scard = (icon: string, label: string, value: string, cls = "") =>
-    `<div class="card kcard sm ${cls}"><span class="circ">${ICON[icon] ?? ""}</span><div class="k-val">${value}</div><div class="k-lab">${label}</div></div>`;
   const table = (head: string[], rows: string[], cls = "") =>
     `<div class="tw"><table class="tb ${cls}"><thead><tr>${head.map((item) => `<th>${item}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
 
@@ -582,10 +486,9 @@ function slidesRuntime(
       clicks: string;
       leads: string;
       cpl: string;
-      ctr: string;
-      conv: string;
     },
     note?: string,
+    rateValues?: { ctr: string; conv: string },
   ) {
     const steps = [
       ["coins", D.labels.investment, values.investment],
@@ -603,18 +506,16 @@ function slidesRuntime(
             : "1,1 203,1 287,84 203,167 1,167 85,84";
         return `<div class="chev-item ${index === 0 ? "first" : ""}" style="left:${10 + index * step}px">
       <svg class="chev-bg" viewBox="0 0 288 168" preserveAspectRatio="none"><polygon points="${polygon}" fill="#FFE9DA" stroke="#E6D6C3" stroke-width="1.5"/></svg>
-      <div class="chev-in"><span class="ic">${ICON[item[0]!] ?? ""}</span><b>${item[1]}</b><span class="val">${item[2]}</span></div>
-      <div class="chev-var">${DASH}<small> ${D.labels.variationPrevious.toLocaleLowerCase(D.locale)}</small></div></div>`;
+      <div class="chev-in"><span class="ic">${ICON[item[0]!] ?? ""}</span><b>${item[1]}</b><span class="val">${item[2]}</span></div></div>`;
       })
       .join("");
     const centers = [10 + 144 - 21, 10 + step + 144, 10 + 2 * step + 144, 10 + 3 * step + 144];
-    const brackets = `<svg class="brackets" width="1164" height="191" viewBox="0 0 1164 191" fill="none" stroke="#C76B4B" stroke-width="1.7">
+    const rates = rateValues ? `<svg class="brackets" width="1164" height="191" viewBox="0 0 1164 191" fill="none" stroke="#C76B4B" stroke-width="1.7">
     <path d="M${centers[1]} 191V143H${centers[2]}V191"/><path d="M${centers[2]} 191V85H${centers[3]}V191"/></svg>
-    <div class="b-label" style="left:${(centers[1]! + centers[2]!) / 2}px;top:96px">CTR = ${values.ctr}</div>
-    <div class="b-label" style="left:${(centers[2]! + centers[3]!) / 2}px;top:12px">${values.conv}<small>${D.labels.clickToLead}</small></div>`;
-    return `<div class="chev-stage">${brackets}${items}
-    <div class="pills"><span>CTR = ${values.ctr}</span><span>${values.conv} ${D.labels.clickToLead}</span></div>
-    <div class="chev-legend">${D.labels.variationPrevious}</div>
+    <div class="b-label" style="left:${(centers[1]! + centers[2]!) / 2}px;top:96px">CTR = ${rateValues.ctr}</div>
+    <div class="b-label" style="left:${(centers[2]! + centers[3]!) / 2}px;top:12px">${rateValues.conv}<small>${D.labels.clickToLead}</small></div>
+    <div class="pills"><span>CTR = ${rateValues.ctr}</span><span>${rateValues.conv} ${D.labels.clickToLead}</span></div>` : "";
+    return `<div class="chev-stage">${rates}${items}
     ${note ? `<div class="chev-note">${note}</div>` : ""}</div>`;
   }
 
@@ -690,14 +591,13 @@ function slidesRuntime(
       ? fPct((investment / totalInvestment) * 100, 1)
       : DASH;
   S.push(content(D.labels.summary, `
-  <div class="obj"><span class="t">${D.labels.objective} » </span>${D.objective}</div>
+  ${D.objective ? `<div class="obj"><span class="t">${D.labels.objective} » </span>${D.objective}</div>` : ""}
   <div class="sub">${D.labels.digitalAds}</div>
   <div class="channels">
-    <div class="ch"><span class="circ">${ICON.meta ?? ""}</span><b>Meta Ads</b><span>${D.labels.investmentShare}: ${share(primary?.meta.investment ?? null)}</span><span>${D.labels.segmentation}: ${D.labels.notInformed}</span></div>
-    <div class="ch"><span class="circ">${ICON.google ?? ""}</span><b>Google Ads</b><span>${D.labels.investmentShare}: ${share(primary?.google.investment ?? null)}</span><span>${D.labels.segmentation}: ${D.labels.notInformed}</span></div>
+    <div class="ch"><span class="circ">${ICON.meta ?? ""}</span><b>Meta Ads</b><span>${D.labels.investmentShare}: ${share(primary?.meta.investment ?? null)}</span></div>
+    <div class="ch"><span class="circ">${ICON.google ?? ""}</span><b>Google Ads</b><span>${D.labels.investmentShare}: ${share(primary?.google.investment ?? null)}</span></div>
   </div>`));
 
-  S.push(divider(D.sections.results, D.labels.results));
   D.groups.forEach((group) => {
     const suffix = D.groups.length > 1 ? ` · ${group.currency}` : "";
     S.push(content(`${D.labels.allMedia}${suffix}`, chevrons({
@@ -706,8 +606,6 @@ function slidesRuntime(
       clicks: fInt(group.clicks),
       leads: fInt(group.leads),
       cpl: fMoney(group.cpl, group.currency),
-      ctr: fPct(group.ctr),
-      conv: fPct(group.conversion),
     })));
     const periods = group.history.length > 0 ? group.history : [{ label: D.month, investment: group.investment, leads: group.leads, cpl: group.cpl, sales: null }];
     const row = (label: string, values: string[]) => `<tr><td><b>${label}</b></td>${values.map((value) => `<td>${value}</td>`).join("")}</tr>`;
@@ -719,7 +617,6 @@ function slidesRuntime(
     ])}</div>`));
   });
 
-  S.push(divider(D.sections.meta, "Meta Ads"));
   D.groups.forEach((group) => {
     const suffix = D.groups.length > 1 ? ` · ${group.currency}` : "";
     const meta = group.meta;
@@ -729,8 +626,6 @@ function slidesRuntime(
       clicks: fInt(meta.clicks),
       leads: fInt(meta.leads),
       cpl: fMoney(meta.cpl, group.currency),
-      ctr: fPct(meta.ctr),
-      conv: fPct(meta.conversion),
     }, D.labels.metaAttribution)));
     S.push(content(`${D.labels.reachDelivery}${suffix}`, `<div class="grid g2">${
       kcard("users", D.labels.reach, fInt(meta.reach), D.labels.uniquePeople) +
@@ -739,16 +634,18 @@ function slidesRuntime(
       kcard("click", "CPC", fMoney(meta.cpc, group.currency), D.labels.cpcCaption)
     }</div>`));
     const video = meta.video;
-    const maxVideo = Math.max(1, video.v25 ?? 0, video.v50 ?? 0, video.v75 ?? 0, video.v95 ?? 0);
-    const callout = (icon: string, label: string, subtitle: string, value: string, caption: string) => `<div class="card callout"><div class="k-top"><span class="circ">${ICON[icon] ?? ""}</span><span class="k-label">${label}<small>${subtitle}</small></span></div><div class="k-val">${value}</div><div class="k-cap">${caption}</div></div>`;
-    const bar = (label: string, value: number | null) => `<div class="bar-row"><span>${label}</span><div class="bar-track"><div class="bar-fill" style="width:${value == null ? 0 : ((value / maxVideo) * 100).toFixed(1)}%"></div></div><span class="bar-val">${fInt(value)}</span></div>`;
-    S.push(content(`${D.labels.videoRetention}${suffix}`, `<div class="ret"><div class="col">${callout("play", "HOOK", "3s+", fPct(video.hook), D.labels.stoppedToWatch)}${callout("badge", "BODY", "75%+", fPct(video.body), D.labels.watchedToEnd)}</div>
-    <div class="card chart-card"><h3>${D.labels.videoMilestones}</h3><div class="bars">${bar("View 25%", video.v25)}${bar("View 50%", video.v50)}${bar("View 75%", video.v75)}${bar("View 95%", video.v95)}</div></div></div>`));
-    const creatives = Array.from({ length: 3 }, (_, index) => group.creatives[index] ?? null);
-    S.push(content(`${D.labels.creativeRanking}${suffix}`, `<div class="crea">${creatives.map((creative, index) => `<div><div class="frame">${creative?.image ? `<img src="${creative.image}" alt="${creative.name}" style="width:100%;height:100%;object-fit:cover;border-radius:14px">` : `${creative?.name ?? `${D.labels.creative} ${index + 1}`}<br>(${D.labels.noImage})`}<span class="rank">${index + 1}º</span></div>${table([D.labels.leads, D.labels.cpl], [`<tr><td style="text-align:center">${creative ? fInt(creative.leads) : DASH}</td><td>${creative ? fMoney(creative.cpl, group.currency) : DASH}</td></tr>`])}</div>`).join("")}</div>`));
+    if ([video.hook, video.body, video.v25, video.v50, video.v75, video.v95].some((value) => value != null && value !== 0)) {
+      const maxVideo = Math.max(1, video.v25 ?? 0, video.v50 ?? 0, video.v75 ?? 0, video.v95 ?? 0);
+      const callout = (icon: string, label: string, subtitle: string, value: string, caption: string) => `<div class="card callout"><div class="k-top"><span class="circ">${ICON[icon] ?? ""}</span><span class="k-label">${label}<small>${subtitle}</small></span></div><div class="k-val">${value}</div><div class="k-cap">${caption}</div></div>`;
+      const bar = (label: string, value: number | null) => `<div class="bar-row"><span>${label}</span><div class="bar-track"><div class="bar-fill" style="width:${value == null ? 0 : ((value / maxVideo) * 100).toFixed(1)}%"></div></div><span class="bar-val">${fInt(value)}</span></div>`;
+      S.push(content(`${D.labels.videoRetention}${suffix}`, `<div class="ret"><div class="col">${callout("play", "HOOK", "3s+", fPct(video.hook), D.labels.stoppedToWatch)}${callout("badge", "BODY", "75%+", fPct(video.body), D.labels.watchedToEnd)}</div>
+      <div class="card chart-card"><h3>${D.labels.videoMilestones}</h3><div class="bars">${bar("View 25%", video.v25)}${bar("View 50%", video.v50)}${bar("View 75%", video.v75)}${bar("View 95%", video.v95)}</div></div></div>`));
+    }
+    if (group.creatives.length > 0) {
+      S.push(content(`${D.labels.creativeRanking}${suffix}`, `<div class="crea">${group.creatives.map((creative, index) => `<div><div class="frame"><img src="${creative.image}" alt="${creative.name}" style="width:100%;height:100%;object-fit:cover;border-radius:14px"><span class="rank">${index + 1}º</span></div>${table([D.labels.leads, D.labels.cpl], [`<tr><td style="text-align:center">${fInt(creative.leads)}</td><td>${fMoney(creative.cpl, group.currency)}</td></tr>`])}</div>`).join("")}</div>`));
+    }
   });
 
-  S.push(divider(D.sections.google, "Google Ads"));
   D.groups.forEach((group) => {
     const suffix = D.groups.length > 1 ? ` · ${group.currency}` : "";
     const google = group.google;
@@ -758,18 +655,17 @@ function slidesRuntime(
       clicks: fInt(google.clicks),
       leads: fInt(google.leads),
       cpl: fMoney(google.cpl, group.currency),
+    }), undefined, {
       ctr: fPct(google.ctr),
       conv: fPct(google.conversion),
-    })));
-    const keywordRows = google.keywords.length > 0
-      ? google.keywords.slice(0, 5).map((keyword) => `<tr><td>${keyword.keyword}</td><td>${fInt(keyword.impressions)}</td><td>${fInt(keyword.clicks)}</td><td>${fInt(keyword.conversions)}</td><td>${fPct(keyword.ctr)}</td><td>${fMoney(keyword.cost_per_conversion, group.currency)}</td></tr>`)
-      : Array.from({ length: 5 }, () => `<tr><td class="m">${DASH}</td>${`<td>${DASH}</td>`.repeat(5)}</tr>`);
-    const totalRow = `<tr class="tot"><td>${D.labels.total}</td><td>${fInt(google.impressions)}</td><td>${fInt(google.clicks)}</td><td>${fInt(google.leads)}</td><td>${fPct(google.ctr)}</td><td>${fMoney(google.cpl, group.currency)}</td></tr>`;
-    S.push(content(`${D.labels.googleKeywords}${suffix}`, table([D.labels.keyword, D.labels.impressions, D.labels.clicks, D.labels.conversions, "CTR", D.labels.costPerConversion], [totalRow, ...keywordRows])));
+    }));
+    if (google.keywords.length > 0) {
+      const keywordRows = google.keywords.slice(0, 5).map((keyword) => `<tr><td>${keyword.keyword}</td><td>${fInt(keyword.impressions)}</td><td>${fInt(keyword.clicks)}</td><td>${fInt(keyword.conversions)}</td><td>${fPct(keyword.ctr)}</td><td>${fMoney(keyword.cost_per_conversion, group.currency)}</td></tr>`);
+      S.push(content(`${D.labels.googleKeywords}${suffix}`, table([D.labels.keyword, D.labels.impressions, D.labels.clicks, D.labels.conversions, "CTR", D.labels.costPerConversion], keywordRows)));
+    }
   });
 
   if (D.profile) {
-    S.push(divider(D.sections.profile ?? "04", D.labels.profileSection));
     const greatestCoverage = Math.max(...D.profile.fields.map((field) => field.coverage));
     S.push(content(D.labels.formCompletion, `<div class="grid g3 pre" style="margin-top:50px">${
       kcard("file", D.labels.consideredPeople, fInt(D.profile.considered), D.labels.peopleWithAnswers) +
@@ -781,7 +677,6 @@ function slidesRuntime(
   }
 
   if (D.funnel) {
-    S.push(divider(D.sections.funnel ?? "04", D.labels.funnelSection));
     const chunks: StageConversion[][] = [];
     for (let index = 0; index < D.funnel.stages.length; index += 6) chunks.push(D.funnel.stages.slice(index, index + 6));
     chunks.forEach((stages, chunkIndex) => {
@@ -796,20 +691,7 @@ function slidesRuntime(
       const suffix = chunks.length > 1 ? ` · ${chunkIndex + 1}/${chunks.length}` : "";
       S.push(content(`${D.labels.leadToClose}${suffix}`, `<div class="card fun"><div class="fun-head"><span>${D.labels.stage}</span><span>${D.labels.volume}</span><span></span><span>${D.labels.conversion}</span><span>${D.labels.stageCost}</span></div>${rows}</div>`));
     });
-    const group = D.groups[0];
-    const closingCards = [
-      scard("wallet", D.labels.investment, group ? fMoney(group.investment, group.currency) : DASH),
-      scard("file", D.labels.leads, group ? fInt(group.leads) : DASH),
-      scard("dollar", D.labels.costPerLead, group ? fMoney(group.cpl, group.currency) : DASH),
-      ...D.funnel.stages.slice(0, 5).map((stage) => scard(stage.is_won ? "trophy" : "userCheck", stage.name, fInt(stage.volume), stage.is_won ? "att" : "")),
-    ];
-    S.push(content(D.labels.periodClosing, `<div class="grid g4">${closingCards.join("")}</div>`));
-    if (D.funnel.focus.length > 0) {
-      S.push(content(D.labels.monitoringFocus, `<div class="grid g2 foco">${D.funnel.focus.map((item, index) => `<div class="card"><span class="n">${String(index + 1).padStart(2, "0")}</span><span class="tx">${item}</span></div>`).join("")}</div>`));
-    }
   }
-
-  S.push(`<section class="slide closing">${LOGO ? logo("") : `<h1 style="position:absolute;left:10%;right:10%;top:50%;transform:translateY(-50%);text-align:center;font-size:72px;color:var(--terracotta)">${D.brand}</h1>`}</section>`);
 
   const stage = document.getElementById("stage")!;
   try {

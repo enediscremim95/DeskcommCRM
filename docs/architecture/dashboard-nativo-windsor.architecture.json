@@ -55,6 +55,6 @@
     { "id": "e19", "from": "report", "to": "pdf", "label": "mesma seleção, ordem e período da tela" },
     { "id": "e20", "from": "report", "to": "slides", "label": "mesma fonte tenant-scoped, sem converter moedas" },
     { "id": "e21", "from": "screen", "to": "slides", "label": "download principal; PDF permanece secundário" },
-    { "id": "e22", "from": "windsor", "to": "slides", "label": "palavras Google por conta, período e moeda; falha mantém tabela vazia" }
+    { "id": "e22", "from": "windsor", "to": "slides", "label": "palavras Google por conta, período e moeda; sem palavras, o slide é omitido" }
   ]
 }

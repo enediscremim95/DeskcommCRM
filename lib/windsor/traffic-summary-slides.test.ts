@@ -101,7 +101,7 @@ describe("renderTrafficSummarySlides", () => {
     expect(html).toContain("const D = {");
     expect(html).toContain('"investment":1000');
     expect(html).toContain('"currency":"BRL"');
-    expect(html).toContain("Resultados");
+    expect(html).toContain("Todas as mídias");
     expect(html).toContain("Meta Ads");
     expect(html).toContain("Google Ads");
     expect(html).toContain("@page{size:1280px 720px;margin:0}");
@@ -113,7 +113,7 @@ describe("renderTrafficSummarySlides", () => {
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("kroebel");
   });
 
-  it("omite perfil e funil sem dados e mantém divisores consecutivos", async () => {
+  it("omite perfil e funil sem dados", async () => {
     const html = await renderTrafficSummarySlides({
       source: source(),
       brand,
@@ -125,10 +125,9 @@ describe("renderTrafficSummarySlides", () => {
     expect(html).not.toContain('"funnel":{');
     expect(html).not.toContain("Perfil dos leads");
     expect(html).not.toContain("Do lead ao fechamento");
-    expect(html).toContain('"sections":{"results":"01","meta":"02","google":"03"}');
   });
 
-  it("inclui perfil e etapas reais do CRM e renumera as seções", async () => {
+  it("inclui perfil e etapas reais do CRM", async () => {
     const html = await renderTrafficSummarySlides({
       source: source({
         crm: {
@@ -158,9 +157,25 @@ describe("renderTrafficSummarySlides", () => {
       organizationSlug: "cliente-generico",
     });
 
-    expect(html).toContain('"sections":{"results":"01","meta":"02","google":"03","profile":"04","funnel":"05"}');
     expect(html).toContain('"name":"Reunião"');
     expect(html).toContain('"topValue":"Pequeno"');
+  });
+
+  it("remove divisores, fechamento, encerramento, variações fixas e objetivo genérico", async () => {
+    const html = await renderTrafficSummarySlides({
+      source: source({ objective: "" }),
+      brand,
+      language: "pt-BR",
+      organizationSlug: "cliente-generico",
+    });
+
+    expect(html).not.toContain('class="slide divider"');
+    expect(html).not.toContain('class="slide closing"');
+    expect(html).not.toContain("Fechamento do período");
+    expect(html).not.toContain("Foco de acompanhamento");
+    expect(html).not.toContain("Variação em relação ao mês anterior");
+    expect(html).not.toContain("RESULTADOS DE PERFORMANCE DO PERÍODO");
+    expect(html).not.toContain("Segmentação: não informada");
   });
 
   it("mantém palavras-chave separadas no grupo da própria moeda", async () => {

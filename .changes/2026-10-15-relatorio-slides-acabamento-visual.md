@@ -1,7 +1,7 @@
 ---
 impacto: nada_mudou
 secao: corrigido
-titulo: Relatório em slides com acabamento visual novo
+titulo: Relatório em slides fica mais enxuto
 ---
 
-Só o visual do relatório em slides muda: tipografia, cartões abertos com fio fino no lugar de caixas com sombra, tabelas limpas, funil em tons progressivos com o custo por lead em destaque, barras mais finas, navegação discreta e transição curta entre slides. Conteúdo, dados e ordem dos slides seguem iguais. Os títulos trocam o travessão por dois-pontos.
+O relatório em slides deixa de exibir divisores, páginas de fechamento e cartões sem dados. Objetivo, ranking de anúncios, retenção de vídeo e palavras-chave só aparecem quando há informação real, sem mudar período, moeda ou a ordem do conteúdo restante.
