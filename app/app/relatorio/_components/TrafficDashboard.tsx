@@ -1610,6 +1610,46 @@ function CampaignTable({
   );
 }
 
+const PRINT_READY_TIMEOUT_MS = 8_000;
+const PRINT_CLEANUP_TIMEOUT_MS = 60_000;
+
+function waitAtMost(promise: Promise<unknown>, timeoutMs: number) {
+  return new Promise<void>((resolve) => {
+    const timeout = globalThis.window.setTimeout(resolve, timeoutMs);
+    const finish = () => {
+      globalThis.window.clearTimeout(timeout);
+      resolve();
+    };
+    void promise.then(finish, finish);
+  });
+}
+
+function waitForIframeLoad(iframe: HTMLIFrameElement, timeoutMs: number) {
+  return new Promise<void>((resolve) => {
+    const finish = () => {
+      globalThis.window.clearTimeout(timeout);
+      iframe.removeEventListener("load", finish);
+      resolve();
+    };
+    const timeout = globalThis.window.setTimeout(finish, timeoutMs);
+    iframe.addEventListener("load", finish, { once: true });
+  });
+}
+
+async function waitForPrintAssets(document: Document, timeoutMs: number) {
+  const fontsReady = document.fonts?.ready ?? Promise.resolve();
+  const imagesReady = Array.from(document.images, async (image) => {
+    if (!image.complete) {
+      await new Promise<void>((resolve) => {
+        image.addEventListener("load", () => resolve(), { once: true });
+        image.addEventListener("error", () => resolve(), { once: true });
+      });
+    }
+    if (typeof image.decode === "function") await image.decode().catch(() => undefined);
+  });
+  await waitAtMost(Promise.all([fontsReady, ...imagesReady]), timeoutMs);
+}
+
 export function TrafficDashboard() {
   const t = useT();
   const idioma = useIdioma();
@@ -1620,7 +1660,7 @@ export function TrafficDashboard() {
   const [report, setReport] = useState<ReportResponse["data"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [downloading, setDownloading] = useState<"slides" | "pdf" | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [selectedColumns, setSelectedColumns] = useState<
     Record<AdPlatform, CampaignMetricColumn[]>
@@ -1631,6 +1671,7 @@ export function TrafficDashboard() {
   >(null);
   const [mostrarMetricasCrm, setMostrarMetricasCrm] = useState(false);
   const restauracaoMetricasCrm = useRef(0);
+  const limparIframeDeImpressao = useRef<(() => void) | null>(null);
   const chaveMetricasCrm = report
     ? `traffic-report-crm-metrics:${report.organization_key}:${report.viewer_key}`
     : null;
@@ -1688,6 +1729,13 @@ export function TrafficDashboard() {
     return () => globalThis.window.clearTimeout(timeout);
   }, [chaveMetricasCrm]);
 
+  useEffect(
+    () => () => {
+      limparIframeDeImpressao.current?.();
+    },
+    [],
+  );
+
   function alternarMetricasCrm() {
     restauracaoMetricasCrm.current += 1;
     setMostrarMetricasCrm((visiveis) => {
@@ -1730,17 +1778,20 @@ export function TrafficDashboard() {
     setWindow(next);
   }
 
-  async function downloadSummary(format: "slides" | "pdf") {
-    setDownloading(format);
+  async function downloadSummary() {
+    setDownloading(true);
     setDownloadError(null);
+    limparIframeDeImpressao.current?.();
+    let iframe: HTMLIFrameElement | null = null;
+    let cleanup: (() => void) | null = null;
     try {
       const query = new URLSearchParams({
         from: window.from,
         to: window.to,
         language: idioma,
       });
-      const response = await fetch(`/api/v1/reports/traffic/${format}?${query.toString()}`, {
-        headers: { accept: format === "slides" ? "text/html" : "application/pdf" },
+      const response = await fetch(`/api/v1/reports/traffic/slides?${query.toString()}`, {
+        headers: { accept: "text/html" },
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as {
@@ -1748,25 +1799,51 @@ export function TrafficDashboard() {
         } | null;
         throw new Error(body?.error?.message ?? t("Não foi possível baixar o relatório."));
       }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const disposition = response.headers.get("content-disposition") ?? "";
-      const match = disposition.match(/filename="([^"]+)"/i);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download =
-        match?.[1] ??
-        `relatorio-resumido-${window.from}-a-${window.to}.${format === "slides" ? "html" : "pdf"}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      const html = await response.text();
+      iframe = document.createElement("iframe");
+      iframe.title = t("Preparando PDF…");
+      iframe.style.position = "fixed";
+      iframe.style.left = "-10000px";
+      iframe.style.top = "0";
+      iframe.style.width = "1280px";
+      iframe.style.height = "720px";
+      iframe.style.border = "0";
+      iframe.srcdoc = html;
+
+      const inicio = Date.now();
+      const carregou = waitForIframeLoad(iframe, PRINT_READY_TIMEOUT_MS);
+      document.body.appendChild(iframe);
+      await carregou;
+
+      const frameDocument = iframe.contentDocument;
+      const frameWindow = iframe.contentWindow;
+      if (!frameDocument || !frameWindow || typeof frameWindow.print !== "function") {
+        throw new Error(t("Não foi possível baixar o relatório."));
+      }
+      const tempoRestante = Math.max(0, PRINT_READY_TIMEOUT_MS - (Date.now() - inicio));
+      if (tempoRestante > 0) await waitForPrintAssets(frameDocument, tempoRestante);
+      frameDocument.title = `relatorio-resumido-${window.from}-a-${window.to}`;
+
+      let cleanupTimeout: number | null = null;
+      cleanup = () => {
+        if (cleanupTimeout !== null) globalThis.window.clearTimeout(cleanupTimeout);
+        frameWindow.removeEventListener("afterprint", cleanup!);
+        iframe?.remove();
+        if (limparIframeDeImpressao.current === cleanup) limparIframeDeImpressao.current = null;
+      };
+      frameWindow.addEventListener("afterprint", cleanup, { once: true });
+      cleanupTimeout = globalThis.window.setTimeout(cleanup, PRINT_CLEANUP_TIMEOUT_MS);
+      limparIframeDeImpressao.current = cleanup;
+      frameWindow.focus();
+      frameWindow.print();
     } catch (cause) {
+      if (cleanup) cleanup();
+      else iframe?.remove();
       setDownloadError(
         cause instanceof Error ? cause.message : t("Não foi possível baixar o relatório."),
       );
     } finally {
-      setDownloading(null);
+      setDownloading(false);
     }
   }
 
@@ -1834,10 +1911,10 @@ export function TrafficDashboard() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => void downloadSummary("slides")}
-                disabled={!report || loading || downloading !== null}
+                onClick={() => void downloadSummary()}
+                disabled={!report || loading || downloading}
               >
-                {downloading === "slides" ? t("Preparando relatório…") : t("Baixar relatório")}
+                {downloading ? t("Preparando PDF…") : t("Baixar PDF")}
               </Button>
               {preset === "custom" && (
                 <>

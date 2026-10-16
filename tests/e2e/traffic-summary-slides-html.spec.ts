@@ -280,6 +280,21 @@ test("cenário completo fica com 13 slides sem divisores, fechamento ou encerram
   expect(browserErrors).toEqual([]);
 });
 
+test("imprime como PDF com uma página 1280x720 por slide, sem página sobrando", async ({ page }) => {
+  await openGeneratedHtml(page, 1280, completeSource, imageDependencies);
+  const slides = await page.locator(".slide").count();
+  const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true });
+  const texto = pdf.toString("latin1");
+  const paginas = (texto.match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+  const caixa = texto.match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/);
+
+  expect(slides).toBe(13);
+  expect(paginas).toBe(slides);
+  // 1280px x 720px em pontos (96 dpi para 72 dpi): 960 x 540.
+  expect(Number(caixa?.[1])).toBeCloseTo(960, 0);
+  expect(Number(caixa?.[2])).toBeCloseTo(540, 0);
+});
+
 test("omite ranking, vídeo e palavras-chave quando estão vazios", async ({ page }) => {
   const browserErrors = await openGeneratedHtml(page, 1280, emptyOptionalSource);
   const titles = await page.locator("h2.title").allTextContents();
