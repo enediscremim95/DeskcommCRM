@@ -21,7 +21,7 @@ vi.mock("@/lib/logger", () => ({
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => dependencias.admin }));
 vi.mock("@/lib/waha/client", () => ({ getWahaClient: () => dependencias.client }));
 
-import { GET } from "./route";
+import { GET } from "@/app/api/v1/cron/historico-conversas/route";
 
 function dependenciasDaRodada() {
   const sessoes = [
