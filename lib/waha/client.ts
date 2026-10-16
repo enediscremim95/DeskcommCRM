@@ -490,7 +490,7 @@ export class WahaClient {
     const url = new URL(`${this.baseUrl}/api/${encodeURIComponent(session)}/chats`);
     url.searchParams.set("limit", String(inteiroEntre(options.limit, 1, 200)));
     url.searchParams.set("offset", String(inteiroEntre(options.offset, 0, Number.MAX_SAFE_INTEGER)));
-    url.searchParams.set("sortBy", "messageTimestamp");
+    url.searchParams.set("sortBy", "conversationTimestamp");
     url.searchParams.set("sortOrder", "desc");
     return this.historico(url, chatsSchema);
   }

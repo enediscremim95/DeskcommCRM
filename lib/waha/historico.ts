@@ -260,6 +260,11 @@ export function proximoCursorHistorico(cursor: number, chatsRecebidos: number): 
   return Math.max(0, cursor) + Math.max(0, chatsRecebidos);
 }
 
+function codigoHttpDoHistorico(err: unknown): string | null {
+  const mensagem = err instanceof Error ? err.message : String(err);
+  return /^waha_history_\d{3}$/.test(mensagem) ? mensagem : null;
+}
+
 export async function executarRodadaHistorico(input: {
   admin?: Admin;
   client?: WahaClient | null;
@@ -296,70 +301,81 @@ export async function executarRodadaHistorico(input: {
       metadata: objeto(raw.metadata),
     };
     if (sessao.metadata.historico_importado_em) continue;
-    const cursor = Number.isInteger(sessao.metadata.historico_cursor)
-      ? Number(sessao.metadata.historico_cursor)
-      : 0;
-    const restante = LIMITE_DE_CHATS_POR_RODADA - chatsProcessados;
-    const chats = await client.listChats(sessao.waha_session_name, { limit: restante, offset: cursor });
-    if (chats.status === "store_desligado") {
-      await admin.from("channel_sessions").update({
-        metadata: { ...sessao.metadata, historico_store_desligado_em: new Date().toISOString() },
-      }).eq("id", sessao.id).eq("organization_id", sessao.organization_id);
-      continue;
-    }
-    for (const chat of chats.data) {
-      chatsProcessados++;
-      try {
-        let contato = await contatoDoChat(admin, sessao.organization_id, chat.id);
-        let mensagens: WahaHistoryResult<WahaPayload[]> | null = null;
-        if (!contato && parseChatId(chat.id).kind === "lid") {
-          mensagens = await mensagensDoChat(client, sessao, chat.id, 0);
-          if (mensagens.status === "ok") {
-            const telefone = mensagens.data.map(telefoneAlternativoDe).find(Boolean);
-            if (telefone) {
-              contato = await encontrarContatoPorTelefone(
-                admin as unknown as SupabaseClient,
-                sessao.organization_id,
-                telefone,
-              );
+    try {
+      const cursor = Number.isInteger(sessao.metadata.historico_cursor)
+        ? Number(sessao.metadata.historico_cursor)
+        : 0;
+      const restante = LIMITE_DE_CHATS_POR_RODADA - chatsProcessados;
+      const chats = await client.listChats(sessao.waha_session_name, { limit: restante, offset: cursor });
+      if (chats.status === "store_desligado") {
+        await admin.from("channel_sessions").update({
+          metadata: { ...sessao.metadata, historico_store_desligado_em: new Date().toISOString() },
+        }).eq("id", sessao.id).eq("organization_id", sessao.organization_id);
+        continue;
+      }
+      for (const chat of chats.data) {
+        chatsProcessados++;
+        try {
+          let contato = await contatoDoChat(admin, sessao.organization_id, chat.id);
+          let mensagens: WahaHistoryResult<WahaPayload[]> | null = null;
+          if (!contato && parseChatId(chat.id).kind === "lid") {
+            mensagens = await mensagensDoChat(client, sessao, chat.id, 0);
+            if (mensagens.status === "ok") {
+              const telefone = mensagens.data.map(telefoneAlternativoDe).find(Boolean);
+              if (telefone) {
+                contato = await encontrarContatoPorTelefone(
+                  admin as unknown as SupabaseClient,
+                  sessao.organization_id,
+                  telefone,
+                );
+              }
             }
           }
+          if (!contato) continue;
+          mensagens ??= await mensagensDoChat(client, sessao, chat.id, 0);
+          if (mensagens.status === "store_desligado") continue;
+          const offsetAprofundamento = mensagens.data.filter((p) => {
+            const instante = instanteDaMensagem(p);
+            return instante !== null && new Date(instante) >= desde;
+          }).length;
+          const resultado = await importarPayloadsSilenciosamente({
+            admin,
+            sessao,
+            contato,
+            payloads: mensagens.data,
+            desde,
+            registrarOffset: offsetAprofundamento,
+          });
+          mensagensInseridas += resultado.inseridas;
+          efeitosPorOrganizacao[sessao.organization_id] =
+            (efeitosPorOrganizacao[sessao.organization_id] ?? 0) + resultado.inseridas;
+        } catch (err) {
+          if (codigoHttpDoHistorico(err)) throw err;
+          logger.warn("historico.canal: chat ignorado apos falha", {
+            organization_id: sessao.organization_id,
+            channel_session_id: sessao.id,
+            chat_kind: parseChatId(chat.id).kind,
+            detail: err instanceof Error ? err.message : String(err),
+          });
         }
-        if (!contato) continue;
-        mensagens ??= await mensagensDoChat(client, sessao, chat.id, 0);
-        if (mensagens.status === "store_desligado") continue;
-        const offsetAprofundamento = mensagens.data.filter((p) => {
-          const instante = instanteDaMensagem(p);
-          return instante !== null && new Date(instante) >= desde;
-        }).length;
-        const resultado = await importarPayloadsSilenciosamente({
-          admin,
-          sessao,
-          contato,
-          payloads: mensagens.data,
-          desde,
-          registrarOffset: offsetAprofundamento,
-        });
-        mensagensInseridas += resultado.inseridas;
-        efeitosPorOrganizacao[sessao.organization_id] =
-          (efeitosPorOrganizacao[sessao.organization_id] ?? 0) + resultado.inseridas;
-      } catch (err) {
-        logger.warn("historico.canal: chat ignorado apos falha", {
-          organization_id: sessao.organization_id,
-          channel_session_id: sessao.id,
-          chat_kind: parseChatId(chat.id).kind,
-          detail: err instanceof Error ? err.message : String(err),
-        });
       }
+      const terminou = chats.data.length < restante;
+      await admin.from("channel_sessions").update({
+        metadata: {
+          ...sessao.metadata,
+          historico_cursor: proximoCursorHistorico(cursor, chats.data.length),
+          ...(terminou ? { historico_importado_em: new Date().toISOString() } : {}),
+        },
+      }).eq("id", sessao.id).eq("organization_id", sessao.organization_id);
+    } catch (err) {
+      const codigoHttp = codigoHttpDoHistorico(err);
+      logger.warn("historico.canal: canal indisponivel", {
+        organization_id: sessao.organization_id,
+        channel_session_id: sessao.id,
+        codigo: codigoHttp ?? "historico_canal_falhou",
+        ...(codigoHttp ? {} : { detail: err instanceof Error ? err.message : String(err) }),
+      });
     }
-    const terminou = chats.data.length < restante;
-    await admin.from("channel_sessions").update({
-      metadata: {
-        ...sessao.metadata,
-        historico_cursor: proximoCursorHistorico(cursor, chats.data.length),
-        ...(terminou ? { historico_importado_em: new Date().toISOString() } : {}),
-      },
-    }).eq("id", sessao.id).eq("organization_id", sessao.organization_id);
   }
   return { status: "ok", chatsProcessados, mensagensInseridas, efeitosPorOrganizacao };
 }

@@ -5,6 +5,24 @@ import { CONVERSAS_IGNORADAS, NOWEB_STORE, WahaClient } from "./client";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("cliente de histórico", () => {
+  it("lista conversas pelas mais recentes usando o campo temporal aceito pelo NOWEB", async () => {
+    const requisicoes: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string | URL) => {
+      requisicoes.push(String(url));
+      return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+    }));
+    const cliente = new WahaClient("http://canal.local", "segredo");
+
+    await cliente.listChats("sessão 1", { limit: 20, offset: 7 });
+
+    const url = new URL(requisicoes[0]!);
+    expect(url.pathname).toBe("/api/sess%C3%A3o%201/chats");
+    expect(url.searchParams.get("limit")).toBe("20");
+    expect(url.searchParams.get("offset")).toBe("7");
+    expect(url.searchParams.get("sortBy")).toBe("conversationTimestamp");
+    expect(url.searchParams.get("sortOrder")).toBe("desc");
+  });
+
   it("devolve store_desligado no 400 conhecido sem lançar", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       statusCode: 400,
