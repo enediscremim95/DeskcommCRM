@@ -104,6 +104,9 @@ vi.mock("@/components/leads/DadosCompletosDoLead", async (importOriginal) => {
 vi.mock("@/components/leads/DeleteLeadDialog", () => ({ DeleteLeadDialog: () => null }));
 vi.mock("@/components/leads/FollowupsDoLead", () => ({ FollowupsDoLead: () => null }));
 vi.mock("@/components/leads/LeadQualification", () => ({ LeadQualification: () => null }));
+vi.mock("@/components/leads/AnotacoesDoLead", () => ({
+  AnotacoesDoLead: () => <section data-testid="lead-notes" />,
+}));
 vi.mock("@/components/leads/ProximasTarefasDoLead", () => ({
   ProximasTarefasDoLead: () => null,
 }));
@@ -284,12 +287,16 @@ describe("rodapé da conversa na página do lead", () => {
     const excluir = screen.getByRole("button", { name: "Excluir" });
     const dados = screen.getByTestId("dados-completos");
     const formulario = screen.getByTestId("lead-fields-form");
+    const anotacoes = screen.getByTestId("lead-notes");
     const header = screen.getByText("Funil principal").closest("header");
 
     expect(header).not.toContainElement(excluir);
     expect(dados.compareDocumentPosition(excluir) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
       formulario.compareDocumentPosition(excluir) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      anotacoes.compareDocumentPosition(excluir) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(excluir.parentElement).toHaveClass("mt-8", "border-t", "pt-4");
   });

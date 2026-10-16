@@ -7,9 +7,11 @@ import {
   GOV_ORG,
   GOV_PIPELINE,
   GOV_STAGE,
+  GOV_VIEWER,
   countAs,
   seedGov,
   sql,
+  writeCountAs,
 } from "./gov-helpers";
 
 /**
@@ -31,8 +33,13 @@ import {
 
 const LEAD_A = "a5e01111-0000-4000-8000-000000000001"; // owner = GOV_AGENT_A
 const LEAD_B = "a5e01111-0000-4000-8000-000000000002"; // owner = GOV_AGENT_B
+const LEAD_SHARED = "a5e01111-0000-4000-8000-000000000003"; // sem dono, visível aos dois agents
 const ACT_A = "a5e02222-0000-4000-8000-000000000001"; // activity do lead de A
 const ACT_B = "a5e02222-0000-4000-8000-000000000002"; // activity do lead de B
+const ACT_SYSTEM = "a5e02222-0000-4000-8000-000000000003";
+const NOTE_AUTHOR_DELETE = "a5e02222-0000-4000-8000-000000000004";
+const NOTE_OTHER_BLOCKED = "a5e02222-0000-4000-8000-000000000005";
+const NOTE_MANAGER_DELETE = "a5e02222-0000-4000-8000-000000000006";
 const LINK_A = "a5e03333-0000-4000-8000-000000000001"; // link do lead de A
 const LINK_B = "a5e03333-0000-4000-8000-000000000002"; // link do lead de B
 // target_id sintético (kind='external' — sem FK, não precisa existir).
@@ -44,13 +51,19 @@ beforeAll(() => {
     insert into public.crm_leads (id, organization_id, pipeline_id, stage_id, title, owner_user_id)
       values
         ('${LEAD_A}', '${GOV_ORG}', '${GOV_PIPELINE}', '${GOV_STAGE}', 'Lead do agent A (5e)', '${GOV_AGENT_A}'),
-        ('${LEAD_B}', '${GOV_ORG}', '${GOV_PIPELINE}', '${GOV_STAGE}', 'Lead do agent B (5e)', '${GOV_AGENT_B}')
+        ('${LEAD_B}', '${GOV_ORG}', '${GOV_PIPELINE}', '${GOV_STAGE}', 'Lead do agent B (5e)', '${GOV_AGENT_B}'),
+        ('${LEAD_SHARED}', '${GOV_ORG}', '${GOV_PIPELINE}', '${GOV_STAGE}', 'Lead compartilhado (5e)', null)
       on conflict (id) do nothing;
 
-    insert into public.crm_lead_activities (id, organization_id, lead_id, source_module, type, payload)
+    insert into public.crm_lead_activities
+      (id, organization_id, lead_id, source_module, type, payload, actor_kind, performed_by_user_id)
       values
-        ('${ACT_A}', '${GOV_ORG}', '${LEAD_A}', 'invariant', 'note', '{"note":"sintetico A"}'::jsonb),
-        ('${ACT_B}', '${GOV_ORG}', '${LEAD_B}', 'invariant', 'note', '{"note":"sintetico B"}'::jsonb)
+        ('${ACT_A}', '${GOV_ORG}', '${LEAD_A}', 'invariant', 'note', '{"text":"sintetico A"}'::jsonb, 'user', '${GOV_AGENT_A}'),
+        ('${ACT_B}', '${GOV_ORG}', '${LEAD_B}', 'invariant', 'note', '{"text":"sintetico B"}'::jsonb, 'user', '${GOV_AGENT_B}'),
+        ('${ACT_SYSTEM}', '${GOV_ORG}', '${LEAD_SHARED}', 'invariant', 'system', '{}'::jsonb, 'system', null),
+        ('${NOTE_AUTHOR_DELETE}', '${GOV_ORG}', '${LEAD_SHARED}', 'invariant', 'note', '{"text":"autor apaga"}'::jsonb, 'user', '${GOV_AGENT_A}'),
+        ('${NOTE_OTHER_BLOCKED}', '${GOV_ORG}', '${LEAD_SHARED}', 'invariant', 'note', '{"text":"outro nao apaga"}'::jsonb, 'user', '${GOV_AGENT_A}'),
+        ('${NOTE_MANAGER_DELETE}', '${GOV_ORG}', '${LEAD_SHARED}', 'invariant', 'note', '{"text":"gerente apaga"}'::jsonb, 'user', '${GOV_AGENT_A}')
       on conflict (id) do nothing;
 
     insert into public.crm_lead_links (id, organization_id, lead_id, target_kind, target_id, link_kind)
@@ -65,7 +78,10 @@ describe("eixo 5 / INB-10 — escopo da timeline/vínculos de lead (G6-00)", () 
   // ---- READ: fechamento do vazamento ----
   it("agent A NÃO lê a activity de lead de outro agent (INB-10 = 0 rows)", () => {
     expect(
-      countAs(GOV_AGENT_A, `select count(*) from public.crm_lead_activities where id = '${ACT_B}';`),
+      countAs(
+        GOV_AGENT_A,
+        `select count(*) from public.crm_lead_activities where id = '${ACT_B}';`,
+      ),
     ).toBe(0);
   });
 
@@ -78,7 +94,10 @@ describe("eixo 5 / INB-10 — escopo da timeline/vínculos de lead (G6-00)", () 
   // ---- READ: controle positivo (dono do lead vê a própria timeline) ----
   it("agent A lê a activity do PRÓPRIO lead (controle positivo = 1)", () => {
     expect(
-      countAs(GOV_AGENT_A, `select count(*) from public.crm_lead_activities where id = '${ACT_A}';`),
+      countAs(
+        GOV_AGENT_A,
+        `select count(*) from public.crm_lead_activities where id = '${ACT_A}';`,
+      ),
     ).toBe(1);
   });
 
@@ -107,6 +126,15 @@ describe("eixo 5 / INB-10 — escopo da timeline/vínculos de lead (G6-00)", () 
     ).toBe(2);
   });
 
+  it("viewer lê atividade comum, mas não lê anotação", () => {
+    expect(
+      countAs(
+        GOV_VIEWER,
+        `select count(*) from public.crm_lead_activities where id in ('${ACT_SYSTEM}', '${NOTE_OTHER_BLOCKED}');`,
+      ),
+    ).toBe(1);
+  });
+
   // ---- WRITE: a gravação legítima da timeline NÃO quebrou ----
   it("service role INSERE activity de qualquer lead (worker/IA/timeline automática não quebra)", () => {
     // Espelha o admin client (bypassrls) — o caminho real de todo escritor de timeline.
@@ -125,10 +153,47 @@ describe("eixo 5 / INB-10 — escopo da timeline/vínculos de lead (G6-00)", () 
       set role authenticated;
       select set_config('request.jwt.claims', '{"sub":"${GOV_AGENT_A}"}', false);
       with w as (
-        insert into public.crm_lead_activities (organization_id, lead_id, source_module, type)
-          values ('${GOV_ORG}', '${LEAD_A}', 'invariant', 'note') returning 1
+        insert into public.crm_lead_activities
+          (organization_id, lead_id, source_module, type, payload, actor_kind, performed_by_user_id)
+          values (
+            '${GOV_ORG}', '${LEAD_A}', 'invariant', 'note', '{"text":"nota manual"}'::jsonb,
+            'user', '${GOV_AGENT_A}'
+          ) returning 1
       ) select count(*) from w;
     `);
     expect(out.trim().split("\n").pop()).toBe("1");
+  });
+
+  it("autor APAGA a própria anotação", () => {
+    expect(
+      writeCountAs(
+        GOV_AGENT_A,
+        `delete from public.crm_lead_activities where id = '${NOTE_AUTHOR_DELETE}'`,
+      ),
+    ).toBe(1);
+  });
+
+  it("outro agent NÃO APAGA a anotação mesmo vendo o lead", () => {
+    expect(
+      countAs(
+        GOV_AGENT_B,
+        `select count(*) from public.crm_lead_activities where id = '${NOTE_OTHER_BLOCKED}';`,
+      ),
+    ).toBe(1);
+    expect(
+      writeCountAs(
+        GOV_AGENT_B,
+        `delete from public.crm_lead_activities where id = '${NOTE_OTHER_BLOCKED}'`,
+      ),
+    ).toBe(0);
+  });
+
+  it("manager APAGA a anotação de outro autor", () => {
+    expect(
+      writeCountAs(
+        GOV_MANAGER,
+        `delete from public.crm_lead_activities where id = '${NOTE_MANAGER_DELETE}'`,
+      ),
+    ).toBe(1);
   });
 });

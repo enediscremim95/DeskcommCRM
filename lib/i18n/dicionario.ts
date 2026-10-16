@@ -9706,6 +9706,25 @@ export const DICIONARIO: Traducoes = {
   "que fecharam": { es: "que cerraron" },
   "fecharam venda": { es: "cerraron venta" },
   "por venda": { es: "por venta" },
+  "Anotações": { es: "Notas" },
+  "Nova anotação": { es: "Nueva nota" },
+  "Escreva uma anotação sobre este negócio": { es: "Escribe una nota sobre este negocio" },
+  "Criar anotação": { es: "Crear nota" },
+  "Não foi possível carregar as anotações.": { es: "No se pudieron cargar las notas." },
+  "Nenhuma anotação ainda": { es: "Todavía no hay notas" },
+  "Autor não identificado": { es: "Autor no identificado" },
+  Apagar: { es: "Eliminar" },
+  "Apagar anotação": { es: "Eliminar nota" },
+  "Apagar esta anotação?": { es: "¿Eliminar esta nota?" },
+  "O texto será removido do histórico do negócio e não poderá ser recuperado.": {
+    es: "El texto se eliminará del historial del negocio y no se podrá recuperar.",
+  },
+  "Erro ao localizar o negócio.": { es: "Error al localizar el negocio." },
+  "Erro ao criar anotação.": { es: "Error al crear la nota." },
+  "Erro ao localizar a anotação.": { es: "Error al localizar la nota." },
+  "Anotação não encontrada.": { es: "Nota no encontrada." },
+  "Você não pode apagar esta anotação.": { es: "No puedes eliminar esta nota." },
+  "Erro ao apagar anotação.": { es: "Error al eliminar la nota." },
 };
 
 /**
