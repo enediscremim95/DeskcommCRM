@@ -10,10 +10,16 @@ import {
   proximoCursorHistorico,
 } from "./historico";
 
-const efeitos = vi.hoisted(() => ({ posEntrada: vi.fn(), followup: vi.fn(), notificacao: vi.fn() }));
+const efeitos = vi.hoisted(() => ({
+  posEntrada: vi.fn(),
+  followup: vi.fn(),
+  notificacao: vi.fn(),
+  aviso: vi.fn(),
+}));
 vi.mock("@/lib/channels/pos-entrada", () => ({ aplicarEfeitosPosEntrada: efeitos.posEntrada }));
 vi.mock("@/lib/followup/engine", () => ({ runFollowup: efeitos.followup }));
 vi.mock("@/lib/notifications/email.handler", () => ({ handleEmailNotification: efeitos.notificacao }));
+vi.mock("@/lib/logger", () => ({ logger: { warn: efeitos.aviso } }));
 
 interface EstadoFake {
   ids: Set<string>;
@@ -189,6 +195,102 @@ describe("importação silenciosa do histórico", () => {
     expect(atualizacoes.at(-1)).toMatchObject({
       metadata: { historico_cursor: 22, historico_importado_em: expect.any(String) },
     });
+  });
+
+  it.each([422, 400])("falha HTTP %i de um canal não impede importar o canal seguinte", async (status) => {
+    const sessoes = [
+      {
+        id: "session-falha",
+        organization_id: "org-falha",
+        waha_session_name: "session-falha",
+        metadata: {},
+      },
+      {
+        id: "session-saudavel",
+        organization_id: "org-saudavel",
+        waha_session_name: "session-saudavel",
+        metadata: {},
+      },
+    ];
+    const inseridas: Array<Record<string, unknown>> = [];
+    const atualizacao = {
+      eq: () => atualizacao,
+      then(resolve: (value: unknown) => void) { resolve({ data: null, error: null }); },
+    };
+    const admin = {
+      from(tabela: string) {
+        if (tabela === "channel_sessions") {
+          const consulta = {
+            select: () => consulta,
+            eq: () => consulta,
+            is: () => consulta,
+            not: () => consulta,
+            limit: async () => ({ data: sessoes, error: null }),
+            update: () => atualizacao,
+          };
+          return consulta;
+        }
+        if (tabela === "contacts") {
+          const consulta = {
+            select: () => consulta,
+            eq: () => consulta,
+            in: () => consulta,
+            is: () => consulta,
+            limit: async () => ({
+              data: [{ id: "contact-saudavel", phone_number: "+5511999999999" }],
+              error: null,
+            }),
+          };
+          return consulta;
+        }
+        if (tabela === "conversations") {
+          const leitura = {
+            eq: () => leitura,
+            maybeSingle: async () => ({ data: { id: "conv-saudavel", metadata: {} }, error: null }),
+          };
+          return { select: () => leitura, update: () => atualizacao };
+        }
+        if (tabela === "messages") {
+          return {
+            insert: async (linha: Record<string, unknown>) => {
+              inseridas.push(linha);
+              return { error: null };
+            },
+          };
+        }
+        throw new Error(`tabela inesperada: ${tabela}`);
+      },
+      rpc: async () => ({ error: null }),
+    };
+    const listChats = vi.fn(async (nome: string) => {
+      if (nome === "session-falha") throw new Error(`waha_history_${status}`);
+      return { status: "ok" as const, data: [{ id: "5511999999999@c.us" }] };
+    });
+    const getChatMessages = vi.fn(async () => ({
+      status: "ok" as const,
+      data: [payload("msg-saudavel", Math.floor(Date.now() / 1000))],
+    }));
+
+    const resultado = await executarRodadaHistorico({
+      admin: admin as never,
+      client: { listChats, getChatMessages } as never,
+      habilitado: true,
+    });
+
+    expect(listChats).toHaveBeenCalledTimes(2);
+    expect(getChatMessages).toHaveBeenCalledTimes(1);
+    expect(inseridas).toHaveLength(1);
+    expect(inseridas[0]).toMatchObject({ organization_id: "org-saudavel", external_id: "msg-saudavel" });
+    expect(resultado.mensagensInseridas).toBe(1);
+    expect(resultado.efeitosPorOrganizacao).toEqual({ "org-saudavel": 1 });
+    expect(efeitos.aviso).toHaveBeenCalledWith(
+      "historico.canal: canal indisponivel",
+      expect.objectContaining({
+        organization_id: "org-falha",
+        channel_session_id: "session-falha",
+        codigo: `waha_history_${status}`,
+      }),
+    );
   });
 
   it("contato inexistente não é criado pela importação em massa", async () => {
