@@ -414,15 +414,14 @@ describe("colunas da tabela de campanhas", () => {
     expect(screen.queryByText("Campanha do período inteiro")).not.toBeInTheDocument();
   });
 
-  it("baixa os slides do período e mantém o PDF disponível", async () => {
+  it("abre a impressão dos slides em um único botão de PDF e limpa o iframe", async () => {
+    const slidesHtml = "<!doctype html><html><head></head><body>Slides</body></html>";
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("/api/v1/reports/traffic/slides?")) {
-        return new Response("<!doctype html>", {
+        return new Response(slidesHtml, {
           status: 200,
           headers: {
-            "Content-Disposition":
-              'attachment; filename="relatorio-organizacao-2026-09-01-a-2026-09-30.html"',
             "Content-Type": "text/html; charset=utf-8",
           },
         });
@@ -451,28 +450,29 @@ describe("colunas da tabela de campanhas", () => {
         },
       });
     });
-    Object.defineProperty(URL, "createObjectURL", {
-      configurable: true,
-      value: vi.fn(() => "blob:relatorio"),
-    });
-    Object.defineProperty(URL, "revokeObjectURL", {
-      configurable: true,
-      value: vi.fn(),
-    });
     const user = userEvent.setup();
     render(<TrafficDashboard />);
-    const downloadButton = await screen.findByRole("button", { name: "Baixar relatório" });
-    expect(screen.queryByRole("button", { name: "Baixar PDF" })).not.toBeInTheDocument();
+    const downloadButton = await screen.findByRole("button", { name: "Baixar PDF" });
+    expect(screen.getAllByRole("button", { name: "Baixar PDF" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Baixar relatório" })).not.toBeInTheDocument();
     await waitFor(() => expect(downloadButton).toBeEnabled());
     const appendChild = document.body.appendChild.bind(document.body);
-    let downloadLink: HTMLAnchorElement | null = null;
-    const click = vi.fn();
+    let printFrame: HTMLIFrameElement | null = null;
+    let printedTitle = "";
+    const focus = vi.fn();
+    const print = vi.fn(() => {
+      printedTitle = printFrame?.contentDocument?.title ?? "";
+      printFrame?.contentWindow?.dispatchEvent(new Event("afterprint"));
+    });
     vi.spyOn(document.body, "appendChild").mockImplementation((node) => {
-      if (node instanceof HTMLAnchorElement) {
-        downloadLink = node;
-        vi.spyOn(node, "click").mockImplementation(click);
+      const appended = appendChild(node);
+      if (node instanceof HTMLIFrameElement) {
+        printFrame = node;
+        Object.defineProperty(node.contentWindow, "focus", { configurable: true, value: focus });
+        Object.defineProperty(node.contentWindow, "print", { configurable: true, value: print });
+        globalThis.window.setTimeout(() => node.dispatchEvent(new Event("load")), 0);
       }
-      return appendChild(node);
+      return appended;
     });
 
     await user.click(downloadButton);
@@ -489,12 +489,47 @@ describe("colunas da tabela de campanhas", () => {
     expect(slidesUrl).toContain("from=");
     expect(slidesUrl).toContain("to=");
     expect(slidesUrl).toContain("language=pt-BR");
-    await waitFor(() => expect(click).toHaveBeenCalledOnce());
-    expect(downloadLink).not.toBeNull();
-    expect(downloadLink).toHaveAttribute(
-      "download",
-      "relatorio-organizacao-2026-09-01-a-2026-09-30.html",
+    await waitFor(() => expect(print).toHaveBeenCalledOnce());
+    expect(focus).toHaveBeenCalledOnce();
+    expect(printFrame).not.toBeNull();
+    const iframe = printFrame as unknown as HTMLIFrameElement;
+    expect(iframe.srcdoc).toBe(slidesHtml);
+    expect(iframe.style.position).toBe("fixed");
+    expect(iframe.style.left).toBe("-10000px");
+    expect(iframe.style.width).toBe("1280px");
+    expect(iframe.style.height).toBe("720px");
+    const params = new URL(slidesUrl, "http://localhost").searchParams;
+    expect(printedTitle).toBe(
+      `relatorio-resumido-${params.get("from")}-a-${params.get("to")}`,
     );
+    expect(document.body.contains(iframe)).toBe(false);
+  });
+
+  it("mostra o erro dos slides sem criar iframe quando a busca falha", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/api/v1/reports/traffic/slides?")) {
+        return Response.json(
+          { error: { message: "Falha ao preparar PDF" } },
+          { status: 500 },
+        );
+      }
+      return Response.json(baseResponse([]));
+    });
+    const user = userEvent.setup();
+    render(<TrafficDashboard />);
+    const downloadButton = await screen.findByRole("button", { name: "Baixar PDF" });
+    await waitFor(() => expect(downloadButton).toBeEnabled());
+
+    await user.click(downloadButton);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/reports/traffic/slides?"),
+        expect.objectContaining({ headers: { accept: "text/html" } }),
+      ),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("Falha ao preparar PDF");
+    expect(document.querySelector("iframe")).not.toBeInTheDocument();
   });
 
   it("filtra por status, persiste a escolha e ordena campanhas sem separar seus detalhes", async () => {

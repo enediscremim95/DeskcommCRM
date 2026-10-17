@@ -2034,7 +2034,7 @@ A spec `organizacoes-criacao-convite-e-cache.spec.ts` cobre criação padrão co
 | W11 | Cliente consulta as predefinições liberadas | Viewer troca entre predefinições da própria organização e plataforma sem receber controles ou permissão de escrita |
 | W12 | Organização atualiza sem criar preset | `campaign_metric_columns` continua sendo o fallback, filtrado por plataforma, até o dono marcar uma nova predefinição como padrão |
 | W13 | Organização já tinha predefinições | A atualização conserva a linha original no Meta e cria uma cópia idempotente no Google, removendo apenas métricas sem dado nessa plataforma |
-| W14 | Cliente baixa o relatório do período | O botão principal entrega HTML autocontido com a marca e os dados do tenant, preserva moedas separadas, omite seções sem dados e funciona em 375, 768 e 1280 px; o PDF continua disponível como opção secundária |
+| W14 | Cliente baixa o relatório do período | O único botão `Baixar PDF` carrega o HTML autocontido dos slides fora da tela e abre a impressão do navegador, com um slide por página, título de arquivo do período e limpeza do iframe após a impressão |
 
 Prova atual: normalizador e agregador têm testes unitários focados; migration segue a
 tripla migration + baseline + MANIFEST. A execução Playwright com Windsor real não é
