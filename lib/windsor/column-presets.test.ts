@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { serializeTrafficColumnPresets } from "./column-presets";
+import {
+  columnsCanBePersisted,
+  serializeTrafficColumnPresets,
+  trafficColumnPresetColumnsSchema,
+} from "./column-presets";
 import { campaignMetricColumnsForPlatform, defaultCampaignColumns } from "./types";
 
 describe("predefinições de colunas do Relatório", () => {
@@ -62,10 +66,26 @@ describe("predefinições de colunas do Relatório", () => {
 
   it("oferece ao Google só métricas calculadas e mantém resultado no padrão de mensagens", () => {
     expect(campaignMetricColumnsForPlatform("google_ads")).not.toEqual(
-      expect.arrayContaining(["reach", "messaging_conversations"]),
+      expect.arrayContaining(["reach", "hook_rate", "hold_rate", "messaging_conversations"]),
     );
     expect(defaultCampaignColumns("messages", "google_ads")).toEqual(
       expect.arrayContaining(["leads", "cost_per_lead"]),
+    );
+  });
+
+  it("oferece Hook rate e Hold rate só ao Meta e os coloca após CTR no padrão", () => {
+    const available = campaignMetricColumnsForPlatform("meta_ads");
+    const defaults = defaultCampaignColumns("leads", "meta_ads");
+
+    expect(available).toEqual(expect.arrayContaining(["hook_rate", "hold_rate"]));
+    expect(defaults.slice(defaults.indexOf("ctr"), defaults.indexOf("ctr") + 3)).toEqual([
+      "ctr",
+      "hook_rate",
+      "hold_rate",
+    ]);
+    expect(columnsCanBePersisted(["spend", "hook_rate"])).toBe(false);
+    expect(trafficColumnPresetColumnsSchema.safeParse(["spend", "hook_rate"]).success).toBe(
+      false,
     );
   });
 });

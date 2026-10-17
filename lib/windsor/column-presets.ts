@@ -14,8 +14,13 @@ export const trafficColumnPresetPlatformSchema = z.enum(AD_PLATFORMS);
 export const trafficColumnPresetColumnsSchema = z
   .array(z.enum(CAMPAIGN_METRIC_COLUMNS))
   .min(1)
-  .max(CAMPAIGN_METRIC_COLUMNS.length)
+  .max(CAMPAIGN_METRIC_COLUMNS.length - 2)
+  .refine(columnsCanBePersisted, "Métricas disponíveis apenas na visualização pessoal.")
   .refine((columns) => new Set(columns).size === columns.length, "Colunas duplicadas.");
+
+export function columnsCanBePersisted(columns: readonly CampaignMetricColumn[]): boolean {
+  return columns.every((column) => column !== "hook_rate" && column !== "hold_rate");
+}
 
 export interface TrafficColumnPreset {
   id: string;
