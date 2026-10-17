@@ -26,7 +26,8 @@ export const BUDGET_FIELDS = [
 ] as const;
 
 export const CAMPAIGN_METRIC_COLUMNS = [
-  "budget", "spend", "reach", "impressions", "cpm", "ctr", "link_clicks", "cpc",
+  "budget", "spend", "reach", "impressions", "cpm", "ctr", "hook_rate", "hold_rate",
+  "link_clicks", "cpc",
   "landing_page_views", "cost_per_landing_page_view", "leads", "cost_per_lead",
   "add_to_cart", "cost_per_add_to_cart", "initiate_checkout", "cost_per_initiate_checkout",
   "purchases", "cost_per_purchase", "revenue", "roas", "messaging_conversations",
@@ -38,19 +39,25 @@ const CAMPAIGN_METRIC_COLUMNS_BY_PLATFORM: Record<AdPlatform, readonly CampaignM
   meta_ads: CAMPAIGN_METRIC_COLUMNS,
   google_ads: CAMPAIGN_METRIC_COLUMNS.filter(
     (column) => column !== "reach"
+      && column !== "hook_rate"
+      && column !== "hold_rate"
       && column !== "messaging_conversations"
       && column !== "cost_per_messaging_conversation",
   ),
 };
 
 const DEFAULT_CAMPAIGN_COLUMNS: Record<DashboardModel, readonly CampaignMetricColumn[]> = {
-  leads: ["spend", "impressions", "ctr", "link_clicks", "cpc", "leads", "cost_per_lead"],
+  leads: [
+    "spend", "impressions", "ctr", "hook_rate", "hold_rate", "link_clicks", "cpc", "leads",
+    "cost_per_lead",
+  ],
   messages: [
-    "spend", "impressions", "ctr", "link_clicks",
+    "spend", "impressions", "ctr", "hook_rate", "hold_rate", "link_clicks",
     "messaging_conversations", "cost_per_messaging_conversation",
   ],
   ecommerce: [
-    "spend", "impressions", "ctr", "link_clicks", "cpc", "landing_page_views",
+    "spend", "impressions", "ctr", "hook_rate", "hold_rate", "link_clicks", "cpc",
+    "landing_page_views",
     "add_to_cart", "cost_per_add_to_cart", "initiate_checkout",
     "cost_per_initiate_checkout", "purchases", "cost_per_purchase", "revenue", "roas",
   ],

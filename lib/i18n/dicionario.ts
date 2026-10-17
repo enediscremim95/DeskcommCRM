@@ -9265,6 +9265,9 @@ export const DICIONARIO: Traducoes = {
   "Voltar ao padrão": { es: "Volver al valor predeterminado" },
   "Definir como padrão da organização": { es: "Definir como valor predeterminado de la organización" },
   "Esta é a sua visualização pessoal.": { es: "Esta es tu visualización personal." },
+  "Hook rate e Hold rate ficam nesta visualização pessoal.": {
+    es: "Hook rate y Hold rate quedan en esta vista personal.",
+  },
   "Padrão da organização restaurado.": { es: "Valor predeterminado de la organización restaurado." },
   "Padrão restaurado para esta organização.": { es: "Predeterminado restaurado para esta organización." },
   "Custo por conversa": { es: "Costo por conversación" },

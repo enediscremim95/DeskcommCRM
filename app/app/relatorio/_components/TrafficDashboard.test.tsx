@@ -1638,7 +1638,8 @@ describe("colunas da tabela de campanhas", () => {
     );
     expect(screen.getByText("VD")).toBeInTheDocument();
     expect(screen.getAllByText("sem dado").length).toBeGreaterThan(0);
-    expect(document.body.textContent).not.toContain("—");
+    const creativeSection = screen.getByText("Anúncios Meta").closest("section")!;
+    expect(within(creativeSection).getAllByText("—")).toHaveLength(4);
   });
 
   it("segue a predefinição de colunas ao montar a tabela", async () => {
@@ -2030,6 +2031,70 @@ describe("colunas da tabela de campanhas", () => {
     expect(within(table).getByRole("columnheader", { name: /Investimento/ })).not.toHaveAttribute(
       "data-priority",
     );
+  });
+
+  it("mostra Hook rate e Hold rate por vídeo e travessão para anúncio de imagem", async () => {
+    const response = creativeResponse();
+    response.data.default_columns = [
+      "spend",
+      "impressions",
+      "ctr",
+      "hook_rate",
+      "hold_rate",
+    ];
+    const campaign = response.data.currencies[0]!.campaigns[0] as {
+      adsets: Array<{ ads: Array<Record<string, unknown>> }>;
+    };
+    const ads = campaign.adsets[0]!.ads;
+    Object.assign(ads[0]!, { impressions: 1_000, video_views: 550, video_p75: 80 });
+    Object.assign(ads[1]!, { impressions: 1_000, video_views: 0, video_p75: 0 });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(response));
+    const user = userEvent.setup();
+
+    render(<TrafficDashboard />);
+
+    const creativeSection = (await screen.findByText("Anúncios Meta")).closest(
+      "section",
+    ) as HTMLElement;
+    const creativeTable = creativeSection.querySelector("table") as HTMLTableElement;
+    expect(headerNames(creativeTable)).toEqual(
+      expect.arrayContaining(["CTR", "Hook rate", "Hold rate"]),
+    );
+    const creativeHook = columnIndex(creativeTable, "Hook rate");
+    const creativeHold = columnIndex(creativeTable, "Hold rate");
+    const videoCreative = within(creativeTable).getByText("Criativo campeão").closest("tr")!;
+    const imageCreative = within(creativeTable).getByText("Criativo secundário").closest("tr")!;
+    expect(videoCreative.cells[creativeHook]?.textContent).toBe("55,0%");
+    expect(videoCreative.cells[creativeHold]?.textContent).toBe("8,0%");
+    expect(imageCreative.cells[creativeHook]?.textContent).toBe("—");
+    expect(imageCreative.cells[creativeHold]?.textContent).toBe("—");
+
+    const campaignTable = screen
+      .getAllByText("Campanha de criativos")
+      .map((element) => element.closest("table"))
+      .find((table): table is HTMLTableElement => table?.tFoot != null)!;
+    const hook = columnIndex(campaignTable, "Hook rate");
+    const hold = columnIndex(campaignTable, "Hold rate");
+    const campaignRow = within(campaignTable)
+      .getByRole("button", { name: /Campanha de criativos/, expanded: false })
+      .closest("tr")!;
+    expect(campaignRow.cells[hook]?.textContent).toBe("55,0%");
+    expect(campaignRow.cells[hold]?.textContent).toBe("8,0%");
+    expect(campaignTable.tFoot?.rows[0]?.cells[hook]?.textContent).toBe("55,0%");
+    expect(campaignTable.tFoot?.rows[0]?.cells[hold]?.textContent).toBe("8,0%");
+
+    await user.click(
+      within(campaignTable).getByRole("button", {
+        name: /Campanha de criativos/,
+        expanded: false,
+      }),
+    );
+    await user.click(
+      within(campaignTable).getByRole("button", { name: /Conjunto principal/, expanded: false }),
+    );
+    const imageDetail = within(campaignTable).getByText("Criativo secundário").closest("tr")!;
+    expect(imageDetail.cells[hook]?.textContent).toBe("—");
+    expect(imageDetail.cells[hold]?.textContent).toBe("—");
   });
 
   it("abre as métricas do CRM sob demanda, persiste a escolha e calcula o gargalo só com etapas visíveis", async () => {

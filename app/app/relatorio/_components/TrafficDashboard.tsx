@@ -23,6 +23,7 @@ import {
   type AdPlatform,
   type CampaignMetricColumn,
 } from "@/lib/windsor/types";
+import { calculateVideoRates, type VideoRateRow } from "@/lib/windsor/video-rates";
 import type { TrafficColumnPreset } from "@/lib/windsor/column-presets";
 import {
   paginasDestinoLimpas,
@@ -234,6 +235,13 @@ function percent(value: number | null, blank = ""): string {
   return value == null ? blank : `${number(value)}%`;
 }
 
+function videoPercent(value: number, idioma: string): string {
+  return `${new Intl.NumberFormat(idioma === "es" ? "es-ES" : "pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value)}%`;
+}
+
 /**
  * Descrição leiga embaixo do nome da campanha, derivada do próprio nome
  * (regra `_desc_map` do painel antigo da Veritas). Nome que não bate em
@@ -430,6 +438,8 @@ const MONEY_COLUMNS = new Set<CampaignMetricColumn>([
 const META_ONLY_COLUMNS = new Set<CampaignMetricColumn>([
   "budget",
   "reach",
+  "hook_rate",
+  "hold_rate",
   "landing_page_views",
   "cost_per_landing_page_view",
   "add_to_cart",
@@ -454,6 +464,8 @@ function columnLabel(column: CampaignMetricColumn, idioma: string): string {
     impressions: ["Impressões", "Impresiones"],
     cpm: ["CPM", "CPM"],
     ctr: ["CTR", "CTR"],
+    hook_rate: ["Hook rate", "Hook rate"],
+    hold_rate: ["Hold rate", "Hold rate"],
     link_clicks: ["Cliques no link", "Clics en el enlace"],
     cpc: ["CPC", "CPC"],
     landing_page_views: ["Visualizações da página", "Visitas a la página"],
@@ -479,9 +491,15 @@ function metricValue(
   column: CampaignMetricColumn,
   currency: string,
   platform: "meta_ads" | "google_ads",
+  idioma: string,
+  videoRows: readonly VideoRateRow[] = [metrics],
 ): string {
-  // Célula sem dado fica vazia; travessão nunca (regra do dono).
   if (platform === "google_ads" && META_ONLY_COLUMNS.has(column)) return "";
+  if (column === "hook_rate" || column === "hold_rate") {
+    const value = calculateVideoRates(videoRows)[column];
+    return value == null ? "—" : videoPercent(value, idioma);
+  }
+  // As demais células sem dado continuam vazias, conforme a regra da tabela.
   if (column === "budget") {
     if (metrics.budget == null) return "";
     return `${money(metrics.budget, currency)}${metrics.budget_type === "daily" ? "/dia" : " total"}`;
@@ -651,8 +669,8 @@ function compareCampaigns(
     const result = first.name.localeCompare(second.name, idioma, { sensitivity: "base" });
     return direction === "ascending" ? result : -result;
   }
-  const firstValue = first[key];
-  const secondValue = second[key];
+  const firstValue = campaignMetricNumber(first, key);
+  const secondValue = campaignMetricNumber(second, key);
   const firstNumber = typeof firstValue === "number" ? firstValue : null;
   const secondNumber = typeof secondValue === "number" ? secondValue : null;
   if (firstNumber == null && secondNumber == null) return first.name.localeCompare(second.name);
@@ -663,6 +681,21 @@ function compareCampaigns(
     return first.name.localeCompare(second.name, idioma, { sensitivity: "base" });
   }
   return direction === "ascending" ? result : -result;
+}
+
+function campaignAds(campaign: Campaign): Campaign["adsets"][number]["ads"] {
+  return campaign.adsets.flatMap((adset) => adset.ads);
+}
+
+function campaignMetricNumber(
+  campaign: Campaign,
+  key: Exclude<CampaignSortKey, "name">,
+): number | null {
+  if (key === "hook_rate" || key === "hold_rate") {
+    return calculateVideoRates(campaignAds(campaign))[key];
+  }
+  const value = campaign[key];
+  return typeof value === "number" ? value : null;
 }
 
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -927,6 +960,10 @@ function CampaignTable({
     () => summarizeCampaigns(visibleCampaigns.map(({ campaign }) => campaign), platform),
     [platform, visibleCampaigns],
   );
+  const visibleVideoRows = useMemo(
+    () => visibleCampaigns.flatMap(({ campaign }) => campaignAds(campaign)),
+    [visibleCampaigns],
+  );
   const selectedCampaigns = useMemo(
     () =>
       campaignsWithKeys.filter(({ key }) => selectedKeys.has(key)).map(({ campaign }) => campaign),
@@ -1062,6 +1099,7 @@ function CampaignTable({
     column: CampaignMetricColumn,
     className = "",
     trailing?: ReactNode,
+    videoRows: readonly VideoRateRow[] = [metrics],
   ) => {
     const priority = column === priorityMetric;
     return (
@@ -1075,7 +1113,7 @@ function CampaignTable({
           className={trailing ? "flex flex-col items-end gap-1" : "flex items-center justify-end"}
         >
           <CostSignal value={costColumnValue(metrics, column)} threshold={threshold}>
-            {metricValue(metrics, column, currency, platform)}
+            {metricValue(metrics, column, currency, platform, idioma, videoRows)}
           </CostSignal>
           {trailing}
         </span>
@@ -1450,7 +1488,13 @@ function CampaignTable({
                             </Badge>
                           </td>
                         ) : null;
-                      return metricCell(campaign, column, "text-muted-foreground");
+                      return metricCell(
+                        campaign,
+                        column,
+                        "text-muted-foreground",
+                        undefined,
+                        campaignAds(campaign),
+                      );
                     })}
                   </tr>
                   {isOpen &&
@@ -1513,7 +1557,13 @@ function CampaignTable({
                                     style={columnStyle("status")}
                                   />
                                 ) : null;
-                              return metricCell(adset, column, "text-muted-foreground");
+                              return metricCell(
+                                adset,
+                                column,
+                                "text-muted-foreground",
+                                undefined,
+                                adset.ads,
+                              );
                             })}
                           </tr>
                           {adsetOpen &&
@@ -1571,7 +1621,13 @@ function CampaignTable({
                                           style={columnStyle("status")}
                                         />
                                       ) : null;
-                                    return metricCell(ad, column, "text-muted-foreground");
+                                    return metricCell(
+                                      ad,
+                                      column,
+                                      "text-muted-foreground",
+                                      undefined,
+                                      [ad],
+                                    );
                                   })}
                                 </tr>
                               );
@@ -1600,7 +1656,7 @@ function CampaignTable({
                   return showStatus ? (
                     <td key={column} className="px-4 py-3" style={columnStyle("status")} />
                   ) : null;
-                return metricCell(visibleTotal, column);
+                return metricCell(visibleTotal, column, "", undefined, visibleVideoRows);
               })}
             </tr>
           </tfoot>

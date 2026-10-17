@@ -12,7 +12,10 @@ import {
   type CampaignMetricColumn,
   type DashboardModel,
 } from "@/lib/windsor/types";
-import type { TrafficColumnPreset } from "@/lib/windsor/column-presets";
+import {
+  columnsCanBePersisted,
+  type TrafficColumnPreset,
+} from "@/lib/windsor/column-presets";
 
 interface ColumnPresetMenuProps {
   organizationKey: string;
@@ -143,6 +146,7 @@ export function ColumnPresetMenu({
   ]);
 
   const activePreset = presets.find((preset) => preset.id === activePresetId) ?? null;
+  const columnsAreLocalOnly = !columnsCanBePersisted(columns);
 
   function chooseColumns(next: CampaignMetricColumn[], presetId = activePresetId) {
     setColumns(next);
@@ -359,6 +363,12 @@ export function ColumnPresetMenu({
           </p>
         )}
 
+        {columnsAreLocalOnly && (
+          <p className="mt-3 rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+            {t("Hook rate e Hold rate ficam nesta visualização pessoal.")}
+          </p>
+        )}
+
         {activePreset && (
           <div className="mt-3 flex items-center gap-2 rounded-lg bg-muted/45 px-3 py-2">
             {renaming ? (
@@ -372,7 +382,7 @@ export function ColumnPresetMenu({
                 <button
                   type="button"
                   className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground"
-                  disabled={busy || !nameDraft.trim()}
+                  disabled={busy || columnsAreLocalOnly || !nameDraft.trim()}
                   onClick={renamePreset}
                 >
                   {t("Salvar nome")}
@@ -524,7 +534,7 @@ export function ColumnPresetMenu({
               <button
                 type="button"
                 className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-                disabled={busy || !activePreset}
+                disabled={busy || columnsAreLocalOnly || !activePreset}
                 onClick={saveColumns}
               >
                 {busy ? t("Salvando…") : t("Salvar")}
@@ -532,7 +542,7 @@ export function ColumnPresetMenu({
               <button
                 type="button"
                 className="rounded-md border px-3 py-2 text-sm font-medium"
-                disabled={busy}
+                disabled={busy || columnsAreLocalOnly}
                 onClick={() => {
                   setNameDraft("");
                   setCreating(true);

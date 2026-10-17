@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { buildFunnelReadings, type TrafficRichCrmInsights } from "@/lib/windsor/traffic-insights";
 import type { PriorityMetricColumn } from "@/lib/windsor/priority-metrics";
+import { calculateVideoRates } from "@/lib/windsor/video-rates";
 import { CostSignal, type CostThreshold } from "./CostThresholds";
 import { useColunasAjustaveis, type ConfiguracaoColunaAjustavel } from "./colunas-ajustaveis";
 import { BlocoRecolhivel, ControleEdicaoRelatorio } from "./RelatorioRecolhivel";
@@ -29,6 +30,8 @@ type CreativeResizableColumnKey =
   | "impressions"
   | "clicks"
   | "ctr"
+  | "hook_rate"
+  | "hold_rate"
   | "conversions"
   | "cost_per_conversion"
   | "conversion_rate"
@@ -42,6 +45,8 @@ const CREATIVE_RESIZABLE_COLUMNS: Record<CreativeResizableColumnKey, Configuraca
     impressions: { larguraMinima: 104, larguraPadrao: 144 },
     clicks: { larguraMinima: 104, larguraPadrao: 144 },
     ctr: { larguraMinima: 104, larguraPadrao: 144 },
+    hook_rate: { larguraMinima: 104, larguraPadrao: 144 },
+    hold_rate: { larguraMinima: 104, larguraPadrao: 144 },
     conversions: { larguraMinima: 104, larguraPadrao: 144 },
     cost_per_conversion: { larguraMinima: 104, larguraPadrao: 144 },
     conversion_rate: { larguraMinima: 104, larguraPadrao: 144 },
@@ -86,6 +91,8 @@ interface Metrics {
   cost_per_lead: number | null;
   ctr: number | null;
   roas: number | null;
+  video_views: number;
+  video_p75: number;
 }
 
 interface Ad extends Metrics {
@@ -134,6 +141,13 @@ function number(value: number, idioma: string) {
 
 function percent(value: number | null, idioma: string) {
   return value == null ? "" : `${number(value, idioma)}%`;
+}
+
+function videoPercent(value: number, idioma: string) {
+  return `${new Intl.NumberFormat(idioma === "es" ? "es-ES" : "pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value)}%`;
 }
 
 function weekKey(date: string) {
@@ -476,6 +490,8 @@ export function CreativePerformance({
         "impressions",
         "clicks",
         "ctr",
+        "hook_rate",
+        "hold_rate",
         "conversions",
         "cost_per_conversion",
         "conversion_rate",
@@ -654,15 +670,19 @@ export function CreativePerformance({
                           ? t("Cliques")
                           : column === "ctr"
                             ? "CTR"
-                            : column === "conversions"
-                              ? conversionLabel
-                              : column === "cost_per_conversion"
-                                ? compactCostLabel
-                                : column === "conversion_rate"
-                                  ? rateLabel
-                                  : column === "revenue"
-                                    ? t("Receita")
-                                    : "ROAS",
+                            : column === "hook_rate"
+                              ? "Hook rate"
+                              : column === "hold_rate"
+                                ? "Hold rate"
+                                : column === "conversions"
+                                  ? conversionLabel
+                                  : column === "cost_per_conversion"
+                                    ? compactCostLabel
+                                    : column === "conversion_rate"
+                                      ? rateLabel
+                                      : column === "revenue"
+                                        ? t("Receita")
+                                        : "ROAS",
                   column === "creative" ? "left" : "right",
                 ),
               )}
@@ -734,6 +754,10 @@ export function CreativePerformance({
                         </CostSignal>
                       </td>
                     );
+                  if (column === "hook_rate" || column === "hold_rate") {
+                    const value = calculateVideoRates([row])[column];
+                    return <td {...common}>{value == null ? "—" : videoPercent(value, idioma)}</td>;
+                  }
                   const value =
                     column === "spend"
                       ? money(row.spend, group.currency, idioma)
