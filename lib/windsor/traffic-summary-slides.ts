@@ -1,4 +1,5 @@
 import type { MarcaDeSaida } from "@/lib/branding/saida";
+import { traduzir } from "@/lib/i18n/dicionario";
 import {
   fetchPdfThumbnailDataUri,
   preloadPdfThumbnails,
@@ -23,6 +24,7 @@ type SlideStage = {
   name: string;
   volume: number;
   from_previous: number | null;
+  cost_per_stage?: number | null;
 };
 
 type SlideKeyword = {
@@ -95,6 +97,7 @@ type SlideProfile = {
 
 type SlideFunnel = {
   stages: SlideStage[];
+  objective: boolean;
 };
 
 type SlideData = {
@@ -112,7 +115,10 @@ type SlideData = {
 };
 
 type SourceWithSlideDetails = TrafficSummarySource & {
-  crm: TrafficSummarySource["crm"] & { stage_conversion?: SourceStage[] };
+  crm: TrafficSummarySource["crm"] & {
+    stage_conversion?: SourceStage[];
+    report_funnel?: SourceStage[];
+  };
 };
 
 const DASH = "—";
@@ -290,6 +296,7 @@ function labels(language: TrafficSummaryLanguage) {
     volume: localized("VOLUME", "VOLUMEN"),
     conversion: localized("CONVERSÃO", "CONVERSIÓN"),
     stageCost: localized("CUSTO POR ETAPA", "COSTO POR ETAPA"),
+    noData: traduzir("sem dado", language),
     monthlyPerformance: localized("RELATÓRIO MENSAL DE PERFORMANCE", "INFORME MENSUAL DE RENDIMIENTO"),
   };
 }
@@ -386,10 +393,12 @@ async function slideData(args: {
     } satisfies SlideMetricGroup;
   });
 
-  const rawStages = (source.crm.stage_conversion ?? [])
+  const configuredStages = source.crm.report_funnel;
+  const objectiveFunnel = (configuredStages?.length ?? 0) > 0;
+  const rawStages = (configuredStages?.length ? configuredStages : source.crm.stage_conversion ?? [])
     .filter((stage) => Number.isFinite(stage.volume) && stage.volume >= 0)
     .map((stage) => ({
-      name: escapeHtml(stage.name),
+      name: escapeHtml(objectiveFunnel ? traduzir(stage.name, language) : stage.name),
       volume: stage.volume,
       is_won: stage.is_won,
     }));
@@ -401,15 +410,23 @@ async function slideData(args: {
     });
   }
   const funnelStages = rawStages
-    .filter((stage, index) => stage.volume > 0 || index === fallbackWonIndex)
+    .filter(
+      (stage, index) => objectiveFunnel || stage.volume > 0 || index === fallbackWonIndex,
+    )
     .map((stage, index, stages) => {
       const previous = index > 0 ? stages[index - 1] : null;
-      return {
+      const converted: SlideStage = {
         name: stage.name,
         volume: stage.volume,
         from_previous:
           previous && previous.volume > 0 ? (stage.volume / previous.volume) * 100 : null,
       };
+      if (objectiveFunnel) {
+        const investment = groups[0]?.investment;
+        converted.cost_per_stage =
+          investment != null && stage.volume > 0 ? investment / stage.volume : null;
+      }
+      return converted;
     });
   const hasFunnel = funnelStages.length > 0;
   const profile =
@@ -464,6 +481,7 @@ async function slideData(args: {
   if (hasFunnel) {
     data.funnel = {
       stages: funnelStages,
+      objective: objectiveFunnel,
     };
   }
   return data;
@@ -712,8 +730,22 @@ function slidesRuntime(
       const top = D.funnel!.stages[0]?.volume ?? 0;
       const rows = stages.map((stage) => {
         const group = D.groups[0];
-        const cost = group?.investment != null && stage.volume > 0 ? group.investment / stage.volume : null;
-        return `<div class="fun-row"><span class="lb">${stage.name}</span><span class="nv">${fInt(stage.volume)}</span><div class="tr">${stage.volume > 0 && top > 0 ? `<div class="fl" style="width:${((stage.volume / top) * 100).toFixed(1)}%"></div>` : ""}</div><span class="rt">${stage.from_previous != null ? fPct(stage.from_previous, 1) : DASH}</span><span class="cost">${group ? fMoney(cost, group.currency) : DASH}</span></div>`;
+        const cost = stage.cost_per_stage !== undefined
+          ? stage.cost_per_stage
+          : group?.investment != null && stage.volume > 0
+            ? group.investment / stage.volume
+            : null;
+        const conversion = stage.from_previous != null
+          ? fPct(stage.from_previous, 1)
+          : D.funnel!.objective
+            ? "-"
+            : DASH;
+        const costLabel = group
+          ? D.funnel!.objective && stage.volume === 0
+            ? D.labels.noData
+            : fMoney(cost, group.currency)
+          : DASH;
+        return `<div class="fun-row"><span class="lb">${stage.name}</span><span class="nv">${fInt(stage.volume)}</span><div class="tr">${stage.volume > 0 && top > 0 ? `<div class="fl" style="width:${((stage.volume / top) * 100).toFixed(1)}%"></div>` : ""}</div><span class="rt">${conversion}</span><span class="cost">${costLabel}</span></div>`;
       }).join("");
       const suffix = chunks.length > 1 ? ` · ${chunkIndex + 1}/${chunks.length}` : "";
       S.push(content(`${D.labels.leadToClose}${suffix}`, `<div class="card fun"><div class="fun-head"><span>${D.labels.stage}</span><span>${D.labels.volume}</span><span></span><span>${D.labels.conversion}</span><span>${D.labels.stageCost}</span></div>${rows}</div>`));

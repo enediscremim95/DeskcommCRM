@@ -109,13 +109,25 @@ function crmWithStages(stageConversion: StageInput[]): TrafficSummarySource["crm
 }
 
 function serializedFunnel(html: string): {
-  stages: Array<{ name: string; volume: number; from_previous: number | null }>;
+  objective: boolean;
+  stages: Array<{
+    name: string;
+    volume: number;
+    from_previous: number | null;
+    cost_per_stage?: number | null;
+  }>;
 } | undefined {
   const serialized = html.match(/const D = (.+);\nconst ICON =/);
   expect(serialized?.[1]).toBeDefined();
   return (JSON.parse(serialized![1]!) as {
     funnel?: {
-      stages: Array<{ name: string; volume: number; from_previous: number | null }>;
+      objective: boolean;
+      stages: Array<{
+        name: string;
+        volume: number;
+        from_previous: number | null;
+        cost_per_stage?: number | null;
+      }>;
     };
   }).funnel;
 }
@@ -290,6 +302,96 @@ describe("renderTrafficSummarySlides", () => {
       { name: "Novo", volume: 10, from_previous: null },
       { name: "Venda", volume: 2, from_previous: 20 },
     ]);
+  });
+
+  it("usa os seis marcos objetivos, preserva o marco zerado e calcula custo por marco", async () => {
+    const baseCurrency = source().currencies[0]!;
+    const html = await renderTrafficSummarySlides({
+      source: source({
+        currencies: [
+          {
+            ...baseCurrency,
+            summary: {
+              ...baseCurrency.summary,
+              spend: 4_323.84,
+              leads: 56,
+            },
+          },
+        ],
+        crm: {
+          ...crmWithStages([
+            { name: "Lead Novo", volume: 56, from_previous: null, from_top: 100, is_won: false },
+            { name: "Em Tentativa", volume: 40, from_previous: 71.4, from_top: 71.4, is_won: false },
+            { name: "Reagendar/Noshow", volume: 3, from_previous: 7.5, from_top: 5.4, is_won: false },
+          ]),
+          report_funnel: [
+            { name: "Leads", volume: 56, is_won: false },
+            { name: "Leads contactados", volume: 23, is_won: false },
+            { name: "Leads qualificados", volume: 2, is_won: false },
+            { name: "Reuniões realizadas", volume: 2, is_won: false },
+            { name: "COF", volume: 1, is_won: false },
+            { name: "Vendas fechadas", volume: 0, is_won: true },
+          ],
+        } as unknown as TrafficSummarySource["crm"],
+      }),
+      brand,
+      language: "pt-BR",
+      organizationSlug: "bendito-ponto",
+    });
+
+    const funnel = serializedFunnel(html);
+    expect(funnel?.objective).toBe(true);
+    expect(funnel?.stages.map((stage) => stage.name)).toEqual([
+      "Leads",
+      "Leads contactados",
+      "Leads qualificados",
+      "Reuniões realizadas",
+      "COF",
+      "Vendas fechadas",
+    ]);
+    expect(funnel?.stages.map((stage) => stage.volume)).toEqual([56, 23, 2, 2, 1, 0]);
+    expect(funnel?.stages[1]?.from_previous).toBeCloseTo(41.0714, 4);
+    expect(funnel?.stages[2]?.from_previous).toBeCloseTo(8.6957, 4);
+    expect(funnel?.stages[3]?.from_previous).toBe(100);
+    expect(funnel?.stages[4]?.from_previous).toBe(50);
+    expect(funnel?.stages[5]?.from_previous).toBe(0);
+    expect(funnel?.stages[0]?.cost_per_stage).toBeCloseTo(77.2114, 4);
+    expect(funnel?.stages[1]?.cost_per_stage).toBeCloseTo(187.993, 3);
+    expect(funnel?.stages[5]?.cost_per_stage).toBeNull();
+    expect(funnel?.stages.map((stage) => stage.name)).not.toContain("Em Tentativa");
+    expect(funnel?.stages.map((stage) => stage.name)).not.toContain("Reagendar/Noshow");
+    expect(html).toContain("D.labels.noData");
+  });
+
+  it("traduz os rótulos do funil objetivo para espanhol", async () => {
+    const html = await renderTrafficSummarySlides({
+      source: source({
+        crm: {
+          ...crmWithStages([]),
+          report_funnel: [
+            { name: "Leads", volume: 6, is_won: false },
+            { name: "Leads contactados", volume: 5, is_won: false },
+            { name: "Leads qualificados", volume: 4, is_won: false },
+            { name: "Reuniões realizadas", volume: 3, is_won: false },
+            { name: "COF", volume: 2, is_won: false },
+            { name: "Vendas fechadas", volume: 1, is_won: true },
+          ],
+        } as unknown as TrafficSummarySource["crm"],
+      }),
+      brand,
+      language: "es",
+      organizationSlug: "bendito-ponto",
+    });
+
+    expect(serializedFunnel(html)?.stages.map((stage) => stage.name)).toEqual([
+      "Leads",
+      "Leads contactados",
+      "Leads calificados",
+      "Reuniones realizadas",
+      "COF",
+      "Ventas cerradas",
+    ]);
+    expect(html).toContain('\"noData\":\"sin dato\"');
   });
 
   it("remove divisores, fechamento, encerramento, variações fixas e objetivo genérico", async () => {

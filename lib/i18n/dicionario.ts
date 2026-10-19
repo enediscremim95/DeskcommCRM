@@ -622,6 +622,10 @@ export const DICIONARIO: Traducoes = {
   "Mês a mês": { es: "Mes a mes" },
   "Entraram no CRM": { es: "Ingresaron al CRM" },
   "Vendas fechadas": { es: "Ventas cerradas" },
+  "Leads contactados": { es: "Leads contactados" },
+  "Leads qualificados": { es: "Leads calificados" },
+  "Reuniões realizadas": { es: "Reuniones realizadas" },
+  COF: { es: "COF" },
   "Custo por venda": { es: "Costo por venta" },
   "campanhas com custo acima do aceitável": { es: "campañas con costo superior al aceptable" },
   "Acompanhe o desempenho que foi preparado para sua empresa.": {
