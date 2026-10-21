@@ -133,10 +133,12 @@ export const fetchWindsorAccountRowsForRange = (
 export const fetchWindsorCampaignReach = (
   accountId: string,
   range: DateRange,
+  timeoutMs = WINDSOR_REQUEST_TIMEOUT_MS,
 ) => request(
   ["account_id", "campaign_id", "campaign", "reach"],
   "",
   undefined,
   { accountId, platform: "meta_ads" },
   range,
+  timeoutMs,
 );

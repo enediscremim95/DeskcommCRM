@@ -9,6 +9,10 @@ import {
   WINDSOR_SUMMARY_FIELDS_BY_PLATFORM,
 } from "./account-fetch";
 import { normalizeFactsForAccount } from "./normalizer";
+import {
+  configUpdateForSyncFailure,
+  orderAccountsByOldestOrganizationSync,
+} from "./sync-policy";
 
 const account = (
   account_id: string,
@@ -17,6 +21,28 @@ const account = (
 ): AccountRow => ({ account_id, platform, organization_id, account_name: account_id, currency: "BRL" });
 
 describe("sincronização Windsor por conta", () => {
+  it("ordena contas pela organização há mais tempo sem sincronizar e preserva empates", () => {
+    const accounts = [
+      account("act-newer-a", "meta_ads", "org-newer"),
+      account("act-null-a", "meta_ads", "org-null"),
+      account("act-old", "meta_ads", "org-old"),
+      account("act-null-b", "meta_ads", "org-null"),
+      account("act-newer-b", "meta_ads", "org-newer"),
+    ];
+
+    expect(orderAccountsByOldestOrganizationSync(accounts, [
+      { organization_id: "org-newer", last_sync_succeeded_at: "2026-10-21T12:00:00.000Z" },
+      { organization_id: "org-null", last_sync_succeeded_at: null },
+      { organization_id: "org-old", last_sync_succeeded_at: "2026-10-20T12:00:00.000Z" },
+    ]).map((item) => item.account_id)).toEqual([
+      "act-null-a",
+      "act-null-b",
+      "act-old",
+      "act-newer-a",
+      "act-newer-b",
+    ]);
+  });
+
   it("filtra outra conta e outra plataforma antes de devolver linhas para gravação", () => {
     const selected = account("act_123", "meta_ads");
     const rows: WindsorRow[] = [
@@ -134,6 +160,51 @@ describe("sincronização Windsor por conta", () => {
 
     expect(fetcher).not.toHaveBeenCalled();
     expect(results.get("meta_ads:act_1")?.error).toMatchObject({ message: "windsor_sync_deadline" });
+  });
+
+  it("repete timeout uma vez e não entra em laço", async () => {
+    const timeout = Object.assign(
+      new Error("Windsor não respondeu em 75 segundos."),
+      { code: "windsor_timeout" },
+    );
+    const fetcher = vi.fn().mockRejectedValue(timeout);
+
+    const results = await fetchSelectedAccountRows([
+      account("123-456-7890", "google_ads"),
+    ], fetcher);
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(results.get("google_ads:123-456-7890")?.error).toBe(timeout);
+  });
+
+  it("não repete timeout quando o prazo global acabou durante a tentativa", async () => {
+    const deadlineAt = Date.now() + 1_000;
+    const timeout = Object.assign(
+      new Error("Windsor não respondeu em 75 segundos."),
+      { code: "windsor_timeout" },
+    );
+    const now = vi.spyOn(Date, "now");
+    now.mockReturnValueOnce(deadlineAt - 1).mockReturnValue(deadlineAt);
+    const fetcher = vi.fn().mockRejectedValue(timeout);
+
+    const results = await fetchSelectedAccountRows([
+      account("123-456-7890", "google_ads"),
+    ], fetcher, deadlineAt);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(results.get("google_ads:123-456-7890")?.error).toBe(timeout);
+    now.mockRestore();
+  });
+
+  it("não troca o último erro real por deadline de conta que nem foi tentada", () => {
+    expect(configUpdateForSyncFailure({
+      code: "windsor_sync_deadline",
+      message: "windsor_sync_deadline",
+    })).toEqual({ sync_status: "failed" });
+    expect(configUpdateForSyncFailure({
+      code: "windsor_sync_failed",
+      message: "falha real",
+    })).toEqual({ sync_status: "failed", last_sync_error: "falha real" });
   });
 
   it("combina métricas fragmentadas e miniatura sem data pelo anúncio", async () => {

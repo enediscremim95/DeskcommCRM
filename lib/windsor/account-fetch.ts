@@ -135,6 +135,28 @@ function mergeDetailRows(parts: WindsorRow[][]): WindsorRow[] {
   });
 }
 
+function isWindsorTimeout(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && error.code === "windsor_timeout";
+}
+
+async function fetchWithSingleTimeoutRetry(
+  fetcher: WindsorAccountFetcher,
+  fields: readonly string[],
+  account: AccountRow,
+  days: 30 | 90,
+  deadlineAt: number,
+): Promise<WindsorRow[]> {
+  try {
+    return await fetcher(fields, account.account_id, account.platform, days);
+  } catch (error) {
+    if (!isWindsorTimeout(error) || Date.now() >= deadlineAt) throw error;
+    return fetcher(fields, account.account_id, account.platform, days);
+  }
+}
+
 export async function fetchSelectedAccountRows(
   accounts: AccountRow[],
   fetcher: WindsorAccountFetcher,
@@ -168,7 +190,7 @@ export async function fetchSelectedAccountRows(
       }
       try {
         current[kind] = filterRowsForAccount(
-          await fetcher(fields, account.account_id, account.platform, days),
+          await fetchWithSingleTimeoutRetry(fetcher, fields, account, days, deadlineAt),
           account,
         );
       } catch (error) {
