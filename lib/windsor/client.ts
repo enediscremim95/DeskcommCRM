@@ -119,8 +119,10 @@ export const fetchWindsorAccountRows = (
   fields: readonly string[],
   accountId: string,
   platform: AdPlatform,
-  days: 30 | 90 = 90,
-) => withTodayFallback(fields, days, undefined, { accountId, platform });
+  period: 30 | 90 | DateRange = 90,
+) => typeof period === "number"
+  ? withTodayFallback(fields, period, undefined, { accountId, platform })
+  : request(fields, "", undefined, { accountId, platform }, period);
 
 export const fetchWindsorAccountRowsForRange = (
   fields: readonly string[],
