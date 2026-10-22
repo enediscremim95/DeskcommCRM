@@ -186,6 +186,111 @@ describe("dados ricos do CRM no período", () => {
     expect(result.leads_timeline).toEqual([{ period: "2026-09", count: 2 }]);
   });
 
+  it("monta os marcos objetivos cumulativos por posição e trata posições iguais como o mesmo nível", () => {
+    const objectiveStages = [
+      { id: "new", pipeline_id: "sales", name: "Lead Novo", position: 10, is_won: false, is_lost: false },
+      { id: "attempt", pipeline_id: "sales", name: "Em Tentativa", position: 20, is_won: false, is_lost: false },
+      { id: "contacted", pipeline_id: "sales", name: "Contato Realizado", position: 30, is_won: false, is_lost: false },
+      { id: "contacted-peer", pipeline_id: "sales", name: "Retorno do contato", position: 30, is_won: false, is_lost: false },
+      { id: "scheduled", pipeline_id: "sales", name: "Reunião Agendada", position: 40, is_won: false, is_lost: false },
+      { id: "qualified-peer", pipeline_id: "sales", name: "Qualificado", position: 40, is_won: false, is_lost: false },
+      { id: "noshow", pipeline_id: "sales", name: "Reagendar/Noshow", position: 50, is_won: false, is_lost: false },
+      { id: "meeting", pipeline_id: "sales", name: "Reunião Realizada", position: 60, is_won: false, is_lost: false },
+      { id: "cof", pipeline_id: "sales", name: "COF Enviada", position: 70, is_won: false, is_lost: false },
+      { id: "won", pipeline_id: "sales", name: "Contrato", position: 80, is_won: true, is_lost: false },
+      { id: "lost", pipeline_id: "sales", name: "Perdido", position: 90, is_won: false, is_lost: true },
+    ];
+    const result = buildTrafficRichCrmInsights({
+      window: { from: "2026-09-01", to: "2026-09-30" },
+      stages: objectiveStages,
+      pipelines: [
+        {
+          id: "sales",
+          position: 1,
+          settings: {
+            report_funnel: [
+              { label: "Leads", stage_names: [] },
+              { label: "Leads contactados", stage_names: ["Contato Realizado"] },
+              { label: "Leads qualificados", stage_names: ["Reunião Agendada"] },
+              { label: "Reuniões realizadas", stage_names: ["Reunião Realizada"] },
+              { label: "COF", stage_names: ["COF Enviada"] },
+              { label: "Vendas fechadas", stage_names: ["Contrato"] },
+            ],
+          },
+        },
+      ],
+      leads: ([
+        ["lead-new", "new", "open"],
+        ["lead-contacted", "contacted", "open"],
+        ["lead-contacted-peer", "contacted-peer", "open"],
+        ["lead-scheduled", "scheduled", "open"],
+        ["lead-qualified-peer", "qualified-peer", "open"],
+        ["lead-noshow", "noshow", "open"],
+        ["lead-meeting", "meeting", "open"],
+        ["lead-cof", "cof", "open"],
+        ["lead-won", "won", "won"],
+        ["lead-lost", "lost", "lost"],
+      ] satisfies Array<[string, string, string]>).map(([id, stage_id, status]) => ({
+        id,
+        pipeline_id: "sales",
+        stage_id,
+        status,
+        lost_reason: null,
+        created_at: "2026-09-10",
+      })),
+    });
+
+    expect(result.report_funnel?.map(({ name, volume, from_previous }) => ({
+      name,
+      volume,
+      from_previous,
+    }))).toEqual([
+      { name: "Leads", volume: 10, from_previous: null },
+      { name: "Leads contactados", volume: 8, from_previous: 80 },
+      { name: "Leads qualificados", volume: 6, from_previous: 75 },
+      { name: "Reuniões realizadas", volume: 3, from_previous: 50 },
+      { name: "COF", volume: 2, from_previous: (2 / 3) * 100 },
+      { name: "Vendas fechadas", volume: 1, from_previous: 50 },
+    ]);
+  });
+
+  it("mantém o funil interno quando não há configuração objetiva válida", () => {
+    const args = {
+      window: { from: "2026-09-01", to: "2026-09-30" },
+      stages,
+      leads: [
+        {
+          id: "lead-service",
+          pipeline_id: "sales",
+          status: "open",
+          stage_id: "service",
+          lost_reason: null,
+          created_at: "2026-09-10",
+        },
+      ],
+    };
+
+    const withoutConfig = buildTrafficRichCrmInsights(args);
+    const invalidConfig = buildTrafficRichCrmInsights({
+      ...args,
+      pipelines: [
+        {
+          id: "sales",
+          settings: {
+            report_funnel: [
+              { label: "Leads", stage_names: [] },
+              { label: "Etapa inexistente", stage_names: ["Não existe"] },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(withoutConfig).not.toHaveProperty("report_funnel");
+    expect(invalidConfig).not.toHaveProperty("report_funnel");
+    expect(invalidConfig.stage_conversion).toEqual(withoutConfig.stage_conversion);
+  });
+
   it("produz no máximo três leituras e compara taxas em pontos percentuais", () => {
     const readings = buildFunnelReadings(
       [

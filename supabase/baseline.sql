@@ -28894,6 +28894,41 @@ grant delete on table public.crm_lead_activities to authenticated;
 
 notify pgrst, 'reload schema';
 
+-- ---- funil objetivo do relatório da Bendito Ponto (migration 0292) ----
+-- Data migration tenant-specific e idempotente. Em instalações sem esta
+-- organização, o UPDATE não casa linhas. O merge preserva as outras chaves.
+with report_funnel_config as (
+  select jsonb_build_array(
+       jsonb_build_object('label', 'Leads', 'stage_names', jsonb_build_array()),
+       jsonb_build_object(
+         'label', 'Leads contactados',
+         'stage_names', jsonb_build_array('Contato Realizado')
+       ),
+       jsonb_build_object(
+         'label', 'Leads qualificados',
+         'stage_names', jsonb_build_array('Reunião Agendada', 'Reuniao Agendada')
+       ),
+       jsonb_build_object(
+         'label', 'Reuniões realizadas',
+         'stage_names', jsonb_build_array('Reunião Realizada', 'Reuniao Realizada')
+       ),
+       jsonb_build_object('label', 'COF', 'stage_names', jsonb_build_array('COF Enviada')),
+       jsonb_build_object(
+         'label', 'Vendas fechadas',
+         'stage_names', jsonb_build_array('Contrato')
+       )
+     ) as value
+)
+update public.crm_pipelines as pipeline
+   set settings = coalesce(pipeline.settings, '{}'::jsonb) || jsonb_build_object(
+         'report_funnel', config.value
+       ),
+       updated_at = now()
+  from report_funnel_config as config
+ where organization_id = '4db279eb-55d6-44a3-870f-9909f19f8b87'::uuid
+   and name = 'Funil de vendas'
+   and pipeline.settings -> 'report_funnel' is distinct from config.value;
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

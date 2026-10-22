@@ -35,6 +35,7 @@ import {
   buildTrafficKanbanStages,
   buildTrafficRichCrmInsights,
   type TrafficLeadRow,
+  type TrafficPipelineRow,
   type TrafficStageRow,
 } from "@/lib/windsor/traffic-insights";
 import {
@@ -296,6 +297,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     deliveryFactsResult,
     previousFactsResult,
     { data: crmStages, error: crmStagesError },
+    { data: crmPipelines, error: crmPipelinesError },
     currentLeadRowsResult,
     previousLeadRowsResult,
     { data: presetRows, error: presetError },
@@ -380,6 +382,15 @@ export async function GET(request: NextRequest): Promise<Response> {
       .select("id,name,position,pipeline_id,is_won,is_lost")
       .eq("organization_id", organizationId)
       .eq("is_archived", false),
+    includePdfDetails
+      ? admin
+          .from("crm_pipelines" as never)
+          .select("id,position,settings")
+          .eq("organization_id", organizationId)
+          .eq("is_archived", false)
+          .order("position")
+          .order("id")
+      : Promise.resolve({ data: [], error: null }),
     fetchLeadSituationRows(new Date(fromCreatedAt), exclusiveTo),
     fetchLeadSituationRows(previousFrom, previousExclusiveTo),
     admin
@@ -409,6 +420,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     deliveryFactError ||
     previousFactError ||
     crmStagesError ||
+    crmPipelinesError ||
     currentLeadRowsResult.error ||
     previousLeadRowsResult.error ||
     presetError ||
@@ -417,15 +429,18 @@ export async function GET(request: NextRequest): Promise<Response> {
     return fail("internal_error", "Não foi possível ler o relatório.", 500, { requestId });
   }
   const stages = (crmStages ?? []) as unknown as TrafficStageRow[];
+  const pipelines = (crmPipelines ?? []) as unknown as TrafficPipelineRow[];
   const crm = buildTrafficRichCrmInsights({
     leads: currentLeadRowsResult.data ?? [],
     previousLeads: previousLeadRowsResult.data ?? [],
     stages,
+    pipelines,
     window: parsed.data,
   });
   const previousCrm = buildTrafficRichCrmInsights({
     leads: previousLeadRowsResult.data ?? [],
     stages,
+    pipelines,
     window: previousRange,
   });
   const facts = factsResult.data;

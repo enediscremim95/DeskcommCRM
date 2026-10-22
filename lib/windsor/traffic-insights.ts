@@ -25,6 +25,17 @@ export interface TrafficStageRow {
   is_lost: boolean;
 }
 
+export interface TrafficPipelineRow {
+  id: string;
+  position?: number | string;
+  settings?: unknown;
+}
+
+interface TrafficReportFunnelMilestone {
+  label: string;
+  stage_names: string[];
+}
+
 export interface TrafficKanbanStage {
   id: string;
   pipeline_id: string | null;
@@ -67,6 +78,7 @@ export interface TrafficSalesValue {
 
 export interface TrafficRichCrmInsights extends TrafficLeadSituation {
   stage_conversion: TrafficStageConversion[];
+  report_funnel?: TrafficStageConversion[];
   leads_timeline: Array<{ period: string; count: number }>;
   sales_timeline: TrafficSalesPoint[];
   sales_values: TrafficSalesValue[];
@@ -212,22 +224,86 @@ function stageVolumes(leads: TrafficLeadRow[], stages: TrafficStageRow[]) {
   });
 }
 
-/** Agrega somente a coorte que entrou na janela selecionada. */
-export function buildTrafficRichCrmInsights(args: {
-  leads: TrafficLeadRow[];
-  previousLeads?: TrafficLeadRow[];
-  stages: TrafficStageRow[];
-  window: { from: string; to: string };
-}): TrafficRichCrmInsights {
-  const leads = args.leads.filter((lead) =>
-    inWindow(lead.created_at, args.window.from, args.window.to),
+function reportFunnelMilestones(settings: unknown): TrafficReportFunnelMilestone[] | null {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return null;
+  const raw = (settings as Record<string, unknown>).report_funnel;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+
+  const milestones: TrafficReportFunnelMilestone[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+    const label = (item as Record<string, unknown>).label;
+    const stageNames = (item as Record<string, unknown>).stage_names;
+    if (typeof label !== "string" || !label.trim() || !Array.isArray(stageNames)) return null;
+    if (!stageNames.every((name) => typeof name === "string" && name.trim())) return null;
+    milestones.push({
+      label: label.trim(),
+      stage_names: [...new Set(stageNames.map((name) => (name as string).trim()))],
+    });
+  }
+
+  if (milestones[0]?.stage_names.length !== 0) return null;
+  if (milestones.slice(1).some((milestone) => milestone.stage_names.length === 0)) return null;
+  return milestones;
+}
+
+function objectiveFunnelDefinition(
+  pipelines: TrafficPipelineRow[],
+  stages: TrafficStageRow[],
+): { pipelineId: string; milestones: TrafficReportFunnelMilestone[] } | null {
+  const ordered = [...pipelines].sort(
+    (a, b) =>
+      Number(a.position ?? Number.MAX_SAFE_INTEGER) -
+        Number(b.position ?? Number.MAX_SAFE_INTEGER) || a.id.localeCompare(b.id),
   );
-  const base = buildTrafficLeadSituation(leads, args.stages);
-  const current = stageVolumes(leads, args.stages);
-  const previous = stageVolumes(args.previousLeads ?? [], args.stages);
+  for (const pipeline of ordered) {
+    const milestones = reportFunnelMilestones(pipeline.settings);
+    if (!milestones) continue;
+    const pipelineStages = stages.filter((stage) => stage.pipeline_id === pipeline.id);
+    const resolvable = milestones.slice(1).every((milestone) =>
+      pipelineStages.some((stage) => milestone.stage_names.includes(stage.name)),
+    );
+    if (resolvable) return { pipelineId: pipeline.id, milestones };
+  }
+  return null;
+}
+
+function objectiveStageVolumes(
+  leads: TrafficLeadRow[],
+  stages: TrafficStageRow[],
+  definition: { pipelineId: string; milestones: TrafficReportFunnelMilestone[] },
+) {
+  const pipelineStages = stages.filter((stage) => stage.pipeline_id === definition.pipelineId);
+  const stageById = new Map(pipelineStages.map((stage) => [stage.id, stage]));
+  const pipelineLeads = leads.filter((lead) => {
+    const current = stageById.get(lead.stage_id);
+    return lead.pipeline_id === definition.pipelineId || current?.pipeline_id === definition.pipelineId;
+  });
+
+  return definition.milestones.map((milestone, index) => {
+    if (index === 0) {
+      return { name: milestone.label, volume: pipelineLeads.length, is_won: false };
+    }
+    const targets = pipelineStages.filter((stage) => milestone.stage_names.includes(stage.name));
+    const isWon = targets.some((stage) => stage.is_won);
+    const threshold = Math.min(...targets.map((stage) => Number(stage.position)));
+    const volume = pipelineLeads.filter((lead) => {
+      if (isWon) return lead.status === "won";
+      const current = stageById.get(lead.stage_id);
+      if (!current || current.is_lost) return false;
+      return Number(current.position) >= threshold;
+    }).length;
+    return { name: milestone.label, volume, is_won: isWon };
+  });
+}
+
+function stageConversions(
+  current: Array<{ name: string; volume: number; is_won: boolean }>,
+  previous: Array<{ name: string; volume: number; is_won: boolean }>,
+): TrafficStageConversion[] {
   const previousByName = new Map(previous.map((stage) => [stage.name, stage.volume]));
   const top = current[0]?.volume ?? 0;
-  const stageConversion = current.map((stage, index) => {
+  return current.map((stage, index) => {
     const priorStage = index > 0 ? current[index - 1] : null;
     const previousVolume = previousByName.get(stage.name) ?? null;
     return {
@@ -244,6 +320,30 @@ export function buildTrafficRichCrmInsights(args: {
       is_won: stage.is_won,
     };
   });
+}
+
+/** Agrega somente a coorte que entrou na janela selecionada. */
+export function buildTrafficRichCrmInsights(args: {
+  leads: TrafficLeadRow[];
+  previousLeads?: TrafficLeadRow[];
+  stages: TrafficStageRow[];
+  pipelines?: TrafficPipelineRow[];
+  window: { from: string; to: string };
+}): TrafficRichCrmInsights {
+  const leads = args.leads.filter((lead) =>
+    inWindow(lead.created_at, args.window.from, args.window.to),
+  );
+  const base = buildTrafficLeadSituation(leads, args.stages);
+  const current = stageVolumes(leads, args.stages);
+  const previous = stageVolumes(args.previousLeads ?? [], args.stages);
+  const stageConversion = stageConversions(current, previous);
+  const reportDefinition = objectiveFunnelDefinition(args.pipelines ?? [], args.stages);
+  const reportFunnel = reportDefinition
+    ? stageConversions(
+        objectiveStageVolumes(leads, args.stages, reportDefinition),
+        objectiveStageVolumes(args.previousLeads ?? [], args.stages, reportDefinition),
+      )
+    : null;
 
   const closed = leads.filter(
     (lead) => lead.status === "won" && inWindow(lead.closed_at, args.window.from, args.window.to),
@@ -289,6 +389,7 @@ export function buildTrafficRichCrmInsights(args: {
   return {
     ...base,
     stage_conversion: stageConversion,
+    ...(reportFunnel ? { report_funnel: reportFunnel } : {}),
     leads_timeline: [...leadsByMonth.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([period, count]) => ({ period, count })),
