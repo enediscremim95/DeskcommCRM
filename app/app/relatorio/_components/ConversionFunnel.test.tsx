@@ -6,6 +6,7 @@ import { buildTrafficReport, type StoredFact } from "@/lib/windsor/report";
 import {
   buildTrafficFunnelStages,
   ConversionFunnel,
+  passageText,
   recalculateFunnelStages,
 } from "./ConversionFunnel";
 
@@ -50,18 +51,34 @@ describe("funil visual de conversão", () => {
     ).toEqual(["impressions", "clicks", "page", "cart", "checkout", "purchases"]);
   });
 
-  it("prioriza o alcance agregado do período sem iniciar o funil em zero", () => {
-    const [first] = buildTrafficFunnelStages(
-      { ...metrics, reach: 730, impressions: 1_000 },
+  it("mantém impressões como primeira etapa mesmo quando há alcance", () => {
+    const stages = buildTrafficFunnelStages(
+      { ...metrics, reach: 30_000, impressions: 40_000, link_clicks: 716 },
       "leads",
       "pt",
     );
+    const [first, clicks] = stages;
 
     expect(first).toMatchObject({
-      key: "reach",
-      label: "Pessoas alcançadas",
-      value: 730,
+      key: "impressions",
+      label: "Impressões",
+      value: 40_000,
+      asSource: "exibições",
+      asTarget: "exibições",
+      costLabel: "por exibição",
     });
+    expect(passageText(first!, clicks!, "pt").replaceAll("\u00a0", " ")).toBe(
+      "De 40 mil exibições, 716 clicaram (1,79%)",
+    );
+
+    const stagesEs = buildTrafficFunnelStages(
+      { ...metrics, reach: 30_000, impressions: 40_000, link_clicks: 716 },
+      "leads",
+      "es",
+    );
+    expect(passageText(stagesEs[0]!, stagesEs[1]!, "es").replaceAll("\u00a0", " ")).toBe(
+      "De 40 mil impresiones, 716 hicieron clic (1,79%)",
+    );
   });
 
   it("preserva uma etapa medida com valor zero no agregado Windsor", () => {
@@ -207,15 +224,15 @@ describe("funil visual de conversão", () => {
   it("recalcula a passagem entre as etapas que sobraram ao esconder a etapa do meio", () => {
     const visible = recalculateFunnelStages(
       [
-        { key: "reach", label: "Alcance", value: 100, asSource: "que viram" },
+        { key: "impressions", label: "Impressões", value: 100, asSource: "exibições" },
         { key: "clicks", label: "Cliques", value: 40, asTarget: "clicaram" },
         { key: "leads", label: "Leads", value: 10, asTarget: "viraram leads" },
       ],
-      ["reach", "leads"],
+      ["impressions", "leads"],
     );
 
     expect(visible.map((stage) => [stage.key, stage.rate])).toEqual([
-      ["reach", null],
+      ["impressions", null],
       ["leads", 10],
     ]);
   });
@@ -223,11 +240,11 @@ describe("funil visual de conversão", () => {
   it("oferece etapas reais do Kanban, aceita uma só e restaura a escolha persistida", async () => {
     const user = userEvent.setup();
     const stages = [
-      { key: "reach", label: "Alcance", value: 100, asSource: "que viram" },
+      { key: "impressions", label: "Impressões", value: 100, asSource: "exibições" },
       { key: "leads", label: "Leads", value: 10, asTarget: "viraram leads" },
     ];
     const props = {
-      title: "Do alcance à venda",
+      title: "Das impressões à venda",
       stages,
       summary: [],
       idioma: "pt-BR",
@@ -249,13 +266,13 @@ describe("funil visual de conversão", () => {
     expect(screen.getAllByText("7").length).toBeGreaterThan(0);
     expect(
       JSON.parse(localStorage.getItem("traffic-report-funnel-stages:org-1:user-1:funnel") ?? "[]"),
-    ).toEqual(["reach", "leads", "kanban:proposta"]);
+    ).toEqual(["impressions", "leads", "kanban:proposta"]);
 
-    await user.click(screen.getByRole("checkbox", { name: "Alcance" }));
+    await user.click(screen.getByRole("checkbox", { name: "Impressões" }));
     await user.click(screen.getByRole("checkbox", { name: "Leads" }));
     expect(screen.getByRole("checkbox", { name: "Proposta enviada" })).toBeDisabled();
     await user.keyboard("{Escape}");
-    expect(screen.queryByText("Alcance")).not.toBeInTheDocument();
+    expect(screen.queryByText("Impressões")).not.toBeInTheDocument();
 
     first.unmount();
     render(<ConversionFunnel {...props} />);
@@ -263,6 +280,44 @@ describe("funil visual de conversão", () => {
     await waitFor(() =>
       expect(screen.getByRole("checkbox", { name: "Proposta enviada" })).toBeChecked(),
     );
-    expect(screen.getByRole("checkbox", { name: "Alcance" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Impressões" })).not.toBeChecked();
+  });
+
+  it("lê a etapa salva reach como impressions sem alterar o valor persistido", async () => {
+    const storageKey = "traffic-report-funnel-stages:org-1:user-1:funnel";
+    const legacySelection = JSON.stringify(["reach", "kanban:proposta"]);
+    localStorage.setItem(storageKey, legacySelection);
+    const user = userEvent.setup();
+    const stages = [
+      { key: "impressions", label: "Impressões", value: 100, asSource: "exibições" },
+      { key: "leads", label: "Leads", value: 10, asTarget: "viraram leads" },
+    ];
+
+    render(
+      <ConversionFunnel
+        title="Das impressões à venda"
+        stages={stages}
+        summary={[]}
+        idioma="pt-BR"
+        organizationKey="org-1"
+        viewerKey="user-1"
+        stageGroups={[
+          { key: "report", label: "Métricas do relatório", stages },
+          {
+            key: "kanban",
+            label: "Etapas do Kanban",
+            stages: [{ key: "kanban:proposta", label: "Proposta enviada", value: 7 }],
+          },
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Escolher etapas" }));
+    await waitFor(() =>
+      expect(screen.getByRole("checkbox", { name: "Impressões" })).toBeChecked(),
+    );
+    expect(screen.getByRole("checkbox", { name: "Leads" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Proposta enviada" })).toBeChecked();
+    expect(localStorage.getItem(storageKey)).toBe(legacySelection);
   });
 });

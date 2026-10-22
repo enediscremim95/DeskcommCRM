@@ -2413,7 +2413,7 @@ export function TrafficDashboard() {
 
                 <ConversionFunnel
                   eyebrow={t("Funil de desempenho")}
-                  title={t("Do alcance à venda fechada")}
+                  title={t("Das impressões à venda fechada")}
                   stages={trafficStages}
                   stageGroups={funnelStageGroups}
                   crmStages={crmFunnelStages}
