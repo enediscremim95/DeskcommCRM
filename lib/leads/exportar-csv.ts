@@ -1,3 +1,5 @@
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+
 const FUSO_EXPORTACAO = "America/Sao_Paulo";
 
 export const CABECALHO_EXPORTACAO_LEADS = [
@@ -35,7 +37,9 @@ export interface LeadParaExportacao {
 
 function partesDaData(data: Date): Record<string, string> {
   return Object.fromEntries(
-    new Intl.DateTimeFormat("pt-BR", {
+    // O formato do arquivo (DD/MM/AAAA HH:MM em São Paulo) é fixo de propósito, para o Excel
+    // brasileiro; o idioma abaixo só entrega as partes numéricas, não define o formato.
+    new Intl.DateTimeFormat("en-GB", {
       timeZone: FUSO_EXPORTACAO,
       day: "2-digit",
       month: "2-digit",
@@ -111,7 +115,7 @@ export function montarCsvDeLeads(leads: LeadParaExportacao[]): string {
   const linhas = [CABECALHO_EXPORTACAO_LEADS.join(";")];
 
   for (const lead of leads) {
-    const nome = lead.contato?.display_name?.trim() || lead.contato?.name || "";
+    const nome = rotuloDoContato(lead.contato);
     linhas.push(
       [
         nome,
