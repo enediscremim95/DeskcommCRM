@@ -332,10 +332,12 @@ describe("colunas da tabela de campanhas", () => {
     const user = userEvent.setup();
     render(<TrafficDashboard />);
     expect(
-      await screen.findByRole("region", { name: "Do alcance à venda fechada" }),
+      await screen.findByRole("region", { name: "Das impressões à venda fechada" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Do alcance à venda fechada")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("region", { name: "Do alcance à venda fechada" })).toHaveLength(1);
+    expect(screen.queryByText("Das impressões à venda fechada")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("region", { name: "Das impressões à venda fechada" })).toHaveLength(
+      1,
+    );
     await user.click(screen.getByText("Colunas (2)"));
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Predefinição de colunas" }),
@@ -2139,7 +2141,7 @@ describe("colunas da tabela de campanhas", () => {
     const user = userEvent.setup();
 
     const first = render(<TrafficDashboard />);
-    const funnel = await screen.findByRole("list", { name: "Do alcance à venda fechada" });
+    const funnel = await screen.findByRole("list", { name: "Das impressões à venda fechada" });
 
     expect(within(funnel).queryByText("Entraram no CRM")).not.toBeInTheDocument();
     expect(within(funnel).queryByText("Em atendimento")).not.toBeInTheDocument();
@@ -2165,7 +2167,7 @@ describe("colunas da tabela de campanhas", () => {
       await screen.findByRole("button", { name: "Ocultar métricas do CRM" }),
     ).toBeInTheDocument();
     expect(
-      within(screen.getByRole("list", { name: "Do alcance à venda fechada" })).getByText(
+      within(screen.getByRole("list", { name: "Das impressões à venda fechada" })).getByText(
         "Entraram no CRM",
       ),
     ).toBeInTheDocument();

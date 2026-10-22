@@ -66,6 +66,13 @@ export const DICIONARIO: Traducoes = {
   "Abra chrome://extensions, ative o modo do desenvolvedor e escolha Carregar sem compactação.": { es: "Abre chrome://extensions, activa el modo de desarrollador y elige Cargar descomprimida." },
   "Selecione a pasta extraída e volte a esta tela. Não há token para copiar.": { es: "Selecciona la carpeta extraída y vuelve a esta pantalla. No hay ningún token que copiar." },
   "Baixar extensão": { es: "Descargar extensión" },
+  "Baixar leads": { es: "Descargar leads" },
+  "Não foi possível preparar a exportação de leads.": {
+    es: "No fue posible preparar la exportación de leads.",
+  },
+  "Há mais de 20.000 leads. Reduza a quantidade antes de baixar.": {
+    es: "Hay más de 20.000 leads. Reduce la cantidad antes de descargarlos.",
+  },
   "Conectar agora": { es: "Conectar ahora" },
   "Estado neste navegador": { es: "Estado en este navegador" },
   "A empresa acompanha a organização ativa no CRM.": { es: "La empresa sigue la organización activa en el CRM." },
@@ -9701,7 +9708,7 @@ export const DICIONARIO: Traducoes = {
   "{{count}} grupos para conferir": { es: "{{count}} grupos para revisar" },
   "Métricas do anúncio e da página": { es: "Métricas del anuncio y de la página" },
   "Etapas do Kanban": { es: "Etapas del Kanban" },
-  "Do alcance à venda fechada": { es: "Del alcance a la venta cerrada" },
+  "Das impressões à venda fechada": { es: "De las impresiones a la venta cerrada" },
   "Adicionar métricas do CRM": { es: "Añadir métricas del CRM" },
   "Ocultar métricas do CRM": { es: "Ocultar métricas del CRM" },
   "que entraram no CRM": { es: "que ingresaron al CRM" },

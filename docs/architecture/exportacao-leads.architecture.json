@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Exportação direta de leads",
+    "subtitle": "tenant ativo, CSV seguro e auditoria sem dado pessoal",
+    "output": "exportacao-leads.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "tela", "label": "Ação da pessoa" },
+    { "id": "api", "label": "Autorização e montagem" },
+    { "id": "dados", "label": "Dados do tenant" },
+    { "id": "saida", "label": "Saídas" }
+  ],
+  "mainPath": ["botoes", "rota", "csv"],
+  "nodes": [
+    {
+      "id": "botoes",
+      "lane": "tela",
+      "type": "frontend",
+      "label": "Baixar leads",
+      "sublabel": "Contatos e Kanban, somente gestão"
+    },
+    {
+      "id": "rota",
+      "lane": "api",
+      "type": "api",
+      "label": "GET /api/v1/leads/export",
+      "sublabel": "manager+ e teto de 20.000"
+    },
+    {
+      "id": "sessao",
+      "lane": "api",
+      "type": "service",
+      "label": "requireRole + organização ativa",
+      "sublabel": "tenant nunca vem do pedido"
+    },
+    {
+      "id": "leads",
+      "lane": "dados",
+      "type": "database",
+      "label": "crm_leads",
+      "sublabel": "organization_id explícito"
+    },
+    {
+      "id": "contatos",
+      "lane": "dados",
+      "type": "database",
+      "label": "contacts",
+      "sublabel": "nome, telefone e e-mail do mesmo tenant"
+    },
+    {
+      "id": "etapas",
+      "lane": "dados",
+      "type": "database",
+      "label": "crm_stages",
+      "sublabel": "nome da etapa do mesmo tenant"
+    },
+    {
+      "id": "auditoria",
+      "lane": "saida",
+      "type": "database",
+      "label": "api_audit_log",
+      "sublabel": "ator + organização + quantidade, sem PII"
+    },
+    {
+      "id": "csv",
+      "lane": "saida",
+      "type": "frontend",
+      "label": "CSV anexado",
+      "sublabel": "BOM + ponto e vírgula + no-store"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "botoes", "to": "rota", "label": "âncora nativa inicia o GET" },
+    { "id": "e2", "from": "rota", "to": "sessao", "label": "exige papel de gestão" },
+    { "id": "e3", "from": "sessao", "to": "rota", "label": "entrega ator e tenant confiáveis" },
+    { "id": "e4", "from": "leads", "to": "rota", "label": "todos, mais novos primeiro" },
+    { "id": "e5", "from": "contatos", "to": "rota", "label": "dados pessoais autorizados" },
+    { "id": "e6", "from": "etapas", "to": "rota", "label": "rótulo da etapa" },
+    { "id": "e7", "from": "rota", "to": "auditoria", "label": "lead.exported sem conteúdo" },
+    { "id": "e8", "from": "rota", "to": "csv", "label": "attachment imediato" },
+    { "id": "e9", "from": "csv", "to": "botoes", "label": "navegador conclui o download" }
+  ]
+}

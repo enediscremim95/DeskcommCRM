@@ -58,6 +58,9 @@ export const AUDIT_ACTIONS = [
   // N `lead.created`: "quem despejou 300 negócios neste funil, e quando" é a
   // pergunta que se faz depois, e ela não se responde contando linhas soltas.
   "lead.imported",
+  // O download não altera o funil, mas retira dados pessoais do sistema. A trilha
+  // registra ator, organização e quantidade, nunca o conteúdo exportado.
+  "lead.exported",
   "contact.created",
   "contact.updated",
   "contacts.imported",

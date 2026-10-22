@@ -109,6 +109,7 @@ const reachResponseSchema = z
 async function fetchWindsorAccountReach(
   accountId: string,
   range: { from: string; to: string },
+  timeoutMs = WINDSOR_REQUEST_TIMEOUT_MS,
 ): Promise<number | null> {
   if (!env.WINDSOR_API_KEY) return null;
   const url = buildWindsorUrl(
@@ -122,7 +123,7 @@ async function fetchWindsorAccountReach(
   const response = await fetch(url, {
     cache: "no-store",
     headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(WINDSOR_REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) return null;
   const parsed = reachResponseSchema.safeParse(await response.json());
@@ -133,6 +134,65 @@ async function fetchWindsorAccountReach(
     .map((row) => Number(row.reach ?? 0))
     .filter((reach) => Number.isFinite(reach) && reach > 0);
   return values.length > 0 ? Math.max(...values) : null;
+}
+
+export const WINDSOR_REACH_TIMEOUT_MS = 8_000;
+
+interface ReachLoadOptions {
+  timeoutMs?: number;
+  fetchCampaignReach?: typeof fetchWindsorCampaignReach;
+  fetchAccountReach?: typeof fetchWindsorAccountReach;
+}
+
+export async function loadPeriodReach(
+  accounts: StoredAccount[],
+  range: { from: string; to: string },
+  options: ReachLoadOptions = {},
+) {
+  const timeoutMs = options.timeoutMs ?? WINDSOR_REACH_TIMEOUT_MS;
+  const fetchCampaignReach = options.fetchCampaignReach ?? fetchWindsorCampaignReach;
+  const fetchAccountReach = options.fetchAccountReach ?? fetchWindsorAccountReach;
+  const campaignReach = new Map<string, number>();
+  const accountReach = new Map<string, number>();
+  let acceptingResults = true;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const requests = Promise.all(
+    accounts
+      .filter((account) => account.platform === "meta_ads")
+      .map(async (account) => {
+        const [campaignResult, accountResult] = await Promise.allSettled([
+          fetchCampaignReach(account.account_id, range, timeoutMs),
+          fetchAccountReach(account.account_id, range, timeoutMs),
+        ]);
+        if (!acceptingResults) return;
+        if (campaignResult.status === "fulfilled") {
+          for (const row of campaignResult.value) {
+            const campaignId = typeof row.campaign_id === "string" ? row.campaign_id : null;
+            const campaignName = typeof row.campaign === "string" ? row.campaign : "";
+            const reach = Number(row.reach ?? 0);
+            if (!Number.isFinite(reach) || reach <= 0) continue;
+            const key = campaignReportKey("meta_ads", campaignId, campaignName);
+            campaignReach.set(key, (campaignReach.get(key) ?? 0) + reach);
+          }
+        }
+        if (accountResult.status === "fulfilled" && accountResult.value != null) {
+          accountReach.set(account.account_id, accountResult.value);
+        }
+      }),
+  );
+
+  try {
+    await Promise.race([
+      requests,
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    acceptingResults = false;
+    if (timeout) clearTimeout(timeout);
+  }
+  return { campaignReach, accountReach };
 }
 
 function validColumns(
@@ -391,41 +451,9 @@ export async function GET(request: NextRequest): Promise<Response> {
   const deliveryFacts = (deliveryFactsResult.data ?? []) as unknown as StoredFact[];
   const previousFacts = previousFactsResult.data;
   const storedAccounts = (accounts ?? []) as unknown as StoredAccount[];
-  async function loadPeriodReach(range: { from: string; to: string }) {
-    const campaignReach = new Map<string, number>();
-    const accountReach = new Map<string, number>();
-    await Promise.all(
-      storedAccounts
-        .filter((account) => account.platform === "meta_ads")
-        .map(async (account) => {
-          try {
-            const [campaignResult, accountResult] = await Promise.allSettled([
-              fetchWindsorCampaignReach(account.account_id, range),
-              fetchWindsorAccountReach(account.account_id, range),
-            ]);
-            if (campaignResult.status === "fulfilled") {
-              for (const row of campaignResult.value) {
-                const campaignId = typeof row.campaign_id === "string" ? row.campaign_id : null;
-                const campaignName = typeof row.campaign === "string" ? row.campaign : "";
-                const reach = Number(row.reach ?? 0);
-                if (!Number.isFinite(reach) || reach <= 0) continue;
-                const key = campaignReportKey("meta_ads", campaignId, campaignName);
-                campaignReach.set(key, (campaignReach.get(key) ?? 0) + reach);
-              }
-            }
-            if (accountResult.status === "fulfilled" && accountResult.value != null) {
-              accountReach.set(account.account_id, accountResult.value);
-            }
-          } catch {
-            // O relatório continua disponível; alcance fica indisponível se o conector falhar.
-          }
-        }),
-    );
-    return { campaignReach, accountReach };
-  }
   const [currentReach, previousReach] = await Promise.all([
-    loadPeriodReach(parsed.data),
-    loadPeriodReach(previousRange),
+    loadPeriodReach(storedAccounts, parsed.data),
+    loadPeriodReach(storedAccounts, previousRange),
   ]);
   const currentCurrencies = buildTrafficReport({
     model: typedConfig.model,
