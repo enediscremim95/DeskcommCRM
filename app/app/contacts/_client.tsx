@@ -15,11 +15,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useContactList } from "@/hooks/contacts/useContactList";
+import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ContactsTable } from "@/components/contacts/ContactsTable";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
 import { ImportContactsDialog } from "@/components/contacts/ImportContactsDialog";
 import { MergeDialog } from "@/components/contacts/MergeDialog";
+import { BaixarLeadsButton } from "@/components/leads/BaixarLeadsButton";
 import { EmptyContacts } from "@/components/empty";
+import { roleAtLeast } from "@/lib/auth/types";
 import type { ContactOrderBy } from "@/lib/schemas/contacts";
 
 const SOURCE_OPTIONS = [
@@ -34,6 +37,8 @@ const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 export function ContactsListClient() {
   const t = useT();
+  const { activeOrg } = useAuth();
+  const podeBaixarLeads = roleAtLeast(activeOrg?.role, "manager");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState<string | undefined>(undefined);
@@ -108,6 +113,7 @@ export function ContactsListClient() {
             <UploadSimple size={16} weight="bold" aria-hidden />
             <span>{t("Importar CSV")}</span>
           </Button>
+          {podeBaixarLeads ? <BaixarLeadsButton /> : null}
           <Button onClick={() => setCreateOpen(true)}>
             <Plus size={16} weight="bold" aria-hidden />
             <span>{t("Novo contato")}</span>

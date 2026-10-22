@@ -57,6 +57,7 @@ export default async function KanbanPickerPage({
   // Importar planilha é ESCRITA DE OPERAÇÃO, não configuração: quem atende
   // sobe a lista que recebeu. Espelha o `requireRole("agent")` da rota.
   const podeImportar = ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent;
+  const podeBaixar = ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
   const idioma = user.idioma;
   const t = (texto: string) => traduzir(texto, idioma);
 
@@ -74,7 +75,12 @@ export default async function KanbanPickerPage({
         <h1 className="text-2xl font-semibold tracking-tight">{t("Funis")}</h1>
       </header>
 
-      <FunisClient funis={funis} podeGerenciar={podeGerenciar} podeImportar={podeImportar} />
+      <FunisClient
+        funis={funis}
+        podeGerenciar={podeGerenciar}
+        podeImportar={podeImportar}
+        podeBaixar={podeBaixar}
+      />
     </div>
   );
 }
