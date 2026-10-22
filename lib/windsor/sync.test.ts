@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { logger } from "@/lib/logger";
 import type { WindsorRow } from "./types";
 import {
   fetchSelectedAccountRows,
@@ -9,6 +10,11 @@ import {
   WINDSOR_SUMMARY_FIELDS_BY_PLATFORM,
 } from "./account-fetch";
 import { normalizeFactsForAccount } from "./normalizer";
+import type { DateRange } from "./request";
+import {
+  configUpdateForSyncFailure,
+  orderAccountsByOldestOrganizationSync,
+} from "./sync-policy";
 
 const account = (
   account_id: string,
@@ -17,6 +23,28 @@ const account = (
 ): AccountRow => ({ account_id, platform, organization_id, account_name: account_id, currency: "BRL" });
 
 describe("sincronização Windsor por conta", () => {
+  it("ordena contas pela organização há mais tempo sem sincronizar e preserva empates", () => {
+    const accounts = [
+      account("act-newer-a", "meta_ads", "org-newer"),
+      account("act-null-a", "meta_ads", "org-null"),
+      account("act-old", "meta_ads", "org-old"),
+      account("act-null-b", "meta_ads", "org-null"),
+      account("act-newer-b", "meta_ads", "org-newer"),
+    ];
+
+    expect(orderAccountsByOldestOrganizationSync(accounts, [
+      { organization_id: "org-newer", last_sync_succeeded_at: "2026-10-21T12:00:00.000Z" },
+      { organization_id: "org-null", last_sync_succeeded_at: null },
+      { organization_id: "org-old", last_sync_succeeded_at: "2026-10-20T12:00:00.000Z" },
+    ]).map((item) => item.account_id)).toEqual([
+      "act-null-a",
+      "act-null-b",
+      "act-old",
+      "act-newer-a",
+      "act-newer-b",
+    ]);
+  });
+
   it("filtra outra conta e outra plataforma antes de devolver linhas para gravação", () => {
     const selected = account("act_123", "meta_ads");
     const rows: WindsorRow[] = [
@@ -77,7 +105,7 @@ describe("sincronização Windsor por conta", () => {
       _fields: readonly string[],
       _accountId: string,
       _platform: AccountRow["platform"],
-      _days?: 30 | 90,
+      _period?: 30 | 90 | DateRange,
     ) => []);
 
     await fetchSelectedAccountRows([
@@ -89,12 +117,131 @@ describe("sincronização Windsor por conta", () => {
     expect(metaCalls).toHaveLength(5);
     expect(metaCalls[0]?.[3]).toBe(90);
     expect(metaCalls.slice(1).map((call) => call[3])).toEqual([30, 30, 30, 30]);
+    expect(metaCalls.filter((call) => typeof call[3] === "object")).toHaveLength(0);
     expect(fetcher).toHaveBeenCalledWith(
       WINDSOR_SUMMARY_FIELDS_BY_PLATFORM.google_ads,
       "123-456-7890",
       "google_ads",
       90,
     );
+  });
+
+  it("quando o resumo Meta de 90 dias expira, junta três janelas de 30 dias", async () => {
+    const timeout = Object.assign(
+      new Error("Windsor não respondeu em 75 segundos."),
+      { code: "windsor_timeout" },
+    );
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-21T12:00:00.000Z"));
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    let activeWindows = 0;
+    let peakWindows = 0;
+    const fetcher = vi.fn(async (
+      _fields: readonly string[],
+      accountId: string,
+      _platform: AccountRow["platform"],
+      period?: 30 | 90 | DateRange,
+    ) => {
+      if (period === 90) throw timeout;
+      if (typeof period === "object") {
+        activeWindows += 1;
+        peakWindows = Math.max(peakWindows, activeWindows);
+        await Promise.resolve();
+        activeWindows -= 1;
+        return [{ account_id: accountId, date: period.from, spend: 1 }];
+      }
+      return [];
+    });
+
+    try {
+      const result = (await fetchSelectedAccountRows([account("act_1", "meta_ads")], fetcher))
+        .get("meta_ads:act_1");
+      const ranges = fetcher.mock.calls
+        .map((call) => call[3])
+        .filter((period): period is DateRange => typeof period === "object");
+
+      expect(ranges).toEqual([
+        { from: "2026-07-24", to: "2026-08-22" },
+        { from: "2026-08-23", to: "2026-09-21" },
+        { from: "2026-09-22", to: "2026-10-21" },
+      ]);
+      expect(result?.rows).toHaveLength(3);
+      expect(peakWindows).toBe(1);
+      expect(warn).toHaveBeenCalledWith(
+        "[windsor-dashboard] resumo de 90 dias dividido após timeout",
+        { organization_id: "org-act_1", account_id: "act_1" },
+      );
+    } finally {
+      now.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it("propaga o timeout quando uma janela do resumo também expira", async () => {
+    const summaryTimeout = Object.assign(new Error("timeout do resumo"), { code: "windsor_timeout" });
+    const windowTimeout = Object.assign(new Error("timeout da janela"), { code: "windsor_timeout" });
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    let windowsStarted = 0;
+    const fetcher = vi.fn(async (
+      _fields: readonly string[],
+      accountId: string,
+      _platform: AccountRow["platform"],
+      period?: 30 | 90 | DateRange,
+    ) => {
+      if (period === 90) throw summaryTimeout;
+      if (typeof period === "object") {
+        windowsStarted += 1;
+        if (windowsStarted === 2) throw windowTimeout;
+        return [{ account_id: accountId, date: period.from, spend: 1 }];
+      }
+      return [];
+    });
+
+    try {
+      const result = (await fetchSelectedAccountRows([account("act_1", "meta_ads")], fetcher))
+        .get("meta_ads:act_1");
+
+      expect(fetcher.mock.calls.filter((call) => typeof call[3] === "object")).toHaveLength(2);
+      expect(result?.error).toBe(windowTimeout);
+      expect(result?.error).toMatchObject({ code: "windsor_timeout" });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("cobre exatamente 90 dias nas janelas, sem buraco nem sobreposição", async () => {
+    const timeout = Object.assign(new Error("timeout do resumo"), { code: "windsor_timeout" });
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-21T12:00:00.000Z"));
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const fetcher = vi.fn(async (
+      _fields: readonly string[],
+      _accountId: string,
+      _platform: AccountRow["platform"],
+      period?: 30 | 90 | DateRange,
+    ) => {
+      if (period === 90) throw timeout;
+      return [];
+    });
+
+    try {
+      await fetchSelectedAccountRows([account("act_1", "meta_ads")], fetcher);
+      const ranges = fetcher.mock.calls
+        .map((call) => call[3])
+        .filter((period): period is DateRange => typeof period === "object");
+      const dayMs = 24 * 60 * 60 * 1_000;
+
+      expect(ranges).toHaveLength(3);
+      expect(ranges[0]?.from).toBe("2026-07-24");
+      expect(ranges[2]?.to).toBe("2026-10-21");
+      expect(ranges.every((range) =>
+        (Date.parse(range.to) - Date.parse(range.from)) / dayMs + 1 === 30,
+      )).toBe(true);
+      expect(ranges.slice(1).every((range, index) =>
+        Date.parse(range.from) - Date.parse(ranges[index]?.to ?? "") === dayMs,
+      )).toBe(true);
+    } finally {
+      now.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   it("grava Meta e Google pela plataforma configurada no mesmo ciclo", () => {
@@ -134,6 +281,51 @@ describe("sincronização Windsor por conta", () => {
 
     expect(fetcher).not.toHaveBeenCalled();
     expect(results.get("meta_ads:act_1")?.error).toMatchObject({ message: "windsor_sync_deadline" });
+  });
+
+  it("repete timeout uma vez e não entra em laço", async () => {
+    const timeout = Object.assign(
+      new Error("Windsor não respondeu em 75 segundos."),
+      { code: "windsor_timeout" },
+    );
+    const fetcher = vi.fn().mockRejectedValue(timeout);
+
+    const results = await fetchSelectedAccountRows([
+      account("123-456-7890", "google_ads"),
+    ], fetcher);
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(results.get("google_ads:123-456-7890")?.error).toBe(timeout);
+  });
+
+  it("não repete timeout quando o prazo global acabou durante a tentativa", async () => {
+    const deadlineAt = Date.now() + 1_000;
+    const timeout = Object.assign(
+      new Error("Windsor não respondeu em 75 segundos."),
+      { code: "windsor_timeout" },
+    );
+    const now = vi.spyOn(Date, "now");
+    now.mockReturnValueOnce(deadlineAt - 1).mockReturnValue(deadlineAt);
+    const fetcher = vi.fn().mockRejectedValue(timeout);
+
+    const results = await fetchSelectedAccountRows([
+      account("123-456-7890", "google_ads"),
+    ], fetcher, deadlineAt);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(results.get("google_ads:123-456-7890")?.error).toBe(timeout);
+    now.mockRestore();
+  });
+
+  it("não troca o último erro real por deadline de conta que nem foi tentada", () => {
+    expect(configUpdateForSyncFailure({
+      code: "windsor_sync_deadline",
+      message: "windsor_sync_deadline",
+    })).toEqual({ sync_status: "failed" });
+    expect(configUpdateForSyncFailure({
+      code: "windsor_sync_failed",
+      message: "falha real",
+    })).toEqual({ sync_status: "failed", last_sync_error: "falha real" });
   });
 
   it("combina métricas fragmentadas e miniatura sem data pelo anúncio", async () => {

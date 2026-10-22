@@ -9704,7 +9704,7 @@ export const DICIONARIO: Traducoes = {
   "{{count}} grupos para conferir": { es: "{{count}} grupos para revisar" },
   "Métricas do anúncio e da página": { es: "Métricas del anuncio y de la página" },
   "Etapas do Kanban": { es: "Etapas del Kanban" },
-  "Do alcance à venda fechada": { es: "Del alcance a la venta cerrada" },
+  "Das impressões à venda fechada": { es: "De las impresiones a la venta cerrada" },
   "Adicionar métricas do CRM": { es: "Añadir métricas del CRM" },
   "Ocultar métricas do CRM": { es: "Ocultar métricas del CRM" },
   "que entraram no CRM": { es: "que ingresaron al CRM" },

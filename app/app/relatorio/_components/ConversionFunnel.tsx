@@ -87,26 +87,15 @@ export function buildTrafficFunnelStages(
   idioma: string,
 ): FunnelStage[] {
   const text = (pt: string, es: string) => (idioma === "es" ? es : pt);
-  const firstStage =
-    metrics.reach != null && metrics.reach > 0
-      ? {
-          key: "reach",
-          label: text("Pessoas alcançadas", "Personas alcanzadas"),
-          value: metrics.reach,
-          available: true,
-          asSource: text("que viram o anúncio", "que vieron el anuncio"),
-          asTarget: text("viram o anúncio", "vieron el anuncio"),
-          costLabel: text("por pessoa", "por persona"),
-        }
-      : {
-          key: "impressions",
-          label: text("Impressões", "Impresiones"),
-          value: metrics.impressions,
-          available: true,
-          asSource: text("exibições", "impresiones"),
-          asTarget: text("exibições", "impresiones"),
-          costLabel: text("por exibição", "por impresión"),
-        };
+  const firstStage = {
+    key: "impressions",
+    label: text("Impressões", "Impresiones"),
+    value: metrics.impressions,
+    available: true,
+    asSource: text("exibições", "impresiones"),
+    asTarget: text("exibições", "impresiones"),
+    costLabel: text("por exibição", "por impresión"),
+  };
   const clicks = (value: number, label: string) => ({
     key: "clicks",
     label,
@@ -286,9 +275,12 @@ export function ConversionFunnel({
           const raw = window.localStorage.getItem(selectionStorageKey);
           const parsed: unknown = raw ? JSON.parse(raw) : null;
           if (Array.isArray(parsed)) {
-            const valid = parsed.filter(
+            const normalized = parsed.map((key) => (key === "reach" ? "impressions" : key));
+            const valid = normalized.filter(
               (key, index): key is string =>
-                typeof key === "string" && available.has(key) && parsed.indexOf(key) === index,
+                typeof key === "string" &&
+                available.has(key) &&
+                normalized.indexOf(key) === index,
             );
             if (valid.length > 0) next = valid;
           }
