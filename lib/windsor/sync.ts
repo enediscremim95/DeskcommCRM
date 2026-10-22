@@ -14,6 +14,10 @@ import {
 } from "./account-fetch";
 import { fetchWindsorAccountRows } from "./client";
 import { deduplicateRows, normalizeFactsForAccount } from "./normalizer";
+import {
+  configUpdateForSyncFailure,
+  orderAccountsByOldestOrganizationSync,
+} from "./sync-policy";
 import type { WindsorRow } from "./types";
 
 interface ConfigRow {
@@ -22,6 +26,7 @@ interface ConfigRow {
   conversion_fields: string[];
   revenue_field: string | null;
   enabled: boolean;
+  last_sync_succeeded_at: string | null;
 }
 interface SyncOptions {
   trigger: "cron" | "manual";
@@ -61,7 +66,7 @@ export async function syncTrafficDashboards(options: SyncOptions): Promise<SyncS
   const admin = createAdminClient();
   let configQuery = admin
     .from("traffic_dashboard_configs" as never)
-    .select("organization_id,model,conversion_fields,revenue_field,enabled");
+    .select("organization_id,model,conversion_fields,revenue_field,enabled,last_sync_succeeded_at");
   if (options.organizationId) configQuery = configQuery.eq("organization_id", options.organizationId);
   const { data: configData, error: configError } = await configQuery;
   if (configError) throw new Error(`traffic_config_read_failed: ${configError.message}`);
@@ -77,7 +82,10 @@ export async function syncTrafficDashboards(options: SyncOptions): Promise<SyncS
     .select("organization_id,account_id,platform,account_name,currency")
     .in("organization_id", organizationIds);
   if (accountError) throw new Error(`traffic_accounts_read_failed: ${accountError.message}`);
-  const accounts = (accountData ?? []) as unknown as AccountRow[];
+  const accounts = orderAccountsByOldestOrganizationSync(
+    (accountData ?? []) as unknown as AccountRow[],
+    enabled,
+  );
 
   const fetched = options.preloadedRows
     ? new Map(
@@ -109,7 +117,7 @@ export async function syncTrafficDashboards(options: SyncOptions): Promise<SyncS
     } as never);
     await admin
       .from("traffic_dashboard_configs" as never)
-      .update({ sync_status: "syncing", last_sync_started_at: startedAt, last_sync_error: null } as never)
+      .update({ sync_status: "syncing", last_sync_started_at: startedAt } as never)
       .eq("organization_id", config.organization_id);
 
     try {
@@ -184,9 +192,9 @@ export async function syncTrafficDashboards(options: SyncOptions): Promise<SyncS
         status: "failed", finished_at: finishedAt,
         error_code: failure.code, error_message: failure.message,
       } as never).eq("id", runId).eq("organization_id", config.organization_id);
-      await admin.from("traffic_dashboard_configs" as never).update({
-        sync_status: "failed", last_sync_error: failure.message,
-      } as never).eq("organization_id", config.organization_id);
+      await admin.from("traffic_dashboard_configs" as never)
+        .update(configUpdateForSyncFailure(failure) as never)
+        .eq("organization_id", config.organization_id);
       await audit({
         action: "traffic_dashboard.sync_failed",
         actorUserId: options.actorUserId ?? null,

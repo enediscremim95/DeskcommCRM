@@ -2023,7 +2023,7 @@ A spec `organizacoes-criacao-convite-e-cache.spec.ts` cobre criação padrão co
 | --- | --- | --- |
 | W1 | Platform admin escolhe contas para uma organização | Só `account_id` selecionado fica associado ao tenant; a chave Windsor nunca chega ao browser nem ao banco |
 | W2 | Primeira sincronização manual | Estado passa por `syncing` e termina em `ready`, com data visível e fatos locais deduplicados |
-| W3 | Sincronização das contas selecionadas | Executor usa o conector da plataforma e `select_accounts`, limita a seis pedidos simultâneos e 450 s para iniciar consultas, busca Meta em nível de conjunto e anúncio e volta a aplicar filtro exato por `account_id` |
+| W3 | Sincronização das contas selecionadas | Executor prioriza organizações sem sincronização ou com sucesso mais antigo, usa o conector da plataforma e `select_accounts`, limita a três contas simultâneas e 450 s para iniciar consultas, repete timeout uma vez dentro do prazo e volta a aplicar filtro exato por `account_id` |
 | W4 | Windsor falha ou degrada nomes de campanha | Run e organização ficam em `failed`; último conjunto confirmado permanece consultável |
 | W5 | Organização com BRL e USD | A tela cria seções separadas; nenhum total soma moedas diferentes |
 | W6 | Tenant tenta ler outro tenant | Handler resolve a organização da sessão e ignora qualquer `organization_id` do cliente |
@@ -2035,6 +2035,7 @@ A spec `organizacoes-criacao-convite-e-cache.spec.ts` cobre criação padrão co
 | W12 | Organização atualiza sem criar preset | `campaign_metric_columns` continua sendo o fallback, filtrado por plataforma, até o dono marcar uma nova predefinição como padrão |
 | W13 | Organização já tinha predefinições | A atualização conserva a linha original no Meta e cria uma cópia idempotente no Google, removendo apenas métricas sem dado nessa plataforma |
 | W14 | Cliente baixa o relatório do período | O único botão `Baixar PDF` carrega o HTML autocontido dos slides fora da tela e abre a impressão do navegador, com um slide por página, título de arquivo do período e limpeza do iframe após a impressão |
+| W15 | Windsor demora ao calcular alcance | O relatório responde em até cerca de 8 s além das leituras locais e mantém alcance indisponível, sem bloquear os demais dados |
 
 Prova atual: normalizador e agregador têm testes unitários focados; migration segue a
 tripla migration + baseline + MANIFEST. A execução Playwright com Windsor real não é

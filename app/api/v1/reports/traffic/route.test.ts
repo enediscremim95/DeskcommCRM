@@ -7,7 +7,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchWindsorCampaignReach } from "@/lib/windsor/client";
 
-import { GET, PATCH } from "./route";
+import { GET, loadPeriodReach, PATCH, WINDSOR_REACH_TIMEOUT_MS } from "./route";
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
@@ -153,6 +153,34 @@ beforeEach(() => {
 });
 
 describe("leitura dos fatos do relatório", () => {
+  it("abandona o alcance ao vivo no teto e devolve alcance indisponível", async () => {
+    vi.useFakeTimers();
+    const slowCampaign = vi.fn(() => new Promise<never>(() => undefined));
+    const slowAccount = vi.fn(() => new Promise<never>(() => undefined));
+
+    try {
+      const pending = loadPeriodReach(
+        [{ account_id: "meta", account_name: "Meta", platform: "meta_ads", currency: "BRL" }],
+        { from: "2026-10-01", to: "2026-10-21" },
+        {
+          timeoutMs: 25,
+          fetchCampaignReach: slowCampaign,
+          fetchAccountReach: slowAccount,
+        },
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      const result = await pending;
+
+      expect(result.campaignReach.size).toBe(0);
+      expect(result.accountReach.size).toBe(0);
+      expect(slowCampaign).toHaveBeenCalledTimes(1);
+      expect(slowAccount).toHaveBeenCalledTimes(1);
+      expect(WINDSOR_REACH_TIMEOUT_MS).toBe(8_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("inclui os dias mais recentes quando o histórico ultrapassa 1.000 linhas", async () => {
     auth(true);
     const factReads: FactRead[] = [];
