@@ -27,6 +27,15 @@ import {
 } from "@/lib/automation/ritmo-humano";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
+import {
+  avaliarIdadeDaMensagem,
+  IDADE_DA_MENSAGEM_AVALIADA_METADATA_KEY,
+  type MensagemDoContextoDaAutomacao,
+} from "@/lib/automation/idade-da-mensagem";
+import {
+  lerGuardasDaAutomacao,
+  type GuardasDaAutomacao,
+} from "@/lib/automation/guardas-da-automacao";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
 
@@ -104,6 +113,38 @@ async function persistirEstadoRitmo(
     .eq("organization_id", row.organization_id);
   if (error) throw new Error(`automation_pacing_state_write_failed: ${error.message}`);
   row.metadata = metadata;
+}
+
+async function marcarIdadeDaMensagemAvaliada(
+  admin: SupabaseClient,
+  row: EventRow,
+): Promise<void> {
+  const metadata = {
+    ...(row.metadata ?? {}),
+    [IDADE_DA_MENSAGEM_AVALIADA_METADATA_KEY]: true,
+  };
+  const { error } = await admin
+    .from("event_log")
+    .update({ metadata })
+    .eq("id", row.id)
+    .eq("organization_id", row.organization_id);
+  if (error) throw new Error(`automation_message_age_state_write_failed: ${error.message}`);
+  row.metadata = metadata;
+}
+
+async function carregarGuardasDaAutomacao(
+  admin: SupabaseClient,
+  organizationId: string,
+): Promise<GuardasDaAutomacao> {
+  const { data, error } = await admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`automation_guards_read_failed: ${error.message}`);
+  }
+  return lerGuardasDaAutomacao(data?.settings);
 }
 
 function statusDosResultados(results: ActionResultDetail[]): "success" | "partial" | "failed" | "adiado" {
@@ -297,7 +338,31 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
       .maybeSingle();
     if (contact) context.contact = contact;
   } else if (row.entity_kind === "message" && row.entity_id) {
-    const contactId = row.payload.contact_id as string | undefined;
+    let message: Record<string, unknown> | null = null;
+    if (row.event_type === "message.received") {
+      // `sent_at` guarda o instante recebido do provedor. `event_log.created_at`
+      // guarda o processamento e fica fora desta trava.
+      const result = await admin
+        .from("messages")
+        .select("id, contact_id, conversation_id, channel_session_id, sent_at")
+        .eq("id", row.entity_id)
+        .eq("organization_id", org)
+        .maybeSingle();
+      message = result.data;
+      if (result.error) {
+        logger.warn("[automation.engine] n\u00e3o foi poss\u00edvel ler o hor\u00e1rio da mensagem", {
+          organization_id: org,
+          event_id: row.id,
+          message_id: row.entity_id,
+          error: result.error.message,
+        });
+      }
+    }
+    if (message) context.message = message;
+
+    const contactId =
+      (message?.contact_id as string | undefined) ??
+      (row.payload.contact_id as string | undefined);
     if (contactId) {
       const { data: contact } = await admin
         .from("contacts")
@@ -396,6 +461,9 @@ export async function runAutomationForEvent(
 ): Promise<HandlerResult> {
   const serviceBoundaries = new Map<string, Promise<ServiceBoundary>>();
   let pacingState = lerEstadoRitmo(row.metadata ?? {});
+  const eventoEmRetomada =
+    pacingState !== null ||
+    row.metadata?.[IDADE_DA_MENSAGEM_AVALIADA_METADATA_KEY] === true;
   const requestId = row.metadata?.request_id;
   const causedByRule =
     Boolean(row.metadata?.caused_by_rule) || (typeof requestId === "string" && requestId.startsWith("rule:"));
@@ -425,7 +493,10 @@ export async function runAutomationForEvent(
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_rules" };
   }
 
-  const context = await buildContext(admin, row);
+  const [context, automationGuards] = await Promise.all([
+    buildContext(admin, row),
+    carregarGuardasDaAutomacao(admin, row.organization_id),
+  ]);
   const ruleEmRetomadaId = pacingState?.current.rule_id;
   // Condições são a porta de entrada da regra, não uma guarda entre suas
   // próprias ações. Uma ação anterior pode adicionar justamente a tag que
@@ -447,6 +518,63 @@ export async function runAutomationForEvent(
     pacingState = null;
   }
 
+  if (row.event_type === "message.received" && !eventoEmRetomada) {
+    const idade = avaliarIdadeDaMensagem(
+      context.message as MensagemDoContextoDaAutomacao | undefined,
+      automationGuards.maxMessageAgeMinutes,
+    );
+    if (idade.status === "desconhecida") {
+      // Falha aberta: sem o instante do provedor, falta base para descartar a
+      // mensagem. O aviso preserva a visibilidade.
+      logger.warn("[automation.engine] evento sem hor\u00e1rio da mensagem; trava de idade n\u00e3o aplicada", {
+        organization_id: row.organization_id,
+        event_id: row.id,
+        message_id: row.entity_id,
+      });
+      await marcarIdadeDaMensagemAvaliada(admin, row);
+    } else if (idade.status === "antiga") {
+      for (const rule of applicable) {
+        if (completedRuleIds.has(rule.id)) continue;
+        const resumed = pacingState?.current.rule_id === rule.id ? pacingState.current : null;
+        const startAt = resumed?.action_index ?? 0;
+        const pendingActions = (rule.actions ?? []).slice(startAt);
+        const skipped: ActionResultDetail[] = (
+          pendingActions.length ? pendingActions : [{ type: "automation_rule" }]
+        ).map((action) => ({
+          type: action.type,
+          status: "skipped",
+          detail: {
+            reason: "message_too_old",
+            message_sent_at: idade.messageSentAt,
+            age_minutes: idade.ageMs / 60_000,
+            max_age_minutes: idade.maxAgeMinutes,
+            explicacao:
+              "A mensagem chegou ao provedor h\u00e1 mais tempo que o limite aceito para iniciar esta automa\u00e7\u00e3o.",
+          },
+        }));
+        await registrarRunFinal(
+          admin,
+          row,
+          rule,
+          [...(resumed?.results ?? []), ...skipped],
+          resumed?.run_id,
+        );
+      }
+      if (RITMO_HUMANO_METADATA_KEY in (row.metadata ?? {})) {
+        await persistirEstadoRitmo(admin, row, null);
+      }
+      return {
+        consumer_key: AUTOMATION_CONSUMER_KEY,
+        status: "skipped",
+        detail: "message_too_old",
+      };
+    } else if (idade.status === "recente") {
+      // O evento cruzou a porta de entrada. O marcador impede que uma espera
+      // deliberada do próprio motor transforme a mesma mensagem em antiga.
+      await marcarIdadeDaMensagemAvaliada(admin, row);
+    }
+  }
+
   const actionCtx = (rule: RuleRow) => ({
     admin,
     serviceBoundaries,
@@ -455,6 +583,7 @@ export async function runAutomationForEvent(
     ruleName: rule.name,
     event: row,
     context,
+    automationGuards,
     requestId: row.id,
   });
 
@@ -480,6 +609,14 @@ export async function runAutomationForEvent(
         // Atividade não mostrava NADA — para quem montou a regra, "não apareceu
         // nada" e "não rodou" são a mesma tela (migration 0175).
         await registrarAdiamento(admin, row, rule, action.type, until);
+        if (
+          row.event_type === "message.received" &&
+          row.metadata?.[IDADE_DA_MENSAGEM_AVALIADA_METADATA_KEY] !== true
+        ) {
+          // Mesmo com a trava desligada, a regra já começou. Se o tenant ligar
+          // o limite durante a espera, a retomada não vira uma nova entrada.
+          await marcarIdadeDaMensagemAvaliada(admin, row);
+        }
         return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: until };
       }
     }

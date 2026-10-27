@@ -11,6 +11,22 @@ import { reportarEnvio, type MensagemEnviada } from "@/lib/automation/desfecho-d
 import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
 import { sinalizarDigitando } from "@/lib/messaging/presenca";
 import { houveRespostaHumanaDepoisDoEvento } from "@/lib/messaging/resposta-humana";
+import { logger } from "@/lib/logger";
+
+type ResultadoDoCanal =
+  | { status: "desligada" | "igual" | "ausente" }
+  | { status: "diferente"; eventChannelSessionId: string };
+
+function compararCanalDoEvento(ctx: ActionCtx, actionChannelSessionId: string): ResultadoDoCanal {
+  if (ctx.automationGuards?.sameChannelOnly !== true) return { status: "desligada" };
+  // O gatilho fn_emit_message_event copia este valor de messages.channel_session_id.
+  // A origem nunca vem da conversa, do contato nem da config.
+  const raw = ctx.event.payload?.channel_session_id;
+  if (typeof raw !== "string" || !raw.trim()) return { status: "ausente" };
+  return raw === actionChannelSessionId
+    ? { status: "igual" }
+    : { status: "diferente", eventChannelSessionId: raw };
+}
 
 async function interruptRule(
   ctx: ActionCtx,
@@ -19,6 +35,7 @@ async function interruptRule(
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   const eventCreatedAt = ctx.event.created_at;
   if (!sessionId) return null;
+  if (compararCanalDoEvento(ctx, sessionId).status === "diferente") return null;
   if (!eventCreatedAt) {
     return {
       type: "send_whatsapp_message",
@@ -56,6 +73,13 @@ async function interruptRule(
 }
 
 async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
+  const configuredSessionId =
+    typeof config.channel_session_id === "string" ? config.channel_session_id : null;
+  if (
+    configuredSessionId &&
+    compararCanalDoEvento(ctx, configuredSessionId).status === "diferente"
+  ) return null;
+
   const contato = checarGuardasDeContato(ctx);
   if (contato.ok) {
     const protection = (await protecaoAgendaSupabase(ctx.admin, ctx.organizationId, [contato.contact.id])).get(contato.contact.id)!;
@@ -79,6 +103,30 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   const template = typeof config.template === "string" ? config.template : null;
   if (!sessionId || !template) {
     return { type: "send_whatsapp_message", status: "failed", error: "missing_config" };
+  }
+  const canal = compararCanalDoEvento(ctx, sessionId);
+  if (canal.status === "diferente") {
+    return {
+      type: "send_whatsapp_message",
+      status: "skipped",
+      detail: {
+        reason: "channel_mismatch",
+        event_channel_session_id: canal.eventChannelSessionId,
+        action_channel_session_id: sessionId,
+        explicacao:
+          "A mensagem entrou por outro n\u00famero. Esta a\u00e7\u00e3o foi pulada para n\u00e3o responder pelo canal errado.",
+      },
+    };
+  }
+  if (canal.status === "ausente") {
+    // Canal ausente impede confirmar mismatch. O envio anterior segue, com aviso.
+    logger.warn("[automation.send-whatsapp] evento sem canal de origem; compara\u00e7\u00e3o n\u00e3o aplicada", {
+      organization_id: ctx.organizationId,
+      rule_id: ctx.ruleId,
+      event_id: ctx.event.id,
+      event_type: ctx.event.event_type,
+      action_channel_session_id: sessionId,
+    });
   }
   // Guardas compartilhadas com send_ai_message — ver guarda-do-contato.ts
   // (existe/bloqueado/telefone/consentimento, este último um gate FIXO).
@@ -126,6 +174,7 @@ async function textLength(ctx: ActionCtx, config: Record<string, unknown>): Prom
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   const template = typeof config.template === "string" ? config.template : null;
   if (!sessionId || !template) return null;
+  if (compararCanalDoEvento(ctx, sessionId).status === "diferente") return null;
   const guarda = checarGuardasDeContato(ctx);
   if (!guarda.ok) return null;
 
@@ -136,6 +185,7 @@ async function textLength(ctx: ActionCtx, config: Record<string, unknown>): Prom
 async function signalTyping(ctx: ActionCtx, config: Record<string, unknown>): Promise<void> {
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   if (!sessionId) return;
+  if (compararCanalDoEvento(ctx, sessionId).status === "diferente") return;
   const guarda = checarGuardasDeContato(ctx);
   if (!guarda.ok) return;
   const boundary = await serviceForAutomation(ctx, guarda.contact.id, sessionId);

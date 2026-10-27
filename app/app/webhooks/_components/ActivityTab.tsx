@@ -83,6 +83,10 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   ia_indisponivel:
     "A IA não está configurada nesta instalação — cadastre uma chave em Provedores de IA.",
   texto_vazio: "A IA não devolveu texto. Revise o contexto que você escreveu para ela.",
+  message_too_old:
+    "A mensagem chegou h\u00e1 mais tempo que o limite aceito para iniciar esta automa\u00e7\u00e3o.",
+  channel_mismatch:
+    "A mensagem entrou por outro n\u00famero. A a\u00e7\u00e3o foi pulada para n\u00e3o responder pelo canal errado.",
 };
 
 function explicacaoDe(

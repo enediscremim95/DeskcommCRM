@@ -1,6 +1,7 @@
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow } from "@/lib/event-log/dispatcher";
+import type { GuardasDaAutomacao } from "@/lib/automation/guardas-da-automacao";
 
 export interface ActionResultDetail {
   type: string;
@@ -19,6 +20,8 @@ export interface ActionCtx {
   ruleName: string;
   event: EventRow;
   context: Record<string, unknown>; // mesmo objeto avaliado pelas condições
+  /** Configuração interna lida de organizations.settings uma vez pelo motor. */
+  automationGuards?: GuardasDaAutomacao;
   requestId: string;
   /**
    * O motor já aplicou o ritmo humano durável desta ação. Executores que ainda
