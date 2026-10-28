@@ -410,7 +410,7 @@ const channelConfigSchema = z
 
 const updateDraftInput = {
   agent_id: UUID,
-  system_prompt: z.string().trim().min(10).max(20000).optional(),
+  system_prompt: z.string().trim().min(10).max(32000).optional(),
   skill: z
     .object({ name: z.string().trim().min(1).max(120), enabled: z.boolean() })
     .strict()
