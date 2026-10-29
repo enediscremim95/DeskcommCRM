@@ -7,7 +7,10 @@ import {
   type SnapshotGuardaFila,
   type TurnoFila,
 } from "./fila-primeira-mensagem.handler";
-import type { ItemFilaPrimeiraMensagem } from "./fila-primeira-mensagem";
+import {
+  acaoUsaFilaPrimeiraMensagem,
+  type ItemFilaPrimeiraMensagem,
+} from "./fila-primeira-mensagem";
 
 const NOW = new Date("2026-10-28T15:00:00.000Z");
 
@@ -90,6 +93,12 @@ afterEach(() => {
 });
 
 describe("fila da primeira mensagem", () => {
+  it("continua opt-in e ignora ações sem o marcador exato", () => {
+    expect(acaoUsaFilaPrimeiraMensagem({})).toBe(false);
+    expect(acaoUsaFilaPrimeiraMensagem({ fila: "outra_fila" })).toBe(false);
+    expect(acaoUsaFilaPrimeiraMensagem({ fila: "primeira_mensagem" })).toBe(true);
+  });
+
   it("mantém FIFO quando o item ainda não é a cabeça", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
