@@ -115,7 +115,10 @@ create policy "automation_first_message_queue_select"
     or public.fn_is_platform_admin()
   );
 
-revoke all on table public.automation_first_message_queue from anon;
+-- Os privilégios padrão do schema dão ALL a authenticated em tabela nova: sem
+-- revogar aqui, o RLS (sem policy de escrita) até barraria as linhas, mas a
+-- permissão de escrever continuaria concedida. A fila só se escreve pelo servidor.
+revoke all on table public.automation_first_message_queue from anon, authenticated;
 grant select on table public.automation_first_message_queue to authenticated;
 grant all on table public.automation_first_message_queue to service_role;
 
