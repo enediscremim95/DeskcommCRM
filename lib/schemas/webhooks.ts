@@ -19,16 +19,49 @@ export const conditionSchema = z.object({
   value: z.string().max(500),
 });
 
+const templateDeBolhaSchema = z
+  .string()
+  .max(1000)
+  .refine((value) => value.trim().length > 0, "A bolha não pode ficar vazia.");
+
+const sendWhatsappConfigSchema = z
+  .object({
+    channel_session_id: z.string().uuid(),
+    template: z.string().min(1).max(2000).optional(),
+    templates: z.array(templateDeBolhaSchema).min(2).max(4).optional(),
+    pausa_entre_bolhas_segundos: z.number().int().min(1).max(10).optional(),
+    /** Opt-in explícito. Ausente preserva integralmente o envio legado. */
+    fila: z.literal("primeira_mensagem").optional(),
+  })
+  .superRefine((config, ctx) => {
+    if (!config.template && !config.templates) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["template"],
+        message: "Informe template ou templates.",
+      });
+    }
+    if (config.templates && config.fila !== "primeira_mensagem") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["templates"],
+        message: "Várias bolhas exigem a fila da primeira mensagem.",
+      });
+    }
+    if (config.pausa_entre_bolhas_segundos !== undefined && !config.templates) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["pausa_entre_bolhas_segundos"],
+        message: "A pausa só existe quando templates foi informado.",
+      });
+    }
+  });
+
 export const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("create_or_move_lead"), config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }) }),
   z.object({
     type: z.literal("send_whatsapp_message"),
-    config: z.object({
-      channel_session_id: z.string().uuid(),
-      template: z.string().min(1).max(2000),
-      /** Opt-in explícito. Ausente preserva integralmente o envio legado. */
-      fila: z.literal("primeira_mensagem").optional(),
-    }),
+    config: sendWhatsappConfigSchema,
   }),
   z.object({ type: z.literal("add_tag"), config: z.object({ tags: z.array(z.string().min(1).max(60)).min(1).max(10) }) }),
   z.object({ type: z.literal("remove_tag"), config: z.object({ tags: z.array(z.string().min(1).max(60)).min(1).max(10) }) }),

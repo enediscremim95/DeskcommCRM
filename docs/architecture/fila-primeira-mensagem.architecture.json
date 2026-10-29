@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Fila da primeira mensagem",
-    "subtitle": "opt-in por ação, FIFO por canal e guardas antes do envio",
+    "subtitle": "opt-in por ação, FIFO por canal e guardas antes de cada bolha",
     "output": "fila-primeira-mensagem.html",
     "quality_profile": "standard"
   },
@@ -17,11 +17,11 @@
   "nodes": [
     { "id": "evento", "lane": "entrada", "type": "service", "label": "message.received", "sublabel": "canal presente no payload" },
     { "id": "regra", "lane": "entrada", "type": "service", "label": "automation_rules", "sublabel": "somente config.fila = primeira_mensagem" },
-    { "id": "item", "lane": "fila", "type": "database", "label": "automation_first_message_queue", "sublabel": "tenant, canal, ordem e resultado" },
+    { "id": "item", "lane": "fila", "type": "database", "label": "automation_first_message_queue", "sublabel": "um item por lead, snapshot e progresso das bolhas" },
     { "id": "claim", "lane": "fila", "type": "database", "label": "fn_try_claim_automation_first_message", "sublabel": "lock por canal, FIFO, intervalo e teto" },
     { "id": "knobs", "lane": "fila", "type": "database", "label": "channel_knobs", "sublabel": "120 a 240 s, 200/dia, pausa e fuso" },
-    { "id": "guardas", "lane": "guardas", "type": "service", "label": "guardas atuais", "sublabel": "tags, opt-out, 23 h, humano e janela" },
-    { "id": "envio", "lane": "guardas", "type": "service", "label": "send_whatsapp_message", "sublabel": "executor existente, sem reenviar" },
+    { "id": "guardas", "lane": "guardas", "type": "service", "label": "guardas atuais", "sublabel": "reavaliadas antes de cada bolha" },
+    { "id": "envio", "lane": "guardas", "type": "service", "label": "send_whatsapp_message", "sublabel": "uma mensagem outbound por bolha, com identidade estável" },
     { "id": "rota", "lane": "operacao", "type": "api", "label": "GET/PATCH first-message-queue", "sublabel": "manager+, tenant da sessão e audit" }
   ],
   "edges": [
@@ -30,7 +30,8 @@
     { "id": "e3", "from": "item", "to": "claim", "label": "cabeça do canal" },
     { "id": "e4", "from": "knobs", "to": "claim", "label": "governa ritmo e cota" },
     { "id": "e5", "from": "claim", "to": "guardas", "label": "libera um item" },
-    { "id": "e6", "from": "guardas", "to": "envio", "label": "somente se ainda permitido" },
+    { "id": "e6", "from": "guardas", "to": "envio", "label": "envia, persiste progresso e volta às guardas" },
+    { "id": "e9", "from": "envio", "to": "guardas", "label": "pausa curta antes da próxima bolha" },
     { "id": "e7", "from": "rota", "to": "knobs", "label": "lê e altera configuração" },
     { "id": "e8", "from": "rota", "to": "item", "label": "conta pendentes e enviados" }
   ]

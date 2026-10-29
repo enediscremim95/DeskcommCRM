@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type {
@@ -16,6 +18,7 @@ export const FILA_PRIMEIRA_MENSAGEM_DEFAULTS = {
   maxIntervalSeconds: 240,
   dailyLimit: 200,
   paused: false,
+  pauseBetweenPartsSeconds: 3,
 } as const;
 
 export type StatusFilaPrimeiraMensagem =
@@ -39,10 +42,32 @@ export interface ItemFilaPrimeiraMensagem {
   status: StatusFilaPrimeiraMensagem;
   discard_reason: string | null;
   outbound_message_id: string | null;
+  outbound_message_ids: string[];
+  message_parts: string[] | null;
+  sent_part_count: number;
   next_attempt_at: string | null;
   enqueued_at: string;
   started_at: string | null;
   finished_at: string | null;
+}
+
+/** UUID v5 determinístico: retry da mesma bolha reencontra a mesma linha no CRM. */
+export function idDaBolhaFilaPrimeiraMensagem(queueId: string, index: number): string {
+  const bytes = createHash("sha1")
+    .update(`automation:first-message-queue:v1:${queueId}:${index}`)
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export function pausaEntreBolhasSegundos(item: ItemFilaPrimeiraMensagem): number {
+  const configured = item.action_config.pausa_entre_bolhas_segundos;
+  return typeof configured === "number" && Number.isInteger(configured) && configured >= 1 && configured <= 10
+    ? configured
+    : FILA_PRIMEIRA_MENSAGEM_DEFAULTS.pauseBetweenPartsSeconds;
 }
 
 interface EnqueueResult {
@@ -175,8 +200,15 @@ export function resultadoDaFila(
   }
   const detail = {
     queue_id: item.id,
+    sent_parts: item.sent_part_count,
+    ...(item.outbound_message_ids.length > 0
+      ? { message_ids: item.outbound_message_ids }
+      : {}),
     ...(item.outbound_message_id
       ? { message_id: item.outbound_message_id }
+      : {}),
+    ...(item.message_parts && item.sent_part_count < item.message_parts.length
+      ? { partial: item.sent_part_count > 0, total_parts: item.message_parts.length }
       : {}),
   };
   if (item.status === "sent") {

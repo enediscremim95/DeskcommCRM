@@ -116,7 +116,7 @@ function claim(queueId: string, now: string, shouldClaim: boolean): ClaimResult 
   ) as ClaimResult;
 }
 
-describe("migrations 0293 a 0295, fila da primeira mensagem", () => {
+describe("migrations 0293 a 0296, fila da primeira mensagem", () => {
   beforeAll(() => {
     seedGov();
     sql(`
@@ -149,9 +149,68 @@ describe("migrations 0293 a 0295, fila da primeira mensagem", () => {
   it("instala a tabela e os knobs operacionais", () => {
     expect(tableExists("automation_first_message_queue")).toBe(true);
     expect(columnExists("automation_first_message_queue", "not_before_at")).toBe(true);
+    expect(columnExists("automation_first_message_queue", "message_parts")).toBe(true);
+    expect(columnExists("automation_first_message_queue", "sent_part_count")).toBe(true);
+    expect(columnExists("automation_first_message_queue", "outbound_message_ids")).toBe(true);
     expect(columnExists("channel_knobs", "first_message_queue_paused")).toBe(true);
     expect(columnExists("channel_knobs", "first_message_queue_daily_limit")).toBe(true);
     expect(columnExists("channel_knobs", "first_message_queue_next_at")).toBe(true);
+  });
+
+  it("preserva item legado e valida o estado persistido das bolhas", () => {
+    expect(
+      JSON.parse(
+        sql(`
+          select json_build_object(
+            'message_parts', message_parts,
+            'sent_part_count', sent_part_count,
+            'outbound_message_ids', outbound_message_ids
+          )
+          from public.automation_first_message_queue
+          where id = '${QUEUE}';
+        `),
+      ),
+    ).toEqual({
+      message_parts: null,
+      sent_part_count: 0,
+      outbound_message_ids: [],
+    });
+
+    sql(`
+      update public.automation_first_message_queue
+      set message_parts = '["Primeira", "Segunda", "Terceira"]'::jsonb,
+          sent_part_count = 1,
+          outbound_message_ids = array['${randomUUID()}'::uuid]
+      where id = '${QUEUE}';
+    `);
+    expect(() =>
+      sql(`
+        update public.automation_first_message_queue
+        set message_parts = '["Única"]'::jsonb
+        where id = '${QUEUE}';
+      `),
+    ).toThrow();
+    expect(() =>
+      sql(`
+        update public.automation_first_message_queue
+        set sent_part_count = 5
+        where id = '${QUEUE}';
+      `),
+    ).toThrow();
+    expect(() =>
+      sql(`
+        update public.automation_first_message_queue
+        set message_parts = '{"parte":"inválida"}'::jsonb
+        where id = '${QUEUE}';
+      `),
+    ).toThrow();
+    sql(`
+      update public.automation_first_message_queue
+      set message_parts = null,
+          sent_part_count = 0,
+          outbound_message_ids = '{}'::uuid[]
+      where id = '${QUEUE}';
+    `);
   });
 
   it("isola a leitura por organização e bloqueia escrita autenticada", () => {

@@ -6,10 +6,13 @@ import { buildContext } from "@/lib/automation/engine";
 import {
   CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
   EVENTO_FILA_PRIMEIRA_MENSAGEM,
+  idDaBolhaFilaPrimeiraMensagem,
+  pausaEntreBolhasSegundos,
   semMarcadorDaFila,
   type ItemFilaPrimeiraMensagem,
 } from "@/lib/automation/fila-primeira-mensagem";
 import { adiarAteAJanelaAbrir, knobsDoCanal } from "@/lib/automation/janela-do-canal";
+import { renderTemplate } from "@/lib/automation/template";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { proximaAberturaDaJanela } from "@/lib/agent-engine/pacing/engine";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
@@ -17,6 +20,7 @@ import { comandoDaConversa, silencioVigente } from "@/lib/inbox/comando-da-conve
 import { houveRespostaHumanaDepoisDoEvento } from "@/lib/messaging/resposta-humana";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logger } from "@/lib/logger";
 
 const LIMITE_JANELA_LIVRE_MS = 23 * 60 * 60 * 1_000;
 const RETENTATIVA_CURTA_MS = 60_000;
@@ -34,6 +38,7 @@ export type MotivoDescarteFila =
   | "regra_indisponivel";
 
 export interface SnapshotGuardaFila {
+  ruleActive: boolean;
   tags: string[];
   isBlocked: boolean;
   forceHuman: boolean;
@@ -52,6 +57,7 @@ export function motivoParaDescartarFila(
   snapshot: SnapshotGuardaFila,
   now: Date = new Date(),
 ): MotivoDescarteFila | null {
+  if (!snapshot.ruleActive) return "regra_indisponivel";
   if (snapshot.tags.includes("nao_contatar")) return "tag_nao_contatar";
   if (snapshot.tags.includes("sem_followup")) return "tag_sem_followup";
   if (snapshot.isBlocked || ehPedidoDeOptOut(snapshot.latestInboundBody)) {
@@ -111,12 +117,168 @@ export interface RuntimeFilaPrimeiraMensagem {
   turno(item: ItemFilaPrimeiraMensagem, claim: boolean): Promise<TurnoFila>;
   snapshot(item: ItemFilaPrimeiraMensagem): Promise<SnapshotGuardaFila>;
   descartar(item: ItemFilaPrimeiraMensagem, reason: MotivoDescarteFila): Promise<void>;
-  enviar(item: ItemFilaPrimeiraMensagem): Promise<ActionResultDetail>;
+  prepararPartes(item: ItemFilaPrimeiraMensagem): Promise<ItemFilaPrimeiraMensagem>;
+  enviarBolha(
+    item: ItemFilaPrimeiraMensagem,
+    body: string,
+    index: number,
+  ): Promise<ActionResultDetail>;
+  registrarBolha(
+    item: ItemFilaPrimeiraMensagem,
+    index: number,
+    result: ActionResultDetail,
+  ): Promise<void>;
   acompanharMensagem(item: ItemFilaPrimeiraMensagem): Promise<ActionResultDetail | null>;
+  depoisDaPrimeiraBolha(item: ItemFilaPrimeiraMensagem): Promise<void>;
+  pausarEntreBolhas(milliseconds: number): Promise<void>;
   finalizar(item: ItemFilaPrimeiraMensagem, result: ActionResultDetail): Promise<void>;
   reagendar(item: ItemFilaPrimeiraMensagem, retryAt: string): Promise<void>;
   proximaAberturaDoDiaSeguinte(item: ItemFilaPrimeiraMensagem, anchor: string): Promise<string>;
   acordarOrigem(item: ItemFilaPrimeiraMensagem): Promise<void>;
+}
+
+function partesDoItem(item: ItemFilaPrimeiraMensagem): string[] {
+  if (
+    Array.isArray(item.message_parts) &&
+    item.message_parts.length >= 2 &&
+    item.message_parts.length <= 4 &&
+    item.message_parts.every((part) => typeof part === "string" && part.trim().length > 0)
+  ) {
+    return item.message_parts;
+  }
+  const template = item.action_config.template;
+  return typeof template === "string" && template.length > 0 ? [template] : [];
+}
+
+function resultadoInterrompido(
+  item: ItemFilaPrimeiraMensagem,
+  total: number,
+  reason: MotivoDescarteFila,
+): ActionResultDetail {
+  if (item.sent_part_count === 0) {
+    return {
+      type: "send_whatsapp_message",
+      status: "skipped",
+      detail: { reason },
+    };
+  }
+  return {
+    type: "send_whatsapp_message",
+    status: "success",
+    detail: {
+      partial: true,
+      reason,
+      sent_parts: item.sent_part_count,
+      total_parts: total,
+      message_ids: item.outbound_message_ids,
+    },
+  };
+}
+
+async function processarBolhas(
+  runtime: RuntimeFilaPrimeiraMensagem,
+  original: ItemFilaPrimeiraMensagem,
+): Promise<HandlerResult> {
+  const item = await runtime.prepararPartes(original);
+  const parts = partesDoItem(item);
+  if (parts.length === 0) {
+    const result: ActionResultDetail = {
+      type: "send_whatsapp_message",
+      status: "failed",
+      error: "first_message_queue_missing_template",
+    };
+    await runtime.finalizar(item, result);
+    await runtime.acordarOrigem(item);
+    return {
+      consumer_key: CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
+      status: "ok",
+      detail: result.error,
+    };
+  }
+
+  // Se o worker caiu depois de persistir a primeira bolha, a aplicação da tag
+  // é repetida com segurança: add_tag faz merge idempotente e não reemite evento.
+  if (item.sent_part_count > 0) await runtime.depoisDaPrimeiraBolha(item);
+
+  for (let index = item.sent_part_count; index < parts.length; index += 1) {
+    const descarte = motivoParaDescartarFila(
+      await runtime.snapshot(item),
+      runtime.now(),
+    );
+    if (descarte) {
+      const result = resultadoInterrompido(item, parts.length, descarte);
+      await runtime.finalizar(item, result);
+      await runtime.acordarOrigem(item);
+      return {
+        consumer_key: CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
+        status: "ok",
+        detail: item.sent_part_count > 0 ? `parcial:${descarte}` : descarte,
+      };
+    }
+
+    const result = await runtime.enviarBolha(item, parts[index]!, index);
+    await runtime.registrarBolha(item, index, result);
+
+    if (result.status === "success") {
+      if (index === 0) await runtime.depoisDaPrimeiraBolha(item);
+      if (index < parts.length - 1) {
+        await runtime.pausarEntreBolhas(pausaEntreBolhasSegundos(item) * 1_000);
+      }
+      continue;
+    }
+
+    if (result.status === "postponed") {
+      await runtime.finalizar(item, result);
+      const at = new Date(runtime.now().getTime() + RETENTATIVA_CURTA_MS).toISOString();
+      await runtime.reagendar(item, at);
+      return retry(at, `bolha_${index + 1}_aguardando_canal`);
+    }
+
+    const partial = item.sent_part_count > 0;
+    const partialError =
+      partial && result.status === "failed"
+        ? `partial_send_failed:${result.error ?? "message_failed"}`
+        : null;
+    const terminal: ActionResultDetail = partial
+      ? {
+          type: "send_whatsapp_message",
+          status: result.status === "skipped" ? "success" : "failed",
+          ...(partialError ? { error: partialError } : {}),
+          detail: {
+            partial: true,
+            reason: partialError ?? result.detail?.reason ?? result.error ?? "message_not_sent",
+            failed_part_index: index,
+            sent_parts: item.sent_part_count,
+            total_parts: parts.length,
+            message_ids: item.outbound_message_ids,
+          },
+        }
+      : result;
+    await runtime.finalizar(item, terminal);
+    await runtime.acordarOrigem(item);
+    return {
+      consumer_key: CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
+      status: "ok",
+      detail: partial ? terminal.error ?? "parcial_interrompido" : terminal.status,
+    };
+  }
+
+  const result: ActionResultDetail = {
+    type: "send_whatsapp_message",
+    status: "success",
+    detail: {
+      sent_parts: parts.length,
+      total_parts: parts.length,
+      message_ids: item.outbound_message_ids,
+    },
+  };
+  await runtime.finalizar(item, result);
+  await runtime.acordarOrigem(item);
+  return {
+    consumer_key: CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
+    status: "ok",
+    detail: "success",
+  };
 }
 
 function retry(
@@ -143,7 +305,12 @@ export async function processarItemFilaPrimeiraMensagem(
     };
   }
 
-  if (item.status === "processing") {
+  if (
+    item.status === "processing" &&
+    item.message_parts === null &&
+    item.sent_part_count === 0 &&
+    item.outbound_message_id
+  ) {
     const acompanhado = await runtime.acompanharMensagem(item);
     if (acompanhado) {
       await runtime.finalizar(item, acompanhado);
@@ -160,6 +327,7 @@ export async function processarItemFilaPrimeiraMensagem(
       };
     }
   }
+  if (item.status === "processing") return processarBolhas(runtime, item);
 
   const janela = await runtime.foraDaJanela(item);
   if (janela) {
@@ -211,40 +379,7 @@ export async function processarItemFilaPrimeiraMensagem(
     return retry(at, claim.decision);
   }
 
-  // O snapshot anterior protege o claim. Este segundo fecha a corrida curta
-  // entre obter o lock e iniciar o efeito externo, quando uma pessoa pode ter
-  // respondido ou pausado a conversa.
-  const descarteDepoisDoClaim = motivoParaDescartarFila(
-    await runtime.snapshot(item),
-    runtime.now(),
-  );
-  if (descarteDepoisDoClaim) {
-    await runtime.finalizar(item, {
-      type: "send_whatsapp_message",
-      status: "skipped",
-      detail: { reason: descarteDepoisDoClaim },
-    });
-    await runtime.acordarOrigem(item);
-    return {
-      consumer_key: CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
-      status: "ok",
-      detail: descarteDepoisDoClaim,
-    };
-  }
-
-  const result = await runtime.enviar(item);
-  await runtime.finalizar(item, result);
-  if (result.status === "postponed") {
-    const at = new Date(runtime.now().getTime() + RETENTATIVA_CURTA_MS).toISOString();
-    await runtime.reagendar(item, at);
-    return retry(at, "mensagem_da_fila_aguardando_canal");
-  }
-  await runtime.acordarOrigem(item);
-  return {
-    consumer_key: CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
-    status: "ok",
-    detail: result.status,
-  };
+  return processarBolhas(runtime, { ...item, status: "processing" });
 }
 
 function primeiraLinha<T>(data: unknown): T | null {
@@ -273,7 +408,7 @@ async function carregarSnapshot(
   item: ItemFilaPrimeiraMensagem,
   now: Date,
 ): Promise<SnapshotGuardaFila> {
-  const [contactResult, conversationResult, inboundResult, humanReplied] =
+  const [contactResult, conversationResult, inboundResult, ruleResult, humanReplied] =
     await Promise.all([
       admin
         .from("contacts")
@@ -296,6 +431,12 @@ async function carregarSnapshot(
         .order("sent_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      admin
+        .from("automation_rules")
+        .select("is_active")
+        .eq("id", item.rule_id)
+        .eq("organization_id", item.organization_id)
+        .maybeSingle(),
       houveRespostaHumanaDepoisDoEvento(admin, {
         organizationId: item.organization_id,
         conversationId: item.conversation_id,
@@ -304,7 +445,7 @@ async function carregarSnapshot(
     ]);
 
   const readError =
-    contactResult.error ?? conversationResult.error ?? inboundResult.error;
+    contactResult.error ?? conversationResult.error ?? inboundResult.error ?? ruleResult.error;
   if (readError) throw new Error(`first_message_queue_guard_read_failed: ${readError.message}`);
   if (!contactResult.data || !conversationResult.data) {
     throw new Error("first_message_queue_guard_target_missing");
@@ -323,6 +464,7 @@ async function carregarSnapshot(
   const inbound = inboundResult.data as { body: string | null; sent_at: string | null } | null;
   void now;
   return {
+    ruleActive: ruleResult.data?.is_active === true,
     tags: contact.tags ?? [],
     isBlocked: contact.is_blocked === true,
     forceHuman: contact.force_human === true,
@@ -336,6 +478,60 @@ async function carregarSnapshot(
       botSilencedUntil: conversation.bot_silenced_until,
     },
   };
+}
+
+interface OrigemDaFila {
+  event: EventRow;
+  rule: {
+    id: string;
+    name: string;
+    is_active: boolean;
+    actions: Array<{ type: string; config?: Record<string, unknown> }>;
+  };
+  context: Record<string, unknown>;
+}
+
+async function carregarOrigemDaFila(
+  admin: SupabaseClient,
+  item: ItemFilaPrimeiraMensagem,
+): Promise<OrigemDaFila | null> {
+  const [{ data: eventData, error: eventError }, { data: ruleData, error: ruleError }] =
+    await Promise.all([
+      admin
+        .from("event_log")
+        .select("*")
+        .eq("id", item.original_event_id)
+        .eq("organization_id", item.organization_id)
+        .maybeSingle(),
+      admin
+        .from("automation_rules")
+        .select("id, name, is_active, actions")
+        .eq("id", item.rule_id)
+        .eq("organization_id", item.organization_id)
+        .maybeSingle(),
+    ]);
+  if (eventError || ruleError) {
+    throw new Error(
+      `first_message_queue_origin_read_failed: ${eventError?.message ?? ruleError?.message}`,
+    );
+  }
+  const rule = ruleData as OrigemDaFila["rule"] | null;
+  if (!eventData || !rule) return null;
+  const event = eventData as unknown as EventRow;
+  return { event, rule, context: await buildContext(admin, event) };
+}
+
+function configDaBolha(
+  actionConfig: Record<string, unknown>,
+  body: string,
+): Record<string, unknown> {
+  const {
+    fila: _fila,
+    templates: _templates,
+    pausa_entre_bolhas_segundos: _pausa,
+    ...restante
+  } = actionConfig;
+  return { ...restante, template: body };
 }
 
 async function finalizarNoBanco(
@@ -417,37 +613,43 @@ function runtimeReal(
         .eq("status", "queued");
       if (error) throw new Error(`first_message_queue_discard_failed: ${error.message}`);
     },
-    async enviar(item) {
-      const [{ data: eventData, error: eventError }, { data: ruleData, error: ruleError }] =
-        await Promise.all([
-          admin
-            .from("event_log")
-            .select("*")
-            .eq("id", item.original_event_id)
-            .eq("organization_id", item.organization_id)
-            .maybeSingle(),
-          admin
-            .from("automation_rules")
-            .select("id, name, is_active")
-            .eq("id", item.rule_id)
-            .eq("organization_id", item.organization_id)
-            .maybeSingle(),
-        ]);
-      if (eventError || ruleError) {
-        throw new Error(
-          `first_message_queue_origin_read_failed: ${eventError?.message ?? ruleError?.message}`,
-        );
-      }
-      const rule = ruleData as { id: string; name: string; is_active: boolean } | null;
-      if (!eventData || !rule?.is_active) {
+    async prepararPartes(item) {
+      if (Array.isArray(item.message_parts)) return item;
+      const templates = item.action_config.templates;
+      if (!Array.isArray(templates)) return item;
+      const origem = await carregarOrigemDaFila(admin, item);
+      if (!origem) return item;
+      const knobs = await knobsDoCanal(
+        admin,
+        item.organization_id,
+        item.channel_session_id,
+      );
+      const renderedAt = now();
+      const messageParts = templates.map((template) =>
+        renderTemplate(String(template), origem.context, {
+          now: renderedAt,
+          timezone: knobs.timezone,
+        }),
+      );
+      const { error } = await admin
+        .from("automation_first_message_queue")
+        .update({ message_parts: messageParts })
+        .eq("id", item.id)
+        .eq("organization_id", item.organization_id)
+        .is("message_parts", null);
+      if (error) throw new Error(`first_message_queue_parts_snapshot_failed: ${error.message}`);
+      item.message_parts = messageParts;
+      return item;
+    },
+    async enviarBolha(item, body, index) {
+      const origem = await carregarOrigemDaFila(admin, item);
+      if (!origem?.rule.is_active) {
         return {
           type: "send_whatsapp_message",
           status: "skipped",
           detail: { reason: "regra_indisponivel" },
         };
       }
-      const event = eventData as unknown as EventRow;
-      const context = await buildContext(admin, event);
       const executor = getAction("send_whatsapp_message");
       if (!executor) {
         return {
@@ -456,25 +658,64 @@ function runtimeReal(
           error: "send_whatsapp_action_unavailable",
         };
       }
+      const internalMessageId = idDaBolhaFilaPrimeiraMensagem(item.id, index);
       const ctx: ActionCtx = {
         admin,
         organizationId: item.organization_id,
         ruleId: item.rule_id,
-        ruleName: rule.name,
-        event,
-        context,
-        requestId: item.queue_event_id ?? item.id,
+        ruleName: origem.rule.name,
+        event: origem.event,
+        context: origem.context,
+        requestId: `first-message:${item.id}:${index}`,
         actionIndex: item.action_index,
         humanPacingManaged: true,
+        internalMessageId,
+        messageMetadata: {
+          idempotency_key: `first-message:${item.id}:${index}`,
+          first_message_queue_part_index: index,
+        },
         serviceBoundaries: new Map(),
       };
-      return executor.execute(ctx, semMarcadorDaFila(item.action_config));
+      return executor.execute(ctx, configDaBolha(semMarcadorDaFila(item.action_config), body));
+    },
+    async registrarBolha(item, index, result) {
+      const messageId =
+        typeof result.detail?.message_id === "string"
+          ? result.detail.message_id
+          : null;
+      const ids = [...(item.outbound_message_ids ?? [])];
+      if (messageId) ids[index] = messageId;
+      const sentPartCount =
+        result.status === "success"
+          ? Math.max(item.sent_part_count, index + 1)
+          : item.sent_part_count;
+      const { error } = await admin
+        .from("automation_first_message_queue")
+        .update({
+          sent_part_count: sentPartCount,
+          outbound_message_ids: ids,
+          ...(messageId ? { outbound_message_id: messageId } : {}),
+          result: {
+            status: "processing",
+            sent_parts: sentPartCount,
+            current_part_index: index,
+            last_part_result: result,
+          },
+          updated_at: now().toISOString(),
+        })
+        .eq("id", item.id)
+        .eq("organization_id", item.organization_id)
+        .eq("status", "processing");
+      if (error) throw new Error(`first_message_queue_part_progress_failed: ${error.message}`);
+      item.sent_part_count = sentPartCount;
+      item.outbound_message_ids = ids;
+      if (messageId) item.outbound_message_id = messageId;
     },
     async acompanharMensagem(item) {
       if (!item.outbound_message_id) return null;
       const { data, error } = await admin
         .from("messages")
-        .select("id, status, error_code, error_message, metadata")
+        .select("id, status, error_code, error_message")
         .eq("id", item.outbound_message_id)
         .eq("organization_id", item.organization_id)
         .maybeSingle();
@@ -502,6 +743,38 @@ function runtimeReal(
         detail: { message_id: data.id, reason: "aguardando_o_canal" },
       };
     },
+    async depoisDaPrimeiraBolha(item) {
+      const origem = await carregarOrigemDaFila(admin, item);
+      if (!origem?.rule.is_active) return;
+      const nextAction = origem.rule.actions[item.action_index + 1];
+      if (nextAction?.type !== "add_tag") return;
+      const executor = getAction("add_tag");
+      if (!executor) return;
+      const result = await executor.execute(
+        {
+          admin,
+          organizationId: item.organization_id,
+          ruleId: item.rule_id,
+          ruleName: origem.rule.name,
+          event: origem.event,
+          context: origem.context,
+          requestId: `first-message:${item.id}:after-first-part`,
+          actionIndex: item.action_index + 1,
+          serviceBoundaries: new Map(),
+        },
+        nextAction.config ?? {},
+      );
+      if (result.status === "failed") {
+        logger.warn("[automation.first-message-queue] add_tag após a primeira bolha falhou", {
+          organization_id: item.organization_id,
+          queue_id: item.id,
+          rule_id: item.rule_id,
+          error: result.error ?? "unknown",
+        });
+      }
+    },
+    pausarEntreBolhas: (milliseconds) =>
+      new Promise((resolve) => setTimeout(resolve, milliseconds)),
     finalizar: (item, result) => finalizarNoBanco(admin, item, result, now()),
     async reagendar(item, retryAt) {
       const { error } = await admin

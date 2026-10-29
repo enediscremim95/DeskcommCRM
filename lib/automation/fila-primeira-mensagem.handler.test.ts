@@ -9,6 +9,9 @@ import {
 } from "./fila-primeira-mensagem.handler";
 import {
   acaoUsaFilaPrimeiraMensagem,
+  idDaBolhaFilaPrimeiraMensagem,
+  pausaEntreBolhasSegundos,
+  resultadoDaFila,
   type ItemFilaPrimeiraMensagem,
 } from "./fila-primeira-mensagem";
 
@@ -25,10 +28,13 @@ function item(id = "fila-1"): ItemFilaPrimeiraMensagem {
     action_index: 0,
     contact_id: "contato-1",
     conversation_id: "conversa-1",
-    action_config: { fila: "primeira_mensagem" },
+    action_config: { fila: "primeira_mensagem", template: "Olá" },
     status: "queued",
     discard_reason: null,
     outbound_message_id: null,
+    outbound_message_ids: [],
+    message_parts: null,
+    sent_part_count: 0,
     next_attempt_at: null,
     enqueued_at: "2026-10-28T14:00:00.000Z",
     started_at: null,
@@ -38,6 +44,7 @@ function item(id = "fila-1"): ItemFilaPrimeiraMensagem {
 
 function snapshot(overrides: Partial<SnapshotGuardaFila> = {}): SnapshotGuardaFila {
   return {
+    ruleActive: true,
     tags: [],
     isBlocked: false,
     forceHuman: false,
@@ -64,7 +71,7 @@ function runtime(decisions: TurnoFila[]): RuntimeFilaPrimeiraMensagem & {
   const calls: string[] = [];
   return {
     calls,
-    now: () => new Date(),
+    now: () => new Date(NOW),
     foraDaJanela: vi.fn(async () => null),
     turno: vi.fn(async (_item, claim) => {
       calls.push(claim ? "claim" : "peek");
@@ -72,15 +79,26 @@ function runtime(decisions: TurnoFila[]): RuntimeFilaPrimeiraMensagem & {
     }),
     snapshot: vi.fn(async () => snapshot()),
     descartar: vi.fn(async (_item, reason) => void calls.push(`discard:${reason}`)),
-    enviar: vi.fn(async () => {
-      calls.push("send");
+    prepararPartes: vi.fn(async (queueItem) => queueItem),
+    enviarBolha: vi.fn(async (_queueItem, body, index) => {
+      calls.push(`send:${index}:${body}`);
       return {
         type: "send_whatsapp_message",
         status: "success" as const,
-        detail: { message_id: "m-1" },
+        detail: { message_id: `m-${index + 1}` },
       };
     }),
+    registrarBolha: vi.fn(async (queueItem, index, result) => {
+      calls.push(`part:${index}`);
+      if (result.status === "success") queueItem.sent_part_count = index + 1;
+      if (typeof result.detail?.message_id === "string") {
+        queueItem.outbound_message_ids[index] = result.detail.message_id;
+        queueItem.outbound_message_id = result.detail.message_id;
+      }
+    }),
     acompanharMensagem: vi.fn(async () => null),
+    depoisDaPrimeiraBolha: vi.fn(async () => void calls.push("after-first")),
+    pausarEntreBolhas: vi.fn(async (milliseconds) => void calls.push(`pause:${milliseconds}`)),
     finalizar: vi.fn(async () => void calls.push("finish")),
     reagendar: vi.fn(async (_item, at) => void calls.push(`retry:${at}`)),
     proximaAberturaDoDiaSeguinte: vi.fn(async () => "2026-10-29T12:00:00.000Z"),
@@ -97,6 +115,38 @@ describe("fila da primeira mensagem", () => {
     expect(acaoUsaFilaPrimeiraMensagem({})).toBe(false);
     expect(acaoUsaFilaPrimeiraMensagem({ fila: "outra_fila" })).toBe(false);
     expect(acaoUsaFilaPrimeiraMensagem({ fila: "primeira_mensagem" })).toBe(true);
+  });
+
+  it("deriva uma identidade estável e distinta para cada bolha", () => {
+    const primeira = idDaBolhaFilaPrimeiraMensagem("fila-1", 0);
+    expect(idDaBolhaFilaPrimeiraMensagem("fila-1", 0)).toBe(primeira);
+    expect(idDaBolhaFilaPrimeiraMensagem("fila-1", 1)).not.toBe(primeira);
+    expect(primeira).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it("usa pausa padrão de três segundos entre bolhas", () => {
+    expect(pausaEntreBolhasSegundos(item())).toBe(3);
+  });
+
+  it("expõe o desfecho parcial sem esconder as bolhas já enviadas", () => {
+    const partial = item();
+    partial.status = "failed";
+    partial.message_parts = ["Primeira", "Segunda", "Terceira"];
+    partial.sent_part_count = 1;
+    partial.outbound_message_ids = ["mensagem-1"];
+    partial.outbound_message_id = "mensagem-1";
+    partial.discard_reason = "partial_send_failed:channel_send_failed";
+
+    expect(resultadoDaFila(partial)).toMatchObject({
+      status: "failed",
+      error: "partial_send_failed:channel_send_failed",
+      detail: {
+        partial: true,
+        sent_parts: 1,
+        total_parts: 3,
+        message_ids: ["mensagem-1"],
+      },
+    });
   });
 
   it("mantém FIFO quando o item ainda não é a cabeça", async () => {
@@ -119,7 +169,7 @@ describe("fila da primeira mensagem", () => {
     const result = await processarItemFilaPrimeiraMensagem(r, item());
 
     expect(result).toMatchObject({ status: "retry", retry_at: retryAt });
-    expect(r.enviar).not.toHaveBeenCalled();
+    expect(r.enviarBolha).not.toHaveBeenCalled();
   });
 
   it("adia o teto diário para a próxima abertura do canal", async () => {
@@ -144,14 +194,130 @@ describe("fila da primeira mensagem", () => {
     const queued = item();
     const paused = runtime([turno("paused", "2026-10-28T15:01:00.000Z")]);
     await processarItemFilaPrimeiraMensagem(paused, queued);
-    expect(paused.enviar).not.toHaveBeenCalled();
+    expect(paused.enviarBolha).not.toHaveBeenCalled();
 
     vi.setSystemTime(new Date("2026-10-28T15:01:00.000Z"));
     const resumed = runtime([turno("ready"), turno("claimed")]);
     const result = await processarItemFilaPrimeiraMensagem(resumed, queued);
 
     expect(result.status).toBe("ok");
-    expect(resumed.calls).toEqual(["peek", "claim", "send", "finish", "wake"]);
+    expect(resumed.calls).toEqual([
+      "peek",
+      "claim",
+      "send:0:Olá",
+      "part:0",
+      "after-first",
+      "finish",
+      "wake",
+    ]);
+  });
+
+  it("envia três bolhas em ordem e pausa entre elas", async () => {
+    const queued = item();
+    queued.message_parts = ["Primeira", "Segunda", "Terceira"];
+    queued.action_config = {
+      fila: "primeira_mensagem",
+      pausa_entre_bolhas_segundos: 4,
+    };
+    const r = runtime([turno("ready"), turno("claimed")]);
+
+    const result = await processarItemFilaPrimeiraMensagem(r, queued);
+
+    expect(result).toMatchObject({ status: "ok", detail: "success" });
+    expect(r.calls).toEqual([
+      "peek",
+      "claim",
+      "send:0:Primeira",
+      "part:0",
+      "after-first",
+      "pause:4000",
+      "send:1:Segunda",
+      "part:1",
+      "pause:4000",
+      "send:2:Terceira",
+      "part:2",
+      "finish",
+      "wake",
+    ]);
+  });
+
+  it("para antes da segunda bolha quando um humano responde no meio", async () => {
+    const queued = item();
+    queued.message_parts = ["Primeira", "Segunda", "Terceira"];
+    const r = runtime([turno("ready"), turno("claimed")]);
+    vi.mocked(r.snapshot)
+      .mockResolvedValueOnce(snapshot())
+      .mockResolvedValueOnce(snapshot())
+      .mockResolvedValueOnce(snapshot({ humanRepliedAfterQueue: true }));
+
+    const result = await processarItemFilaPrimeiraMensagem(r, queued);
+
+    expect(result).toMatchObject({ status: "ok", detail: "parcial:humano_respondeu" });
+    expect(r.enviarBolha).toHaveBeenCalledTimes(1);
+    expect(r.calls).toContain("send:0:Primeira");
+    expect(r.calls).not.toContain("send:1:Segunda");
+  });
+
+  it("retoma da segunda bolha sem duplicar a primeira já confirmada", async () => {
+    const processing = item();
+    processing.status = "processing";
+    processing.message_parts = ["Primeira", "Segunda", "Terceira"];
+    processing.sent_part_count = 1;
+    processing.outbound_message_id = "m-1";
+    processing.outbound_message_ids = ["m-1"];
+    const r = runtime([]);
+
+    await processarItemFilaPrimeiraMensagem(r, processing);
+
+    expect(r.enviarBolha).toHaveBeenCalledTimes(2);
+    expect(r.calls).not.toContain("send:0:Primeira");
+    expect(r.calls).toContain("send:1:Segunda");
+    expect(r.calls).toContain("send:2:Terceira");
+  });
+
+  it("falha terminal na segunda bolha não reenvia a primeira", async () => {
+    const processing = item();
+    processing.status = "processing";
+    processing.message_parts = ["Primeira", "Segunda", "Terceira"];
+    processing.sent_part_count = 1;
+    processing.outbound_message_id = "m-1";
+    processing.outbound_message_ids = ["m-1"];
+    const r = runtime([]);
+    vi.mocked(r.enviarBolha).mockResolvedValueOnce({
+      type: "send_whatsapp_message",
+      status: "failed",
+      error: "channel_send_failed",
+      detail: { message_id: "m-2" },
+    });
+
+    const result = await processarItemFilaPrimeiraMensagem(r, processing);
+
+    expect(result).toMatchObject({
+      status: "ok",
+      detail: "partial_send_failed:channel_send_failed",
+    });
+    expect(r.enviarBolha).toHaveBeenCalledTimes(1);
+    expect(r.enviarBolha).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "fila-1" }),
+      "Segunda",
+      1,
+    );
+  });
+
+  it("mantém item legado sem partes como uma única mensagem", async () => {
+    const legacy = item();
+    legacy.action_config = { fila: "primeira_mensagem", template: "Mensagem única" };
+    const r = runtime([turno("ready"), turno("claimed")]);
+
+    await processarItemFilaPrimeiraMensagem(r, legacy);
+
+    expect(r.enviarBolha).toHaveBeenCalledTimes(1);
+    expect(r.enviarBolha).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "fila-1" }),
+      "Mensagem única",
+      0,
+    );
+    expect(r.pausarEntreBolhas).not.toHaveBeenCalled();
   });
 
   it.each([
