@@ -94,6 +94,80 @@ describe("createAutomationRuleSchema", () => {
     ).toBe(false);
   });
 
+  it("aceita de duas a quatro bolhas na fila e permite template legado junto", () => {
+    const result = createAutomationRuleSchema.safeParse({
+      name: "Primeira mensagem em bolhas",
+      trigger_event: "message.received",
+      conditions: [],
+      actions: [{
+        type: "send_whatsapp_message",
+        config: {
+          channel_session_id: UUID,
+          template: "Fallback legado",
+          templates: ["Olá {{nome}}", "Estas são as opções", "Qual você prefere?"],
+          pausa_entre_bolhas_segundos: 4,
+          fila: "primeira_mensagem",
+        },
+      }],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it.each([
+    { templates: ["", "Segunda"] },
+    { templates: ["Única"] },
+    { templates: ["1", "2", "3", "4", "5"] },
+    { templates: ["x".repeat(1001), "Segunda"] },
+  ])("rejeita lista de bolhas inválida: $templates", ({ templates }) => {
+    const result = createAutomationRuleSchema.safeParse({
+      name: "Primeira mensagem inválida",
+      trigger_event: "message.received",
+      conditions: [],
+      actions: [{
+        type: "send_whatsapp_message",
+        config: {
+          channel_session_id: UUID,
+          templates,
+          fila: "primeira_mensagem",
+        },
+      }],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejeita várias bolhas fora da fila e pausa fora dos limites", () => {
+    const base = {
+      name: "Primeira mensagem inválida",
+      trigger_event: "message.received" as const,
+      conditions: [],
+    };
+    expect(
+      createAutomationRuleSchema.safeParse({
+        ...base,
+        actions: [{
+          type: "send_whatsapp_message",
+          config: { channel_session_id: UUID, templates: ["Uma", "Duas"] },
+        }],
+      }).success,
+    ).toBe(false);
+    expect(
+      createAutomationRuleSchema.safeParse({
+        ...base,
+        actions: [{
+          type: "send_whatsapp_message",
+          config: {
+            channel_session_id: UUID,
+            templates: ["Uma", "Duas"],
+            pausa_entre_bolhas_segundos: 11,
+            fila: "primeira_mensagem",
+          },
+        }],
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts a happy path with one action of each type", () => {
     const base = {
       name: "Regra 1",

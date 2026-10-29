@@ -25,6 +25,10 @@ export interface ActionCtx {
   requestId: string;
   /** Posição da ação na regra. Compõe a chave idempotente de filas por ação. */
   actionIndex?: number;
+  /** Identidade interna estável de uma mensagem. Nunca vem da configuração da regra. */
+  internalMessageId?: string;
+  /** Metadados internos do envio, compostos pelo runtime e não pelo input público. */
+  messageMetadata?: Record<string, unknown>;
   /**
    * O motor já aplicou o ritmo humano durável desta ação. Executores que ainda
    * mantêm um throttle local não devem somá-lo outra vez.

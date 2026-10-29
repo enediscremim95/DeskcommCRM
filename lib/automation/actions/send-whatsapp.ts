@@ -48,8 +48,8 @@ async function interruptRule(
   if (acaoUsaFilaPrimeiraMensagem(config)) {
     const item = await lerItemFilaDaAcao(ctx.admin, ctx);
     if (item?.status === "discarded" || item?.status === "failed") {
-      // Encerra a regra para não executar efeitos posteriores, como a etiqueta
-      // `sub_primeira_enviada`, quando nenhuma mensagem saiu.
+      // Encerra os efeitos posteriores. Quando houve envio parcial, a etiqueta
+      // imediatamente seguinte já foi aplicada após a primeira bolha.
       return resultadoDaFila(item);
     }
     return null;
@@ -186,9 +186,15 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
         serviceBoundary: boundary,
         proactiveContext: { organizationId: ctx.organizationId, contactId: contact.id },
         actor: { type: "webhook_source", id: ctx.ruleId },
-        requestId: `rule:${ctx.ruleId}`,
+        requestId: ctx.internalMessageId ? ctx.requestId : `rule:${ctx.ruleId}`,
+        ...(ctx.internalMessageId ? { internalMessageId: ctx.internalMessageId } : {}),
       },
-      { conversation_id: conversationId, type: "text", body } as Parameters<typeof sendMessageHandler>[2],
+      {
+        conversation_id: conversationId,
+        type: "text",
+        body,
+        ...(ctx.messageMetadata ? { metadata: ctx.messageMetadata } : {}),
+      } as Parameters<typeof sendMessageHandler>[2],
     );
     // O desfecho vem do ESTADO DA MENSAGEM, nunca da ausência de exceção:
     // `sendMessageHandler` marca `failed`/`queued` e devolve normalmente (ver
