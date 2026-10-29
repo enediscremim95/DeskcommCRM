@@ -68,6 +68,32 @@ describe("createWebhookSourceSchema", () => {
 });
 
 describe("createAutomationRuleSchema", () => {
+  it("aceita somente o marcador opt-in da fila na ação de WhatsApp", () => {
+    const base = {
+      name: "Primeira mensagem",
+      trigger_event: "message.received" as const,
+      conditions: [],
+    };
+    expect(
+      createAutomationRuleSchema.safeParse({
+        ...base,
+        actions: [{
+          type: "send_whatsapp_message",
+          config: { channel_session_id: UUID, template: "Olá", fila: "primeira_mensagem" },
+        }],
+      }).success,
+    ).toBe(true);
+    expect(
+      createAutomationRuleSchema.safeParse({
+        ...base,
+        actions: [{
+          type: "send_whatsapp_message",
+          config: { channel_session_id: UUID, template: "Olá", fila: "qualquer" },
+        }],
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts a happy path with one action of each type", () => {
     const base = {
       name: "Regra 1",

@@ -34,6 +34,7 @@ export const AUTOMATION_CATALOG = {
       "lead.source_metadata.utm_source",
       "event.to_stage_id",
       "event.body_preview",
+      "event.channel_session_id",
       "event.added_tags",
       "contact.tags",
     ],

@@ -24,7 +24,14 @@ import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 
 export type ActionItem =
   | { type: "create_or_move_lead"; config: { pipeline_id: string; stage_id: string } }
-  | { type: "send_whatsapp_message"; config: { channel_session_id: string; template: string } }
+  | {
+      type: "send_whatsapp_message";
+      config: {
+        channel_session_id: string;
+        template: string;
+        fila?: "primeira_mensagem";
+      };
+    }
   | {
       type: "send_ai_message";
       config: { agent_id: string; channel_session_id: string; instruction: string };
@@ -129,7 +136,11 @@ const TEMPLATE_VARS = [
 function SendWhatsappForm({
   config,
   onChange,
-}: FormProps<{ channel_session_id: string; template: string }>) {
+}: FormProps<{
+  channel_session_id: string;
+  template: string;
+  fila?: "primeira_mensagem";
+}>) {
   const t = useT();
   const { data: sessions } = useChannelSessions();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);

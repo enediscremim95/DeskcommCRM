@@ -1,7 +1,10 @@
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
 import { protecaoAgendaSupabase } from "@/lib/agenda/protecao-followup";
 import { registerAction } from "@/lib/automation/actions";
-import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
+import type {
+  ActionCtx,
+  ActionResultDetail,
+} from "@/lib/automation/types";
 import { renderTemplate } from "@/lib/automation/template";
 import { serviceForAutomation } from "@/lib/atendimento/origem-automacao";
 import { checkDailyLimit, espacarEnvio } from "@/lib/automation/throttle";
@@ -12,6 +15,13 @@ import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
 import { sinalizarDigitando } from "@/lib/messaging/presenca";
 import { houveRespostaHumanaDepoisDoEvento } from "@/lib/messaging/resposta-humana";
 import { logger } from "@/lib/logger";
+import {
+  acaoUsaFilaPrimeiraMensagem,
+  esperaDaFila,
+  garantirItemFilaPrimeiraMensagem,
+  lerItemFilaDaAcao,
+  resultadoDaFila,
+} from "@/lib/automation/fila-primeira-mensagem";
 
 type ResultadoDoCanal =
   | { status: "desligada" | "igual" | "ausente" }
@@ -32,6 +42,18 @@ async function interruptRule(
   ctx: ActionCtx,
   config: Record<string, unknown>,
 ): Promise<ActionResultDetail | null> {
+  // A fila reavalia resposta humana, atribuição, pausa, tags, opt-out e 24 h
+  // imediatamente antes do envio. O guard legado aqui roda antes de o item ser
+  // enfileirado e apagaria justamente o rastro persistente do descarte.
+  if (acaoUsaFilaPrimeiraMensagem(config)) {
+    const item = await lerItemFilaDaAcao(ctx.admin, ctx);
+    if (item?.status === "discarded" || item?.status === "failed") {
+      // Encerra a regra para não executar efeitos posteriores, como a etiqueta
+      // `sub_primeira_enviada`, quando nenhuma mensagem saiu.
+      return resultadoDaFila(item);
+    }
+    return null;
+  }
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   const eventCreatedAt = ctx.event.created_at;
   if (!sessionId) return null;
@@ -72,13 +94,21 @@ async function interruptRule(
   };
 }
 
-async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
+async function postponeUntil(
+  ctx: ActionCtx,
+  config: Record<string, unknown>,
+): Promise<string | null> {
   const configuredSessionId =
     typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   if (
     configuredSessionId &&
     compararCanalDoEvento(ctx, configuredSessionId).status === "diferente"
   ) return null;
+
+  if (acaoUsaFilaPrimeiraMensagem(config)) {
+    const item = await garantirItemFilaPrimeiraMensagem(ctx, config);
+    return esperaDaFila(item);
+  }
 
   const contato = checarGuardasDeContato(ctx);
   if (contato.ok) {
@@ -99,6 +129,9 @@ async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): P
 }
 
 async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
+  if (acaoUsaFilaPrimeiraMensagem(config)) {
+    return resultadoDaFila(await lerItemFilaDaAcao(ctx.admin, ctx));
+  }
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   const template = typeof config.template === "string" ? config.template : null;
   if (!sessionId || !template) {
@@ -171,6 +204,9 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
 }
 
 async function textLength(ctx: ActionCtx, config: Record<string, unknown>): Promise<number | null> {
+  // O espaçamento durável da fila substitui o atraso individual de 40–100 s.
+  // Somar os dois faria o início real deixar de respeitar o intervalo reservado.
+  if (acaoUsaFilaPrimeiraMensagem(config)) return null;
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   const template = typeof config.template === "string" ? config.template : null;
   if (!sessionId || !template) return null;
@@ -183,6 +219,7 @@ async function textLength(ctx: ActionCtx, config: Record<string, unknown>): Prom
 }
 
 async function signalTyping(ctx: ActionCtx, config: Record<string, unknown>): Promise<void> {
+  if (acaoUsaFilaPrimeiraMensagem(config)) return;
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   if (!sessionId) return;
   if (compararCanalDoEvento(ctx, sessionId).status === "diferente") return;
