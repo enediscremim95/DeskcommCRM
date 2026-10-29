@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 import { evaluateConditions, resolveField } from "@/lib/automation/conditions";
 
 const ctx = {
-  event: { to_stage_id: "s2", added_tags: ["vip", "novo"] },
+  event: {
+    to_stage_id: "s2",
+    added_tags: ["vip", "novo"],
+    channel_session_id: "canal-novo",
+  },
   lead: { title: "Ana", custom_fields: { utm_source: "instagram" }, value_cents: 5000 },
   contact: { tags: ["cliente", "fluxo_padrinhos_orcamento"] },
 };
@@ -17,6 +21,16 @@ describe("evaluateConditions", () => {
     expect(evaluateConditions([], ctx)).toBe(true));
   it("eq string", () =>
     expect(evaluateConditions([{ field: "event.to_stage_id", op: "eq", value: "s2" }], ctx)).toBe(true));
+  it("isola a regra pelo canal carregado no evento", () => {
+    const condition = [{ field: "event.channel_session_id", op: "eq" as const, value: "canal-novo" }];
+    expect(evaluateConditions(condition, ctx)).toBe(true);
+    expect(
+      evaluateConditions(condition, {
+        ...ctx,
+        event: { ...ctx.event, channel_session_id: "canal-antigo" },
+      }),
+    ).toBe(false);
+  });
   it("eq com coerção numérica (valor sempre chega como string da UI)", () =>
     expect(evaluateConditions([{ field: "lead.value_cents", op: "eq", value: "5000" }], ctx)).toBe(true));
   it("neq", () =>

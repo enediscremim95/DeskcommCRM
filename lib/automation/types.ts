@@ -23,6 +23,8 @@ export interface ActionCtx {
   /** Configuração interna lida de organizations.settings uma vez pelo motor. */
   automationGuards?: GuardasDaAutomacao;
   requestId: string;
+  /** Posição da ação na regra. Compõe a chave idempotente de filas por ação. */
+  actionIndex?: number;
   /**
    * O motor já aplicou o ritmo humano durável desta ação. Executores que ainda
    * mantêm um throttle local não devem somá-lo outra vez.

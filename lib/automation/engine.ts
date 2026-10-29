@@ -394,6 +394,7 @@ async function registrarAdiamento(
   rule: RuleRow,
   actionType: string,
   retryAt: string,
+  filaPrimeiraMensagem = false,
 ): Promise<void> {
   const { error } = await admin.from("automation_rule_runs").insert({
     organization_id: row.organization_id,
@@ -405,10 +406,13 @@ async function registrarAdiamento(
         type: actionType,
         status: "postponed",
         detail: {
-          reason: "fora_da_janela_de_envio",
+          reason: filaPrimeiraMensagem
+            ? "fila_primeira_mensagem"
+            : "fora_da_janela_de_envio",
           retry_at: retryAt,
-          explicacao:
-            "A regra casou e está esperando a janela de envio do número reabrir — nada foi tentado ainda.",
+          explicacao: filaPrimeiraMensagem
+            ? "A primeira mensagem está guardada na fila deste número e será enviada na vez dela."
+            : "A regra casou e está esperando a janela de envio do número reabrir. Nada foi tentado ainda.",
         },
       },
     ],
@@ -433,11 +437,14 @@ async function interrupcaoDaRegra(
   startAt: number,
   ctx: ActionCtx,
 ): Promise<ActionResultDetail | null> {
-  for (const action of (rule.actions ?? []).slice(startAt)) {
+  for (const [offset, action] of (rule.actions ?? []).slice(startAt).entries()) {
     const executor = getAction(action.type);
     if (!executor?.interruptRule) continue;
     try {
-      const result = await executor.interruptRule(ctx, action.config ?? {});
+      const result = await executor.interruptRule(
+        { ...ctx, actionIndex: startAt + offset },
+        action.config ?? {},
+      );
       if (result) return result;
     } catch (err) {
       return {
@@ -575,7 +582,7 @@ export async function runAutomationForEvent(
     }
   }
 
-  const actionCtx = (rule: RuleRow) => ({
+  const actionCtx = (rule: RuleRow, actionIndex?: number): ActionCtx => ({
     admin,
     serviceBoundaries,
     organizationId: row.organization_id,
@@ -585,6 +592,7 @@ export async function runAutomationForEvent(
     context,
     automationGuards,
     requestId: row.id,
+    actionIndex,
   });
 
   const interrupcoesPrechecadas = new Map<string, ActionResultDetail>();
@@ -594,21 +602,33 @@ export async function runAutomationForEvent(
   for (const rule of applicable) {
     if (completedRuleIds.has(rule.id)) continue;
     const startAt = pacingState?.current.rule_id === rule.id ? pacingState.current.action_index : 0;
-    const interrupcao = await interrupcaoDaRegra(rule, startAt, actionCtx(rule));
+    const interrupcao = await interrupcaoDaRegra(rule, startAt, actionCtx(rule, startAt));
     if (interrupcao) {
       interrupcoesPrechecadas.set(rule.id, interrupcao);
       continue;
     }
-    for (const action of (rule.actions ?? []).slice(startAt)) {
+    for (const [offset, action] of (rule.actions ?? []).slice(startAt).entries()) {
       const executor = getAction(action.type);
       if (!executor?.postponeUntil) continue;
-      const until = await executor.postponeUntil(actionCtx(rule), action.config ?? {});
-      if (until) {
+      const actionIndex = startAt + offset;
+      const retryAt = await executor.postponeUntil(
+        actionCtx(rule, actionIndex),
+        action.config ?? {},
+      );
+      if (retryAt) {
         // A ESPERA É UM ESTADO, e um estado que ninguém vê é indistinguível de
         // morte. Sem esta linha o evento sumia até a janela reabrir e a aba
         // Atividade não mostrava NADA — para quem montou a regra, "não apareceu
         // nada" e "não rodou" são a mesma tela (migration 0175).
-        await registrarAdiamento(admin, row, rule, action.type, until);
+        await registrarAdiamento(
+          admin,
+          row,
+          rule,
+          action.type,
+          retryAt,
+          action.type === "send_whatsapp_message" &&
+            action.config?.fila === "primeira_mensagem",
+        );
         if (
           row.event_type === "message.received" &&
           row.metadata?.[IDADE_DA_MENSAGEM_AVALIADA_METADATA_KEY] !== true
@@ -617,7 +637,11 @@ export async function runAutomationForEvent(
           // o limite durante a espera, a retomada não vira uma nova entrada.
           await marcarIdadeDaMensagemAvaliada(admin, row);
         }
-        return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: until };
+        return {
+          consumer_key: AUTOMATION_CONSUMER_KEY,
+          status: "retry",
+          retry_at: retryAt,
+        };
       }
     }
   }
@@ -669,7 +693,11 @@ export async function runAutomationForEvent(
     while (current.action_index < (rule.actions ?? []).length) {
       const interrupcao =
         interrupcoesPrechecadas.get(rule.id) ??
-        (await interrupcaoDaRegra(rule, current.action_index, actionCtx(rule)));
+        (await interrupcaoDaRegra(
+          rule,
+          current.action_index,
+          actionCtx(rule, current.action_index),
+        ));
       interrupcoesPrechecadas.delete(rule.id);
       if (interrupcao) {
         current.results.push(interrupcao);
@@ -703,7 +731,10 @@ export async function runAutomationForEvent(
           const plano = calcularPlanoRitmoHumano(current.text_length);
           if (executor.humanPacing.signalTyping) {
             try {
-              await executor.humanPacing.signalTyping(actionCtx(rule), action.config ?? {});
+              await executor.humanPacing.signalTyping(
+                actionCtx(rule, current.action_index),
+                action.config ?? {},
+              );
             } catch (err) {
               // O indicador é decoração; nunca troca entrega por presença.
               logger.warn("[automation.engine] não foi possível sinalizar digitando", {
@@ -721,7 +752,10 @@ export async function runAutomationForEvent(
         try {
           current.results.push(
             await executor.execute(
-              { ...actionCtx(rule), humanPacingManaged: true },
+              {
+                ...actionCtx(rule, current.action_index),
+                humanPacingManaged: true,
+              },
               action.config ?? {},
             ),
           );
@@ -746,7 +780,10 @@ export async function runAutomationForEvent(
       if (executor.humanPacing) {
         let textLength: number | null = null;
         try {
-          textLength = await executor.humanPacing.textLength(actionCtx(rule), action.config ?? {});
+          textLength = await executor.humanPacing.textLength(
+            actionCtx(rule, current.action_index),
+            action.config ?? {},
+          );
         } catch (err) {
           // Se não deu para preparar o ritmo, preserva o envio pelo executor e
           // pelo throttle legado. A preparação nunca vira ponto único de falha.
@@ -773,7 +810,12 @@ export async function runAutomationForEvent(
       }
 
       try {
-        current.results.push(await executor.execute(actionCtx(rule), action.config ?? {}));
+        current.results.push(
+          await executor.execute(
+            actionCtx(rule, current.action_index),
+            action.config ?? {},
+          ),
+        );
       } catch (err) {
         current.results.push({
           type: action.type,

@@ -83,7 +83,7 @@ beforeEach(() => {
 });
 
 describe("send_whatsapp_message, canal do evento", () => {
-  it("sem automation_guards, canal diferente mantém o envio anterior", async () => {
+  it("sem marcador de fila nem configuração da fila, mantém o envio anterior", async () => {
     const result = await getAction("send_whatsapp_message")!.execute(
       ctx("88888888-8888-4888-8888-888888888888"),
       { channel_session_id: ACTION_CHANNEL, template: "Ol\u00e1" },
