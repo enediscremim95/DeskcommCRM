@@ -254,7 +254,7 @@ describe("migrations 0293 e 0294, fila da primeira mensagem", () => {
       next_attempt_at: null,
     });
     expect(
-      sql(`
+      JSON.parse(sql(`
         select json_build_object(
           'queue_event_id', queue_event_id,
           'started_at', started_at,
@@ -268,10 +268,13 @@ describe("migrations 0293 e 0294, fila da primeira mensagem", () => {
         )
         from public.automation_first_message_queue q
         where q.id = '${duplicate.queue_id}';
-      `),
-    ).toBe(
-      '{"queue_event_id":null,"started_at":null,"finished":true,"live_count":0}',
-    );
+      `)),
+    ).toEqual({
+      queue_event_id: null,
+      started_at: null,
+      finished: true,
+      live_count: 0,
+    });
     expect(
       Number(
         sql(`
