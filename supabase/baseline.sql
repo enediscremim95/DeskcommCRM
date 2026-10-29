@@ -29054,6 +29054,17 @@ revoke all on table public.automation_first_message_queue from anon, authenticat
 grant select on table public.automation_first_message_queue to authenticated;
 grant all on table public.automation_first_message_queue to service_role;
 
+-- A coluna identity cria uma sequência própria, que também herda ALL nos
+-- privilégios padrão (inclusive para anon). Só o servidor precisa dela.
+do $$
+declare
+  v_seq text := pg_get_serial_sequence('public.automation_first_message_queue', 'queue_sequence');
+begin
+  if v_seq is not null then
+    execute format('revoke all on sequence %s from anon, authenticated', v_seq);
+  end if;
+end $$;
+
 create or replace function public.fn_enqueue_automation_first_message(
   p_organization_id uuid,
   p_channel_session_id uuid,

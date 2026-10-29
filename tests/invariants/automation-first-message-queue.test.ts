@@ -78,6 +78,23 @@ describe("migration 0293, fila da primeira mensagem", () => {
     ).toThrow();
   });
 
+  it("authenticated e anon não têm privilégio de escrita na tabela nem na sequência", () => {
+    const tabela = "public.automation_first_message_queue";
+    for (const papel of ["authenticated", "anon"]) {
+      for (const acao of ["insert", "update", "delete"]) {
+        expect(sql(`select has_table_privilege('${papel}', '${tabela}', '${acao}');`).trim()).toBe("f");
+      }
+    }
+    expect(sql(`select has_table_privilege('anon', '${tabela}', 'select');`).trim()).toBe("f");
+    expect(sql(`select has_table_privilege('authenticated', '${tabela}', 'select');`).trim()).toBe("t");
+    expect(sql(`select has_table_privilege('service_role', '${tabela}', 'update');`).trim()).toBe("t");
+    const sequencia = sql(`select pg_get_serial_sequence('${tabela}', 'queue_sequence');`).trim();
+    expect(sequencia).not.toBe("");
+    for (const papel of ["authenticated", "anon"]) {
+      expect(sql(`select has_sequence_privilege('${papel}', '${sequencia}', 'usage');`).trim()).toBe("f");
+    }
+  });
+
   it("recusa enqueue cruzando tenant ou canal", () => {
     const foreignChannel = randomUUID();
     expect(() =>
