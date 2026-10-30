@@ -15,7 +15,7 @@ beforeAll(async () => {
   await pool.query("delete from ai_agents where id in($1,$2)", [AGENTE_PROPRIO, AGENTE_ALHEIO]);
   await pool.query("delete from organizations where id=$1", [OUTRA_ORG]);
   await pool.query(
-    "insert into organizations(id,slug,legal_name,display_name) values($1,$1::text,'Outra organização','Outra organização')",
+    "insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$1::text,'Outra organização','Outra organização')",
     [OUTRA_ORG],
   );
   const config = {
