@@ -24,6 +24,7 @@ import { mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo"
 import { agentCreateSchema } from "@/lib/ai/guardrails-schema";
 import { agentMcpCreateSchema } from "@/lib/ai/agents/validation";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { ehAssistenteDeRespostaGerenciado } from "@/lib/ai/assistente-de-resposta/config";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +76,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { data, error } = await query.order("created_at", { ascending: false });
   if (error) return fail("internal_error", "Erro ao listar agents.", 500, { requestId });
 
-  return ok(data ?? [], { requestId });
+  const visible = (data ?? []).filter(
+    (agent) =>
+      !ehAssistenteDeRespostaGerenciado((agent as { config?: unknown }).config),
+  );
+  return ok(visible, { requestId });
 }
 
 // ---------------------------------------------------------------------------

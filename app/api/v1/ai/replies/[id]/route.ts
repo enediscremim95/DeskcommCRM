@@ -9,7 +9,11 @@ import { audit } from "@/lib/audit";
 const input = z.object({
   action: z.enum(["approve", "reject"]),
   revision: z.string().regex(/^\d+$/),
-  body: z.string().trim().min(1).max(12000).optional(),
+  body: z
+    .string()
+    .max(12000)
+    .refine((value) => value.trim().length > 0, "Resposta vazia.")
+    .optional(),
   feedback: z.string().max(1000).optional(),
 });
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {

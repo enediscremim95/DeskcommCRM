@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Assistente de resposta",
+    "subtitle": "chave própria, sugestão fantasma e envio humano obrigatório",
+    "output": "assistente-de-resposta.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "config", "label": "Configuração" },
+    { "id": "context", "label": "Contexto" },
+    { "id": "draft", "label": "Rascunho" },
+    { "id": "human", "label": "Decisão humana" }
+  ],
+  "mainPath": ["tela", "cofre", "agente", "historico", "rascunho", "revisao"],
+  "nodes": [
+    {
+      "id": "tela",
+      "lane": "config",
+      "type": "service",
+      "label": "Configurações de IA",
+      "sublabel": "provedor, chave, tom, contexto, cotas e geração automática"
+    },
+    {
+      "id": "cofre",
+      "lane": "config",
+      "type": "database",
+      "label": "ai_provider_credentials",
+      "sublabel": "AES-GCM, validação e chave sem retorno"
+    },
+    {
+      "id": "agente",
+      "lane": "config",
+      "type": "database",
+      "label": "agente interno assistido",
+      "sublabel": "publicado para o core, excluído do inbound e sempre pausado"
+    },
+    {
+      "id": "historico",
+      "lane": "context",
+      "type": "database",
+      "label": "messages + contacts",
+      "sublabel": "últimas N mensagens, teto de tokens e nome seguro"
+    },
+    {
+      "id": "exemplos",
+      "lane": "context",
+      "type": "database",
+      "label": "ai_reply_drafts",
+      "sublabel": "edições recentes da mesma organização e canal"
+    },
+    {
+      "id": "cotas",
+      "lane": "context",
+      "type": "service",
+      "label": "limite por organização",
+      "sublabel": "janela por hora e por dia"
+    },
+    {
+      "id": "entrada",
+      "lane": "draft",
+      "type": "service",
+      "label": "mensagem na conversa aberta",
+      "sublabel": "debounce, contexto atual e automático inativo"
+    },
+    {
+      "id": "rascunho",
+      "lane": "draft",
+      "type": "service",
+      "label": "generateReplyDraft",
+      "sublabel": "reutiliza o contexto atual, sem ferramentas e sem envio"
+    },
+    {
+      "id": "revisao",
+      "lane": "human",
+      "type": "service",
+      "label": "Composer",
+      "sublabel": "fantasma, Tab aceita, Esc rejeita e Enter autoriza o envio"
+    },
+    {
+      "id": "auditoria",
+      "lane": "human",
+      "type": "database",
+      "label": "api_audit_log",
+      "sublabel": "ligar, desligar, trocar configuração e gerar"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "tela", "to": "cofre", "label": "salva e valida" },
+    { "id": "e2", "from": "cofre", "to": "agente", "label": "vincula credencial validada" },
+    { "id": "e3", "from": "agente", "to": "historico", "label": "define janela e prompt" },
+    { "id": "e4", "from": "historico", "to": "rascunho", "label": "contexto curado" },
+    { "id": "e5", "from": "exemplos", "to": "rascunho", "label": "tom aprendido" },
+    { "id": "e6", "from": "cotas", "to": "rascunho", "label": "autoriza a chamada" },
+    { "id": "e11", "from": "entrada", "to": "rascunho", "label": "gera após pequeno atraso" },
+    { "id": "e7", "from": "rascunho", "to": "revisao", "label": "somente texto revisável" },
+    { "id": "e8", "from": "revisao", "to": "exemplos", "label": "edição vira exemplo" },
+    { "id": "e9", "from": "tela", "to": "auditoria", "label": "mudança registrada" },
+    {
+      "id": "e10",
+      "from": "rascunho",
+      "to": "auditoria",
+      "label": "geração registrada sem conteúdo"
+    },
+    {
+      "id": "e12",
+      "from": "tela",
+      "to": "entrada",
+      "label": "liga ou desliga a geração automática"
+    }
+  ]
+}

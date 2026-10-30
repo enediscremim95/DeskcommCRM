@@ -15,6 +15,7 @@ import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
+import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
 import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
 import {
@@ -29,6 +30,8 @@ import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMess
 import { X } from "lucide-react";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia } from "@/hooks/inbox/useUploadMedia";
+import { useReplySuggestion } from "@/hooks/inbox/useReplySuggestion";
+import { useGhostReplySuggestion } from "@/hooks/inbox/useGhostReplySuggestion";
 import { imagemDoClipboard } from "@/lib/inbox/clipboard-image";
 import { interpolateTemplate } from "@/lib/inbox/template-vars";
 import { cn } from "@/lib/utils";
@@ -65,6 +68,10 @@ interface Props {
   contactName?: string | null;
   /** Contato da conversa — excluído do seletor de cartão compartilhado. */
   currentContactId?: string | null;
+  /** A conversa está sob comando humano e pode receber sugestão automática. */
+  autoSuggestionEligible?: boolean;
+  lastInboundAt?: string | null;
+  lastOutboundAt?: string | null;
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
@@ -77,6 +84,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     currentContactId,
     respondendo,
     onCancelarResposta,
+    autoSuggestionEligible = false,
+    lastInboundAt = null,
+    lastOutboundAt = null,
   },
   ref,
 ) {
@@ -115,6 +125,25 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   // nota interna nunca chega ao cliente, e é onde o atendente registra por que
   // a conversa esfriou — barrá-la tira exatamente o que ainda dá para fazer.
   const respostaBarrada = isDisabled || (mode === "reply" && !!janelaFechada);
+  const clienteAguardaResposta = Boolean(
+    lastInboundAt && (!lastOutboundAt || Date.parse(lastInboundAt) > Date.parse(lastOutboundAt)),
+  );
+  const replySuggestion = useReplySuggestion({
+    conversationId,
+    autoEligible: autoSuggestionEligible && clienteAguardaResposta && !respostaBarrada,
+    autoContextKey: lastInboundAt,
+    composerEmpty: mode === "reply" && text.length === 0,
+  });
+  const usaTextoFantasma = Boolean(
+    replySuggestion.currentDraft?.agent_managed &&
+    replySuggestion.currentDraft.proposals.length === 0,
+  );
+  const ghost = useGhostReplySuggestion({
+    conversationId,
+    draft: replySuggestion.currentDraft,
+    text,
+    enabled: mode === "reply" && !respostaBarrada && usaTextoFantasma,
+  });
 
   function autoresize() {
     const ta = taRef.current;
@@ -124,7 +153,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   }
 
   function handleSubmit() {
-    const body = text.trim();
+    // Se o atendente aceitou e não tocou no texto, preserve byte a byte para o
+    // banco registrar "approved". Qualquer edição segue o comportamento antigo
+    // do composer e remove apenas o espaço acidental das pontas.
+    const body = ghost.acceptedDraft?.original_body === text ? text : text.trim();
     if (!body || (mode === "note" ? isDisabled : respostaBarrada)) return;
 
     setText("");
@@ -137,6 +169,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
     if (mode === "note") {
       createNote.mutate({ conversation_id: conversationId, body }, { onError: restoreOnError });
+      return;
+    }
+    if (ghost.acceptedDraft) {
+      void replySuggestion
+        .approve(ghost.acceptedDraft, body)
+        .then(() => {
+          ghost.finish();
+          onCancelarResposta?.();
+        })
+        .catch(restoreOnError);
       return;
     }
     send.mutate(
@@ -159,6 +201,26 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         onError: restoreOnError,
       },
     );
+  }
+
+  function acceptGhost() {
+    const accepted = ghost.accept();
+    if (!accepted) return;
+    setText(accepted);
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = accepted.length;
+      autoresize();
+    });
+  }
+
+  async function generateManually() {
+    const draft = await replySuggestion.generateManually();
+    if (!draft) return;
+    ghost.restore(draft.id);
+    requestAnimationFrame(() => taRef.current?.focus());
   }
 
   function applyTemplate(t: MessageTemplate) {
@@ -194,6 +256,17 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (ghost.visible && text.length === 0 && e.key === "Tab") {
+      e.preventDefault();
+      acceptGhost();
+      return;
+    }
+    if (ghost.visible && text.length === 0 && e.key === "Escape") {
+      e.preventDefault();
+      const dismissed = ghost.dismiss();
+      if (dismissed) void replySuggestion.reject(dismissed);
+      return;
+    }
     if (menuOpen) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -244,7 +317,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
-        {mode === "reply" && (
+        {mode === "reply" && !usaTextoFantasma && (
           <div
             data-testid="reply-review-scroll"
             className="mb-3 max-h-[min(16rem,32dvh)] min-h-0 flex-1 overflow-y-auto overscroll-contain"
@@ -317,6 +390,27 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               </button>
             </div>
           )}
+          <div className="sr-only" aria-live="polite" aria-atomic="true">
+            {replySuggestion.isPreparing
+              ? t("Preparando sugestão")
+              : ghost.visible
+                ? `${t("Sugestão disponível")}: ${ghost.ghostText}. ${t("Pressione Tab para usar.")}`
+                : ""}
+          </div>
+          {mode === "reply" && replySuggestion.isPreparing && (
+            <p className="mb-1 text-[11px] text-muted-foreground" role="status">
+              {t("Preparando sugestão…")}
+            </p>
+          )}
+          {mode === "reply" && ghost.visible && (
+            <button
+              type="button"
+              className="mb-1.5 w-fit rounded-full border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground md:hidden"
+              onClick={acceptGhost}
+            >
+              {t("Usar sugestão")}
+            </button>
+          )}
           <div className="flex items-end gap-2">
             {mode === "reply" && (
               <AttachMenu
@@ -330,12 +424,17 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               onPick={(emoji) => {
                 const ta = taRef.current;
                 if (!ta) {
-                  setText((t) => t + emoji);
+                  setText((current) => {
+                    const next = current + emoji;
+                    ghost.dismissByTyping(next);
+                    return next;
+                  });
                   return;
                 }
                 const start = ta.selectionStart ?? text.length;
                 const end = ta.selectionEnd ?? text.length;
                 const next = text.slice(0, start) + emoji + text.slice(end);
+                ghost.dismissByTyping(next);
                 setText(next);
                 requestAnimationFrame(() => {
                   ta.focus();
@@ -344,10 +443,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 });
               }}
             />
+            {mode === "reply" && usaTextoFantasma && (
+              <DraftReplyButton
+                onClick={() => void generateManually()}
+                pending={replySuggestion.isPreparing}
+                disabled={respostaBarrada || text.length > 0 || !replySuggestion.assistant.enabled}
+              />
+            )}
             <textarea
               ref={taRef}
               value={text}
               onChange={(e) => {
+                ghost.dismissByTyping(e.target.value);
                 setText(e.target.value);
                 setMenuDismissed(false);
                 setActiveTemplateIndex(0);
@@ -367,9 +474,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               // uma nota interna precisa saber que ela não vai para o cliente, e
               // essa informação não pode depender de abrir um diálogo.
               placeholder={
-                mode === "note"
-                  ? t("Escreva uma nota interna… (só o time vê)")
-                  : t("Escreva uma mensagem…")
+                ghost.visible
+                  ? ghost.ghostText
+                  : mode === "note"
+                    ? t("Escreva uma nota interna… (só o time vê)")
+                    : t("Escreva uma mensagem…")
               }
               title={
                 mode === "note"
@@ -378,10 +487,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               }
               className={cn(
                 "max-h-40 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
-                "placeholder:text-muted-foreground focus:ring-1 focus:ring-ring focus:outline-hidden",
+                "placeholder:text-foreground/70 focus:ring-1 focus:ring-ring focus:outline-hidden",
               )}
               disabled={mode === "note" ? isDisabled : respostaBarrada}
               aria-label={t("Mensagem")}
+              aria-describedby={ghost.visible ? "reply-suggestion-help" : undefined}
               // Continua sendo caixa de texto (`textbox`): trocar o papel para
               // `combobox` fez as telas e os testes que procuram "Mensagem" não
               // acharem mais o campo. `aria-expanded` não vale para `textbox`.
@@ -392,6 +502,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 menuOpen && activeTemplate ? templateOptionId(activeTemplate.id) : undefined
               }
             />
+            {ghost.visible && (
+              <span id="reply-suggestion-help" className="sr-only">
+                {t("Pressione Tab para usar a sugestão ou Escape para dispensar.")}
+              </span>
+            )}
             {text.trim() || mode === "note" ? (
               <Button
                 type="button"

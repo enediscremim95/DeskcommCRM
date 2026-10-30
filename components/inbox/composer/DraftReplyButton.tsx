@@ -2,18 +2,16 @@
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
 import { Sparkle } from "@/lib/ui/icons";
-import { useDraftReply } from "@/hooks/inbox/useDraftReply";
 
 interface Props {
-  conversationId: string;
-  onDraft: (text: string) => void;
+  onClick: () => void;
+  pending?: boolean;
   disabled?: boolean;
 }
 
-/** Onda 5.1: botão "Sugerir resposta" — gera rascunho via agente publicado, sem enviar. */
-export function DraftReplyButton({ conversationId, onDraft, disabled }: Props) {
+/** Gera um rascunho pelo assistente ligado da organização, sem enviar. */
+export function DraftReplyButton({ onClick, pending = false, disabled }: Props) {
   const t = useT();
-  const mutation = useDraftReply();
 
   return (
     <Button
@@ -22,15 +20,11 @@ export function DraftReplyButton({ conversationId, onDraft, disabled }: Props) {
       variant="ghost"
       className="h-9 w-9 shrink-0"
       aria-label={t("Sugerir resposta")}
-      aria-busy={mutation.isPending}
-      disabled={disabled || mutation.isPending}
-      onClick={() => {
-        mutation.mutate(conversationId, {
-          onSuccess: (res) => onDraft(res.data.draft),
-        });
-      }}
+      aria-busy={pending}
+      disabled={disabled || pending}
+      onClick={onClick}
     >
-      <Sparkle size={18} weight={mutation.isPending ? "duotone" : "regular"} aria-hidden />
+      <Sparkle size={18} weight={pending ? "duotone" : "regular"} aria-hidden />
     </Button>
   );
 }

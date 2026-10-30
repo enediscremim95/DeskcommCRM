@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import { AgentsList } from "./_components/AgentsList";
 import { logger } from "@/lib/logger";
+import { ehAssistenteDeRespostaGerenciado } from "@/lib/ai/assistente-de-resposta/config";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,10 @@ export default async function AgentsListPage() {
     });
   }
 
-  const agents = (data ?? []) as unknown as AgentRow[];
+  const agents = (data ?? []).filter(
+    (agent) =>
+      !ehAssistenteDeRespostaGerenciado((agent as { config?: unknown }).config),
+  ) as unknown as AgentRow[];
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
   const idioma = user.idioma;
 

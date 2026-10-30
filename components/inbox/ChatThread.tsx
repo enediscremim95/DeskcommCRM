@@ -25,6 +25,13 @@ interface Props {
   conversationId: string | null;
   onResponder?: (m: Message) => void;
   contextItems?: ThreadContextItem[];
+  onActivityChange?: (activity: ThreadActivity) => void;
+}
+
+export interface ThreadActivity {
+  conversationId: string;
+  lastInboundAt: string | null;
+  lastOutboundAt: string | null;
 }
 
 export interface ThreadContextItem {
@@ -67,7 +74,12 @@ function dayLabel(
   return format(d, "dd/MM/yyyy", { locale: locale });
 }
 
-export function ChatThread({ conversationId, onResponder, contextItems = [] }: Props) {
+export function ChatThread({
+  conversationId,
+  onResponder,
+  contextItems = [],
+  onActivityChange,
+}: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useMessagesRealtime(conversationId);
@@ -99,6 +111,32 @@ export function ChatThread({ conversationId, onResponder, contextItems = [] }: P
         : "carregando";
 
   const messages: Message[] = useMemo(() => q.data?.pages.flatMap((p) => p.data) ?? [], [q.data]);
+
+  const activity = useMemo<ThreadActivity | null>(() => {
+    if (!conversationId) return null;
+
+    let lastInboundAt: string | null = null;
+    let lastOutboundAt: string | null = null;
+    for (const message of messages) {
+      if (message.direction === "inbound") {
+        if (!lastInboundAt || Date.parse(message.sent_at) > Date.parse(lastInboundAt)) {
+          lastInboundAt = message.sent_at;
+        }
+      } else if (!lastOutboundAt || Date.parse(message.sent_at) > Date.parse(lastOutboundAt)) {
+        lastOutboundAt = message.sent_at;
+      }
+    }
+
+    return { conversationId, lastInboundAt, lastOutboundAt };
+  }, [conversationId, messages]);
+
+  // O thread recebe a mensagem em tempo real antes de a lista necessariamente
+  // atualizar os agregados da conversa. Publicar os dois instantes daqui faz o
+  // composer reagir à mensagem que acabou de aparecer na tela, sem abrir uma
+  // segunda assinatura de realtime só para a sugestão.
+  useEffect(() => {
+    if (activity) onActivityChange?.(activity);
+  }, [activity, onActivityChange]);
 
   /**
    * As mensagens por id, para resolver a CITADA sem ir ao servidor.

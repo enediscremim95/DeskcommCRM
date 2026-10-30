@@ -9739,6 +9739,54 @@ export const DICIONARIO: Traducoes = {
   "Anotação não encontrada.": { es: "Nota no encontrada." },
   "Você não pode apagar esta anotação.": { es: "No puedes eliminar esta nota." },
   "Erro ao apagar anotação.": { es: "Error al eliminar la nota." },
+  "Cole uma chave para ligar o assistente.": {
+    es: "Pega una clave para activar el asistente.",
+  },
+  "A conta da IA atingiu o limite ou está sem saldo.": {
+    es: "La cuenta de IA alcanzó el límite o no tiene saldo.",
+  },
+  "A chave foi recusada pelo provedor.": { es: "El proveedor rechazó la clave." },
+  "Assistente ligado e pronto para sugerir respostas.": {
+    es: "Asistente activado y listo para sugerir respuestas.",
+  },
+  "Assistente desligado.": { es: "Asistente desactivado." },
+  "Assistente de resposta": { es: "Asistente de respuesta" },
+  "Lê o histórico e prepara um rascunho. Uma pessoa sempre revisa antes de enviar.": {
+    es: "Lee el historial y prepara un borrador. Una persona siempre lo revisa antes de enviarlo.",
+  },
+  "A chave e o custo são desta organização. A chave é cifrada, nunca aparece novamente e não é registrada nos logs.": {
+    es: "La clave y el costo pertenecen a esta organización. La clave se cifra, nunca vuelve a mostrarse y no se registra en los logs.",
+  },
+  "Chave atual termina em": { es: "La clave actual termina en" },
+  "Cole a chave da Anthropic": { es: "Pega la clave de Anthropic" },
+  "Cole a chave da OpenAI": { es: "Pega la clave de OpenAI" },
+  "Como a equipe fala": { es: "Cómo habla el equipo" },
+  "A sugestão será curta e não poderá inventar preço, prazo, frete, estoque ou condição comercial.": {
+    es: "La sugerencia será breve y no podrá inventar precios, plazos, envíos, existencias ni condiciones comerciales.",
+  },
+  "Mensagens do histórico": { es: "Mensajes del historial" },
+  "Limite de texto analisado": { es: "Límite de texto analizado" },
+  "Sugestões por hora": { es: "Sugerencias por hora" },
+  "Sugestões por dia": { es: "Sugerencias por día" },
+  "Sugerir sozinho ao chegar mensagem": {
+    es: "Sugerir automáticamente al recibir un mensaje",
+  },
+  "Prepara o texto na conversa aberta. Nada é enviado sem a ação de uma pessoa.": {
+    es: "Prepara el texto en la conversación abierta. Nada se envía sin la acción de una persona.",
+  },
+  "Somente uma pessoa administradora pode alterar esta configuração.": {
+    es: "Solo una persona administradora puede cambiar esta configuración.",
+  },
+  "Teste a chave do assistente nas configurações de IA e tente novamente.": {
+    es: "Prueba la clave del asistente en la configuración de IA e inténtalo de nuevo.",
+  },
+  "Preparando sugestão": { es: "Preparando sugerencia" },
+  "Sugestão disponível": { es: "Sugerencia disponible" },
+  "Pressione Tab para usar.": { es: "Presiona Tab para usarla." },
+  "Usar sugestão": { es: "Usar sugerencia" },
+  "Pressione Tab para usar a sugestão ou Escape para dispensar.": {
+    es: "Presiona Tab para usar la sugerencia o Escape para descartarla.",
+  },
 };
 
 /**
