@@ -33,9 +33,9 @@ beforeAll(async () => {
     },
   };
   await pool.query(
-    `insert into ai_agents(id,organization_id,name,kind,operation_mode,paused_at,config)
-     values($1,$2,'Assistente próprio','mcp_agent','assisted',now(),$3),
-           ($4,$5,'Assistente alheio','mcp_agent','assisted',now(),$3)`,
+    `insert into ai_agents(id,organization_id,name,kind,operation_mode,paused_at,system_prompt,config)
+     values($1,$2,'Assistente próprio','mcp_agent','assisted',now(),'Instrução do teste',$3),
+           ($4,$5,'Assistente alheio','mcp_agent','assisted',now(),'Instrução do teste',$3)`,
     [AGENTE_PROPRIO, GOV_ORG, config, AGENTE_ALHEIO, OUTRA_ORG],
   );
 });
