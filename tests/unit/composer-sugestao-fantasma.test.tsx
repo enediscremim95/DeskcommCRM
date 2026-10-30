@@ -12,6 +12,8 @@ const reply = vi.hoisted(() => ({
     original_body: "Claro, posso ajudar por aqui.",
     edited_body: "Claro, posso ajudar por aqui.",
     error_code: null,
+    proposals: [],
+    agent_managed: true,
   },
   generateManually: vi.fn(),
   reject: vi.fn(),
@@ -64,6 +66,7 @@ describe("sugestão fantasma no compositor", () => {
     renderComposer();
     const input = screen.getByRole("textbox", { name: "Mensagem" });
     expect(input).toHaveAttribute("placeholder", reply.draft.original_body);
+    expect(screen.queryByTestId("reply-review-scroll")).not.toBeInTheDocument();
 
     const browserPodeNavegar = fireEvent.keyDown(input, { key: "Tab" });
 

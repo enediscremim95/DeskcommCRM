@@ -25,6 +25,8 @@ describe("geração automática da sugestão", () => {
         draft_id: "11000000-0000-4000-8000-000000000001",
         revision: "1",
         status: "pending",
+        proposals: [],
+        agent_managed: true,
       },
     });
   });
@@ -60,6 +62,8 @@ describe("geração automática da sugestão", () => {
       original_body: "Sugestão já preparada",
       edited_body: "Sugestão já preparada",
       error_code: null,
+      proposals: [],
+      agent_managed: true,
     };
     api.get.mockResolvedValue({
       data: {

@@ -11,6 +11,8 @@ const draft: ReplySuggestionDraft = {
   original_body: "Sugestão pronta",
   edited_body: "Sugestão pronta",
   error_code: null,
+  proposals: [],
+  agent_managed: true,
 };
 
 describe("estado local da sugestão fantasma", () => {

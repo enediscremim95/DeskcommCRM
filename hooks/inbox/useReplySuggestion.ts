@@ -13,6 +13,8 @@ export interface ReplySuggestionDraft {
   original_body: string | null;
   edited_body: string | null;
   error_code: string | null;
+  proposals: Array<{ tool: string; arguments: unknown }>;
+  agent_managed: boolean;
 }
 
 interface ReplySuggestionState {
@@ -28,6 +30,8 @@ interface GeneratedReplySuggestion {
     draft_id: string;
     revision: string;
     status: string;
+    proposals: Array<{ tool: string; arguments: unknown }>;
+    agent_managed: boolean;
   };
 }
 
@@ -73,6 +77,8 @@ export function useReplySuggestion({
         original_body: generated.data.draft,
         edited_body: generated.data.draft,
         error_code: null,
+        proposals: generated.data.proposals,
+        agent_managed: generated.data.agent_managed,
       };
       qc.setQueryData<ReplySuggestionState>(queryKey, (current) => ({
         data: {
@@ -130,10 +136,11 @@ export function useReplySuggestion({
   });
   const decideAsync = decision.mutateAsync;
 
+  const latestDraft = query.data?.data.drafts[0] ?? null;
   const currentDraft =
-    query.data?.data.drafts.find(
-      (draft) => draft.status === "pending" && Boolean(draft.original_body?.trim()),
-    ) ?? null;
+    latestDraft?.status === "pending" && Boolean(latestDraft.original_body?.trim())
+      ? latestDraft
+      : null;
   const assistant = query.data?.data.assistant ?? { enabled: false, auto_suggest: false };
 
   // Uma mudança de contexto pode tornar o rascunho em cache obsoleto. O GET é
@@ -218,6 +225,7 @@ export function useReplySuggestion({
 
   return {
     assistant,
+    latestDraft,
     currentDraft,
     isLoading: query.isPending,
     isPreparing: generation.isPending,

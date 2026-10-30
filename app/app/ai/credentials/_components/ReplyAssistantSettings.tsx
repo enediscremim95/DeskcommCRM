@@ -235,7 +235,7 @@ export function ReplyAssistantSettings({ canWrite }: { canWrite: boolean }) {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <NumberField
-          label="Mensagens do histórico"
+          label={t("Mensagens do histórico")}
           value={historyMessages}
           min={5}
           max={80}
@@ -243,7 +243,7 @@ export function ReplyAssistantSettings({ canWrite }: { canWrite: boolean }) {
           disabled={!canWrite || busy}
         />
         <NumberField
-          label="Limite de texto analisado"
+          label={t("Limite de texto analisado")}
           value={historyTokens}
           min={1_000}
           max={16_000}
@@ -252,7 +252,7 @@ export function ReplyAssistantSettings({ canWrite }: { canWrite: boolean }) {
           disabled={!canWrite || busy}
         />
         <NumberField
-          label="Sugestões por hora"
+          label={t("Sugestões por hora")}
           value={hourlyLimit}
           min={1}
           max={200}
@@ -260,7 +260,7 @@ export function ReplyAssistantSettings({ canWrite }: { canWrite: boolean }) {
           disabled={!canWrite || busy}
         />
         <NumberField
-          label="Sugestões por dia"
+          label={t("Sugestões por dia")}
           value={dailyLimit}
           min={1}
           max={2_000}
@@ -331,11 +331,10 @@ function NumberField({
   setValue: (value: number) => void;
   disabled: boolean;
 }) {
-  const t = useT();
   const id = `reply-assistant-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
     <div className="space-y-2">
-      <Label htmlFor={id}>{t(label)}</Label>
+      <Label htmlFor={id}>{label}</Label>
       <Input
         id={id}
         type="number"

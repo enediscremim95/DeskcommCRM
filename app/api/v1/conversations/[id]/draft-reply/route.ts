@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { generateReplyDraft } from "@/lib/agent-engine/agent/reply-drafts";
+import { loadConversationAgentConfig } from "@/lib/agent-engine/agent/agent-config";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -55,9 +56,12 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     c = await context(ctx, requestId);
   if ("response" in c) return c.response;
   const { rows } = await getRequestPool().query(
-    `select id,revision::text,original_body,edited_body,approved_body,proposals,feedback,error_code,created_at,
- case when status in ('generating','pending','approved') and not fn_reply_context_current(organization_id,id) then 'stale' else status end as status
- from ai_reply_drafts where organization_id=$1 and conversation_id=$2 order by created_at desc limit 5`,
+    `select d.id,d.revision::text,d.original_body,d.edited_body,d.approved_body,d.proposals,d.feedback,d.error_code,d.created_at,
+ case when d.status in ('generating','pending','approved') and not fn_reply_context_current(d.organization_id,d.id) then 'stale' else d.status end as status,
+ coalesce(a.config->'reply_assistant'->>'managed','false') = 'true' as agent_managed
+ from ai_reply_drafts d
+ join ai_agents a on a.organization_id=d.organization_id and a.id=d.agent_id
+ where d.organization_id=$1 and d.conversation_id=$2 order by d.created_at desc limit 5`,
     [c.auth.org.orgId, c.conversation.id],
   );
   const assistant = await carregarAssistenteDeResposta(getRequestPool(), c.auth.org.orgId);
@@ -94,7 +98,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return fail("unprocessable", c.t("Conversa sem contato/canal."), 422, { requestId });
   const pool = getRequestPool();
   const assistant = await carregarAssistenteDeResposta(pool, c.auth.org.orgId);
-  if (!assistant) {
+  const conversationAgent =
+    parsed.data.trigger === "manual"
+      ? await loadConversationAgentConfig(pool, c.auth.org.orgId, conversationId, channelId)
+      : null;
+  const selectedAgent = conversationAgent ?? assistant?.agent ?? null;
+  const agentManaged = Boolean(
+    selectedAgent && assistant && selectedAgent.agentId === assistant.agent.agentId,
+  );
+  if (!selectedAgent) {
     return fail(
       "reply_assistant_disabled",
       c.t("O assistente de resposta está desligado. Ligue-o nas configurações de IA."),
@@ -104,7 +116,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   }
   if (
     parsed.data.trigger === "auto" &&
-    (!assistant.settings.auto_suggest ||
+    (!assistant?.settings.auto_suggest ||
       c.conversation.comando_da_conversa === "automatico" ||
       !clienteAguardaResposta(c.conversation))
   ) {
@@ -124,14 +136,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     revision: string;
     status: string;
     original_body: string | null;
+    proposals: Array<{ tool: string; arguments: unknown }>;
   }>(
-    `select id,revision::text,status,original_body
+    `select id,revision::text,status,original_body,proposals
      from ai_reply_drafts
      where organization_id=$1 and conversation_id=$2
+       and agent_id=$3
        and status in ('generating','pending')
        and fn_reply_context_current(organization_id,id)
      order by created_at desc limit 1`,
-    [c.auth.org.orgId, conversationId],
+    [c.auth.org.orgId, conversationId, selectedAgent.agentId],
   );
   const reusable = existing[0];
   if (reusable) {
@@ -141,16 +155,20 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         draft_id: reusable.id,
         revision: reusable.revision,
         status: reusable.status,
+        proposals: reusable.proposals,
+        agent_managed: agentManaged,
       },
       { requestId },
     );
   }
-  const limit = await verificarLimitesDoAssistente(c.auth.org.orgId, assistant.settings);
-  if (!limit.allowed) {
-    return fail(limit.code, c.t(limit.message), 429, {
-      requestId,
-      details: limit.details,
-    });
+  if (agentManaged && assistant) {
+    const limit = await verificarLimitesDoAssistente(c.auth.org.orgId, assistant.settings);
+    if (!limit.allowed) {
+      return fail(limit.code, c.t(limit.message), 429, {
+        requestId,
+        details: limit.details,
+      });
+    }
   }
   try {
     const draft = await generateReplyDraft(pool, requestTurnDeps(), {
@@ -158,7 +176,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       conversationId,
       contactId,
       channelId,
-      agent: assistant.agent,
+      agent: selectedAgent,
     });
     void audit({
       action: "ai_reply.generated",
@@ -174,6 +192,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         draft_id: draft.id,
         revision: draft.revision,
         status: draft.status,
+        proposals: Array.isArray(draft.proposals) ? draft.proposals : [],
+        agent_managed: agentManaged,
       },
       { requestId },
     );

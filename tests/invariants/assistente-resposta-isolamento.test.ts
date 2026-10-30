@@ -54,11 +54,13 @@ async function como(userId: string | null, statement: string) {
     await client.query("select set_config('request.jwt.claims',$1,true)", [
       JSON.stringify({ sub: userId, role: userId ? "authenticated" : "anon", aal: "aal2" }),
     ]);
-    const result = await client.query(statement);
-    await client.query("rollback");
-    return result;
+    return await client.query(statement);
   } finally {
-    client.release();
+    try {
+      await client.query("rollback");
+    } finally {
+      client.release();
+    }
   }
 }
 
@@ -69,11 +71,12 @@ it("RLS: a configuração interna não vaza entre organizações e anon não a l
   );
   expect(own.rows.map((row) => row.id)).toContain(AGENTE_PROPRIO);
   expect(own.rows.map((row) => row.id)).not.toContain(AGENTE_ALHEIO);
-  const anon = await como(
-    null,
-    `select id from ai_agents where id in('${AGENTE_PROPRIO}','${AGENTE_ALHEIO}')`,
-  );
-  expect(anon.rows).toEqual([]);
+  await expect(
+    como(
+      null,
+      `select id from ai_agents where id in('${AGENTE_PROPRIO}','${AGENTE_ALHEIO}')`,
+    ),
+  ).rejects.toMatchObject({ code: "42501" });
 });
 
 it("RLS: nem admin de outro tenant altera o assistente alheio", async () => {

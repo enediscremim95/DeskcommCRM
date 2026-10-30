@@ -16,6 +16,7 @@ import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentP
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
+import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
 import {
   filterTemplates,
@@ -133,11 +134,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     autoContextKey: lastInboundAt,
     composerEmpty: mode === "reply" && text.length === 0,
   });
+  const usaTextoFantasma = Boolean(
+    replySuggestion.currentDraft?.agent_managed &&
+    replySuggestion.currentDraft.proposals.length === 0,
+  );
   const ghost = useGhostReplySuggestion({
     conversationId,
     draft: replySuggestion.currentDraft,
     text,
-    enabled: mode === "reply" && !respostaBarrada,
+    enabled: mode === "reply" && !respostaBarrada && usaTextoFantasma,
   });
 
   function autoresize() {
@@ -312,6 +317,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
+        {mode === "reply" && !usaTextoFantasma && (
+          <div
+            data-testid="reply-review-scroll"
+            className="mb-3 max-h-[min(16rem,32dvh)] min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          >
+            <ReplyReviewPanel conversationId={conversationId} disabled={isDisabled} />
+          </div>
+        )}
         <TemplateMenu
           open={menuOpen}
           query={slash.query}
@@ -474,7 +487,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               }
               className={cn(
                 "max-h-40 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
-                "placeholder:text-muted-foreground/55 focus:ring-1 focus:ring-ring focus:outline-hidden",
+                "placeholder:text-foreground/70 focus:ring-1 focus:ring-ring focus:outline-hidden",
               )}
               disabled={mode === "note" ? isDisabled : respostaBarrada}
               aria-label={t("Mensagem")}

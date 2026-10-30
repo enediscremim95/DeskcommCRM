@@ -124,6 +124,7 @@ describe("Composer + barra de modelos", () => {
             edited_body: null,
             error_code: null,
             proposals: [{ tool: "consultar_agenda", arguments: {} }],
+            agent_managed: false,
           },
         ],
       },
