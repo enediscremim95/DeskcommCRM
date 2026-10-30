@@ -55,11 +55,13 @@ function renderComposer() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <Composer conversationId="conv-1" contactName="Maria da Silva" />
     </QueryClientProvider>,
   );
+  expect(screen.getAllByRole("button", { name: "Sugerir resposta" })).toHaveLength(1);
+  return result;
 }
 
 describe("Composer + barra de modelos", () => {

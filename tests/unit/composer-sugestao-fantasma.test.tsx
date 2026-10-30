@@ -34,7 +34,7 @@ vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
 }));
 vi.mock("@/hooks/inbox/useReplySuggestion", () => ({
   useReplySuggestion: () => ({
-    assistant: { enabled: true, auto_suggest: true },
+    assistant: { enabled: true, auto_suggest: false },
     currentDraft: reply.draft,
     isLoading: false,
     isPreparing: false,
@@ -48,11 +48,13 @@ vi.mock("@/hooks/inbox/useReplySuggestion", () => ({
 import { Composer } from "@/components/inbox/Composer";
 
 function renderComposer() {
-  return render(
+  const result = render(
     <QueryClientProvider client={new QueryClient()}>
       <Composer conversationId="conv-1" />
     </QueryClientProvider>,
   );
+  expect(screen.getAllByRole("button", { name: "Sugerir resposta" })).toHaveLength(1);
+  return result;
 }
 
 describe("sugestão fantasma no compositor", () => {
@@ -60,6 +62,12 @@ describe("sugestão fantasma no compositor", () => {
     vi.clearAllMocks();
     reply.approve.mockResolvedValue({ data: { status: "approved" } });
     reply.reject.mockResolvedValue(true);
+  });
+
+  it("mantém uma única forma manual de pedir sugestão", () => {
+    renderComposer();
+    fireEvent.click(screen.getByRole("button", { name: "Sugerir resposta" }));
+    expect(reply.generateManually).toHaveBeenCalledTimes(1);
   });
 
   it("aparece apagada na própria caixa e Tab apenas aceita", () => {

@@ -443,7 +443,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 });
               }}
             />
-            {mode === "reply" && (
+            {mode === "reply" && usaTextoFantasma && (
               <DraftReplyButton
                 onClick={() => void generateManually()}
                 pending={replySuggestion.isPreparing}

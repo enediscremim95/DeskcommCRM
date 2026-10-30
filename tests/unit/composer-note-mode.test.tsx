@@ -72,7 +72,7 @@ describe("Composer + modo nota interna", () => {
   it("alterna pra modo nota interna: some anexo/rascunho/áudio, muda placeholder", () => {
     renderComposer();
     expect(screen.getByRole("button", { name: /anexar/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /sugerir resposta/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /sugerir resposta/i })).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: /nota interna/i }));
 

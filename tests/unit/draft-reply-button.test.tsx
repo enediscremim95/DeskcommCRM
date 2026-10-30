@@ -7,24 +7,30 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+function getOnlySuggestionButton() {
+  const buttons = screen.getAllByRole("button", { name: "Sugerir resposta" });
+  expect(buttons).toHaveLength(1);
+  return buttons[0]!;
+}
+
 describe("DraftReplyButton", () => {
   it("clicar pede a sugestão, mas não possui caminho de envio", () => {
     const onClick = vi.fn();
     render(<DraftReplyButton onClick={onClick} />);
-    const btn = screen.getByRole("button", { name: "Sugerir resposta" });
+    const btn = getOnlySuggestionButton();
     fireEvent.click(btn);
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it("fica ocupado e desabilitado enquanto prepara", () => {
     render(<DraftReplyButton onClick={vi.fn()} pending />);
-    const button = screen.getByRole("button", { name: "Sugerir resposta" });
+    const button = getOnlySuggestionButton();
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute("aria-busy", "true");
   });
 
   it("disabled prop desabilita o botão", () => {
     render(<DraftReplyButton onClick={vi.fn()} disabled />);
-    expect(screen.getByRole("button", { name: "Sugerir resposta" })).toBeDisabled();
+    expect(getOnlySuggestionButton()).toBeDisabled();
   });
 });
