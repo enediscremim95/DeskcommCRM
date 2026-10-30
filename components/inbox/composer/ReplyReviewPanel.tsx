@@ -179,7 +179,7 @@ export function ReplyReviewPanel({
           )}
           {draft.status === "failed" && (
             <p className="text-xs">
-              {t("Confira a configuração do agente e tente gerar novamente.")}
+              {t("Teste a chave do assistente nas configurações de IA e tente novamente.")}
             </p>
           )}
         </>

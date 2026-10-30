@@ -12,6 +12,8 @@ import {
   readCurrentServiceBoundary,
   withServiceBoundary,
 } from "@/lib/atendimento/fronteira-server";
+import { nomeSeguroParaSugestao } from "@/lib/ai/assistente-de-resposta/config";
+import { carregarAprendizadoDaOrganizacao } from "@/lib/ai/assistente-de-resposta/aprendizado";
 
 export const replyDraftSchema = z
   .object({
@@ -52,6 +54,7 @@ export async function generateReplyDraft(
     input.conversationId,
   );
   const boundary = input.boundary ?? parseServiceBoundary(observed);
+  if (!boundary) throw new Error("reply_context_unavailable");
   assertCurrentServiceBoundary(boundary, observed);
   return withServiceBoundary(pool, boundary, async () => {
     const token = randomUUID();
@@ -79,14 +82,17 @@ export async function generateReplyDraft(
       );
       if (!context.ok || context.context.contact.is_blocked || context.lgpd.isAnonymized)
         throw new Error("reply_context_unavailable");
+      context.context.contact.name = nomeSeguroParaSugestao(context.context.contact.name);
       const { rows: notes } = await pool.query<{ headline: string; body: string }>(
         "select headline,body from lead_notes where organization_id=$1 and contact_id=$2",
         [input.organizationId, input.contactId],
       );
-      const { rows: feedback } = await pool.query<{ feedback: unknown }>(
-        "select feedback from ai_reply_drafts where organization_id=$1 and conversation_id=$2 and service_boundary=$3 and feedback is not null order by updated_at desc limit 3",
-        [input.organizationId, input.conversationId, boundary],
-      );
+      const feedback = await carregarAprendizadoDaOrganizacao(pool, {
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        channelId: input.channelId,
+        boundary,
+      });
       const result = newPreviewResult();
       await runAgentPreview(deps, pool, {
         kind: "assisted",
@@ -96,7 +102,7 @@ export async function generateReplyDraft(
         context,
         previous: await latestCheckpoint(pool, input.organizationId, input.contactId),
         notes,
-        feedback: JSON.stringify(feedback.map((r) => r.feedback)),
+        feedback,
         contactId: input.contactId,
         channelId: input.channelId,
         result,

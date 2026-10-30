@@ -17,8 +17,15 @@ vi.mock("@/hooks/inbox/useUploadMedia", () => ({
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
   useMessageTemplates: () => ({ data: [], isLoading: false }),
 }));
-vi.mock("@/hooks/inbox/useDraftReply", () => ({
-  useDraftReply: () => ({ mutate: vi.fn(), isPending: false }),
+vi.mock("@/hooks/inbox/useReplySuggestion", () => ({
+  useReplySuggestion: () => ({
+    assistant: { enabled: true, auto_suggest: false },
+    currentDraft: null,
+    isPreparing: false,
+    generateManually: vi.fn(),
+    reject: vi.fn(),
+    approve: vi.fn(),
+  }),
 }));
 
 import { Composer } from "@/components/inbox/Composer";

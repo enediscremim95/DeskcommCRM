@@ -42,6 +42,7 @@ ser fonte sem ninguém decidir isso.
 | `juncao-negocios-duplicados.architecture.json` | revisão humana de duplicados vazios, movimentação reversível dos filhos e restauração exata protegida contra histórico alterado |
 | `exportacao-leads.architecture.json` | download direto do CSV de leads, isolado por organização ativa, limitado por papel e auditado sem dados pessoais |
 | `fila-primeira-mensagem.architecture.json` | fila opt-in por ação, com FIFO, intervalo, teto diário, pausa e guardas reavaliadas no instante do envio |
+| `assistente-de-resposta.architecture.json` | sugestão sob demanda com chave própria, histórico limitado, exemplos do mesmo tenant e revisão humana obrigatória |
 
 > **Esta tabela já apodreceu uma vez:** ela listava 8 mapas quando o disco tinha 9 — faltava
 > `indice-de-atrito`. Nenhum teste lê este README (o gate lê os `.json`), então mapa novo que

@@ -57,16 +57,14 @@ async function fixture(pool: pg.Pool) {
     webhook_secret_encrypted: "\\x00",
     metadata: { ai_gate: "allowlist" },
   });
-  const knobs = await db
-    .from("channel_knobs")
-    .insert({
-      organization_id: org,
-      channel_session_id: channel,
-      throttle_ms: 0,
-      jitter_max_ms: 0,
-      window_start_hour: 0,
-      window_end_hour: 24,
-    });
+  const knobs = await db.from("channel_knobs").insert({
+    organization_id: org,
+    channel_session_id: channel,
+    throttle_ms: 0,
+    jitter_max_ms: 0,
+    window_start_hour: 0,
+    window_end_hour: 24,
+  });
   if (knobs.error) throw knobs.error;
   const contact = await insert("contacts", {
     organization_id: org,
@@ -100,6 +98,44 @@ async function fixture(pool: pg.Pool) {
     channel_session_id: channel,
     status: "published",
   });
+  const replyAgent = await insert("ai_agents", {
+    organization_id: org,
+    name: "Assistente interno de resposta",
+    system_prompt: "Sugira somente um rascunho para revisão humana.",
+    operation_mode: "assisted",
+    paused_at: new Date().toISOString(),
+    is_active: false,
+    priority: -1_000_000,
+    config: {
+      reply_assistant: {
+        managed: true,
+        enabled: true,
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        credential_id: randomUUID(),
+        team_style: "Responda de forma curta, cordial e humana.",
+        history_message_window: 20,
+        history_token_window: 4_000,
+        hourly_limit: 20,
+        daily_limit: 100,
+        auto_suggest: false,
+      },
+    },
+  });
+  const replyVersion = await insert("ai_agent_versions", {
+    organization_id: org,
+    agent_id: replyAgent,
+    version_number: 1,
+    system_prompt: "Sugira somente um rascunho para revisão humana.",
+    provider: "anthropic",
+    model: "claude-sonnet-4-6",
+    channel_session_id: channel,
+    status: "published",
+    max_steps: 1,
+    tool_ids: [],
+    history_message_window: 20,
+    history_token_window: 4_000,
+  });
   const source = await insert("ai_knowledge_sources", {
     organization_id: org,
     agent_id: agent,
@@ -121,6 +157,10 @@ async function fixture(pool: pg.Pool) {
   await pool.query(
     "update ai_agents set published_version_id=$1,active_kb_version_id=$2 where organization_id=$3 and id=$4",
     [version, knowledge, org, agent],
+  );
+  await pool.query(
+    "update ai_agents set published_version_id=$1 where organization_id=$2 and id=$3",
+    [replyVersion, org, replyAgent],
   );
   await pool.query(
     "update conversations set active_ai_agent_id=$1 where organization_id=$2 and id=$3",
@@ -209,16 +249,20 @@ async function receiver() {
     },
   };
 }
-const panel = (page: Page) => page.locator('section[aria-label="Assistência do agente"]');
+const composer = (page: Page) => page.locator('[data-testid="composer-controls"]');
 async function generate(page: Page) {
   const response = page.waitForResponse(
     (r) => r.url().endsWith("/draft-reply") && r.request().method() === "POST",
   );
-  await panel(page).getByRole("button", { name: "Sugerir resposta", exact: true }).click();
+  await composer(page).getByRole("button", { name: "Sugerir resposta", exact: true }).click();
   const r = await response;
   expect(r.status(), await r.text()).toBe(200);
-  await expect(panel(page).getByText("Sugestão para revisar", { exact: true })).toBeVisible();
-  return (await r.json()).data.draft_id as string;
+  const data = (await r.json()).data as { draft_id: string; draft: string };
+  await expect(page.getByRole("textbox", { name: "Mensagem" })).toHaveAttribute(
+    "placeholder",
+    data.draft,
+  );
+  return data;
 }
 async function deliver(f: Fixture, draft: string, pool: pg.Pool) {
   const { rows } = await pool.query(
@@ -310,37 +354,47 @@ test("testa sem enviar, pausa preserva publicação e duas aprovações entregam
     await page.goto(`/app/inbox/${f.conversation}`);
     const first = await generate(page);
     expect(channel.bodies).toHaveLength(0);
-    await panel(page)
-      .getByLabel("Resposta sugerida")
-      .fill("Maria, confirmei as informações e posso ajudar por aqui.");
-    await panel(page)
-      .getByLabel("Feedback para a próxima sugestão")
-      .fill("Usar linguagem curta e clara.");
-    await capture(page, panel(page), info, "revisao-desktop");
+    const messageBox = page.getByRole("textbox", { name: "Mensagem" });
+    await messageBox.press("Tab");
+    await expect(messageBox).toHaveValue(first.draft);
+    expect(channel.bodies).toHaveLength(0);
+    await messageBox.fill("Maria, confirmei as informações e posso ajudar por aqui.");
+    expect(channel.bodies).toHaveLength(0);
+    await capture(page, composer(page), info, "revisao-desktop");
     const approved = page.waitForResponse(
-      (r) => r.url().endsWith(`/ai/replies/${first}`) && r.request().method() === "POST",
+      (r) => r.url().endsWith(`/ai/replies/${first.draft_id}`) && r.request().method() === "POST",
     );
-    await panel(page).getByRole("button", { name: "Aprovar e enviar" }).click();
+    await messageBox.press("Enter");
     expect((await approved).status()).toBe(200);
-    const firstJob = await deliver(f, first, pool);
+    const firstJob = await deliver(f, first.draft_id, pool);
     expect(channel.bodies).toHaveLength(1);
     expect(channel.bodies[0]).toMatchObject({
       session: f.sessionName,
       chatId: "15551234567@c.us",
       text: "Maria, confirmei as informações e posso ajudar por aqui.",
     });
-    await expect(panel(page).getByText("Resposta aprovada enviada", { exact: true })).toBeVisible();
+    expect(
+      (
+        await pool.query(
+          "select original_body,approved_body,feedback->>'decision' decision from ai_reply_drafts where organization_id=$1 and id=$2",
+          [f.org, first.draft_id],
+        )
+      ).rows[0],
+    ).toMatchObject({
+      original_body: first.draft,
+      approved_body: "Maria, confirmei as informações e posso ajudar por aqui.",
+      decision: "edited",
+    });
     await inbound(f, "Obrigada, pode continuar");
     const second = await generate(page);
-    await panel(page)
-      .getByLabel("Resposta sugerida")
-      .fill("Claro, Maria. Qual informação você precisa agora?");
+    await messageBox.press("Tab");
+    await messageBox.fill("Claro, Maria. Qual informação você precisa agora?");
     const approvedAgain = page.waitForResponse(
-      (r) => r.url().endsWith(`/ai/replies/${second}`) && r.request().method() === "POST",
+      (r) => r.url().endsWith(`/ai/replies/${second.draft_id}`) && r.request().method() === "POST",
     );
-    await panel(page).getByRole("button", { name: "Aprovar e enviar" }).click();
+    await messageBox.press("Enter");
     expect((await approvedAgain).status()).toBe(200);
-    expect(await deliver(f, second, pool)).not.toBe(firstJob);
+    expect(await deliver(f, second.draft_id, pool)).not.toBe(firstJob);
     expect(channel.bodies).toHaveLength(2);
     expect(
       (
@@ -361,15 +415,15 @@ test("testa sem enviar, pausa preserva publicação e duas aprovações entregam
     // Uma nova entrada cria outra candidata; repetir no mesmo contexto devolve o recibo já enviado.
     await inbound(f, "Tenho mais uma pergunta sobre o atendimento");
     const third = await generate(page);
-    expect(third).not.toBe(second);
+    expect(third.draft_id).not.toBe(second.draft_id);
     await inbound(f, "O assunto mudou");
-    await expect(
-      panel(page).getByText("Sugestão obsoleta: a conversa mudou", { exact: true }),
-    ).toBeVisible();
-    await expect(panel(page).getByRole("button", { name: "Aprovar e enviar" })).toHaveCount(0);
-    await expect(panel(page).getByText("Resposta aprovada. Acompanhe o envio aqui.", { exact: true })).toHaveCount(0);
+    await expect(messageBox).toHaveAttribute("placeholder", "Escreva uma mensagem…");
+    expect(channel.bodies).toHaveLength(2);
+    const fourth = await generate(page);
+    expect(fourth.draft_id).not.toBe(third.draft_id);
     await page.setViewportSize({ width: 390, height: 844 });
-    await capture(page, panel(page), info, "obsoleta-mobile");
+    await expect(page.getByRole("button", { name: "Usar sugestão" })).toBeVisible();
+    await capture(page, composer(page), info, "sugestao-mobile");
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`/app/ai/agents/${f.agent}`);
     await page.getByLabel("Modo de operação").selectOption("automatic");

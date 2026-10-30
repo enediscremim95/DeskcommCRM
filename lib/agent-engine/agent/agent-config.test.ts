@@ -53,11 +53,13 @@ describe('loadPublishedAgentConfigById', () => {
     expect(queryMock).toHaveBeenCalledTimes(1);
     const [sql, params] = queryMock.mock.calls[0] as [string, unknown[]];
     // params na ORDEM exata — falha se o filtro de org for removido/trocado.
-    expect(params).toEqual(['org1', 'a1']);
+    expect(params).toEqual(['org1', 'a1', false]);
     // e o SQL de fato usa esses params pra filtrar org+id (não só passa o
     // valor sem usar) — falha se o `and a.organization_id = $1` sumir do SQL.
     expect(sql).toMatch(/a\.organization_id\s*=\s*\$1/);
     expect(sql).toMatch(/a\.id\s*=\s*\$2/);
+    expect(sql).toContain('reply_assistant');
+    expect(sql).toContain('$3::boolean');
   });
 
   it('retorna null quando o agente não é encontrado', async () => {

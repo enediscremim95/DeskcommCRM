@@ -16,7 +16,7 @@ import {
 import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
 import { ConversationList } from "./ConversationList";
 import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
-import { ChatThread } from "./ChatThread";
+import { ChatThread, type ThreadActivity } from "./ChatThread";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
 import { RetentionNotice } from "./RetentionNotice";
@@ -31,7 +31,7 @@ import { CaretLeft, ChatCircle, IdentificationCard } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { comandosDaFila } from "@/lib/inbox/comando-da-conversa";
+import { comandoDaConversa, comandosDaFila } from "@/lib/inbox/comando-da-conversa";
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
 
 /**
@@ -152,6 +152,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   );
 
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
+  const [threadActivity, setThreadActivity] = useState<ThreadActivity | null>(null);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
   /** A ficha do contato como painel deslizante — só existe abaixo do `xl`. */
@@ -248,6 +249,33 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const needsFetch = !!selectedId && !inList;
   const single = useConversation(selectedId, needsFetch);
   const selectedConversation: ConversationWithContact | null = inList ?? single.data ?? null;
+  const activityForSelection =
+    threadActivity?.conversationId === selectedConversation?.id ? threadActivity : null;
+  const latestTimestamp = (fromConversation: string | null, fromThread: string | null) => {
+    if (!fromConversation) return fromThread;
+    if (!fromThread) return fromConversation;
+    return Date.parse(fromThread) > Date.parse(fromConversation) ? fromThread : fromConversation;
+  };
+  const lastInboundAt = latestTimestamp(
+    selectedConversation?.last_inbound_at ?? null,
+    activityForSelection?.lastInboundAt ?? null,
+  );
+  const lastOutboundAt = latestTimestamp(
+    selectedConversation?.last_outbound_at ?? null,
+    activityForSelection?.lastOutboundAt ?? null,
+  );
+  const automaticoNaConversa = selectedConversation
+    ? comandoDaConversa({
+        status: selectedConversation.status,
+        assigned_to_user_id: selectedConversation.assigned_to_user_id,
+        assigned_to_user_name: selectedConversation.assigned_to_user_name ?? null,
+        assignee_kind: selectedConversation.assignee_kind ?? null,
+        bot_silenced_until: selectedConversation.bot_silenced_until ?? null,
+        force_human: selectedConversation.contacts?.force_human ?? null,
+        is_blocked: selectedConversation.contacts?.is_blocked ?? null,
+        automaticoDaOrg,
+      }).automaticoAtivo
+    : true;
   const selectionNotFound =
     needsFetch && !single.isPending && !single.data && isNotFound(single.error);
 
@@ -278,6 +306,15 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
     setRespondendo(null);
   }, []);
   const handleVisibleChange = useCallback((ids: string[]) => setVisibleIds(ids), []);
+  const handleThreadActivityChange = useCallback((activity: ThreadActivity) => {
+    setThreadActivity((current) =>
+      current?.conversationId === activity.conversationId &&
+      current.lastInboundAt === activity.lastInboundAt &&
+      current.lastOutboundAt === activity.lastOutboundAt
+        ? current
+        : activity,
+    );
+  }, []);
   const handleFocusReply = useCallback(() => composerRef.current?.focus(), []);
   const handleClaim = useCallback(() => {
     if (!selectedConversation) return;
@@ -311,7 +348,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   // composer divergem, e o segundo esquece de cobrir o áudio ou o anexo.
   const janela = estadoDaJanela(
     selectedConversation?.channel_sessions?.provider ?? null,
-    selectedConversation?.last_inbound_at ?? null,
+    lastInboundAt,
     agoraJanela,
   );
   const motivoDaJanela =
@@ -476,7 +513,11 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
             <>
               <ConversationHeader conversation={selectedConversation} />
               <div className="min-h-0 flex-1 overflow-hidden">
-                <ChatThread conversationId={selectedConversation.id} onResponder={setRespondendo} />
+                <ChatThread
+                  conversationId={selectedConversation.id}
+                  onResponder={setRespondendo}
+                  onActivityChange={handleThreadActivityChange}
+                />
               </div>
               <div
                 data-testid="conversation-footer"
@@ -505,6 +546,9 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
                   respondendo={respondendo}
                   onCancelarResposta={() => setRespondendo(null)}
                   currentContactId={selectedConversation.contact_id}
+                  autoSuggestionEligible={!automaticoNaConversa}
+                  lastInboundAt={lastInboundAt}
+                  lastOutboundAt={lastOutboundAt}
                 />
               </div>
             </>

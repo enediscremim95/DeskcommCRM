@@ -236,6 +236,10 @@ export async function loadPublishedAgentConfig(
      join ai_agent_versions v on v.id = a.published_version_id
      where a.organization_id = $1
        and a.archived_at is null
+       -- O assistente de resposta interno só pode ser carregado pelo endpoint
+       -- humano de rascunho. Excluí-lo aqui impede que uma mensagem inbound o
+       -- transforme em atendimento automático ou consuma a chave sem clique.
+       and not (a.config @> '{"reply_assistant":{"managed":true}}'::jsonb)
        -- is_active é semântica do rag_bot legado; para mcp_agent "ativo" =
        -- published_version_id preenchido + não arquivado (mesmo critério do
        -- dispatcher nativo do CRM — pausar = despublicar).
@@ -260,6 +264,7 @@ export async function loadPublishedAgentConfigById(
   db: pg.Pool,
   organizationId: string,
   agentId: string,
+  options?: { allowManagedReplyAssistant?: boolean },
 ): Promise<PublishedAgentConfig | null> {
   const { rows } = await db.query<Row>(
     `select ${SELECT_AGENT_CONFIG_COLUMNS}
@@ -268,8 +273,9 @@ export async function loadPublishedAgentConfigById(
      where a.organization_id = $1
        and a.archived_at is null
        and v.status = 'published'
-       and a.id = $2`,
-    [organizationId, agentId],
+       and a.id = $2
+       and ($3::boolean or not (a.config @> '{"reply_assistant":{"managed":true}}'::jsonb))`,
+    [organizationId, agentId, options?.allowManagedReplyAssistant === true],
   );
   const r = rows[0];
   if (r === undefined) return null;

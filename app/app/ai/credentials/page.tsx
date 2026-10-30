@@ -8,6 +8,7 @@ import type { CredentialRow } from "@/hooks/ai/useCredentials";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { contarUsoPublicado, type VersaoVinculada } from "@/lib/ai/credenciais/uso";
 import { CredentialsList } from "./_components/CredentialsList";
+import { ReplyAssistantSettings } from "./_components/ReplyAssistantSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,7 @@ export default async function CredentialsPage() {
           </p>
         </div>
       </header>
+      <ReplyAssistantSettings canWrite={canWrite} />
       <CredentialsList
         initialData={credentials}
         canWrite={canWrite}
