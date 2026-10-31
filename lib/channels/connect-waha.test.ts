@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { connectWahaChannel } from "./connect-waha";
+import { audit } from "@/lib/audit";
+import { WahaSessionError } from "@/lib/waha/client";
+import { assertWahaConnectionIdle, connectWahaChannel } from "./connect-waha";
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 const managed = vi.hoisted(() => ({ exists: false }));
 vi.mock("./managed-qr", () => ({
@@ -22,6 +24,11 @@ function fixture() {
   return { db, transport, finishes, input: { organizationId: org, idempotencyKey: key, userId: key, requestId: key } };
 }
 describe("conexão recuperável", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    managed.exists = false;
+  });
+
   it("recusa WAHA antes de tocar no transporte quando a organização usa outro conector", async () => {
     const f = fixture();
     managed.exists = true;
@@ -42,6 +49,26 @@ describe("conexão recuperável", () => {
     await expect(connectWahaChannel(f.db, f.db, f.transport, f.input)).rejects.toThrow("connection_repair_required");
     expect(f.transport.deleteSession).not.toHaveBeenCalled();
     expect(f.finishes.at(-1)).toMatchObject({ p_status: "FAILED" });
+  });
+  it("falha do WAHA deixa organização, usuário, motivo e detalhe técnico na auditoria", async () => {
+    const f = fixture();
+    f.transport.startExistingSession.mockRejectedValue(new WahaSessionError("start", 502));
+
+    await expect(connectWahaChannel(f.db, f.db, f.transport, f.input)).rejects.toThrow(
+      "connection_repair_required",
+    );
+
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "channel.connect_failed",
+      actorUserId: key,
+      organizationId: org,
+      requestId: key,
+      metadata: {
+        reason: "connection_repair_required",
+        origin: "connections",
+        technical: { operation: "start", http_status: 502 },
+      },
+    }));
   });
   it("falha após criação própria preserva remoto e marca FAILED", async () => {
     const f = fixture(); f.transport.startExistingSession.mockRejectedValue(new Error("bad_start"));
@@ -78,5 +105,65 @@ describe("conexão recuperável", () => {
     vi.mocked(f.db.rpc).mockResolvedValue({ data: { channel: { ...channel, status: "SCAN_QR_CODE" }, receipt_id: key, replay: true }, error: null } as never);
     expect((await connectWahaChannel(f.db, f.db, f.transport, f.input)).replay).toBe(true);
     expect(f.transport.createSession).not.toHaveBeenCalled();expect(f.transport.deleteSession).not.toHaveBeenCalled();
+  });
+  it("reserva em andamento deixa rastro com o canal e o motivo", async () => {
+    class Query {
+      select() { return this; }
+      eq() { return this; }
+      in() { return this; }
+      order() { return this; }
+      limit() { return this; }
+      async maybeSingle() { return {
+        data: { id: key, lease_until: new Date(Date.now() + 60_000).toISOString() },
+        error: null,
+      }; }
+    }
+    const db = { from: vi.fn(() => new Query()) } as unknown as SupabaseClient;
+
+    await expect(assertWahaConnectionIdle(db, org, key, {
+      userId: key,
+      requestId: key,
+      origin: "reconnect",
+    })).rejects.toThrow("connection_in_progress");
+
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "channel.connect_failed",
+      actorUserId: key,
+      organizationId: org,
+      requestId: key,
+      metadata: {
+        reason: "connection_in_progress",
+        origin: "reconnect",
+        channel_session_id: key,
+      },
+    }));
+  });
+  it("falha ao consultar a reserva deixa o motivo técnico estável", async () => {
+    class Query {
+      select() { return this; }
+      eq() { return this; }
+      in() { return this; }
+      order() { return this; }
+      limit() { return this; }
+      async maybeSingle() { return { data: null, error: { message: "db unavailable" } }; }
+    }
+    const db = { from: vi.fn(() => new Query()) } as unknown as SupabaseClient;
+
+    await expect(assertWahaConnectionIdle(db, org, key, {
+      userId: key,
+      requestId: key,
+      origin: "disconnect",
+    })).rejects.toThrow("connection_reservation_failed");
+
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "channel.connect_failed",
+      actorUserId: key,
+      organizationId: org,
+      metadata: {
+        reason: "connection_reservation_failed",
+        origin: "disconnect",
+        channel_session_id: key,
+      },
+    }));
   });
 });

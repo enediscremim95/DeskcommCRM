@@ -345,7 +345,11 @@ export async function PATCH(
   }
 
   try {
-    await assertWahaConnectionIdle(createAdminClient(), authz.org.orgId, id);
+    await assertWahaConnectionIdle(createAdminClient(), authz.org.orgId, id, {
+      userId: authz.user.id,
+      requestId,
+      origin: "disconnect",
+    });
     await waha.stopSession(session.waha_session_name);
   } catch (err) {
     if (err instanceof ChannelConnectionError) {
@@ -439,7 +443,11 @@ export async function DELETE(
       );
     }
     try {
-      await assertWahaConnectionIdle(createAdminClient(), activeOrg.orgId, id);
+      await assertWahaConnectionIdle(createAdminClient(), activeOrg.orgId, id, {
+        userId: user.id,
+        requestId,
+        origin: "delete",
+      });
       await waha.logoutSession(session.waha_session_name as string);
       await waha.deleteSession(session.waha_session_name as string);
     } catch (err) {

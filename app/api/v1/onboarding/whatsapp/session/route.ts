@@ -7,6 +7,10 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getWahaClient } from "@/lib/waha/client";
 import { connectWahaChannel, ChannelConnectionError } from "@/lib/channels/connect-waha";
+import {
+  auditActiveConnectionRefusal,
+  auditChannelConnectionFailure,
+} from "@/lib/channels/connection-failure-audit";
 import { loadOnboardingChannel } from "@/lib/channels/onboarding-session";
 
 export async function GET(): Promise<Response> {
@@ -28,12 +32,42 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const denied = await requireSupportWrite(); if (denied) return denied;
   const requestId = randomUUID();
+  const denied = await requireSupportWrite();
+  if (denied) {
+    await auditActiveConnectionRefusal({
+      response: denied,
+      requestId: denied.headers.get("X-Request-Id") ?? requestId,
+      origin: "onboarding",
+    });
+    return denied;
+  }
   const auth = await requireRole("admin", { requestId, resource: "channel_sessions", allowPlatformAdmin: true });
-  if (!auth.ok) return auth.response;
-  if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
-  const waha = getWahaClient(); if (!waha) return fail("waha_not_configured", "O serviço de conexão está indisponível. Tente novamente.", 503, { requestId });
+  if (!auth.ok) {
+    await auditActiveConnectionRefusal({ response: auth.response, requestId, origin: "onboarding" });
+    return auth.response;
+  }
+  if (await mfaEmDivida()) {
+    auditChannelConnectionFailure({
+      organizationId: auth.org.orgId,
+      userId: auth.user.id,
+      requestId,
+      reason: "mfa_required",
+      origin: "onboarding",
+    });
+    return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
+  }
+  const waha = getWahaClient();
+  if (!waha) {
+    auditChannelConnectionFailure({
+      organizationId: auth.org.orgId,
+      userId: auth.user.id,
+      requestId,
+      reason: "waha_not_configured",
+      origin: "onboarding",
+    });
+    return fail("waha_not_configured", "O serviço de conexão está indisponível. Tente novamente.", 503, { requestId });
+  }
   try {
     const result = await connectWahaChannel(await createClient(), createAdminClient(), waha, {
       organizationId: auth.org.orgId, idempotencyKey: req.headers.get("Idempotency-Key") ?? "",

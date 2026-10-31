@@ -11,6 +11,10 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { connectWahaChannel, ChannelConnectionError } from "@/lib/channels/connect-waha";
+import {
+  auditActiveConnectionRefusal,
+  auditChannelConnectionFailure,
+} from "@/lib/channels/connection-failure-audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { mfaEmDivida } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -67,22 +71,52 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const supportDenied = await requireSupportWrite();
-  if (supportDenied) return supportDenied;
-
   const requestId = randomUUID();
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) {
+    await auditActiveConnectionRefusal({
+      response: supportDenied,
+      requestId: supportDenied.headers.get("X-Request-Id") ?? requestId,
+      origin: "connections",
+    });
+    return supportDenied;
+  }
+
   const authz = await requireRole("manager", {
     requestId,
     resource: "channel_sessions",
     allowPlatformAdmin: true,
   });
-  if (!authz.ok) return authz.response;
+  if (!authz.ok) {
+    await auditActiveConnectionRefusal({
+      response: authz.response,
+      requestId,
+      origin: "connections",
+    });
+    return authz.response;
+  }
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
-  if (await mfaEmDivida()) return fail("mfa_required", t("Confirme a verificação em duas etapas."), 403, { requestId });
+  if (await mfaEmDivida()) {
+    auditChannelConnectionFailure({
+      organizationId: activeOrg.orgId,
+      userId: user.id,
+      requestId,
+      reason: "mfa_required",
+      origin: "connections",
+    });
+    return fail("mfa_required", t("Confirme a verificação em duas etapas."), 403, { requestId });
+  }
 
   const waha = getWahaClient();
   if (!waha) {
+    auditChannelConnectionFailure({
+      organizationId: activeOrg.orgId,
+      userId: user.id,
+      requestId,
+      reason: "waha_not_configured",
+      origin: "connections",
+    });
     return fail(
       "waha_not_configured",
       t("O WhatsApp (WAHA) não está configurado neste ambiente: faltam WAHA_API_BASE_URL e/ou WAHA_API_KEY. Configure-as e tente de novo."),
@@ -99,6 +133,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   const parsed = createChannelSchema.safeParse(raw ?? {});
   if (!parsed.success) {
+    auditChannelConnectionFailure({
+      organizationId: activeOrg.orgId,
+      userId: user.id,
+      requestId,
+      reason: "validation_failed",
+      origin: "connections",
+    });
     return fail("validation_failed", t("Dados inválidos."), 422, {
       requestId,
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
