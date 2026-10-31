@@ -134,7 +134,11 @@ export async function POST(
   }
 
   try {
-    await assertWahaConnectionIdle(createAdminClient(), activeOrg.orgId, id);
+    await assertWahaConnectionIdle(createAdminClient(), activeOrg.orgId, id, {
+      userId: user.id,
+      requestId,
+      origin: "reconnect",
+    });
     await waha.stopSession(nomeSessao);
     // Só no modo forçado: descartar a credencial é irreversível — obriga a
     // reescanear o QR mesmo que ela ainda estivesse boa.

@@ -210,6 +210,11 @@ export const AUDIT_ACTIONS = [
   "ai_agent.run_completed",
   "ai_agent.run_failed",
   "channel.connected",
+  // Tentativa humana de conexão recusada ou falha. `metadata.reason` guarda o
+  // código estável e `technical` aceita só operação/status, nunca mensagem,
+  // chave, token ou QR. A ação separada permite consultar org + período sem
+  // confundir tentativa frustrada com canal conectado.
+  "channel.connect_failed",
   "channel.ai_access_updated",
   "channel.automatic_attendance_updated",
   "channel.first_message_queue_updated",

@@ -4,6 +4,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
 import type { WahaClient } from "@/lib/waha/client";
 import { WahaSessionError } from "@/lib/waha/client";
+import {
+  auditChannelConnectionFailure,
+  type ConnectionOrigin,
+} from "./connection-failure-audit";
 import { hasManagedConnector } from "./managed-qr";
 
 const channelSchema = z.object({
@@ -24,11 +28,35 @@ export interface ConnectChannelInput {
   displayName?: string; onboarding?: boolean; restart?: boolean;
 }
 
+export async function connectWahaChannel(
+  authDb: SupabaseClient,
+  serviceDb: SupabaseClient,
+  waha: Transport,
+  input: ConnectChannelInput,
+): Promise<{ channel: z.infer<typeof channelSchema>; replay: boolean }> {
+  try {
+    return await connectWahaChannelAttempt(authDb, serviceDb, waha, input);
+  } catch (cause) {
+    const failure = cause instanceof ChannelConnectionError
+      ? cause
+      : new ChannelConnectionError("internal_error", 500);
+    auditChannelConnectionFailure({
+      organizationId: input.organizationId,
+      userId: input.userId,
+      requestId: input.requestId,
+      reason: failure.code,
+      origin: input.onboarding ? "onboarding" : "connections",
+      technical: failure.technical,
+    });
+    throw cause;
+  }
+}
+
 /** Única reserva WAHA: auth client reserva, service client confirma por lease+org.
  * HTTP não participa da transação. Falha mantém FAILED e identidade; retry
  * reutiliza o remoto existente. Nunca exclui uma sessão automaticamente.
  */
-export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: SupabaseClient, waha: Transport, input: ConnectChannelInput): Promise<{ channel: z.infer<typeof channelSchema>; replay: boolean }> {
+async function connectWahaChannelAttempt(authDb: SupabaseClient, serviceDb: SupabaseClient, waha: Transport, input: ConnectChannelInput): Promise<{ channel: z.infer<typeof channelSchema>; replay: boolean }> {
   if (!z.string().uuid().safeParse(input.idempotencyKey).success) throw new ChannelConnectionError("idempotency_key_required", 422);
   // A organização que entrega este número por um conector externo não pode
   // abrir uma segunda sessão automatizada. A guarda vive no seam e portanto
@@ -86,11 +114,33 @@ export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: Supa
 
 /** Ações manuais aguardam apenas a reserva em execução; FAILED é recuperável. */
 export async function assertWahaConnectionIdle(db: SupabaseClient,
-  organizationId: string, channelSessionId: string): Promise<void> {
-  const { data, error } = await db.from("channel_connection_requests")
-    .select("id, lease_until").eq("organization_id", organizationId)
-    .eq("channel_session_id", channelSessionId).in("state", ["processing"])
-    .order("lease_until", { ascending: false }).limit(1).maybeSingle();
-  if (error) throw new ChannelConnectionError("connection_reservation_failed", 503);
-  if (data && new Date(data.lease_until).getTime() > Date.now()) throw new ChannelConnectionError("connection_in_progress", 409);
+  organizationId: string, channelSessionId: string, context: {
+    userId: string;
+    requestId: string;
+    origin: ConnectionOrigin;
+  }): Promise<void> {
+  try {
+    const { data, error } = await db.from("channel_connection_requests")
+      .select("id, lease_until").eq("organization_id", organizationId)
+      .eq("channel_session_id", channelSessionId).in("state", ["processing"])
+      .order("lease_until", { ascending: false }).limit(1).maybeSingle();
+    if (error) throw new ChannelConnectionError("connection_reservation_failed", 503);
+    if (data && new Date(data.lease_until).getTime() > Date.now()) {
+      throw new ChannelConnectionError("connection_in_progress", 409);
+    }
+  } catch (cause) {
+    const failure = cause instanceof ChannelConnectionError
+      ? cause
+      : new ChannelConnectionError("internal_error", 500);
+    auditChannelConnectionFailure({
+      organizationId,
+      userId: context.userId,
+      requestId: context.requestId,
+      reason: failure.code,
+      origin: context.origin,
+      channelSessionId,
+      technical: failure.technical,
+    });
+    throw cause;
+  }
 }
