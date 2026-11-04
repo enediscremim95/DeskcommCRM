@@ -44,7 +44,7 @@ ser fonte sem ninguém decidir isso.
 | `fila-primeira-mensagem.architecture.json` | fila opt-in por ação, com FIFO, intervalo, teto diário, pausa e guardas reavaliadas no instante do envio |
 | `assistente-de-resposta.architecture.json` | sugestão sob demanda com chave própria, histórico limitado, exemplos do mesmo tenant e revisão humana obrigatória |
 
-| `catalogo-e-atalhos-midia.architecture.json` | catálogo e atalhos com imagem, vídeo ou áudio na conversa, lote de produtos e janela de 24 horas revalidada na porta central de envio |
+| `catalogo-e-atalhos-midia.architecture.json` | painel como fonte do catálogo, importação segura de fotos, campos comerciais somente para leitura, lote de produtos e janela de 24 horas revalidada na porta central de envio |
 
 > **Esta tabela já apodreceu uma vez:** ela listava 8 mapas quando o disco tinha 9 — faltava
 > `indice-de-atrito`. Nenhum teste lê este README (o gate lê os `.json`), então mapa novo que

@@ -37,6 +37,23 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Vem do painel": { es: "Viene del panel" },
+  "Nome, descrição, preço, foto e situação são alterados no painel de produtos.": {
+    es: "El nombre, la descripción, el precio, la foto y el estado se cambian en el panel de productos.",
+  },
+  "Legenda complementar do atendimento": { es: "Texto complementario de la atención" },
+  "Vai ao final da legenda enviada e é cortada no limite aceito pelo canal.": {
+    es: "Va al final del texto enviado y se recorta según el límite aceptado por el canal.",
+  },
+  "A foto deste produto é atualizada pelo painel.": {
+    es: "La foto de este producto se actualiza desde el panel.",
+  },
+  "Imagem externa: no envio, este produto sai como texto.": {
+    es: "Imagen externa: al enviarlo, este producto sale como texto.",
+  },
+  "O catálogo da loja. Produtos do painel mantêm nome, preço e foto sincronizados; o CRM acrescenta a legenda do atendimento.": {
+    es: "El catálogo de la tienda. Los productos del panel mantienen nombre, precio y foto sincronizados; el CRM agrega el texto de atención.",
+  },
   "Erro ao remover o áudio.": { es: "No se pudo eliminar el audio." },
   "Áudio é permitido apenas em resposta compartilhada.": { es: "El audio solo se permite en una respuesta compartida." },
   "O áudio precisa ter até 16 MB.": { es: "El audio debe tener hasta 16 MB." },

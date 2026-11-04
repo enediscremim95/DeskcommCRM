@@ -37,4 +37,31 @@ describe("legenda do produto enviada na conversa", () => {
       }),
     ).toBe("Produto\nR$ 10,00");
   });
+
+  it("acrescenta a legenda do atendimento por último", () => {
+    expect(
+      montarLegendaDoProduto({
+        nome: "Produto",
+        preco_cents: 1000,
+        moeda: "BRL",
+        descricao: "Descrição do painel",
+        legenda_atendimento: "Prazo combinado após a aprovação da arte.",
+      }),
+    ).toBe(
+      "Produto\nR$ 10,00\nDescrição do painel\nPrazo combinado após a aprovação da arte.",
+    );
+  });
+
+  it("corta somente o complemento para respeitar o teto da legenda", () => {
+    const legenda = montarLegendaDoProduto({
+      nome: "Produto",
+      preco_cents: 1000,
+      moeda: "BRL",
+      descricao: null,
+      legenda_atendimento: "x".repeat(2000),
+    });
+    expect(legenda).toHaveLength(1024);
+    expect(legenda).toMatch(/^Produto\nR\$ 10,00\n/);
+    expect(legenda.endsWith("…")).toBe(true);
+  });
 });

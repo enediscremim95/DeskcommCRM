@@ -5,6 +5,7 @@ import { z } from "zod";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { caminhoDaImagemDoCatalogo } from "@/lib/catalogo/caminho-da-imagem";
 import { montarLegendaDoProduto } from "@/lib/catalogo/mensagem-do-produto";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -19,13 +20,6 @@ const schema = z.object({ product_ids: z.array(z.string().uuid()).min(1).max(10)
 
 interface RouteCtx {
   params: Promise<{ id: string }>;
-}
-
-function caminhoDaImagem(url: string | null): string | null {
-  if (!url) return null;
-  const marcador = "/storage/v1/object/public/catalog-media/";
-  const indice = url.indexOf(marcador);
-  return indice < 0 ? null : decodeURIComponent(url.slice(indice + marcador.length));
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
@@ -62,7 +56,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const { data: produtos, error: produtosError } = await supabase
     .from("catalog_products")
-    .select("id, nome, descricao, preco_cents, moeda, imagem_url")
+    .select("id, nome, descricao, preco_cents, moeda, imagem_url, legenda_atendimento")
     .eq("organization_id", authz.org.orgId)
     .eq("ativo", true)
     .in("id", parsed.data.product_ids);
@@ -88,7 +82,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     let mediaMime: string | undefined;
     let mediaSizeBytes: number | undefined;
     try {
-      const origem = caminhoDaImagem(produto.imagem_url);
+      const origem = caminhoDaImagemDoCatalogo(produto.imagem_url, authz.org.orgId, produto.id);
       if (origem) {
         const { data: arquivo, error: downloadError } = await admin.storage
           .from("catalog-media")

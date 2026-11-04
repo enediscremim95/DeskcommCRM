@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, noContent, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { caminhoDaImagemDoCatalogo } from "@/lib/catalogo/caminho-da-imagem";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
@@ -19,13 +20,7 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-function caminhoDaImagem(url: string | null): string | null {
-  if (!url) return null;
-  const marcador = "/storage/v1/object/public/catalog-media/";
-  const indice = url.indexOf(marcador);
-  if (indice < 0) return null;
-  return decodeURIComponent(url.slice(indice + marcador.length));
-}
+const mensagemGerenciado = "Este produto vem do painel de produtos. Mude lá.";
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -38,11 +33,15 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supabase = await createClient();
   const { data: produto } = await supabase
     .from("catalog_products")
-    .select("id, imagem_url")
+    .select("id, imagem_url, origem")
     .eq("organization_id", authz.org.orgId)
     .eq("id", id)
     .maybeSingle();
   if (!produto) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
+  if (produto.origem === "painel") {
+    return fail("gerenciado_pelo_painel", t(mensagemGerenciado), 409, { requestId });
+  }
+  const anterior = caminhoDaImagemDoCatalogo(produto.imagem_url, authz.org.orgId, id);
 
   const declared = Number(req.headers.get("content-length") ?? 0);
   if (declared > MAX_WHATSAPP_IMAGE_BYTES + 1_048_576) {
@@ -77,7 +76,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { data: publica } = admin.storage.from("catalog-media").getPublicUrl(caminho);
   const { data, error } = await supabase
     .from("catalog_products")
-    .update({ imagem_url: publica.publicUrl })
+    .update({ imagem_url: publica.publicUrl, imagem_origem_url: null })
     .eq("organization_id", authz.org.orgId)
     .eq("id", id)
     .select("id, imagem_url")
@@ -86,8 +85,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     await admin.storage.from("catalog-media").remove([caminho]);
     return fail("internal_error", t("Erro ao vincular a imagem."), 500, { requestId });
   }
-  const anterior = caminhoDaImagem(produto.imagem_url);
-  if (anterior?.startsWith(`${authz.org.orgId}/${id}/`)) {
+  if (anterior) {
     await admin.storage.from("catalog-media").remove([anterior]);
   }
   await audit({
@@ -113,16 +111,19 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
   const supabase = await createClient();
   const { data: produto } = await supabase
     .from("catalog_products")
-    .select("id, imagem_url")
+    .select("id, imagem_url, origem")
     .eq("organization_id", authz.org.orgId)
     .eq("id", id)
     .maybeSingle();
+  if (produto?.origem === "painel") {
+    return fail("gerenciado_pelo_painel", t(mensagemGerenciado), 409, { requestId });
+  }
   if (!produto?.imagem_url) {
     return fail("not_found", t("Imagem não encontrada."), 404, { requestId });
   }
   const { data, error } = await supabase
     .from("catalog_products")
-    .update({ imagem_url: null })
+    .update({ imagem_url: null, imagem_origem_url: null })
     .eq("organization_id", authz.org.orgId)
     .eq("id", id)
     .not("imagem_url", "is", null)
@@ -130,8 +131,8 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
     .maybeSingle();
   if (error) return fail("internal_error", t("Erro ao remover a imagem."), 500, { requestId });
   if (!data) return fail("not_found", t("Imagem não encontrada."), 404, { requestId });
-  const anterior = caminhoDaImagem(produto.imagem_url);
-  if (anterior?.startsWith(`${authz.org.orgId}/${id}/`)) {
+  const anterior = caminhoDaImagemDoCatalogo(produto.imagem_url, authz.org.orgId, id);
+  if (anterior) {
     await createAdminClient().storage.from("catalog-media").remove([anterior]);
   }
   await audit({

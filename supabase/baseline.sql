@@ -27366,6 +27366,18 @@ comment on column public.message_templates.media_storage_path is
 comment on column public.message_templates.media_kind is
   'Tipo provider-agnostic do anexo da resposta rapida: image ou video.';
 
+-- ---- catalogo do painel e legenda de atendimento (migration 0299) ----
+alter table public.catalog_products
+  add column if not exists legenda_atendimento text,
+  add column if not exists imagem_origem_url text;
+
+comment on column public.catalog_products.legenda_atendimento is
+  'Complemento opcional escrito no CRM e acrescentado ao fim da legenda enviada ao cliente.';
+comment on column public.catalog_products.imagem_origem_url is
+  'URL recebida do painel na última foto baixada com sucesso; evita baixar novamente sem mudança.';
+
+notify pgrst, 'reload schema';
+
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$
 declare

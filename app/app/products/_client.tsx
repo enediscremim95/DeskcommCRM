@@ -8,6 +8,7 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/lib/api/client";
+import { imagemEhDoCatalogoGerenciado } from "@/lib/catalogo/caminho-da-imagem";
 import { formatCents } from "@/lib/money";
 import { precoParaCentavos, type Produto } from "@/lib/schemas/produtos";
 
@@ -37,6 +38,7 @@ interface Rascunho {
   quantidade: string;
   controla_estoque: boolean;
   ativo: boolean;
+  legendaAtendimento: string;
 }
 
 const VAZIO: Rascunho = {
@@ -50,6 +52,7 @@ const VAZIO: Rascunho = {
   quantidade: "0",
   controla_estoque: true,
   ativo: true,
+  legendaAtendimento: "",
 };
 
 function rascunhoDoProduto(produto: Produto): Rascunho {
@@ -66,6 +69,7 @@ function rascunhoDoProduto(produto: Produto): Rascunho {
     quantidade: String(produto.quantidade),
     controla_estoque: produto.controla_estoque,
     ativo: produto.ativo,
+    legendaAtendimento: produto.legenda_atendimento ?? "",
   };
 }
 
@@ -89,6 +93,7 @@ function doRascunho(
     controla_estoque: r.controla_estoque,
     quantidade: Number(r.quantidade) || 0,
     ativo: r.ativo,
+    legenda_atendimento: r.legendaAtendimento.trim() || null,
   };
 }
 
@@ -122,7 +127,10 @@ export function ProdutosClient({
   }, [inicial, busca]);
 
   async function salvar() {
-    const corpo = doRascunho(rascunho, t);
+    const vemDoPainel = editando?.origem === "painel";
+    const corpo = vemDoPainel
+      ? { legenda_atendimento: rascunho.legendaAtendimento.trim() || null }
+      : doRascunho(rascunho, t);
     if ("erro" in corpo) {
       toast.error(corpo.erro as string);
       return;
@@ -134,7 +142,7 @@ export function ProdutosClient({
         ? await apiClient.patch<{ data: Produto }>(`/api/v1/products/${editando.id}`, corpo)
         : await apiClient.post<{ data: Produto }>("/api/v1/products", corpo);
       produtoFoiSalvo = true;
-      if (imagem) {
+      if (imagem && !vemDoPainel) {
         const form = new FormData();
         form.set("file", imagem);
         const resposta = await fetch(`/api/v1/products/${salvo.data.id}/image`, {
@@ -307,12 +315,23 @@ export function ProdutosClient({
 
       {criando && podeEditar ? (
         <div className="mb-6 rounded-lg border p-4" data-testid="form-produto">
+          {editando?.origem === "painel" ? (
+            <div className="mb-4 rounded-md border bg-muted/40 p-3 text-sm">
+              <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                {t("Vem do painel")}
+              </span>
+              <p className="mt-2 text-muted-foreground">
+                {t("Nome, descrição, preço, foto e situação são alterados no painel de produtos.")}
+              </p>
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
               {t("Código")}
               <input
                 value={rascunho.codigo}
                 onChange={(e) => setRascunho({ ...rascunho, codigo: e.target.value })}
+                disabled={editando?.origem === "painel"}
                 className="mt-1 h-9 w-full rounded-md border px-3"
                 data-testid="produto-codigo"
               />
@@ -322,6 +341,7 @@ export function ProdutosClient({
               <input
                 value={rascunho.nome}
                 onChange={(e) => setRascunho({ ...rascunho, nome: e.target.value })}
+                disabled={editando?.origem === "painel"}
                 className="mt-1 h-9 w-full rounded-md border px-3"
                 data-testid="produto-nome"
               />
@@ -331,6 +351,7 @@ export function ProdutosClient({
               <input
                 value={rascunho.marca}
                 onChange={(e) => setRascunho({ ...rascunho, marca: e.target.value })}
+                disabled={editando?.origem === "painel"}
                 className="mt-1 h-9 w-full rounded-md border px-3"
               />
             </label>
@@ -339,6 +360,7 @@ export function ProdutosClient({
               <input
                 value={rascunho.categoria}
                 onChange={(e) => setRascunho({ ...rascunho, categoria: e.target.value })}
+                disabled={editando?.origem === "painel"}
                 className="mt-1 h-9 w-full rounded-md border px-3"
               />
             </label>
@@ -347,6 +369,7 @@ export function ProdutosClient({
               <textarea
                 value={rascunho.descricao}
                 onChange={(e) => setRascunho({ ...rascunho, descricao: e.target.value })}
+                disabled={editando?.origem === "painel"}
                 maxLength={2000}
                 rows={3}
                 className="mt-1 w-full rounded-md border px-3 py-2"
@@ -358,6 +381,7 @@ export function ProdutosClient({
               <input
                 value={rascunho.preco}
                 onChange={(e) => setRascunho({ ...rascunho, preco: e.target.value })}
+                disabled={editando?.origem === "painel"}
                 placeholder="5.499,00"
                 className="mt-1 h-9 w-full rounded-md border px-3"
                 data-testid="produto-preco"
@@ -368,6 +392,7 @@ export function ProdutosClient({
               <input
                 value={rascunho.custo}
                 onChange={(e) => setRascunho({ ...rascunho, custo: e.target.value })}
+                disabled={editando?.origem === "painel"}
                 placeholder="4.100,00"
                 className="mt-1 h-9 w-full rounded-md border px-3"
               />
@@ -380,14 +405,38 @@ export function ProdutosClient({
           </div>
 
           <label className="mt-3 block text-sm">
-            {t("Imagem do produto")}
-            <input
-              type="file"
-              accept="image/jpeg,image/png"
-              onChange={(e) => setImagem(e.target.files?.[0] ?? null)}
-              className="mt-1 block w-full text-sm"
-              data-testid="produto-imagem"
+            {t("Legenda complementar do atendimento")}{" "}
+            <span className="text-muted-foreground">{t("(opcional)")}</span>
+            <textarea
+              value={rascunho.legendaAtendimento}
+              onChange={(e) =>
+                setRascunho({ ...rascunho, legendaAtendimento: e.target.value })
+              }
+              maxLength={4000}
+              rows={3}
+              className="mt-1 w-full rounded-md border px-3 py-2"
+              data-testid="produto-legenda-atendimento"
             />
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {t("Vai ao final da legenda enviada e é cortada no limite aceito pelo canal.")}
+            </span>
+          </label>
+
+          <label className="mt-3 block text-sm">
+            {t("Imagem do produto")}
+            {editando?.origem === "painel" ? (
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {t("A foto deste produto é atualizada pelo painel.")}
+              </span>
+            ) : (
+              <input
+                type="file"
+                accept="image/jpeg,image/png"
+                onChange={(e) => setImagem(e.target.files?.[0] ?? null)}
+                className="mt-1 block w-full text-sm"
+                data-testid="produto-imagem"
+              />
+            )}
             <span className="mt-1 block text-xs text-muted-foreground">
               {t("JPEG ou PNG até 5 MB.")}
             </span>
@@ -398,6 +447,7 @@ export function ProdutosClient({
               type="checkbox"
               checked={rascunho.controla_estoque}
               onChange={(e) => setRascunho({ ...rascunho, controla_estoque: e.target.checked })}
+              disabled={editando?.origem === "painel"}
               data-testid="produto-controla-estoque"
             />
             {t("Controlar estoque deste produto")}
@@ -408,6 +458,7 @@ export function ProdutosClient({
               <input
                 value={rascunho.quantidade}
                 onChange={(e) => setRascunho({ ...rascunho, quantidade: e.target.value })}
+                disabled={editando?.origem === "painel"}
                 className="mt-1 h-9 w-32 rounded-md border px-3"
               />
             </label>
@@ -424,6 +475,7 @@ export function ProdutosClient({
               type="checkbox"
               checked={rascunho.ativo}
               onChange={(e) => setRascunho({ ...rascunho, ativo: e.target.checked })}
+              disabled={editando?.origem === "painel"}
             />
             {t("Produto ativo")}
           </label>
@@ -477,6 +529,18 @@ export function ProdutosClient({
                 {p.descricao ? (
                   <p className="line-clamp-1 text-xs text-muted-foreground">{p.descricao}</p>
                 ) : null}
+                <div className="mt-1 flex flex-wrap gap-2 text-xs">
+                  {p.origem === "painel" ? (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                      {t("Vem do painel")}
+                    </span>
+                  ) : null}
+                  {p.imagem_url && !imagemEhDoCatalogoGerenciado(p.imagem_url) ? (
+                    <span className="text-amber-700" data-testid={`imagem-externa-${p.codigo}`}>
+                      {t("Imagem externa: no envio, este produto sai como texto.")}
+                    </span>
+                  ) : null}
+                </div>
               </div>
               <span className="shrink-0 font-medium tabular-nums">
                 {formatCents(p.preco_cents, p.moeda)}
@@ -497,14 +561,16 @@ export function ProdutosClient({
                   >
                     {t("Editar")}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void alternarAtivo(p)}
-                    data-testid={`alternar-${p.codigo}`}
-                  >
-                    {t(p.ativo ? "Desativar" : "Reativar")}
-                  </Button>
+                  {p.origem !== "painel" ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void alternarAtivo(p)}
+                      data-testid={`alternar-${p.codigo}`}
+                    >
+                      {t(p.ativo ? "Desativar" : "Reativar")}
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </li>

@@ -10,7 +10,12 @@ import { createClient } from "@/lib/supabase/server";
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
+const storageDownload = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: vi.fn(() => ({
+    storage: { from: () => ({ download: storageDownload }) },
+  })),
+}));
 // A regra da janela mora em lib/channels e tem teste próprio. Aqui só importa que
 // a rota a respeite, e a doutrina de canal proíbe nomear provider fora de lá.
 vi.mock("@/lib/channels/janela", () => ({ estadoDaJanela: vi.fn() }));
@@ -24,7 +29,11 @@ const USER = "22222222-2222-4222-8222-222222222222";
 const CONVERSA = "33333333-3333-4333-8333-333333333333";
 const PRODUTO = "44444444-4444-4444-8444-444444444444";
 
-function cliente(lastInboundAt: string, filtros: Array<[string, string, unknown]> = []) {
+function cliente(
+  lastInboundAt: string,
+  filtros: Array<[string, string, unknown]> = [],
+  imagemUrl: string | null = null,
+) {
   return {
     from(tabela: string) {
       if (tabela === "conversations") {
@@ -58,7 +67,8 @@ function cliente(lastInboundAt: string, filtros: Array<[string, string, unknown]
                 descricao: "Descrição de teste",
                 preco_cents: 3990,
                 moeda: "BRL",
-                imagem_url: null,
+                imagem_url: imagemUrl,
+                legenda_atendimento: null,
               },
             ],
             error: null,
@@ -157,5 +167,28 @@ describe("POST /conversations/:id/catalog-items", () => {
     };
 
     expect(body.data).toMatchObject({ sent: 0, queued: 1, failed: 0 });
+  });
+
+  it("trata caminho de outra organização como produto sem foto", async () => {
+    const outraOrg = "99999999-9999-4999-8999-999999999999";
+    const imagem = `https://crm.example/storage/v1/object/public/catalog-media/${outraOrg}/${PRODUTO}/foto.jpg`;
+    vi.mocked(createClient).mockResolvedValue(
+      cliente(new Date().toISOString(), [], imagem) as never,
+    );
+    vi.mocked(sendMessageHandler).mockResolvedValue({
+      id: "55555555-5555-4555-8555-555555555555",
+      status: "sent",
+    } as never);
+    const { POST } = await import("./route");
+
+    const resposta = await POST(pedido(), { params: Promise.resolve({ id: CONVERSA }) });
+
+    expect(resposta.status).toBe(201);
+    expect(storageDownload).not.toHaveBeenCalled();
+    expect(sendMessageHandler).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ type: "text" }),
+    );
   });
 });
