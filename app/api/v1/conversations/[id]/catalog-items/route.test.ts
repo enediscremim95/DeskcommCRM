@@ -4,12 +4,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { requireRole } from "@/lib/auth/require-role";
+import { estadoDaJanela } from "@/lib/channels/janela";
 import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
+// A regra da janela mora em lib/channels e tem teste próprio. Aqui só importa que
+// a rota a respeite, e a doutrina de canal proíbe nomear provider fora de lá.
+vi.mock("@/lib/channels/janela", () => ({ estadoDaJanela: vi.fn() }));
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
   ...(await importOriginal<typeof ImpersonateSupportTypes>()),
   requireSupportWrite: vi.fn(async () => null),
@@ -33,7 +37,7 @@ function cliente(lastInboundAt: string, filtros: Array<[string, string, unknown]
             data: {
               id: CONVERSA,
               last_inbound_at: lastInboundAt,
-              channel_sessions: { provider: "zernio" },
+              channel_sessions: { provider: "canal-de-teste" },
             },
             error: null,
           }),
@@ -77,6 +81,7 @@ function pedido() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(estadoDaJanela).mockReturnValue({ tipo: "aberta" } as never);
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
     user: { id: USER, idioma: "pt-BR" },
@@ -86,6 +91,7 @@ beforeEach(() => {
 
 describe("POST /conversations/:id/catalog-items", () => {
   it("recusa antes do envio quando a janela de 24 horas está fechada", async () => {
+    vi.mocked(estadoDaJanela).mockReturnValue({ tipo: "fechada" } as never);
     vi.mocked(createClient).mockResolvedValue(
       cliente(new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()) as never,
     );
