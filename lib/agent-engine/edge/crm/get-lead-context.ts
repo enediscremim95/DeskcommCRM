@@ -118,7 +118,14 @@ export type LeadContextErrorCode = 'lead_not_found' | 'crm_error' | 'crm_unavail
  * instrutiva, sem stack e sem credencial.
  */
 export type LeadContextResult =
-  | { ok: true; context: LeadContext; tokenCount: number; lgpd: LgpdInput }
+  | {
+      ok: true;
+      context: LeadContext;
+      tokenCount: number;
+      lgpd: LgpdInput;
+      /** Último inbound incluído na foto de histórico que produziu este contexto. */
+      latestInboundMessageId?: string | null;
+    }
   | { ok: false; error: { code: LeadContextErrorCode; message: string } };
 
 function teach(code: LeadContextErrorCode, message: string): LeadContextResult {
@@ -165,6 +172,8 @@ function paraDecisao(row: DecisionRow): UltimaDecisaoHumana | null {
 }
 
 interface HistoryRow {
+  /** Produção sempre seleciona o id; opcional para fixtures puras do formatador. */
+  id?: string;
   direction: 'inbound' | 'outbound';
   type: string;
   body: string | null;
@@ -229,7 +238,7 @@ export async function getLeadContext(
   const history: HistoryRow[] = conversationId
     ? (
         await db.query<HistoryRow>(
-          `select direction, type, body, media_url, media_storage_path, media_mime,
+          `select id, direction, type, body, media_url, media_storage_path, media_mime,
                   media_derived_text, sent_at
            from messages
            where organization_id = $1 and conversation_id = $2
@@ -244,6 +253,14 @@ export async function getLeadContext(
         )
       ).rows.reverse()
     : [];
+  let latestInboundMessageId: string | null = null;
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const message = history[i];
+    if (message?.direction === 'inbound' && typeof message.id === 'string') {
+      latestInboundMessageId = message.id;
+      break;
+    }
+  }
 
   // LGPD: base legal derivada DIRETO do contato (fonte da verdade, mesmo banco).
   // isProspecting=false: o MVP é inbound + follow-up — ambos respondem a lead que
@@ -290,7 +307,13 @@ export async function getLeadContext(
     knobs.maxTokens,
     input.fuso,
   );
-  return { ok: true, context, tokenCount: countPayloadTokens(JSON.stringify(context)), lgpd };
+  return {
+    ok: true,
+    context,
+    tokenCount: countPayloadTokens(JSON.stringify(context)),
+    lgpd,
+    latestInboundMessageId,
+  };
 }
 
 /**

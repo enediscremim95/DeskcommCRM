@@ -459,6 +459,49 @@ export async function loadInboundBodyForJob(
   return row === undefined ? null : (row.body ?? '');
 }
 
+/**
+ * Confirma se este agente já respondeu à foto de conversa que inclui o inbound
+ * do job. A chave não é apenas o horário: a própria outbound declara até qual
+ * inbound o contexto alcançava, evitando descartar uma mensagem que chegou
+ * enquanto a resposta anterior já estava sendo produzida.
+ */
+export async function inboundJaRespondidoPeloAgente(
+  db: Queryable,
+  input: {
+    tenantId: string;
+    conversationId: string;
+    agentId: string;
+    inboundMessageId: string;
+  },
+): Promise<boolean> {
+  const { rows } = await db.query<{ respondido: boolean }>(
+    `select exists(
+       select 1
+         from messages resposta
+         join messages alvo
+           on alvo.organization_id = resposta.organization_id
+          and alvo.conversation_id = resposta.conversation_id
+          and alvo.id = $4
+          and alvo.direction = 'inbound'
+         join messages coberto
+           on coberto.organization_id = resposta.organization_id
+          and coberto.conversation_id = resposta.conversation_id
+          and coberto.id::text = resposta.metadata->>'responded_through_inbound_id'
+          and coberto.direction = 'inbound'
+        where resposta.organization_id = $1
+          and resposta.conversation_id = $2
+          and resposta.direction = 'outbound'
+          and resposta.sent_via = 'ai'
+          and resposta.status in ('queued', 'sending', 'sent', 'delivered', 'read')
+          and resposta.metadata->>'ai_actor_id' = $3
+          and (coalesce(coberto.sent_at, coberto.created_at), coberto.created_at, coberto.id)
+              >= (coalesce(alvo.sent_at, alvo.created_at), alvo.created_at, alvo.id)
+     ) as respondido`,
+    [input.tenantId, input.conversationId, input.agentId, input.inboundMessageId],
+  );
+  return rows[0]?.respondido === true;
+}
+
 /** Conteúdo do checkpoint — o modelo devolve, o Zod valida, o Postgres guarda. */
 export const checkpointContentSchema = z.object({
   commitments: z.array(z.string()).default([]),
@@ -1896,6 +1939,10 @@ async function executarTurnoDoAgente(
     // sumiu) — ambos re-tentam pela fila e morrem em 'dead' se persistirem.
     throw new Error(`abertura do turno falhou em get_lead_context (${openingContext.error.code})`);
   }
+  const respondedThroughInboundId =
+    !preview && liveJob().kind === 'inbound_turn'
+      ? (openingContext.latestInboundMessageId ?? input.inboundMessageId)
+      : undefined;
   const currentInboundText =
     input.inboundMessageId === undefined
       ? null
@@ -2455,6 +2502,9 @@ async function executarTurnoDoAgente(
               agentOperation,
               seq,
               conversationId: input.conversationId,
+              ...(respondedThroughInboundId
+                ? { respondedThroughInboundId }
+                : {}),
               body: finalBody,
               template: { name: template_name, language, values },
             });
@@ -2675,6 +2725,9 @@ async function executarTurnoDoAgente(
                     agentOperation,
                     seq,
                     conversationId: input.conversationId,
+                    ...(respondedThroughInboundId
+                      ? { respondedThroughInboundId }
+                      : {}),
                     body: bubble,
                   });
                 },
@@ -4082,6 +4135,34 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       return;
     }
     if (operationAgent?.pausedAt) return;
+    if (operationAgent) {
+      try {
+        const respondido = await inboundJaRespondidoPeloAgente(pool, {
+          tenantId: job.organization_id,
+          conversationId: payload.conversation_id,
+          agentId: operationAgent.agentId,
+          inboundMessageId: payload.inbound_message_id,
+        });
+        if (respondido) {
+          deps.log.info('turno pulado: inbound já coberto pela resposta anterior do agente', {
+            job_id: job.id,
+            conversation_id: payload.conversation_id,
+            inbound_message_id: payload.inbound_message_id,
+            agent_id: operationAgent.agentId,
+          });
+          return;
+        }
+      } catch (err) {
+        // Sem esta leitura não há prova de que o turno ainda precisa responder.
+        // Falha fechado aqui; a fila durável refaz o job sem arriscar duplicata.
+        deps.log.warn('não consegui conferir se o inbound já foi respondido; turno será refeito', {
+          job_id: job.id,
+          conversation_id: payload.conversation_id,
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+        });
+        throw err;
+      }
+    }
     await runAgentTurn(deps, job, pool, ctx, {
       resolvedAgent,
       channelSessionId: payload.channel_session_id,

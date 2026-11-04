@@ -58,6 +58,8 @@ export interface SendMessageInput {
   /** Posição da mensagem no turno (1..n) — com jobId forma a identidade da intenção. */
   seq: number;
   conversationId: string;
+  /** Último inbound que o contexto desta resposta já cobria. */
+  respondedThroughInboundId?: string;
   body: string;
   /**
    * Presente = envio de TEMPLATE. O `body` continua sendo o texto RENDERIZADO — é
@@ -166,7 +168,12 @@ export async function sendTurnMessage(
               }
             : { type: 'text' as const }),
           body: input.body,
-          metadata: { idempotency_key: idempotencyKey },
+          metadata: {
+            idempotency_key: idempotencyKey,
+            ...(input.respondedThroughInboundId
+              ? { responded_through_inbound_id: input.respondedThroughInboundId }
+              : {}),
+          },
         },
       );
     } catch (err) {
