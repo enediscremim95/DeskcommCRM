@@ -77,8 +77,8 @@ test("cadastra produto com imagem e o encontra no seletor da conversa", async ({
         ? decodeURIComponent(produtoCriado!.imagem_url!.slice(indice + marcador.length))
         : null;
 
-    await page.goto("/app/inbox?filter=all");
-    await page.getByText(conversa.contactName).click();
+    await page.goto(`/app/inbox?conversation=${conversa.conversationId}`);
+    await expect(page.getByLabel("Mensagem")).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "Anexar" }).click();
     await page.getByRole("button", { name: "Catálogo" }).click();
     await expect(page.getByRole("heading", { name: "Enviar produtos do catálogo" })).toBeVisible();

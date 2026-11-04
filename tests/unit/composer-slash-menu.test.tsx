@@ -113,7 +113,11 @@ describe("Composer + barra de modelos", () => {
 
     fireEvent.keyDown(campo, { key: "Enter" });
 
-    expect(await screen.findByRole("heading", { name: "Enviar anexo" })).toBeInTheDocument();
+    // Baixar a mídia e abrir a prévia leva mais de 1 s com a suíte inteira rodando
+    // em paralelo na CI (o padrão do findBy é 1 s). Localmente passa em ~100 ms.
+    expect(
+      await screen.findByRole("heading", { name: "Enviar anexo" }, { timeout: 4_000 }),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Legenda")).toHaveValue("Obrigado, Maria da Silva.");
     expect(sendMock).not.toHaveBeenCalled();
     expect(screen.queryByRole("listbox", { name: /modelos de mensagem/i })).not.toBeInTheDocument();
