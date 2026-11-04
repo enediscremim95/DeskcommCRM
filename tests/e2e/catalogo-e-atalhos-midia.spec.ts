@@ -9,6 +9,7 @@ import { semearConversaDoInbox } from "./helpers/conversa-do-inbox";
 
 interface Credenciais {
   password: string;
+  org_id: string;
   users: Record<string, { id: string; email: string }>;
 }
 
@@ -32,14 +33,7 @@ async function login(page: Page): Promise<void> {
 test("cadastra produto com imagem e o encontra no seletor da conversa", async ({ page }) => {
   const codigo = `MIDIA-${Date.now()}`;
   const nome = `Caneca visual ${codigo}`;
-  const { data: membro, error: erroMembro } = await admin
-    .from("organization_members")
-    .select("organization_id")
-    .eq("user_id", creds.users.manager!.id)
-    .limit(1)
-    .single();
-  if (erroMembro || !membro) throw erroMembro ?? new Error("manager sem organização E2E");
-  const organizationId = (membro as { organization_id: string }).organization_id;
+  const organizationId = creds.org_id;
   const conversa = await semearConversaDoInbox(organizationId);
   let productId: string | null = null;
   let productImagePath: string | null = null;

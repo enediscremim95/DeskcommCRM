@@ -65,8 +65,18 @@ function renderComposer() {
 }
 
 describe("Composer + barra de modelos", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  // O áudio salvo agora aparece com player na prévia, e o jsdom não tem
+  // URL.createObjectURL. Os originais voltam no fim de cada caso.
+  const criarUrl = URL.createObjectURL;
+  const revogarUrl = URL.revokeObjectURL;
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    URL.createObjectURL = criarUrl;
+    URL.revokeObjectURL = revogarUrl;
+  });
   beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => "blob:teste");
+    URL.revokeObjectURL = vi.fn();
     sendMock.mockClear();
     apiGetMock.mockReset();
     apiGetMock.mockResolvedValue({ data: { drafts: [] } });
