@@ -29,24 +29,45 @@ interface ResumoDaImportacao {
 interface Rascunho {
   codigo: string;
   nome: string;
+  descricao: string;
   marca: string;
   categoria: string;
   preco: string;
   custo: string;
   quantidade: string;
   controla_estoque: boolean;
+  ativo: boolean;
 }
 
 const VAZIO: Rascunho = {
   codigo: "",
   nome: "",
+  descricao: "",
   marca: "",
   categoria: "",
   preco: "",
   custo: "",
   quantidade: "0",
   controla_estoque: true,
+  ativo: true,
 };
+
+function rascunhoDoProduto(produto: Produto): Rascunho {
+  const dinheiro = (valor: number | null) =>
+    valor === null ? "" : (valor / 100).toFixed(2).replace(".", ",");
+  return {
+    codigo: produto.codigo,
+    nome: produto.nome,
+    descricao: produto.descricao ?? "",
+    marca: produto.marca ?? "",
+    categoria: produto.categoria ?? "",
+    preco: dinheiro(produto.preco_cents),
+    custo: dinheiro(produto.custo_cents),
+    quantidade: String(produto.quantidade),
+    controla_estoque: produto.controla_estoque,
+    ativo: produto.ativo,
+  };
+}
 
 function doRascunho(
   r: Rascunho,
@@ -60,12 +81,14 @@ function doRascunho(
   return {
     codigo: r.codigo.trim(),
     nome: r.nome.trim(),
+    descricao: r.descricao.trim() || undefined,
     ...(r.marca.trim() ? { marca: r.marca.trim() } : {}),
     ...(r.categoria.trim() ? { categoria: r.categoria.trim() } : {}),
     preco_cents,
     custo_cents,
     controla_estoque: r.controla_estoque,
     quantidade: Number(r.quantidade) || 0,
+    ativo: r.ativo,
   };
 }
 
@@ -82,7 +105,9 @@ export function ProdutosClient({
   const router = useRouter();
   const [busca, setBusca] = React.useState("");
   const [criando, setCriando] = React.useState(false);
+  const [editando, setEditando] = React.useState<Produto | null>(null);
   const [rascunho, setRascunho] = React.useState<Rascunho>(VAZIO);
+  const [imagem, setImagem] = React.useState<File | null>(null);
   const [salvando, setSalvando] = React.useState(false);
   const [importando, setImportando] = React.useState(false);
   const [resumo, setResumo] = React.useState<ResumoDaImportacao | null>(null);
@@ -103,14 +128,43 @@ export function ProdutosClient({
       return;
     }
     setSalvando(true);
+    let produtoFoiSalvo = false;
     try {
-      await apiClient.post("/api/v1/products", corpo);
-      toast.success(t("Produto cadastrado"));
+      const salvo = editando
+        ? await apiClient.patch<{ data: Produto }>(`/api/v1/products/${editando.id}`, corpo)
+        : await apiClient.post<{ data: Produto }>("/api/v1/products", corpo);
+      produtoFoiSalvo = true;
+      if (imagem) {
+        const form = new FormData();
+        form.set("file", imagem);
+        const resposta = await fetch(`/api/v1/products/${salvo.data.id}/image`, {
+          method: "POST",
+          body: form,
+          credentials: "same-origin",
+        });
+        if (!resposta.ok) {
+          const body = (await resposta.json().catch(() => null)) as {
+            error?: { message?: string };
+          } | null;
+          throw new Error(body?.error?.message ?? t("O produto foi salvo, mas a imagem não."));
+        }
+      }
+      toast.success(t(editando ? "Produto atualizado" : "Produto cadastrado"));
       setRascunho(VAZIO);
+      setImagem(null);
+      setEditando(null);
       setCriando(false);
       router.refresh();
     } catch (e) {
-      showApiError(e);
+      if (e instanceof Error) toast.error(e.message);
+      else showApiError(e);
+      if (produtoFoiSalvo) {
+        setRascunho(VAZIO);
+        setImagem(null);
+        setEditando(null);
+        setCriando(false);
+        router.refresh();
+      }
     } finally {
       setSalvando(false);
     }
@@ -124,8 +178,7 @@ export function ProdutosClient({
       form.append("file", arquivo);
       const res = await fetch("/api/v1/products/import", { method: "POST", body: form });
       const json = (await res.json()) as
-        | { data: ResumoDaImportacao }
-        | { error?: { message?: string } };
+        { data: ResumoDaImportacao } | { error?: { message?: string } };
       if (!res.ok || !("data" in json)) {
         const msg = "error" in json ? json.error?.message : undefined;
         toast.error(msg ?? t("Não consegui ler essa planilha."));
@@ -170,7 +223,15 @@ export function ProdutosClient({
         />
         {podeEditar ? (
           <>
-            <Button onClick={() => setCriando((v) => !v)} data-testid="novo-produto">
+            <Button
+              onClick={() => {
+                setCriando((v) => !v);
+                setEditando(null);
+                setRascunho(VAZIO);
+                setImagem(null);
+              }}
+              data-testid="novo-produto"
+            >
               {t(criando ? "Cancelar" : "Novo produto")}
             </Button>
             <input
@@ -281,6 +342,17 @@ export function ProdutosClient({
                 className="mt-1 h-9 w-full rounded-md border px-3"
               />
             </label>
+            <label className="text-sm sm:col-span-2">
+              {t("Descrição")}
+              <textarea
+                value={rascunho.descricao}
+                onChange={(e) => setRascunho({ ...rascunho, descricao: e.target.value })}
+                maxLength={2000}
+                rows={3}
+                className="mt-1 w-full rounded-md border px-3 py-2"
+                data-testid="produto-descricao"
+              />
+            </label>
             <label className="text-sm">
               {t("Preço de venda")}
               <input
@@ -300,10 +372,26 @@ export function ProdutosClient({
                 className="mt-1 h-9 w-full rounded-md border px-3"
               />
               <span className="mt-1 block text-xs text-muted-foreground">
-                {t("Serve para o atendente saber até onde pode negociar. Não aparece para o cliente.")}
+                {t(
+                  "Serve para o atendente saber até onde pode negociar. Não aparece para o cliente.",
+                )}
               </span>
             </label>
           </div>
+
+          <label className="mt-3 block text-sm">
+            {t("Imagem do produto")}
+            <input
+              type="file"
+              accept="image/jpeg,image/png"
+              onChange={(e) => setImagem(e.target.files?.[0] ?? null)}
+              className="mt-1 block w-full text-sm"
+              data-testid="produto-imagem"
+            />
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {t("JPEG ou PNG até 5 MB.")}
+            </span>
+          </label>
 
           <label className="mt-3 flex items-center gap-2 text-sm">
             <input
@@ -331,6 +419,15 @@ export function ProdutosClient({
             </p>
           )}
 
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={rascunho.ativo}
+              onChange={(e) => setRascunho({ ...rascunho, ativo: e.target.checked })}
+            />
+            {t("Produto ativo")}
+          </label>
+
           <div className="mt-4">
             <Button onClick={salvar} disabled={salvando} data-testid="salvar-produto">
               {t(salvando ? "Salvando…" : "Salvar produto")}
@@ -340,16 +437,34 @@ export function ProdutosClient({
       ) : null}
 
       {filtrados.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-8 text-center" data-testid="produtos-vazio">
+        <div
+          className="rounded-lg border border-dashed p-8 text-center"
+          data-testid="produtos-vazio"
+        >
           <p className="font-medium">{textos.vazio}</p>
           <p className="mt-1 text-sm text-muted-foreground">{textos.vazioDica}</p>
         </div>
       ) : (
         <ul className="divide-y rounded-lg border" data-testid="lista-produtos">
           {filtrados.map((p) => (
-            <li key={p.id} className="flex items-center gap-4 p-3" data-testid={`produto-${p.codigo}`}>
+            <li
+              key={p.id}
+              className="flex items-center gap-4 p-3"
+              data-testid={`produto-${p.codigo}`}
+            >
+              {p.imagem_url ? (
+                <img
+                  src={p.imagem_url}
+                  alt={p.nome}
+                  className="h-14 w-14 shrink-0 rounded-md border object-cover"
+                />
+              ) : (
+                <div className="h-14 w-14 shrink-0 rounded-md border bg-muted" aria-hidden />
+              )}
               <div className="min-w-0 flex-1">
-                <p className={`truncate font-medium ${p.ativo ? "" : "text-muted-foreground line-through"}`}>
+                <p
+                  className={`truncate font-medium ${p.ativo ? "" : "text-muted-foreground line-through"}`}
+                >
                   {p.nome}
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -359,19 +474,38 @@ export function ProdutosClient({
                     ? ` · ${p.quantidade} ${t("em estoque")}`
                     : ` · ${t("sem controle de estoque")}`}
                 </p>
+                {p.descricao ? (
+                  <p className="line-clamp-1 text-xs text-muted-foreground">{p.descricao}</p>
+                ) : null}
               </div>
-              <span className="shrink-0 tabular-nums font-medium">
+              <span className="shrink-0 font-medium tabular-nums">
                 {formatCents(p.preco_cents, p.moeda)}
               </span>
               {podeEditar ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void alternarAtivo(p)}
-                  data-testid={`alternar-${p.codigo}`}
-                >
-                  {t(p.ativo ? "Desativar" : "Reativar")}
-                </Button>
+                <div className="flex shrink-0 gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setRascunho(rascunhoDoProduto(p));
+                      setImagem(null);
+                      setEditando(p);
+                      setCriando(true);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    data-testid={`editar-${p.codigo}`}
+                  >
+                    {t("Editar")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void alternarAtivo(p)}
+                    data-testid={`alternar-${p.codigo}`}
+                  >
+                    {t(p.ativo ? "Desativar" : "Reativar")}
+                  </Button>
+                </div>
               ) : null}
             </li>
           ))}

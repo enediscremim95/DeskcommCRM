@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendMock = vi.fn();
 const apiGetMock = vi.fn();
@@ -65,6 +65,7 @@ function renderComposer() {
 }
 
 describe("Composer + barra de modelos", () => {
+  afterEach(() => vi.unstubAllGlobals());
   beforeEach(() => {
     sendMock.mockClear();
     apiGetMock.mockReset();
@@ -85,7 +86,11 @@ describe("Composer + barra de modelos", () => {
     expect(screen.queryByRole("listbox", { name: /modelos de mensagem/i })).not.toBeInTheDocument();
   });
 
-  it("usa setas e Enter para preencher, interpolar e não enviar", () => {
+  it("usa setas e Enter para abrir o áudio salvo com a legenda interpolada", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new Blob(["audio"], { type: "audio/ogg" }), { status: 200 })),
+    );
     renderComposer();
     const campo = screen.getByLabelText("Mensagem");
 
@@ -98,7 +103,8 @@ describe("Composer + barra de modelos", () => {
 
     fireEvent.keyDown(campo, { key: "Enter" });
 
-    expect(campo).toHaveValue("Obrigado, Maria da Silva.");
+    expect(await screen.findByRole("heading", { name: "Enviar anexo" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Legenda")).toHaveValue("Obrigado, Maria da Silva.");
     expect(sendMock).not.toHaveBeenCalled();
     expect(screen.queryByRole("listbox", { name: /modelos de mensagem/i })).not.toBeInTheDocument();
   });

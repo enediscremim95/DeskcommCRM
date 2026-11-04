@@ -15,9 +15,17 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { COLUNAS_DO_PRODUTO, produtoPatchSchema } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
+
+function caminhoDaImagem(url: string | null): string | null {
+  if (!url) return null;
+  const marcador = "/storage/v1/object/public/catalog-media/";
+  const indice = url.indexOf(marcador);
+  return indice < 0 ? null : decodeURIComponent(url.slice(indice + marcador.length));
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -88,6 +96,13 @@ export async function DELETE(
   const { id } = await params;
 
   const supabase = await createClient();
+  const { data: existente } = await supabase
+    .from("catalog_products")
+    .select("id, imagem_url")
+    .eq("organization_id", authz.org.orgId)
+    .eq("id", id)
+    .maybeSingle();
+  if (!existente) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
   const { data, error } = await supabase
     .from("catalog_products")
     .delete()
@@ -98,6 +113,10 @@ export async function DELETE(
 
   if (error) return fail("internal_error", "Erro ao remover o produto.", 500, { requestId });
   if (!data) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
+  const imagem = caminhoDaImagem(existente.imagem_url);
+  if (imagem?.startsWith(`${authz.org.orgId}/${id}/`)) {
+    await createAdminClient().storage.from("catalog-media").remove([imagem]);
+  }
 
   await audit({
     organizationId: authz.org.orgId,
