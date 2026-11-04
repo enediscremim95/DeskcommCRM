@@ -56,6 +56,7 @@ interface CuratedField {
 const LEAD_FIELDS: CuratedField[] = [
   { value: "lead.title", label: "Nome do lead", op: "eq" },
   { value: "lead.tags", label: "Tags do lead", op: "contains" },
+  { value: "lead.source", label: "Origem do lead", op: "eq" },
   // utm_* entram pelo webhook em source_metadata (decisão da rota inbound),
   // não em custom_fields — o path aqui tem que apontar pra onde o dado mora.
   { value: "lead.source_metadata.utm_source", label: "Origem (utm_source)", op: "eq" },

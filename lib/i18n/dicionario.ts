@@ -4027,6 +4027,7 @@ export const DICIONARIO: Traducoes = {
   "Título do lead": { es: "Título del lead" },
   "Nome do lead": { es: "Nombre del lead" },
   "Tags do lead": { es: "Etiquetas del lead" },
+  "Origem do lead": { es: "Origen del lead" },
   "Origem (utm_source)": { es: "Origen (utm_source)" },
   "Etapa de destino": { es: "Etapa de destino" },
   "Texto da mensagem": { es: "Texto del mensaje" },

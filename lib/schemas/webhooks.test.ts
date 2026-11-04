@@ -250,6 +250,11 @@ describe("conditionSchema", () => {
     expect(r.success).toBe(true);
   });
 
+  it.each(["eq", "neq"] as const)("accepts lead.source with %s", (op) => {
+    const r = conditionSchema.safeParse({ field: "lead.source", op, value: "whatsapp" });
+    expect(r.success).toBe(true);
+  });
+
   it("accepts not_contains for mutually exclusive tag states", () => {
     const r = conditionSchema.safeParse({
       field: "contact.tags",
