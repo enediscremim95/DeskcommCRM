@@ -8,6 +8,7 @@ import { useT } from "@/hooks/i18n/useT";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import { AgentStatusBadge, deriveAgentStatus } from "./AgentStatusBadge";
 import { AgentRowMenu } from "./AgentRowMenu";
+import { OndeNoAr } from "./OndeNoAr";
 
 interface Props {
   agent: AgentRow;
@@ -87,6 +88,7 @@ export function AgentCard({ agent, canWrite }: Props) {
       {agent.description && (
         <p className="line-clamp-2 text-xs text-muted-foreground">{agent.description}</p>
       )}
+      <OndeNoAr agent={agent} />
       <dl className="grid grid-cols-2 gap-2 pt-1 text-xs">
         <div>
           <dt className="text-muted-foreground">{t("Tipo")}</dt>
