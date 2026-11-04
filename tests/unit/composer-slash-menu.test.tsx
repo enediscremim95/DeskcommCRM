@@ -99,7 +99,12 @@ describe("Composer + barra de modelos", () => {
   it("usa setas e Enter para abrir o áudio salvo com a legenda interpolada", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(new Blob(["audio"], { type: "audio/ogg" }), { status: 200 })),
+      // Objeto simples de propósito: `new Response(new Blob(...))` quebra no Node 22
+      // (o Blob do jsdom não tem `.stream`, que o undici exige).
+      vi.fn(async () => ({
+        ok: true,
+        blob: async () => new Blob(["audio"], { type: "audio/ogg" }),
+      })),
     );
     renderComposer();
     const campo = screen.getByLabelText("Mensagem");
@@ -113,11 +118,7 @@ describe("Composer + barra de modelos", () => {
 
     fireEvent.keyDown(campo, { key: "Enter" });
 
-    // Baixar a mídia e abrir a prévia leva mais de 1 s com a suíte inteira rodando
-    // em paralelo na CI (o padrão do findBy é 1 s). Localmente passa em ~100 ms.
-    expect(
-      await screen.findByRole("heading", { name: "Enviar anexo" }, { timeout: 4_000 }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Enviar anexo" })).toBeInTheDocument();
     expect(screen.getByLabelText("Legenda")).toHaveValue("Obrigado, Maria da Silva.");
     expect(sendMock).not.toHaveBeenCalled();
     expect(screen.queryByRole("listbox", { name: /modelos de mensagem/i })).not.toBeInTheDocument();
