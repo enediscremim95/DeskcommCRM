@@ -3,6 +3,7 @@ import type { AgentRow } from "@/hooks/ai/useAgent";
 import { deriveAgentStatus } from "./AgentStatusBadge";
 
 type Traduzir = (texto: string) => string;
+type CanalPublicado = NonNullable<NonNullable<AgentRow["versao_publicada"]>["canal"]>;
 
 export type EstadoOndeNoAr = "no_ar" | "automatico_desligado" | "desconectado" | "fora_do_ar";
 
@@ -29,6 +30,16 @@ function formatarTelefone(telefone: string): string {
   return valor;
 }
 
+function rotuloDoCanal(canal: CanalPublicado | null, t: Traduzir): string {
+  const telefone = canal?.phone_number?.trim();
+  if (telefone) return formatarTelefone(telefone);
+
+  const nome = canal?.display_name?.trim();
+  if (nome) return nome;
+
+  return t("Canal não encontrado");
+}
+
 function formatarData(data: string): string | null {
   const partes = /^(\d{4})-(\d{2})-(\d{2})/.exec(data);
   return partes ? `${partes[3]}/${partes[2]}` : null;
@@ -39,11 +50,7 @@ export function ondeNoAr(agent: AgentRow, t: Traduzir = (texto) => texto): OndeN
   const canal = versao?.canal ?? null;
   const statusDoAgente = deriveAgentStatus(agent);
 
-  const canalTexto = versao
-    ? canal?.phone_number?.trim()
-      ? formatarTelefone(canal.phone_number)
-      : canal?.display_name?.trim() || t("Canal não encontrado")
-    : null;
+  const canalTexto = versao ? rotuloDoCanal(canal, t) : null;
 
   const publicadaEm = versao?.published_at ? formatarData(versao.published_at) : null;
   const versaoTexto =
