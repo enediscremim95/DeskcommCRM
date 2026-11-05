@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -79,5 +81,23 @@ describe("normalização do retrato do painel", () => {
     );
     expect(origem).toBe("https://orgbling.s3.amazonaws.com/tenant/a?h=hash-a");
     expect(origem).not.toContain("Signature");
+  });
+
+  it("casa peso e medidas pelo SKU e usa a caixa mais pesada da mesma linha de preço", () => {
+    const fixture: unknown = JSON.parse(
+      readFileSync(resolve(process.cwd(), "tests/fixtures/painel-retrato-fixture.json"), "utf8"),
+    );
+    const [produto] = normalizarRetratoDoPainel(retratoDoPainelSchema.parse(fixture));
+
+    expect(produto?.linhas).toEqual([
+      expect.objectContaining({
+        codigo: "KIT-COMPLETO-AZUL",
+        peso_kg: 1.8,
+        altura_cm: 12,
+        largura_cm: 22,
+        comprimento_cm: 32,
+        embalagem_estimada: true,
+      }),
+    ]);
   });
 });

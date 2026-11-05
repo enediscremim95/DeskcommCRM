@@ -40,6 +40,7 @@ export const BLOCKED_TOOL_IDS = new Set([
   'crm_request_human_handoff',
   'crm_send_catalog_item',
   'crm_send_vitrine',
+  'crm_quote_shipping',
 ]);
 
 export interface McpTurnTools {
