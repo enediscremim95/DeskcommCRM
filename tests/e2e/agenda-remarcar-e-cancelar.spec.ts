@@ -81,7 +81,7 @@ async function entrar(page: PlaywrightTestTypes.Page, creds: Creds): Promise<str
   await page.getByRole("button", { name: /entrar/i }).click();
   await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
   await page.goto("/app/agenda");
-  await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('#conteudo-principal [data-testid="tela-agenda"]:visible')).toBeVisible({ timeout: 20_000 });
   // ⚠️ A SEMANA SEGUINTE, e ela é a condição de os dois casos existirem.
   //
   // O caso de remarcar precisa de DOIS horários livres no mesmo dia ("só havia

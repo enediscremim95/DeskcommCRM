@@ -66,7 +66,7 @@ async function entrar(page: Page, creds: Creds) {
   await page.getByRole("button", { name: /entrar/i }).click();
   await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
   await page.goto("/app/agenda");
-  await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 20_000 });
+  await expect(agendaAtiva(page)).toBeVisible({ timeout: 20_000 });
 }
 
 /**
@@ -83,7 +83,7 @@ async function entrar(page: Page, creds: Creds) {
  * seletor sumir da tela, esta linha falha antes de qualquer outra coisa.
  */
 async function escolherOTipoDoSeed(page: Page, nome: string) {
-  const seletor = page.getByTestId("tipo-da-grade");
+  const seletor = agendaAtiva(page).getByTestId("tipo-da-grade");
   // Organização com um tipo só não precisa de seletor, e ele não é renderizado.
   if ((await seletor.count()) === 0) return;
   await seletor.getByRole("button", { name: new RegExp(`^${nome}$`) }).click();
@@ -99,14 +99,18 @@ async function escolherOTipoDoSeed(page: Page, nome: string) {
  * esse preço com invariante que dependia da hora.
  */
 function blocoLivre(page: Page) {
-  return page.locator('[data-testid^="bloco-"][data-livre="true"]').first();
+  return agendaAtiva(page).locator('[data-testid^="bloco-"][data-livre="true"]').first();
 }
 
 /** Um bloco recusado que NÃO é do passado — o que tem de explicar a regra. */
 function blocoBloqueado(page: Page) {
-  return page
+  return agendaAtiva(page)
     .locator('[data-testid^="bloco-"][data-livre="false"]:not([aria-label*="já passou"])')
     .first();
+}
+
+function agendaAtiva(page: Page) {
+  return page.locator('#conteudo-principal [data-testid="tela-agenda"]:visible');
 }
 
 /**
@@ -159,7 +163,7 @@ test("clicar num bloco livre abre a marcação NAQUELE horário", async ({ page 
 
   await bloco.click();
 
-  const painel = page.getByTestId("painel-de-marcacao");
+  const painel = agendaAtiva(page).getByTestId("painel-de-marcacao");
   await expect(painel).toBeVisible({ timeout: 15_000 });
   // ⚠️ A ASSERÇÃO É O HORÁRIO, não "abriu". Um painel que abre pedindo o dia de
   // novo é exatamente o que o clique no bloco existe para evitar — e passaria
@@ -168,7 +172,7 @@ test("clicar num bloco livre abre a marcação NAQUELE horário", async ({ page 
     painel,
     "o painel abriu, mas não no tempo de confirmar — quem clicou num bloco já escolheu o horário",
   ).toHaveAttribute("data-tempo", "confirmando", { timeout: 10_000 });
-  await expect(page.getByTestId("confirmacao")).toContainText(oferecido!);
+  await expect(agendaAtiva(page).getByTestId("confirmacao")).toContainText(oferecido!);
   // A evidência é gravada DEPOIS da asserção, e não no lugar dela: imagem prova
   // o que a régua já mediu, e serve para o humano que vai revisar sem rodar.
   await page.screenshot({ path: "evidence/calendario/grade-clique-abre-no-horario.png" });
@@ -199,7 +203,7 @@ test("bloco fora da disponibilidade não marca — e diz por quê", async ({ pag
 
   // Clicar não abre marcação nenhuma.
   await bloqueado.click({ force: true });
-  await expect(page.getByTestId("painel-de-marcacao")).toHaveCount(0);
+  await expect(agendaAtiva(page).getByTestId("painel-de-marcacao")).toHaveCount(0);
   await page.screenshot({ path: "evidence/calendario/grade-bloco-recusado-diz-por-que.png" });
 });
 
@@ -222,16 +226,16 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
   const origem = blocoLivre(page);
   const testidOrigem = (await origem.getAttribute("data-testid"))!;
   await origem.click();
-  await expect(page.getByTestId("painel-de-marcacao")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("confirmar-marcacao").click();
-  await expect(page.getByTestId("ver-na-agenda")).toBeVisible({ timeout: 20_000 });
+  await expect(agendaAtiva(page).getByTestId("painel-de-marcacao")).toBeVisible({ timeout: 15_000 });
+  await agendaAtiva(page).getByTestId("confirmar-marcacao").click();
+  await expect(agendaAtiva(page).getByTestId("ver-na-agenda")).toBeVisible({ timeout: 20_000 });
   await page.keyboard.press("Escape");
 
   const criado = respostas.find((r) => r.startsWith("201 POST"));
   const id = criado?.match(/"id":"([0-9a-f-]{36})"/)?.[1];
   expect(id, `o POST não devolveu id. Respostas:\n${respostas.join("\n")}`).toBeTruthy();
 
-  const card = page.locator(`button:has([data-testid="faixa-${id}"])`);
+  const card = agendaAtiva(page).locator(`button:has([data-testid="faixa-${id}"])`);
   await expect(card).toBeVisible({ timeout: 20_000 });
 
   // ⚠️ O HORÁRIO QUE ACABOU DE SER MARCADO PRECISA SAIR DA OFERTA — e esperar
@@ -246,7 +250,7 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
   // Virou asserção em vez de `waitForTimeout` porque a propriedade importa por
   // si: um horário ocupado que continua clicável leva a pessoa direto ao 422.
   await expect(
-    page.locator(`[data-testid="${testidOrigem}"]`),
+      agendaAtiva(page).locator(`[data-testid="${testidOrigem}"]`),
     "o horário recém-marcado continua sendo oferecido — a grade não reconsultou a disponibilidade",
   ).toHaveAttribute("data-livre", "false", { timeout: 20_000 });
 
@@ -264,7 +268,7 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
   // O bloco de origem virou o compromisso, então o primeiro livre do dia agora
   // é o vizinho: os dois cabem na tela ao mesmo tempo, que é a condição para o
   // ponteiro atravessar de um ao outro.
-  const alvo = page.locator(`[data-testid^="bloco-${dia}-"][data-livre="true"]`).first();
+  const alvo = agendaAtiva(page).locator(`[data-testid^="bloco-${dia}-"][data-livre="true"]`).first();
   await expect(alvo).toBeAttached({ timeout: 15_000 });
   const testidAlvo = (await alvo.getAttribute("data-testid"))!;
   const horarioOferecido = /Marcar às (\d{2}:\d{2})/.exec((await alvo.getAttribute("aria-label"))!)![1]!;
@@ -291,21 +295,21 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
   // `pointermove` de verdade, e um salto único não desenha o fantasma.
   await page.mouse.move(caixaAlvo.x + caixaAlvo.width / 2, caixaAlvo.y + 4, { steps: 12 });
   await expect(
-    page.getByTestId("fantasma-do-arraste"),
+    agendaAtiva(page).getByTestId("fantasma-do-arraste"),
     "arrastar não desenhou onde o card cairia — o gesto não está sendo capturado",
   ).toBeVisible();
   await page.screenshot({ path: "evidence/calendario/grade-arraste-fantasma.png" });
   await page.mouse.up();
 
   // ── confirmação ANTES de consumar: remarcar avisa quem está do outro lado ──
-  const confirmacao = page.getByTestId("confirmar-remarcacao");
+  const confirmacao = agendaAtiva(page).getByTestId("confirmar-remarcacao");
   await expect(
     confirmacao,
     "soltar remarcou sem perguntar — o cliente do outro lado recebe aviso de remarcação",
   ).toBeVisible({ timeout: 10_000 });
   await expect(confirmacao).toContainText(horarioOferecido);
   await page.screenshot({ path: "evidence/calendario/grade-confirma-antes-de-remarcar.png" });
-  await page.getByTestId("confirmar-remarcacao-botao").click();
+  await agendaAtiva(page).getByTestId("confirmar-remarcacao-botao").click();
 
   // ── ⚠️ A PROVA NÃO É A TELA ───────────────────────────────────────────
   //
@@ -328,7 +332,7 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
     .toBe(horarioOferecido);
 
   await page.reload();
-  await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 20_000 });
+  await expect(agendaAtiva(page)).toBeVisible({ timeout: 20_000 });
   // ⚠️ O F5 DESFAZ A NAVEGAÇÃO — a âncora da grade é estado do React (`useState(new
   // Date())`), então recarregar devolve a tela para a semana de HOJE. O
   // compromisso vive na semana seguinte, e sem voltar até ele a asserção abaixo
@@ -339,7 +343,7 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
   // `faixa-<id>`, com o servidor tendo confirmado o horário novo dois `await`
   // acima. O que não sobrevive ao F5 é a NAVEGAÇÃO, não o dado.
   await irParaASemanaSeguinte(page);
-  const cardDepois = page.locator(`button:has([data-testid="faixa-${id}"])`);
+  const cardDepois = agendaAtiva(page).locator(`button:has([data-testid="faixa-${id}"])`);
   await expect(cardDepois).toHaveAttribute("aria-label", new RegExp(`${horarioOferecido} às`), {
     timeout: 20_000,
   });
@@ -348,7 +352,7 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
   //
   // O card tem de estar na faixa de hora do horário novo. A olho isto é "parece
   // certo"; medido, é o topo do card contra o topo do bloco daquele horário.
-  const blocoDoNovoHorario = page.locator(`[data-testid="bloco-${dia}-${horarioOferecido}"]`);
+  const blocoDoNovoHorario = agendaAtiva(page).locator(`[data-testid="bloco-${dia}-${horarioOferecido}"]`);
   await blocoDoNovoHorario.scrollIntoViewIfNeeded();
   const caixaFinal = (await cardDepois.boundingBox())!;
   const caixaFaixa = (await blocoDoNovoHorario.boundingBox())!;
@@ -384,15 +388,15 @@ test("arrastar para fora da disponibilidade é RECUSADO e o card volta", async (
   const origem = blocoLivre(page);
   const testidOrigem = (await origem.getAttribute("data-testid"))!;
   await origem.click();
-  await expect(page.getByTestId("painel-de-marcacao")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("confirmar-marcacao").click();
-  await expect(page.getByTestId("ver-na-agenda")).toBeVisible({ timeout: 20_000 });
+  await expect(agendaAtiva(page).getByTestId("painel-de-marcacao")).toBeVisible({ timeout: 15_000 });
+  await agendaAtiva(page).getByTestId("confirmar-marcacao").click();
+  await expect(agendaAtiva(page).getByTestId("ver-na-agenda")).toBeVisible({ timeout: 20_000 });
   await page.keyboard.press("Escape");
 
   const id = respostas.find((r) => r.startsWith("201 POST"))?.match(/"id":"([0-9a-f-]{36})"/)?.[1];
   expect(id, `o POST não devolveu id. Respostas:\n${respostas.join("\n")}`).toBeTruthy();
 
-  const card = page.locator(`button:has([data-testid="faixa-${id}"])`);
+  const card = agendaAtiva(page).locator(`button:has([data-testid="faixa-${id}"])`);
   await expect(card).toBeVisible({ timeout: 20_000 });
   const rotuloAntes = (await card.getAttribute("aria-label"))!;
 
@@ -408,7 +412,7 @@ test("arrastar para fora da disponibilidade é RECUSADO e o card volta", async (
    *
    * A distância entre o card e o bloco da sua hora não depende da rolagem.
    */
-  const blocoDaHoraOriginal = page.locator(`[data-testid="${testidOrigem}"]`);
+  const blocoDaHoraOriginal = agendaAtiva(page).locator(`[data-testid="${testidOrigem}"]`);
   const distanciaAoBloco = async () =>
     (await card.boundingBox())!.y - (await blocoDaHoraOriginal.boundingBox())!.y;
   const distanciaAntes = await distanciaAoBloco();
@@ -427,14 +431,14 @@ test("arrastar para fora da disponibilidade é RECUSADO e o card volta", async (
   });
   // O fantasma existe e está marcado como INVÁLIDO — o gesto continua legível,
   // e a recusa é vista antes de soltar em vez de o card voltar sem explicação.
-  await expect(page.getByTestId("fantasma-do-arraste")).toHaveAttribute("data-valido", "false");
+  await expect(agendaAtiva(page).getByTestId("fantasma-do-arraste")).toHaveAttribute("data-valido", "false");
   await page.mouse.up();
 
   // Recusa explícita, com o motivo. E NENHUMA confirmação: remarcar para um
   // horário fora da disponibilidade publicada não é uma pergunta a fazer.
-  await expect(page.getByTestId("remarcacao-recusada")).toBeVisible({ timeout: 10_000 });
+  await expect(agendaAtiva(page).getByTestId("remarcacao-recusada")).toBeVisible({ timeout: 10_000 });
   await page.screenshot({ path: "evidence/calendario/grade-arraste-recusado.png" });
-  await expect(page.getByTestId("confirmar-remarcacao")).toHaveCount(0);
+  await expect(agendaAtiva(page).getByTestId("confirmar-remarcacao")).toHaveCount(0);
 
   // O CARD VOLTOU. Não basta não ter remarcado: o card tem de estar onde
   // estava, senão a tela mente sobre o estado real.
