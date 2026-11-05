@@ -8,6 +8,15 @@ describe("catálogo alimentado pelo painel", () => {
   it("instala a legenda do atendimento e a memória da URL original", () => {
     expect(columnExists("catalog_products", "legenda_atendimento")).toBe(true);
     expect(columnExists("catalog_products", "imagem_origem_url")).toBe(true);
+    for (const coluna of [
+      "peso_kg",
+      "altura_cm",
+      "largura_cm",
+      "comprimento_cm",
+      "embalagem_estimada",
+    ]) {
+      expect(columnExists("catalog_products", coluna)).toBe(true);
+    }
   });
 
   it("guarda origem painel, legenda e URL sem misturar as duas URLs", () => {

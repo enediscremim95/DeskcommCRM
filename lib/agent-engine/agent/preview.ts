@@ -189,7 +189,9 @@ export function applyPreviewPolicy(
       const catalog = getToolByName(name);
       if (
         (p.kind === 'sandbox' &&
-          (name === 'crm_send_catalog_item' || name === 'crm_send_vitrine')) ||
+          (name === 'crm_send_catalog_item' ||
+            name === 'crm_send_vitrine' ||
+            name === 'crm_quote_shipping')) ||
         nativeRead ||
         (catalog?.category === 'read' && (p.contactId !== null || SCENARIO_READS.has(name)))
       )

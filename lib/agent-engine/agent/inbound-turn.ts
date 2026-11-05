@@ -189,6 +189,12 @@ import {
 } from './send-catalog-item';
 import { criarFilaDeEnviosDoTurno } from './fila-de-envios-do-turno';
 import {
+  executarCotacaoDeFrete,
+  quoteShippingInputSchema,
+  simularCotacaoDeFrete,
+  type EstadoCotacaoFrete,
+} from './quote-shipping';
+import {
   classificadorSemanticoParaMensagem,
   executarVitrine,
   sendVitrineInputSchema,
@@ -233,6 +239,11 @@ export const AGENT_TOOL_DEFS = {
     description:
       'Mostra uma sequência fixa de produtos configurada pela loja. Informe somente o assunto; produtos, ordem, fotos, títulos, preços e textos são resolvidos pelo servidor.',
     inputSchema: sendVitrineInputSchema,
+  },
+  crm_quote_shipping: {
+    description:
+      'Cota o frete de itens ativos. Informe somente CEP, código exato do catálogo e quantidade. O servidor resolve origem, preço, peso, medidas e serviços; trate o resultado como referência, nunca como promessa de data.',
+    inputSchema: quoteShippingInputSchema,
   },
   update_lead_state: {
     description:
@@ -2194,6 +2205,7 @@ async function executarTurnoDoAgente(
   const enviosFisicosNoPreview = { valor: 0 };
   const filaDeEnvios = criarFilaDeEnviosDoTurno();
   const estadoEnvioCatalogo: EstadoEnvioCatalogo = { produtos: 0, imagens: 0 };
+  const estadoCotacaoFrete: EstadoCotacaoFrete = { cotacoes: 0 };
   const codigosDeCatalogoJaEnviados = new Set(preview?.catalogProductCodesAlreadySent ?? []);
   const mensagensEnviadasNesteTurno = new Set<string>();
   const vitrineAtivaNesteAgente =
@@ -3302,6 +3314,41 @@ async function executarTurnoDoAgente(
           }),
       });
     }
+  }
+
+  if (agentConfig?.toolIds.includes('crm_quote_shipping')) {
+    rawTools.crm_quote_shipping = tool({
+      ...AGENT_TOOL_DEFS.crm_quote_shipping,
+      execute: (raw) =>
+        filaDeEnvios.enfileirar(async () => {
+          try {
+            const inputFrete = quoteShippingInputSchema.parse(raw);
+            if (preview?.kind === 'sandbox') {
+              return await simularCotacaoDeFrete({
+                db: pool,
+                organizationId: tenantId,
+                input: inputFrete,
+                estado: estadoCotacaoFrete,
+              });
+            }
+            return await executarCotacaoDeFrete({
+              db: pool,
+              organizationId: tenantId,
+              input: inputFrete,
+              estado: estadoCotacaoFrete,
+            });
+          } catch (err) {
+            noteRunError(err instanceof Error ? err : new Error(String(err)));
+            return {
+              ok: false,
+              error: {
+                code: 'internal_error',
+                message: 'erro interno ao cotar o frete; passe para uma pessoa.',
+              },
+            };
+          }
+        }),
+    });
   }
 
   if (vitrineAtivaNesteAgente && agentConfig !== null) {
