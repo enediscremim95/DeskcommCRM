@@ -22,8 +22,9 @@ import { getToolByName } from '@/lib/mcp/tools';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
 import {
-  pularMensagemDuplicada,
+  filtrarMensagemDoTurno,
   registrarMensagemEnviadaNoTurno,
+  resultadoDeEnvioSemRepeticao,
 } from './dedupe-mensagem-turno';
 import type { GuardaAnuncioSemVitrine } from './anuncio-sem-vitrine';
 
@@ -195,17 +196,22 @@ export function applyPreviewPolicy(
           ...definition,
           execute: async (args: unknown) => {
             if (name === 'send_message') {
-              const body =
+              const bodyRecebido =
                 args && typeof args === 'object' && 'body' in args && typeof args.body === 'string'
                   ? args.body
                   : '';
+              let body = bodyRecebido;
+              let filtro: ReturnType<typeof filtrarMensagemDoTurno> | null = null;
               if (dedupe) {
-                const duplicada = pularMensagemDuplicada({
-                  body,
+                filtro = filtrarMensagemDoTurno({
+                  body: bodyRecebido,
                   enviadas: dedupe.enviadas,
                   log: dedupe.log,
                 });
-                if (duplicada) return duplicada;
+                if (filtro.status === 'duplicate_skipped') {
+                  return { ok: true, status: 'duplicate_skipped' };
+                }
+                body = filtro.body;
               }
               const anuncioSemVitrine = guardaAnuncioSemVitrine?.avaliar(body);
               if (anuncioSemVitrine) return anuncioSemVitrine;
@@ -244,6 +250,8 @@ export function applyPreviewPolicy(
                 registrarMensagemEnviadaNoTurno(body, dedupe.enviadas);
                 if (dedupe.contador) dedupe.contador.valor += 1;
               }
+              const semRepeticao = filtro ? resultadoDeEnvioSemRepeticao(filtro) : null;
+              if (semRepeticao) return semRepeticao;
               return {
                 ok: true,
                 status: p.kind === 'sandbox' ? 'simulated' : 'awaiting_approval',

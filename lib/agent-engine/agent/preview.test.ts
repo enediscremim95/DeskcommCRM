@@ -294,3 +294,44 @@ it('sandbox pula duplicata antes do teto, não consome envio e deixa texto difer
   ]);
   expect(log.warn).toHaveBeenCalledOnce();
 });
+
+it('sandbox envia só os parágrafos novos e removidos não consomem seq nem teto', async () => {
+  const p = preview();
+  const contador = { valor: 0 };
+  const log = { warn: vi.fn() };
+  const tools = applyPreviewPolicy(
+    { send_message: definition(vi.fn()) },
+    p,
+    gate(),
+    () => [],
+    undefined,
+    undefined,
+    { enviadas: new Set(), log, limite: 2, contador },
+  );
+
+  expect(
+    await execute(tools, 'send_message', {
+      body: 'Cumprimento inicial.\n\nPergunta já feita?',
+    }),
+  ).toMatchObject({ ok: true, status: 'simulated' });
+  expect(
+    await execute(tools, 'send_message', {
+      body: 'Pergunta já feita? 😊\n\nPergunta realmente nova?',
+    }),
+  ).toEqual({
+    ok: true,
+    status: 'enviado_sem_repeticao',
+    paragrafos_repetidos_removidos: 1,
+  });
+  expect(
+    await execute(tools, 'send_message', {
+      body: 'Cumprimento inicial.\n\nPergunta já feita?',
+    }),
+  ).toEqual({ ok: true, status: 'duplicate_skipped' });
+  expect(contador.valor).toBe(2);
+  expect(p.result.candidates.map((c) => c.body)).toEqual([
+    'Cumprimento inicial.\n\nPergunta já feita?',
+    'Pergunta realmente nova?',
+  ]);
+  expect(log.warn).toHaveBeenCalledTimes(2);
+});

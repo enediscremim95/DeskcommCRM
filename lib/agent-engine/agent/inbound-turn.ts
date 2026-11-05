@@ -194,9 +194,10 @@ import {
   sendVitrineInputSchema,
 } from './send-vitrine';
 import {
+  filtrarMensagemDoTurno,
   mensagemJaEnviadaNesteTurno,
-  pularMensagemDuplicada,
   registrarMensagemEnviadaNoTurno,
+  resultadoDeEnvioSemRepeticao,
 } from './dedupe-mensagem-turno';
 import { criarGuardaAnuncioSemVitrine } from './anuncio-sem-vitrine';
 
@@ -2577,15 +2578,18 @@ async function executarTurnoDoAgente(
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
       execute: ({ body }) => filaDeEnvios.enfileirar(async () => {
-        const duplicada = pularMensagemDuplicada({
+        const filtroMensagem = filtrarMensagemDoTurno({
           body,
           enviadas: mensagensEnviadasNesteTurno,
           log: runLog,
         });
-        if (duplicada) return duplicada;
-        const anuncioSemVitrine = guardaAnuncioSemVitrine.avaliar(body);
+        if (filtroMensagem.status === 'duplicate_skipped') {
+          return { ok: true, status: 'duplicate_skipped' };
+        }
+        const bodySemRepeticao = filtroMensagem.body;
+        const anuncioSemVitrine = guardaAnuncioSemVitrine.avaliar(bodySemRepeticao);
         if (anuncioSemVitrine) return anuncioSemVitrine;
-        if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
+        if (claimsCurrentInboundIsEmpty(bodySemRepeticao, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
             return {
@@ -2623,7 +2627,7 @@ async function executarTurnoDoAgente(
         // turno. A detecção é determinística (decidePromise); sem tabela do tenant = no-op.
         if (
           promiseTable !== null &&
-          !decidePromise({ candidate: body, table: promiseTable }).allow
+          !decidePromise({ candidate: bodySemRepeticao, table: promiseTable }).allow
         ) {
           outOfTablePromiseAttempted = true;
         }
@@ -2651,7 +2655,7 @@ async function executarTurnoDoAgente(
             leadId,
             jobId: liveJob().id,
             channelSessionId: input.channelSessionId,
-            body,
+            body: bodySemRepeticao,
             optedOutThisTurn,
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
             // no runtime — null cai nos degraus de warm-up (conservadores). Injetar
@@ -2763,7 +2767,7 @@ async function executarTurnoDoAgente(
               },
               {
                 title: 'Atendimento que precisa de um humano',
-                summary: body, // a mensagem-promessa que a IA tentou enviar
+                summary: bodySemRepeticao, // a mensagem-promessa que a IA tentou enviar
                 blocker:
                   'Aberto automaticamente: a IA prometeu envolver um humano e não abriu o caso (fail-safe do guardrail).',
                 source: 'guardrail_autofallback',
@@ -2844,7 +2848,7 @@ async function executarTurnoDoAgente(
             outcome.kind === 'already_sent' ||
             outcome.kind === 'queued'
           ) {
-            registrarMensagemEnviadaNoTurno(body, mensagensEnviadasNesteTurno);
+            registrarMensagemEnviadaNoTurno(bodySemRepeticao, mensagensEnviadasNesteTurno);
           }
           if (outcome.kind === 'sent' && pendingCitations.length > 0) {
             try {
@@ -2863,6 +2867,14 @@ async function executarTurnoDoAgente(
               });
             }
             pendingCitations = [];
+          }
+          if (
+            outcome.kind === 'sent' ||
+            outcome.kind === 'already_sent' ||
+            outcome.kind === 'queued'
+          ) {
+            const semRepeticao = resultadoDeEnvioSemRepeticao(filtroMensagem);
+            if (semRepeticao) return semRepeticao;
           }
           switch (outcome.kind) {
             case 'deferred':
@@ -3299,12 +3311,15 @@ async function executarTurnoDoAgente(
                     : {}),
                 }),
               enviarTexto: async (body, papel) => {
-                const duplicada = pularMensagemDuplicada({
+                const filtroMensagem = filtrarMensagemDoTurno({
                   body,
                   enviadas: mensagensEnviadasNesteTurno,
                   log: runLog,
                 });
-                if (duplicada) return duplicada;
+                if (filtroMensagem.status === 'duplicate_skipped') {
+                  return { status: 'duplicate_skipped' as const };
+                }
+                const bodySemRepeticao = filtroMensagem.body;
 
                 if (emSandbox) {
                   if (enviosFisicosNoPreview.valor >= maxSendsPerTurn) {
@@ -3323,9 +3338,9 @@ async function executarTurnoDoAgente(
                   }
                   const result = evaluateBeforeSend({
                     ...previewContextDoTurno,
-                    body,
+                    body: bodySemRepeticao,
                     semanticPromise: classificadorDoTextoFixoDaVitrine
-                      ? await classificadorDoTextoFixoDaVitrine(body)
+                      ? await classificadorDoTextoFixoDaVitrine(bodySemRepeticao)
                       : null,
                   });
                   if (result.veto) {
@@ -3341,7 +3356,12 @@ async function executarTurnoDoAgente(
                   }
                   preview.result.envios.push({ tipo: 'texto', papel, texto: result.body });
                   enviosFisicosNoPreview.valor += 1;
-                  registrarMensagemEnviadaNoTurno(body, mensagensEnviadasNesteTurno);
+                  registrarMensagemEnviadaNoTurno(
+                    bodySemRepeticao,
+                    mensagensEnviadasNesteTurno,
+                  );
+                  const semRepeticao = resultadoDeEnvioSemRepeticao(filtroMensagem);
+                  if (semRepeticao) return semRepeticao;
                   return { status: 'sent' as const };
                 }
 
@@ -3357,7 +3377,7 @@ async function executarTurnoDoAgente(
                   leadId,
                   jobId: liveJob().id,
                   channelSessionId: input.channelSessionId,
-                  body,
+                  body: bodySemRepeticao,
                   optedOutThisTurn,
                   crmDailyLimit: null,
                   now: clock(),
@@ -3405,7 +3425,12 @@ async function executarTurnoDoAgente(
                   outcome.kind === 'already_sent' ||
                   outcome.kind === 'queued'
                 ) {
-                  registrarMensagemEnviadaNoTurno(body, mensagensEnviadasNesteTurno);
+                  registrarMensagemEnviadaNoTurno(
+                    bodySemRepeticao,
+                    mensagensEnviadasNesteTurno,
+                  );
+                  const semRepeticao = resultadoDeEnvioSemRepeticao(filtroMensagem);
+                  if (semRepeticao) return semRepeticao;
                 }
                 if (outcome.kind === 'sent' || outcome.kind === 'already_sent') {
                   return { status: 'sent' as const };
