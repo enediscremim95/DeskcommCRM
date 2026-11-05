@@ -34,6 +34,7 @@ import {
   PASSO_DA_CELULA_MIN,
   alvoDoArraste,
   celulaQueContem,
+  horarioPublicadoNoFuso,
   horarioNaCelula,
   minutoSobY,
   publicadoVizinho,
@@ -86,6 +87,25 @@ describe("horarioNaCelula — a célula oferece, nunca inventa", () => {
   it("devolve null onde a disponibilidade não publicou nada", () => {
     expect(horarioNaCelula(publicados, minuto("11:00"))).toBeNull();
     expect(horarioNaCelula([], minuto("09:00"))).toBeNull();
+  });
+
+  it("posiciona o instante pelo rótulo do fuso de apresentação, não pelo relógio do navegador", () => {
+    const noveEmSaoPaulo: HorarioPublicado = {
+      instante: "2026-11-09T12:00:00.000Z",
+      rotulo: "09:00",
+    };
+
+    expect(horarioNaCelula([noveEmSaoPaulo], minuto("09:00"))).toEqual(noveEmSaoPaulo);
+    expect(horarioNaCelula([noveEmSaoPaulo], minuto("12:00"))).toBeNull();
+  });
+});
+
+describe("horarioPublicadoNoFuso — a rota e a grade usam o mesmo relógio", () => {
+  it("converte 12:00Z para 09:00 em São Paulo sem depender do TZ do processo", () => {
+    expect(horarioPublicadoNoFuso("2026-11-09T12:00:00.000Z", "America/Sao_Paulo")).toEqual({
+      dia: "2026-11-09",
+      horario: { instante: "2026-11-09T12:00:00.000Z", rotulo: "09:00" },
+    });
   });
 });
 

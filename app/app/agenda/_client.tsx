@@ -18,6 +18,7 @@ import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
 import { EmptyAgenda } from "@/components/empty";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
+import { horarioPublicadoNoFuso } from "@/lib/agenda/grade-interativa";
 import { Button } from "@/components/ui/button";
 import { PainelDeMarcacao } from "@/components/agenda/PainelDeMarcacao";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -178,10 +179,10 @@ export function AgendaClient({
 
   const horariosPorDia = React.useMemo(() => {
     const mapa: Record<string, Array<{ instante: string; rotulo: string }>> = {};
-    for (const s of horarios?.slots ?? []) {
-      const d = new Date(s.inicio);
-      const chave = format(d, "yyyy-MM-dd");
-      (mapa[chave] ??= []).push({ instante: s.inicio, rotulo: format(d, "HH:mm") });
+    if (!horarios) return mapa;
+    for (const s of horarios.slots) {
+      const publicado = horarioPublicadoNoFuso(s.inicio, horarios.fuso_da_regra);
+      (mapa[publicado.dia] ??= []).push(publicado.horario);
     }
     return mapa;
   }, [horarios]);

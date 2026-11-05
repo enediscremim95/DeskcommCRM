@@ -365,7 +365,9 @@ test("marcar pela ficha grava no lead exato e retira o horário livre", async ({
   await expect(painel).toBeVisible({
     timeout: 15_000,
   });
-  await painel.getByRole("button", { name: new RegExp(`^${creds.agenda.tipo_nome}`) }).click();
+  const tipos = page.getByTestId("tipos-de-agendamento").filter({ visible: true });
+  await expect(tipos).toBeVisible({ timeout: 15_000 });
+  await tipos.getByRole("button", { name: new RegExp(`^${creds.agenda.tipo_nome}`) }).click();
   await escolherPrimeiroDiaCheio(page);
 
   const horario = painel.locator('[data-testid^="horario-"]').first();

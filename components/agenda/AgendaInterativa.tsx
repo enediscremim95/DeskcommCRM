@@ -10,7 +10,10 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { useHorariosLivres } from "@/hooks/agenda/useHorariosLivres";
 import { useRemarcarAgendamento } from "@/hooks/agenda/useRemarcarAgendamento";
-import type { MotivoDaGradeTravada } from "@/lib/agenda/grade-interativa";
+import {
+  horarioPublicadoNoFuso,
+  type MotivoDaGradeTravada,
+} from "@/lib/agenda/grade-interativa";
 import { cn } from "@/lib/utils";
 
 import { GradeDaAgenda } from "./GradeDaAgenda";
@@ -102,9 +105,10 @@ export function AgendaInterativa({
 
   const horariosPorDia = React.useMemo(() => {
     const mapa: Record<string, Array<{ instante: string; rotulo: string }>> = {};
-    for (const s of horarios?.slots ?? []) {
-      const d = new Date(s.inicio);
-      (mapa[format(d, "yyyy-MM-dd")] ??= []).push({ instante: s.inicio, rotulo: format(d, "HH:mm") });
+    if (!horarios) return mapa;
+    for (const s of horarios.slots) {
+      const publicado = horarioPublicadoNoFuso(s.inicio, horarios.fuso_da_regra);
+      (mapa[publicado.dia] ??= []).push(publicado.horario);
     }
     return mapa;
   }, [horarios]);

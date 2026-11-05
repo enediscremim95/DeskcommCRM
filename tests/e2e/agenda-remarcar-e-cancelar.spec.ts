@@ -106,8 +106,9 @@ async function marcarUm(
   await telaDaAgendaVisivel(page).getByRole("button", { name: /novo agendamento/i }).click();
   const painel = page.getByTestId("painel-de-marcacao").filter({ visible: true });
   await expect(painel).toBeVisible({ timeout: 10_000 });
-  await expect(painel.getByTestId("tipos-de-agendamento")).toBeVisible({ timeout: 10_000 });
-  await painel.getByRole("button", { name: new RegExp(`^${tipoNome}`) }).click();
+  const tipos = page.getByTestId("tipos-de-agendamento").filter({ visible: true });
+  await expect(tipos).toBeVisible({ timeout: 10_000 });
+  await tipos.getByRole("button", { name: new RegExp(`^${tipoNome}`) }).click();
   await escolherDiaDesenhado(page, dias);
   const horario = painel.locator('[data-testid^="horario-"]').first();
   await expect(horario).toBeVisible({ timeout: 15_000 });
