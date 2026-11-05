@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sql } from "./gov-helpers";
+import { lastLine, sql } from "./gov-helpers";
 
 const ORG_A = "fa301000-0000-4000-8000-000000000001";
 const ORG_B = "fa301000-0000-4000-8000-000000000002";
@@ -34,10 +34,13 @@ describe("configuração de frete exclusiva da service role", () => {
         ('${ORG_B}','https://melhorenvio.com.br/api/v2','Frete B','88000000','\\x02',true)
       on conflict (organization_id) do update set ativo=excluded.ativo;
     `);
+    // `set role` imprime "SET" antes do resultado: lê só a última linha.
     expect(
-      sql(`set role service_role;
-           select count(*) from public.organization_shipping_settings
-            where organization_id in ('${ORG_A}','${ORG_B}');`),
+      lastLine(
+        sql(`set role service_role;
+             select count(*) from public.organization_shipping_settings
+              where organization_id in ('${ORG_A}','${ORG_B}');`),
+      ),
     ).toBe("2");
     for (const papel of ["anon", "authenticated"]) {
       expect(
