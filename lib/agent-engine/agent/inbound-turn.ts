@@ -2648,6 +2648,7 @@ async function executarTurnoDoAgente(
               sendInBubbles(finalBody, {
                 enabled: agentConfig?.splitMessages ?? false,
                 maxChars: agentConfig?.splitMaxChars ?? 600,
+                splitPorParagrafo: agentConfig?.splitPorParagrafo ?? false,
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
                 jitter: () => 1200 + Math.floor(Math.random() * 800), // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
                 // ANTES da 1ª bolha: "digitando…" + espera proporcional ao texto.

@@ -61,4 +61,100 @@ describe("splitIntoBubbles", () => {
     expect(out.join(" ")).not.toContain("7. 990");
     expect(out.join(" ")).toContain("7.990");
   });
+
+  describe("split_por_paragrafo", () => {
+    const optIn = { splitPorParagrafo: true } as const;
+
+    it("mantém o caso real da Natalina em uma bolha no legado e duas no opt-in", () => {
+      const texto = "Natalina de xícara com pires, tampa e colher\n\nComo posso te chamar?";
+      const tetoQueForcaOFluxoLegado = texto.length - 1;
+
+      expect(splitIntoBubbles(texto, tetoQueForcaOFluxoLegado)).toEqual([
+        "Natalina de xícara com pires, tampa e colher Como posso te chamar?",
+      ]);
+      expect(splitIntoBubbles(texto, tetoQueForcaOFluxoLegado, optIn)).toEqual([
+        "Natalina de xícara com pires, tampa e colher",
+        "Como posso te chamar?",
+      ]);
+    });
+
+    it("não cola a pergunta sobre menina ou menino ao parágrafo anterior", () => {
+      const texto =
+        "Fazemos sim o convite para padrinhos de bebê\n\nPor gentileza, é menina ou menino? 💖🩵";
+      const tetoQueForcaOFluxoLegado = texto.length - 1;
+
+      expect(splitIntoBubbles(texto, tetoQueForcaOFluxoLegado)).toEqual([
+        "Fazemos sim o convite para padrinhos de bebê Por gentileza, é menina ou menino? 💖🩵",
+      ]);
+      expect(splitIntoBubbles(texto, tetoQueForcaOFluxoLegado, optIn)).toEqual([
+        "Fazemos sim o convite para padrinhos de bebê",
+        "Por gentileza, é menina ou menino? 💖🩵",
+      ]);
+    });
+
+    it("prefere a vírgula a separar o nome Kit Natalina", () => {
+      const texto =
+        "Temos também algumas opções personalizadas para presentear, como o Kit Natalina de xícara com pires, tampa e colher.";
+
+      expect(splitIntoBubbles(texto, 70)).toEqual([
+        "Temos também algumas opções personalizadas para presentear, como o Kit",
+        "Natalina de xícara com pires, tampa e colher.",
+      ]);
+      expect(splitIntoBubbles(texto, 70, optIn)).toEqual([
+        "Temos também algumas opções personalizadas para presentear,",
+        "como o Kit Natalina de xícara com pires, tampa e colher.",
+      ]);
+    });
+
+    it("quebra parágrafo longo por frase e depois por vírgula, sem perder texto", () => {
+      const texto =
+        "Primeira frase fecha aqui. Segunda ideia longa, com detalhes do pedido e do prazo de entrega. Terceira frase encerra.";
+      const out = splitIntoBubbles(texto, 48, optIn);
+
+      expect(out).toEqual([
+        "Primeira frase fecha aqui.",
+        "Segunda ideia longa,",
+        "com detalhes do pedido e do prazo de entrega.",
+        "Terceira frase encerra.",
+      ]);
+      expect(out.join(" ")).toBe(texto);
+      expect(out.every((bolha) => bolha.length <= 48)).toBe(true);
+    });
+
+    it("preserva preço com ponto ao cortar um parágrafo longo", () => {
+      const texto =
+        "O Kit Natalina custa R$ 10.990 à vista no Pix, com personalização e embalagem para presente.";
+      const out = splitIntoBubbles(texto, 50, optIn);
+
+      expect(out.join(" ")).toContain("R$ 10.990");
+      expect(out.join(" ")).not.toContain("10. 990");
+      expect(out.every((bolha) => !/\d\.\s*$/.test(bolha))).toBe(true);
+    });
+
+    it("reconhece emoji final como parte do parágrafo e mantém a próxima ideia separada", () => {
+      expect(
+        splitIntoBubbles(
+          "Tudo certo por aqui 😊\n\nPosso ajudar em mais alguma coisa?",
+          100,
+          optIn,
+        ),
+      ).toEqual(["Tudo certo por aqui 😊", "Posso ajudar em mais alguma coisa?"]);
+    });
+
+    it("mantém parágrafo único curto em uma bolha", () => {
+      expect(splitIntoBubbles("Como posso ajudar?", 100, optIn)).toEqual(["Como posso ajudar?"]);
+    });
+
+    it("transforma cinco parágrafos em cinco bolhas, sem vazias", () => {
+      const paragrafos = ["Um.", "Dois.", "Três.", "Quatro.", "Cinco."];
+      expect(splitIntoBubbles(paragrafos.join("\n\n"), 100, optIn)).toEqual(paragrafos);
+    });
+
+    it("preserva palavra atômica enorme sem criar bolha vazia", () => {
+      const atomica = "x".repeat(80);
+      const out = splitIntoBubbles(`${atomica} depois`, 20, optIn);
+      expect(out).toEqual([atomica, "depois"]);
+      expect(out).not.toContain("");
+    });
+  });
 });
