@@ -2589,7 +2589,7 @@ async function executarTurnoDoAgente(
         const bodySemRepeticao = filtroMensagem.body;
         const anuncioSemVitrine = guardaAnuncioSemVitrine.avaliar(bodySemRepeticao);
         if (anuncioSemVitrine) return anuncioSemVitrine;
-        if (claimsCurrentInboundIsEmpty(bodySemRepeticao, mensagemDoJob)) {
+        if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
             return {
