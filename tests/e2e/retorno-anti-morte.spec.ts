@@ -108,7 +108,7 @@ test("a linha do tempo do negócio mostra o retorno em português de gente", asy
   await login(page, creds.users.manager!.email);
   // Desde b8124bc3 o dossiê é a página canônica do lead, não um dialog do quadro.
   await page.goto(`/app/leads/${creds.retorno.lead_id}`);
-    const dossie = page.locator('#conteudo-principal [data-testid="lead-page-workspace"]:visible');
+  const dossie = page.getByTestId("lead-page-workspace");
   await expect(dossie.getByTestId("lead-context-event").filter({ hasText: "Retorno agendado" })).toBeVisible();
 
   // O que o operador LÊ, não o que a API devolve: rótulo humano, sem

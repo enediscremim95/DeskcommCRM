@@ -128,7 +128,7 @@ test.describe("distribuição de atendimento — a tela que liga o rodízio e a 
     await login(page, creds.users.manager!.email);
     await page.goto("/app/settings/atendimento");
 
-  await page.locator('#conteudo-principal [data-testid="opcao-modo-manual"]:visible').click();
+    await page.getByTestId("opcao-modo-manual").click();
     await page.getByTestId("opcao-visibilidade-own").click();
     await expect(page.getByTestId("aviso-combinacao-morta")).toBeVisible();
 

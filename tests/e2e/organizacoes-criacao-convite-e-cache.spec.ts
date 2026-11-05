@@ -165,9 +165,9 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
         await page.screenshot({ path: `.superpowers/evidence/comunidade-360/transicao-para-${own}.png` });
       } finally { release(); }
       await navigation;
+      await page.goto(`/app/inbox?filter=all&conversation=${selected}`);
       await page.unroute("**/app/**");
       await expect(page.getByTestId("tenant-switcher")).toContainText(`Empresa ${own} ${suffix}`);
-      await page.goto(`/app/inbox?filter=all&conversation=${selected}`);
       expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).__oldDocument)).toBeUndefined();
       await expect(page.locator("[data-conversation-id]").getByText(`Cliente ${own} ${suffix}`, { exact: true })).toBeVisible();
       await expect(page.locator("[data-conversation-id]").getByText(`Cliente ${foreign} ${suffix}`, { exact: true })).toHaveCount(0);

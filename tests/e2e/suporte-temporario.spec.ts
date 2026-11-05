@@ -197,17 +197,13 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
   }));
   // Negação ESPERADA no modo somente leitura: o suporte entra como `viewer`
   // (`require-role.ts`: access_mode "support_readonly" → role "viewer"), e o
-  // Radar de risco e leitura de rascunhos exigem `agent`. Os 403 nessas duas
-  // rotas não são falha do acompanhamento: são as mesmas portas fechadas que
-  // um viewer comum do cliente encontra. A lista é exata para qualquer outra
-  // negativa continuar reprovando o teste.
-  const NEGACOES_ESPERADAS=new Set([
-    "/api/v1/leads/at-risk",
-    `/api/v1/conversations/${convs[1]}/draft-reply`,
-  ]);
+  // Radar de risco exige `agent`. O 403 ali não é falha do acompanhamento — é
+  // a mesma porta fechada que um viewer comum do cliente encontra. Sem esta
+  // exceção, o teste reprovava o sistema por ele estar funcionando.
+  const NEGACAO_ESPERADA=/\/api\/v1\/leads\/at-risk/;
   const unexpectedDenials:string[]=[];const inboxRequests=new WeakSet<Request>();
   page.on("request",request=>inboxRequests.add(request));
-  page.on("response",response=>{if(response.status()===403&&inboxRequests.has(response.request())&&!NEGACOES_ESPERADAS.has(new URL(response.url()).pathname))unexpectedDenials.push(response.url());});
+  page.on("response",response=>{if(response.status()===403&&inboxRequests.has(response.request())&&!NEGACAO_ESPERADA.test(response.url()))unexpectedDenials.push(response.url());});
   await start(page,orgs[1]!,true);
   await expect(sameTab.getByTestId("tenant-switcher")).toContainText(`Suporte B ${suffix}`);
   await page.goto(`/app/inbox?conversation=${convs[1]}`);

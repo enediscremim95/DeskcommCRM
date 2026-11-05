@@ -276,7 +276,7 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     // Desde b8124bc3 o dossiê deixou de ser um Sheet do quadro e passou a ser
     // a página canônica do lead. Abrir direto elimina o redirecionamento legado.
     await page.goto(`/app/leads/${cenario.leadId}`);
-  await expect(page.locator('#conteudo-principal [data-testid="lead-page-workspace"]:visible')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("lead-page-workspace")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("lead-context-event").filter({ hasText: "Follow-up pausado" })).toBeVisible();
     await expect(page.getByTestId("lead-context-event").filter({ hasText: "Follow-up retomado" })).toBeVisible();
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "05-timeline-do-negocio.png"), fullPage: true });
