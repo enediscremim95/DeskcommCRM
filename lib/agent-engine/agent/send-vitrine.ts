@@ -13,6 +13,11 @@ export const INSTRUCAO_APOS_VITRINE =
 type PapelDoTexto = "intro" | "fechamento";
 type ResultadoDeEnvio =
   | { status: "sent" | "queued" | "duplicate_skipped" }
+  | {
+      ok: true;
+      status: "enviado_sem_repeticao";
+      paragrafos_repetidos_removidos: number;
+    }
   | { status: "failed"; code: string; message: string };
 
 interface ItemPlanejado {

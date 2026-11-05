@@ -66,7 +66,7 @@ describe('anúncio sem vitrine', () => {
     const inicio = inbound.indexOf('send_message: tool({');
     const fim = inbound.indexOf('search_knowledge:', inicio + 1);
     const bloco = inbound.slice(inicio, fim > inicio ? fim : inicio + 15_000);
-    const guarda = bloco.indexOf('guardaAnuncioSemVitrine.avaliar(body)');
+    const guarda = bloco.indexOf('guardaAnuncioSemVitrine.avaliar(bodySemRepeticao)');
     const teto = bloco.indexOf('if (seq >= maxSendsPerTurn)');
 
     expect(inicio).toBeGreaterThan(-1);

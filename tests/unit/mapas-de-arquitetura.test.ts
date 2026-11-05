@@ -164,6 +164,7 @@ describe("mapas de arquitetura — coerência interna", () => {
     for (const peca of ["vitrine", "dedupe", "anuncio"]) {
       expect(grau(peca), `${peca} com menos de 2 arestas`).toBeGreaterThanOrEqual(2);
     }
+    expect((m.nodes ?? []).find((node) => node.id === "dedupe")?.label).toContain("parágrafo");
   });
 });
 
