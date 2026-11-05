@@ -50,6 +50,18 @@ export const TOOLS_COMERCIO = declararTools([
     pacotes: ["atender"],
   },
   {
+    name: "crm_quote_shipping",
+    category: "write",
+    rotulo: "Calcular o frete do pedido",
+    explicacao:
+      "Calcula valor e prazo de transporte com o CEP e os itens cadastrados, sem aceitar preço, peso ou serviço inventado pelo assistente.",
+    oQueToca: "Frete e catálogo",
+    // Como o envio de produto, só entra por escolha individual. A configuração
+    // da organização continua desligada e nenhum pacote a ativa sozinho.
+    risco: "critico",
+    pacotes: ["atender"],
+  },
+  {
     name: "crm_list_privacy_requests",
     category: "read",
     rotulo: "Ver pedidos de privacidade",

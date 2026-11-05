@@ -48,6 +48,7 @@ import {
 } from "./evolucao";
 import {
   crmListContactOrders,
+  crmQuoteShipping,
   crmSearchProducts,
   crmSendCatalogItem,
   crmSendVitrine,
@@ -127,6 +128,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmSearchProducts,
   crmSendCatalogItem,
   crmSendVitrine,
+  crmQuoteShipping,
   crmListPrivacyRequests,
   // read — organizar a operação (W4)
   crmListStages,
