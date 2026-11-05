@@ -108,4 +108,34 @@ describe("knobs da versão publicada", () => {
       "o turno voltou a preferir a env ao valor que a tela grava por agente",
     ).not.toContain("deps.knobs.maxContextTokens");
   });
+
+  it("o teto de envios do agente vence o da instalação sem remover os fallbacks", () => {
+    const turno = readFileSync(
+      path.join(RAIZ, "lib", "agent-engine", "agent", "inbound-turn.ts"),
+      "utf8",
+    );
+    const resolucao =
+      /const maxSendsPerTurn =[\s\S]{0,180}?DEFAULT_MAX_SENDS_PER_TURN;/.exec(turno)?.[0] ?? "";
+
+    expect(resolucao, "não achei a resolução do teto de envios").not.toBe("");
+    expect(resolucao.indexOf("agentConfig?.maxSendsPerTurn")).toBeLessThan(
+      resolucao.indexOf("deps.knobs.maxSendsPerTurn"),
+    );
+    expect(resolucao.indexOf("deps.knobs.maxSendsPerTurn")).toBeLessThan(
+      resolucao.indexOf("DEFAULT_MAX_SENDS_PER_TURN"),
+    );
+  });
+
+  it("turno real e sandbox consomem o mesmo teto resolvido", () => {
+    const turno = readFileSync(
+      path.join(RAIZ, "lib", "agent-engine", "agent", "inbound-turn.ts"),
+      "utf8",
+    );
+
+    expect(turno.match(/deps\.knobs\.maxSendsPerTurn/g)).toHaveLength(1);
+    expect(turno).toContain("if (seq >= maxSendsPerTurn)");
+    expect(turno).toContain("Math.max(0, maxSendsPerTurn - seq)");
+    expect(turno).toContain("Math.max(0, maxSendsPerTurn - estadoEnvioCatalogo.imagens)");
+    expect(turno).toContain("teto: ${maxSendsPerTurn}");
+  });
 });

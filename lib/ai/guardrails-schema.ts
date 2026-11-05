@@ -89,6 +89,7 @@ export const agentConfigSchema = z.object({
   rag_similarity_threshold: z.number().min(0).max(1).default(0.4),
   confidence_threshold: z.number().min(0).max(1).default(0.6),
   split_por_paragrafo: z.boolean().default(false),
+  max_sends_per_turn: z.number().int().min(1).max(12).nullable().optional(),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 

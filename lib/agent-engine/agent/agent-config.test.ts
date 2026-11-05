@@ -61,6 +61,41 @@ describe('loadPublishedAgentConfig — campos de RAG', () => {
     expect(desligado?.splitPorParagrafo).toBe(false);
     expect(ligado?.splitPorParagrafo).toBe(true);
   });
+
+  it('max_sends_per_turn é opt-in por agente e ausência não muda outra organização', async () => {
+    const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const sublimando = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, max_sends_per_turn: 6 } }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChave?.maxSendsPerTurn).toBeNull();
+    expect(sublimando?.maxSendsPerTurn).toBe(6);
+  });
+
+  it.each([null, 0, 13, 1.5, '6', Number.NaN])(
+    'max_sends_per_turn=%p inválido ou nulo cai no teto global',
+    async (value) => {
+      const cfg = await loadPublishedAgentConfig(
+        poolWith({ ...baseRow, config: { ...baseRow.config, max_sends_per_turn: value } }),
+        'org-config-invalida',
+        'cs1',
+      );
+
+      expect(cfg?.maxSendsPerTurn).toBeNull();
+    },
+  );
+
+  it.each([1, 12])('aceita max_sends_per_turn no limite da faixa: %i', async (value) => {
+    const cfg = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, max_sends_per_turn: value } }),
+      'org-config-valida',
+      'cs1',
+    );
+
+    expect(cfg?.maxSendsPerTurn).toBe(value);
+  });
 });
 
 describe('loadPublishedAgentConfigById', () => {

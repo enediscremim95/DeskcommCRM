@@ -37,6 +37,8 @@ export interface PublishedAgentConfig {
   splitMaxChars: number;
   /** Opt-in em ai_agents.config.split_por_paragrafo; ausente = false. */
   splitPorParagrafo: boolean;
+  /** Opt-in em ai_agents.config.max_sends_per_turn; null = teto global da instalação. */
+  maxSendsPerTurn: number | null;
   /** input multimodal (imagem/áudio/pdf) habilitado no turno (Onda 3). */
   multimodalInput: boolean;
   /** tools open_human_case/provide_case_update habilitadas no turno (spec 15). */
@@ -164,6 +166,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     rag_top_k?: unknown;
     rag_similarity_threshold?: unknown;
     split_por_paragrafo?: unknown;
+    max_sends_per_turn?: unknown;
   };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
@@ -203,6 +206,13 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,
     splitPorParagrafo: cfg.split_por_paragrafo === true,
+    maxSendsPerTurn:
+      typeof cfg.max_sends_per_turn === 'number' &&
+      Number.isInteger(cfg.max_sends_per_turn) &&
+      cfg.max_sends_per_turn >= 1 &&
+      cfg.max_sends_per_turn <= 12
+        ? cfg.max_sends_per_turn
+        : null,
     multimodalInput: r.multimodal_input,
     casesEnabled: r.cases_enabled,
     toolIds: r.tool_ids ?? [],
