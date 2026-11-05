@@ -1,5 +1,5 @@
 ---
-impacto: correcao
+impacto: nada_mudou
 secao: corrigido
 titulo: Mensagem recebida não fica sem turno quando a configuração do agente muda
 ---
