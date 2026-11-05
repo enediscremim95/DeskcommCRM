@@ -40,6 +40,8 @@ const AGENT: PublishedAgentConfig = {
   splitMessages: false,
   splitMaxChars: 400,
   splitPorParagrafo: false,
+      maxSendsPerTurn: null,
+      vitrines: {},
   multimodalInput: false,
   casesEnabled: false,
   toolIds: [],

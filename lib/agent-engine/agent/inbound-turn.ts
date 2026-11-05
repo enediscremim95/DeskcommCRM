@@ -152,7 +152,7 @@ import {
 } from './skills';
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
-import { loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
+import { evaluateBeforeSend, loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
 import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
@@ -180,11 +180,20 @@ import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
   executarEnvioDeItemDoCatalogo,
+  inspecionarItemDoCatalogo,
   sendCatalogItemInputSchema,
   simularEnvioDeItemDoCatalogo,
+  type CandidatoCatalogo,
   type EstadoEnvioCatalogo,
+  type ResultadoCandidatoCatalogo,
 } from './send-catalog-item';
 import { criarFilaDeEnviosDoTurno } from './fila-de-envios-do-turno';
+import { executarVitrine, sendVitrineInputSchema } from './send-vitrine';
+import {
+  mensagemJaEnviadaNesteTurno,
+  pularMensagemDuplicada,
+  registrarMensagemEnviadaNoTurno,
+} from './dedupe-mensagem-turno';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -209,6 +218,11 @@ export const AGENT_TOOL_DEFS = {
     description:
       'Envia fotos e informações de UM produto ativo. Informe somente o código exato do catálogo e de 1 a 4 fotos. Preço, legenda e arquivos são resolvidos pelo servidor.',
     inputSchema: sendCatalogItemInputSchema,
+  },
+  crm_send_vitrine: {
+    description:
+      'Mostra uma sequência fixa de produtos configurada pela loja. Informe somente o assunto; produtos, ordem, fotos, títulos, preços e textos são resolvidos pelo servidor.',
+    inputSchema: sendVitrineInputSchema,
   },
   update_lead_state: {
     description:
@@ -2167,14 +2181,20 @@ async function executarTurnoDoAgente(
 
   // Estado do RUN — vive só neste closure (isolamento por construção, acc 3).
   let seq = 0;
+  const enviosFisicosNoPreview = { valor: 0 };
   const filaDeEnvios = criarFilaDeEnviosDoTurno();
   const estadoEnvioCatalogo: EstadoEnvioCatalogo = { produtos: 0, imagens: 0 };
   const codigosDeCatalogoJaEnviados = new Set(preview?.catalogProductCodesAlreadySent ?? []);
+  const mensagensEnviadasNesteTurno = new Set<string>();
+  let previewContextDoTurno: Awaited<ReturnType<typeof previewGateContext>> | null = null;
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
   // barra o modelo sem gastar uma chamada de before-send à toa.
-  const maxSendsPerTurn = deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN;
+  const maxSendsPerTurn =
+    agentConfig?.maxSendsPerTurn ??
+    deps.knobs.maxSendsPerTurn ??
+    DEFAULT_MAX_SENDS_PER_TURN;
   // F3-11: estágio que o MODELO confirmou via update_lead_state neste turno (a máquina
   // F2-10 é a única porta). Comparado com a sugestão do classificador no fim → divergência.
   let confirmedStage: LeadStage | null = null;
@@ -2542,6 +2562,12 @@ async function executarTurnoDoAgente(
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
       execute: ({ body }) => filaDeEnvios.enfileirar(async () => {
+        const duplicada = pularMensagemDuplicada({
+          body,
+          enviadas: mensagensEnviadasNesteTurno,
+          log: runLog,
+        });
+        if (duplicada) return duplicada;
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
@@ -2796,6 +2822,13 @@ async function executarTurnoDoAgente(
           }
           const outcome = chain.outcome;
           outcomes.push(outcome);
+          if (
+            outcome.kind === 'sent' ||
+            outcome.kind === 'already_sent' ||
+            outcome.kind === 'queued'
+          ) {
+            registrarMensagemEnviadaNoTurno(body, mensagensEnviadasNesteTurno);
+          }
           if (outcome.kind === 'sent' && pendingCitations.length > 0) {
             try {
               await pool.query(
@@ -3211,6 +3244,271 @@ async function executarTurnoDoAgente(
     }
   }
 
+  if (
+    agentConfig?.toolIds.includes('crm_send_vitrine') &&
+    Object.keys(agentConfig.vitrines).length > 0
+  ) {
+    rawTools.crm_send_vitrine = tool({
+      ...AGENT_TOOL_DEFS.crm_send_vitrine,
+      execute: (raw) =>
+        filaDeEnvios.enfileirar(async () => {
+          try {
+            const inputVitrine = sendVitrineInputSchema.parse(raw);
+            const emSandbox = preview?.kind === 'sandbox';
+            return await executarVitrine({
+              input: inputVitrine,
+              vitrines: agentConfig.vitrines,
+              maxSendsRestantes: () =>
+                Math.max(
+                  0,
+                  maxSendsPerTurn - (emSandbox ? enviosFisicosNoPreview.valor : seq),
+                ),
+              produtosJaEnviadosNoTurno: estadoEnvioCatalogo.produtos,
+              imagensJaEnviadasNoTurno: estadoEnvioCatalogo.imagens,
+              textoConsumiraEnvio: (body) =>
+                !mensagemJaEnviadaNesteTurno(body, mensagensEnviadasNesteTurno),
+              inspecionarItem: (item) =>
+                inspecionarItemDoCatalogo({
+                  db: pool,
+                  organizationId: tenantId,
+                  conversationId: input.conversationId,
+                  input: { codigo: item.codigo, quantas_fotos: item.fotos },
+                  ...(emSandbox
+                    ? { codigosJaEnviados: codigosDeCatalogoJaEnviados }
+                    : {}),
+                }),
+              enviarTexto: async (body, papel) => {
+                const duplicada = pularMensagemDuplicada({
+                  body,
+                  enviadas: mensagensEnviadasNesteTurno,
+                  log: runLog,
+                });
+                if (duplicada) return duplicada;
+
+                if (emSandbox) {
+                  if (enviosFisicosNoPreview.valor >= maxSendsPerTurn) {
+                    return {
+                      status: 'failed' as const,
+                      code: 'max_sends_per_turn',
+                      message: 'o teto de mensagens deste turno foi atingido.',
+                    };
+                  }
+                  if (!preview || !previewContextDoTurno) {
+                    return {
+                      status: 'failed' as const,
+                      code: 'preview_context_unavailable',
+                      message: 'o contexto seguro da simulação não foi carregado.',
+                    };
+                  }
+                  const result = evaluateBeforeSend({
+                    ...previewContextDoTurno,
+                    body,
+                    semanticPromise: semanticClassifier
+                      ? await semanticClassifier(body)
+                      : null,
+                  });
+                  if (result.veto) {
+                    preview.result.impediments.push({
+                      code: result.veto.code,
+                      message: result.veto.message,
+                    });
+                    return {
+                      status: 'failed' as const,
+                      code: result.veto.code,
+                      message: result.veto.message,
+                    };
+                  }
+                  preview.result.envios.push({ tipo: 'texto', papel, texto: result.body });
+                  enviosFisicosNoPreview.valor += 1;
+                  registrarMensagemEnviadaNoTurno(body, mensagensEnviadasNesteTurno);
+                  return { status: 'sent' as const };
+                }
+
+                const hasOpenCase =
+                  agentConfig.casesEnabled === true
+                    ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
+                    : false;
+                const chain = await runBeforeSend({
+                  pool,
+                  log: runLog,
+                  agentOperation,
+                  tenantId,
+                  leadId,
+                  jobId: liveJob().id,
+                  channelSessionId: input.channelSessionId,
+                  body,
+                  optedOutThisTurn,
+                  crmDailyLimit: null,
+                  now: clock(),
+                  sleep: deps.sleep,
+                  lgpd,
+                  casesEnabled: agentConfig.casesEnabled,
+                  hasOpenCase,
+                  openedCaseThisTurn,
+                  humanPromiseExtraTargets: agentConfig.handoffKeywords,
+                  enforceInternalVocabulary: false,
+                  agenda: {
+                    active: agentConfig.toolIds.includes('crm_book_appointment'),
+                    toolCalledThisTurn: agendaToolCalledThisTurn,
+                  },
+                  ...(deps.knobs.disclosureMode !== undefined
+                    ? { disclosureMode: deps.knobs.disclosureMode }
+                    : {}),
+                  ...(semanticClassifier !== undefined
+                    ? { classifyPromiseSemantic: semanticClassifier }
+                    : {}),
+                  send: (finalBody: string) => {
+                    seq += 1;
+                    return liveChannel().send({
+                      tenantId,
+                      leadId,
+                      jobId: liveJob().id,
+                      jobClaim: claimOfJob(liveJob()),
+                      agentOperation,
+                      seq,
+                      conversationId: input.conversationId,
+                      body: finalBody,
+                      metadata: { vitrine_text_role: papel },
+                    });
+                  },
+                });
+                if (chain.status === 'vetoed') {
+                  return { status: 'failed' as const, code: chain.code, message: chain.message };
+                }
+                const outcome = chain.outcome;
+                outcomes.push(outcome);
+                if (
+                  outcome.kind === 'sent' ||
+                  outcome.kind === 'already_sent' ||
+                  outcome.kind === 'queued'
+                ) {
+                  registrarMensagemEnviadaNoTurno(body, mensagensEnviadasNesteTurno);
+                }
+                if (outcome.kind === 'sent' || outcome.kind === 'already_sent') {
+                  return { status: 'sent' as const };
+                }
+                if (outcome.kind === 'queued') return { status: 'queued' as const };
+                return {
+                  status: 'failed' as const,
+                  code: outcome.kind,
+                  message: 'o canal não confirmou o envio do texto da vitrine',
+                };
+              },
+              enviarItem: async (item) => {
+                if (emSandbox) {
+                  const imagensAntes = estadoEnvioCatalogo.imagens;
+                  const simulado = await simularEnvioDeItemDoCatalogo({
+                    db: pool,
+                    admin: deps.crmCfg.supabase,
+                    organizationId: tenantId,
+                    input: { codigo: item.codigo, quantas_fotos: item.fotos },
+                    estado: estadoEnvioCatalogo,
+                    maxSendsRestantes: () =>
+                      Math.max(0, maxSendsPerTurn - enviosFisicosNoPreview.valor),
+                    codigosJaEnviados: codigosDeCatalogoJaEnviados,
+                    tituloFixo: item.titulo,
+                    limites: { produtos: 3, imagens: 12 },
+                  });
+                  enviosFisicosNoPreview.valor +=
+                    estadoEnvioCatalogo.imagens - imagensAntes;
+                  if (simulado.envio && preview) preview.result.envios.push(simulado.envio);
+                  return simulado.resultado;
+                }
+
+                return executarEnvioDeItemDoCatalogo({
+                  db: pool,
+                  admin: deps.crmCfg.supabase,
+                  organizationId: tenantId,
+                  conversationId: input.conversationId,
+                  input: { codigo: item.codigo, quantas_fotos: item.fotos },
+                  estado: estadoEnvioCatalogo,
+                  maxSendsRestantes: () => Math.max(0, maxSendsPerTurn - seq),
+                  tituloFixo: item.titulo,
+                  limites: { produtos: 3, imagens: 12 },
+                  enviar: async (candidato: CandidatoCatalogo): Promise<ResultadoCandidatoCatalogo> => {
+                    const hasOpenCase =
+                      agentConfig.casesEnabled === true
+                        ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
+                        : false;
+                    const chain = await runBeforeSend({
+                      pool,
+                      log: runLog,
+                      agentOperation,
+                      tenantId,
+                      leadId,
+                      jobId: liveJob().id,
+                      channelSessionId: input.channelSessionId,
+                      body: candidato.body,
+                      optedOutThisTurn,
+                      crmDailyLimit: null,
+                      now: clock(),
+                      sleep: deps.sleep,
+                      lgpd,
+                      casesEnabled: agentConfig.casesEnabled,
+                      hasOpenCase,
+                      openedCaseThisTurn,
+                      humanPromiseExtraTargets: agentConfig.handoffKeywords,
+                      enforceInternalVocabulary: false,
+                      agenda: {
+                        active: agentConfig.toolIds.includes('crm_book_appointment'),
+                        toolCalledThisTurn: agendaToolCalledThisTurn,
+                      },
+                      ...(deps.knobs.disclosureMode !== undefined
+                        ? { disclosureMode: deps.knobs.disclosureMode }
+                        : {}),
+                      ...(semanticClassifier !== undefined
+                        ? { classifyPromiseSemantic: semanticClassifier }
+                        : {}),
+                      send: (finalBody: string) => {
+                        seq += 1;
+                        return liveChannel().send({
+                          tenantId,
+                          leadId,
+                          jobId: liveJob().id,
+                          jobClaim: claimOfJob(liveJob()),
+                          agentOperation,
+                          seq,
+                          conversationId: input.conversationId,
+                          body: finalBody,
+                          metadata: candidato.metadata,
+                          ...(candidato.media ? { media: candidato.media } : {}),
+                        });
+                      },
+                    });
+                    if (chain.status === 'vetoed') {
+                      return { status: 'failed', code: chain.code, message: chain.message };
+                    }
+                    const outcome = chain.outcome;
+                    outcomes.push(outcome);
+                    if (outcome.kind === 'sent' || outcome.kind === 'already_sent') {
+                      return { status: 'sent', messageId: outcome.messageId ?? undefined };
+                    }
+                    if (outcome.kind === 'queued') {
+                      return { status: 'queued', messageId: outcome.messageId ?? undefined };
+                    }
+                    return {
+                      status: 'failed',
+                      code: outcome.kind,
+                      message: 'o canal não confirmou o envio',
+                    };
+                  },
+                });
+              },
+            });
+          } catch (err) {
+            noteRunError(err instanceof Error ? err : new Error(String(err)));
+            return {
+              ok: false,
+              error: {
+                code: 'internal_error',
+                message: 'erro interno ao enviar a vitrine; não diga que foi enviada.',
+              },
+            };
+          }
+        }),
+    });
+  }
+
   const followupKnobs = deps.knobs.followup;
   if (followupKnobs !== undefined) {
     rawTools.schedule_followup = tool({
@@ -3513,9 +3811,10 @@ async function executarTurnoDoAgente(
         ...rawTools.get_lead_note,
         execute: async () => ({ ok: true, notes: preview.notes ?? [] }),
       };
-    const previewContext = preview
+    previewContextDoTurno = preview
       ? await previewGateContext(pool, preview, runLog, clock())
       : null;
+    const previewContext = previewContextDoTurno;
     const previewTools =
       preview && previewContext
         ? applyPreviewPolicy(
@@ -3531,6 +3830,12 @@ async function executarTurnoDoAgente(
             () => pendingCitations,
             semanticClassifier,
             () => ({ agenda: { active: previewContext.agenda?.active ?? false, toolCalledThisTurn: agendaToolCalledThisTurn } }),
+            {
+              enviadas: mensagensEnviadasNesteTurno,
+              log: runLog,
+              limite: maxSendsPerTurn,
+              contador: enviosFisicosNoPreview,
+            },
           )
         : rawTools;
     const toolsWithBreaker = wrapToolsWithBreaker(previewTools, {
@@ -3800,7 +4105,11 @@ async function executarTurnoDoAgente(
 
     if (preview) {
       preview.result.checkpoint = content;
-      if (preview.result.candidates.length === 0 && preview.result.impediments.length === 0)
+      if (
+        preview.result.candidates.length === 0 &&
+        preview.result.envios.length === 0 &&
+        preview.result.impediments.length === 0
+      )
         preview.result.impediments.push({
           code: 'no_candidate',
           message: 'O agente não propôs uma resposta. Revise o cenário ou a configuração.',

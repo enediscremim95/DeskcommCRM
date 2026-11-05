@@ -5,6 +5,7 @@ import type { Queryable } from "../queue/queue";
 import { criarFilaDeEnviosDoTurno } from "./fila-de-envios-do-turno";
 import {
   executarEnvioDeItemDoCatalogo,
+  inspecionarItemDoCatalogo,
   sendCatalogItemInputSchema,
   simularEnvioDeItemDoCatalogo,
   type EstadoEnvioCatalogo,
@@ -34,6 +35,7 @@ function banco(opcoes: { produto?: boolean; duplicado?: boolean } = {}): Queryab
         return { rows: opcoes.produto === false ? [] : [produto] };
       }
       if (sql.includes("select exists")) return { rows: [{ existe: opcoes.duplicado === true }] };
+      if (sql.includes("select count(*)::int")) return { rows: [{ total: fotos.length }] };
       if (sql.includes("from catalog_product_images")) return { rows: fotos };
       if (sql.includes("from catalog_products") && sql.includes("produto_codigo=$2")) {
         return { rows: [produto, { ...produto, codigo: "PRECO-B", preco_cents: 15000 }] };
@@ -214,5 +216,32 @@ describe("crm_send_catalog_item", () => {
       .mock.calls.filter(([sql]) => sql.includes("catalog_products") || sql.includes("catalog_product_images"));
     expect(consultasAoCatalogo.length).toBeGreaterThan(0);
     expect(consultasAoCatalogo.every(([, values]) => values?.[0] === "org-do-teste")).toBe(true);
+  });
+
+  it("inspeciona a unidade inteira sem consultar outro tenant", async () => {
+    const db = banco();
+    const inspecao = await inspecionarItemDoCatalogo({
+      db,
+      organizationId: "org-vitrine",
+      conversationId: "conv-vitrine",
+      input: { codigo: "PRECO-A", quantas_fotos: 3 },
+    });
+
+    expect(inspecao).toMatchObject({
+      status: "ready",
+      produtoCodigo: "PAI-1",
+      mensagensFisicas: 3,
+      precoResumo: expect.stringMatching(/123,45/),
+    });
+    expect(
+      vi.mocked(db.query).mock.calls.every(([, values]) => values?.[0] === "org-vitrine"),
+    ).toBe(true);
+  });
+
+  it("a vitrine injeta o título fixo na legenda sem aceitar texto do modelo", async () => {
+    const args = base({ tituloFixo: "Kit Afeto com caixa kraft" });
+    await executarEnvioDeItemDoCatalogo(args);
+    const primeiro = vi.mocked(args.enviar).mock.calls[0]?.[0];
+    expect(primeiro?.body.split("\n")[0]).toBe("Kit Afeto com caixa kraft");
   });
 });

@@ -2,8 +2,8 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Agente envia produto do catálogo",
-    "subtitle": "retrato do painel, galeria por SKU pai e saída pela cadeia before_send",
+    "title": "Agente envia produto e vitrine determinística do catálogo",
+    "subtitle": "configuração opt-in, galeria por SKU pai, dedupe do turno e saída pela cadeia before_send",
     "quality_profile": "standard"
   },
   "lanes": [
@@ -12,13 +12,16 @@
     { "id": "agente", "label": "Agente" },
     { "id": "canal", "label": "Canal" }
   ],
-  "mainPath": ["retrato", "importador", "pais", "tool", "fifo", "before", "sink"],
+  "mainPath": ["retrato", "importador", "pais", "vitrine", "fifo", "dedupe", "before", "sink"],
   "nodes": [
     { "id": "retrato", "lane": "fonte", "label": "Retrato JSON do painel" },
     { "id": "importador", "lane": "fonte", "label": "Importador dry-run ou aplicar" },
     { "id": "pais", "lane": "dados", "label": "SKU pai e linhas de preço" },
     { "id": "galeria", "lane": "dados", "label": "Galeria ordenada no catalog-media" },
     { "id": "tool", "lane": "agente", "label": "crm_send_catalog_item opt-in" },
+    { "id": "configvitrine", "lane": "dados", "label": "ai_agents.config.vitrines validado" },
+    { "id": "vitrine", "lane": "agente", "label": "crm_send_vitrine opt-in e determinística" },
+    { "id": "dedupe", "lane": "agente", "label": "Trava de texto repetido no turno" },
     { "id": "sandbox", "lane": "agente", "label": "Simulador dry-run por organização" },
     { "id": "trace", "lane": "agente", "label": "PreviewResult: toolTrace e envios" },
     { "id": "fifo", "lane": "agente", "label": "Fila FIFO local ao turno" },
@@ -39,6 +42,15 @@
     { "id": "e11", "from": "pais", "to": "sandbox", "label": "mesmas consultas por organização" },
     { "id": "e12", "from": "galeria", "to": "sandbox", "label": "nomes e URLs sem copiar bytes" },
     { "id": "e13", "from": "sandbox", "to": "trace", "label": "resultado curto de toda tool e fotos simuladas" },
-    { "id": "e14", "from": "trace", "to": "sandbox", "label": "códigos já enviados alimentam o turno seguinte" }
+    { "id": "e14", "from": "trace", "to": "sandbox", "label": "códigos já enviados alimentam o turno seguinte" },
+    { "id": "e15", "from": "configvitrine", "to": "vitrine", "label": "assunto, textos, ordem, títulos e quantidade de fotos" },
+    { "id": "e16", "from": "vitrine", "to": "tool", "label": "cada item usa o mesmo executor de catálogo" },
+    { "id": "e17", "from": "tool", "to": "vitrine", "label": "recibo, preço e ja_enviado por conversa" },
+    { "id": "e18", "from": "vitrine", "to": "fifo", "label": "intro, itens e fechamento na mesma fila" },
+    { "id": "e19", "from": "fifo", "to": "dedupe", "label": "textos candidatos do turno" },
+    { "id": "e20", "from": "dedupe", "to": "before", "label": "somente corpo novo segue para os gates" },
+    { "id": "e21", "from": "dedupe", "to": "trace", "label": "duplicata pulada gera warn e toolTrace" },
+    { "id": "e22", "from": "vitrine", "to": "sandbox", "label": "troca canal e messages por envios simulados" },
+    { "id": "e23", "from": "sandbox", "to": "vitrine", "label": "toolTrace confirma ordem e resultado" }
   ]
 }

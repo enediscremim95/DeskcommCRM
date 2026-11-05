@@ -77,6 +77,39 @@ export type GuardrailItem = z.infer<typeof guardrailItemSchema>;
 export const guardrailsSchema = z.array(guardrailItemSchema).max(50);
 export type Guardrails = z.infer<typeof guardrailsSchema>;
 
+const textoCurtoSemQuebra = (max: number) =>
+  z
+    .string()
+    .regex(/^[^\r\n]*$/, "não pode conter quebra de linha")
+    .trim()
+    .min(1)
+    .max(max);
+
+export const vitrineItemSchema = z
+  .object({
+    codigo: textoCurtoSemQuebra(120),
+    titulo: textoCurtoSemQuebra(80),
+    fotos: z.number().int().min(1).max(4).default(2),
+  })
+  .strict();
+
+export const vitrineSchema = z
+  .object({
+    intro: textoCurtoSemQuebra(120).optional(),
+    fechamento: textoCurtoSemQuebra(120).optional(),
+    itens: z.array(vitrineItemSchema).min(1).max(3),
+  })
+  .strict();
+
+export const vitrinesConfigSchema = z
+  .record(z.string().regex(/^[a-z0-9_]{1,40}$/), vitrineSchema)
+  .refine((vitrines) => Object.keys(vitrines).length <= 12, {
+    message: "no máximo 12 assuntos de vitrine",
+  });
+
+export type VitrineConfig = z.infer<typeof vitrineSchema>;
+export type VitrinesConfig = z.infer<typeof vitrinesConfigSchema>;
+
 // ---------------------------------------------------------------------------
 // Agent config (vai dentro de ai_agents.config jsonb)
 // ---------------------------------------------------------------------------
@@ -89,6 +122,8 @@ export const agentConfigSchema = z.object({
   rag_similarity_threshold: z.number().min(0).max(1).default(0.4),
   confidence_threshold: z.number().min(0).max(1).default(0.6),
   split_por_paragrafo: z.boolean().default(false),
+  max_sends_per_turn: z.number().int().min(1).max(12).nullable().optional(),
+  vitrines: vitrinesConfigSchema.optional(),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
