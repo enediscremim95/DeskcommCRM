@@ -78,11 +78,32 @@ const enviarProdutoInputShape = {
   quantas_fotos: z.number().int().min(1).max(4).optional().default(3),
 };
 
+const enviarVitrineInputShape = {
+  assunto: z.string().regex(/^[a-z0-9_]{1,40}$/),
+};
+
 export const crmSendCatalogItem: McpToolDefinition<typeof enviarProdutoInputShape> = {
   name: "crm_send_catalog_item",
   description:
     "Envia um item ativo do catálogo com preço e fotos resolvidos pelo servidor. Informe apenas o código exato retornado pela busca e, opcionalmente, de 1 a 4 fotos. Nunca forneça preço, legenda ou URL.",
   inputSchema: enviarProdutoInputShape,
+  category: "write",
+  requiresRole: "ai_operator",
+  requiresScope: "mcp:write",
+  handler: async () => ({
+    ok: false,
+    error: {
+      code: "agent_harness_required",
+      message: "esta capacidade só executa dentro do turno do agente, com os guardrails de envio",
+    },
+  }),
+};
+
+export const crmSendVitrine: McpToolDefinition<typeof enviarVitrineInputShape> = {
+  name: "crm_send_vitrine",
+  description:
+    "Envia uma vitrine determinística já configurada para um assunto. Informe somente o assunto; produtos, ordem, fotos, títulos, preços e textos são resolvidos pelo servidor.",
+  inputSchema: enviarVitrineInputShape,
   category: "write",
   requiresRole: "ai_operator",
   requiresScope: "mcp:write",

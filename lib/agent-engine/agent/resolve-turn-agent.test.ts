@@ -23,6 +23,7 @@ function fakeConfig(agentId: string): PublishedAgentConfig {
     splitMaxChars: 900,
     splitPorParagrafo: false,
     maxSendsPerTurn: null,
+    vitrines: {},
     multimodalInput: false,
     casesEnabled: false,
     toolIds: [],

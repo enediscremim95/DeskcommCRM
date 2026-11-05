@@ -198,3 +198,37 @@ it('preserves the complete inbound and outbound history supplied by the caller',
   ];
   expect(scenarioContext(messages).context.messages).toEqual(messages);
 });
+
+it('sandbox pula duplicata antes do teto, não consome envio e deixa texto diferente passar', async () => {
+  const p = preview();
+  const contador = { valor: 0 };
+  const log = { warn: vi.fn() };
+  const tools = applyPreviewPolicy(
+    { send_message: definition(vi.fn()) },
+    p,
+    gate(),
+    () => [],
+    undefined,
+    undefined,
+    { enviadas: new Set(), log, limite: 2, contador },
+  );
+
+  expect(await execute(tools, 'send_message', { body: 'Olá, posso ajudar? 🥰' })).toMatchObject({
+    ok: true,
+    status: 'simulated',
+  });
+  expect(await execute(tools, 'send_message', { body: '  OLÁ,   posso ajudar? 😊' })).toEqual({
+    ok: true,
+    status: 'duplicate_skipped',
+  });
+  expect(await execute(tools, 'send_message', { body: 'Posso mostrar os modelos?' })).toMatchObject({
+    ok: true,
+    status: 'simulated',
+  });
+  expect(contador.valor).toBe(2);
+  expect(p.result.candidates.map((c) => c.body)).toEqual([
+    'Olá, posso ajudar? 🥰',
+    'Posso mostrar os modelos?',
+  ]);
+  expect(log.warn).toHaveBeenCalledOnce();
+});

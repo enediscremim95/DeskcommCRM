@@ -40,6 +40,16 @@ export const TOOLS_COMERCIO = declararTools([
     pacotes: ["atender"],
   },
   {
+    name: "crm_send_vitrine",
+    category: "write",
+    rotulo: "Mostrar vitrine de produtos",
+    explicacao:
+      "Envia uma sequência pronta de produtos com fotos, títulos e valores cadastrados, na ordem definida pela loja e sem deixar o assistente trocar versões ou repetir preços.",
+    oQueToca: "Catálogo e conversa",
+    risco: "critico",
+    pacotes: ["atender"],
+  },
+  {
     name: "crm_list_privacy_requests",
     category: "read",
     rotulo: "Ver pedidos de privacidade",

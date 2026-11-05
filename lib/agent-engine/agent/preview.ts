@@ -21,6 +21,10 @@ import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
+import {
+  pularMensagemDuplicada,
+  registrarMensagemEnviadaNoTurno,
+} from './dedupe-mensagem-turno';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -44,6 +48,11 @@ export interface PreviewCatalogDelivery {
   legenda: string;
   imagens: Array<{ nome: string; url: string }>;
 }
+export interface PreviewTextDelivery {
+  tipo: 'texto';
+  papel: 'intro' | 'fechamento';
+  texto: string;
+}
 export interface PreviewToolTrace {
   tool: string;
   argumentos: unknown;
@@ -54,7 +63,7 @@ export interface PreviewResult {
   checkpoint?: unknown;
   candidates: Array<{ body: string; citations: Citation[]; trace: GateTraceEntry[] }>;
   proposals: Array<{ tool: string; arguments: unknown }>;
-  envios: PreviewCatalogDelivery[];
+  envios: Array<PreviewCatalogDelivery | PreviewTextDelivery>;
   toolTrace: PreviewToolTrace[];
   impediments: Array<{ code: string; message: string }>;
   restrictions: string[];
@@ -155,6 +164,12 @@ export function applyPreviewPolicy(
   citations: () => Citation[],
   semanticClassifier?: (body: string) => Promise<NonNullable<GateContext['semanticPromise']>>,
   liveContext?: () => Partial<GateContext>,
+  dedupe?: {
+    enviadas: Set<string>;
+    log: Pick<Logger, 'warn'>;
+    limite?: number;
+    contador?: { valor: number };
+  },
 ): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -166,7 +181,8 @@ export function applyPreviewPolicy(
       ].includes(name);
       const catalog = getToolByName(name);
       if (
-        (p.kind === 'sandbox' && name === 'crm_send_catalog_item') ||
+        (p.kind === 'sandbox' &&
+          (name === 'crm_send_catalog_item' || name === 'crm_send_vitrine')) ||
         nativeRead ||
         (catalog?.category === 'read' && (p.contactId !== null || SCENARIO_READS.has(name)))
       )
@@ -181,6 +197,27 @@ export function applyPreviewPolicy(
                 args && typeof args === 'object' && 'body' in args && typeof args.body === 'string'
                   ? args.body
                   : '';
+              if (dedupe) {
+                const duplicada = pularMensagemDuplicada({
+                  body,
+                  enviadas: dedupe.enviadas,
+                  log: dedupe.log,
+                });
+                if (duplicada) return duplicada;
+              }
+              if (
+                dedupe?.limite !== undefined &&
+                dedupe.contador !== undefined &&
+                dedupe.contador.valor >= dedupe.limite
+              ) {
+                return {
+                  ok: false,
+                  error: {
+                    code: 'max_sends_per_turn',
+                    message: 'o teto de mensagens deste turno foi atingido; encerre e espere a resposta.',
+                  },
+                };
+              }
               const result = evaluateBeforeSend({
                 ...ctx,
                 ...liveContext?.(),
@@ -199,6 +236,10 @@ export function applyPreviewPolicy(
                 citations: citations(),
                 trace: result.trace,
               });
+              if (dedupe) {
+                registrarMensagemEnviadaNoTurno(body, dedupe.enviadas);
+                if (dedupe.contador) dedupe.contador.valor += 1;
+              }
               return {
                 ok: true,
                 status: p.kind === 'sandbox' ? 'simulated' : 'awaiting_approval',
@@ -298,6 +339,8 @@ function traceResult(value: unknown): { ok: boolean; resultado: string } {
     return { ok: false, resultado: `erro:${truncateTraceString(code)}` };
   }
   if (record.ja_enviado === true) return { ok: true, resultado: 'sucesso:ja_enviado' };
+  if (record.status === 'duplicate_skipped')
+    return { ok: true, resultado: 'sucesso:duplicate_skipped' };
   const fields = Object.keys(record).slice(0, TRACE_OBJECT_LIMIT);
   const lists = fields.flatMap((field) =>
     Array.isArray(record[field]) ? [`${field}=${record[field].length}`] : [],

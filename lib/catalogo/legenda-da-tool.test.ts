@@ -63,4 +63,35 @@ describe("legenda determinística do catálogo", () => {
     expect(legenda).not.toContain("Texto que não pode entrar");
     expect(legenda).not.toContain("Prazo que não pode entrar");
   });
+
+  it("usa o título fixo sem cortar a parte que diferencia os produtos", () => {
+    const selecionada = {
+      codigo: "A",
+      nome: "Nome longo que não deve aparecer",
+      descricao: null,
+      opcao_preco: "Versão: Casal",
+      preco_cents: 12990,
+      moeda: "BRL",
+    };
+    const legenda = montarLegendaDaTool(selecionada, [selecionada], {
+      tituloFixo: "Kit Afeto com caixa pinus e tampa acrílica",
+    });
+    expect(legenda.split("\n")[0]).toBe("Kit Afeto com caixa pinus e tampa acrílica");
+    expect(legenda).toContain("Versão: Casal");
+    expect(legenda).toMatch(/R\$\s129,90/);
+  });
+
+  it("sem tituloFixo preserva exatamente a legenda anterior", () => {
+    const selecionada = {
+      codigo: "A",
+      nome: "Kit Especial",
+      descricao: "Primeira linha. Segunda linha.",
+      opcao_preco: "Versão: A",
+      preco_cents: 12990,
+      moeda: "BRL",
+    };
+    expect(montarLegendaDaTool(selecionada, [selecionada])).toBe(
+      "Kit Especial\nVersão: A\nR$\u00a0129,90\nPrimeira linha. Segunda linha.",
+    );
+  });
 });
