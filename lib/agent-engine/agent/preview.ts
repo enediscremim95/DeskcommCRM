@@ -39,6 +39,8 @@ export interface TurnPreview {
   feedback?: string;
   /** Produtos já enviados em turnos anteriores deste cenário, nunca lidos de messages. */
   catalogProductCodesAlreadySent?: string[];
+  /** Mensagem pinada que abriu a rajada, equivalente ao inbound_message_id do job real. */
+  currentInboundText?: string;
   /** Null means a scenario, never a synthetic identifier passed to SQL. */
   contactId: string | null;
   channelId: string | null;

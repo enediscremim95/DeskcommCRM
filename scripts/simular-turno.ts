@@ -1,6 +1,10 @@
 /**
  * Área de testes do agente, sem contato, conversa, mensagem, mídia ou canal real.
  * A única escrita no banco é a linha dry-run de ai_agent_runs.
+ *
+ * Uma fala: --msg "oi"
+ * Rajada: --msgs "oi|||tudo bem?|||quero 30 lembrancinhas"
+ * Retorno futuro: --depois-de 3d (também aceita h e m)
  */
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -13,6 +17,12 @@ import { runAgentPreview } from "@/lib/agent-engine/agent/inbound-turn";
 import { newPreviewResult, scenarioContext } from "@/lib/agent-engine/agent/preview";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import {
+  construirRajada,
+  parseDepoisDe,
+  parseMensagensCli,
+  relogioInicialDoTurno,
+} from "@/scripts/simular-turno-opcoes";
 
 const messageSchema = z.object({
   direction: z.enum(["inbound", "outbound"]),
@@ -63,7 +73,9 @@ async function main(): Promise<void> {
       agentId: z.string().uuid(),
       versionId: z.string().uuid().optional(),
       historyFile: z.string().min(1),
-      message: z.string().min(1),
+      message: z.string().optional(),
+      messages: z.string().optional(),
+      depoisDe: z.string().optional(),
       promptFile: z.string().min(1).optional(),
       name: z.string().min(1).max(200).optional(),
       reset: z.boolean(),
@@ -73,7 +85,9 @@ async function main(): Promise<void> {
       agentId: requiredOption("agente-id"),
       versionId: option("versao-id"),
       historyFile: requiredOption("hist"),
-      message: requiredOption("msg"),
+      message: option("msg"),
+      messages: option("msgs"),
+      depoisDe: option("depois-de"),
       promptFile: option("prompt"),
       name: option("nome"),
       reset: process.argv.includes("--novo"),
@@ -81,14 +95,25 @@ async function main(): Promise<void> {
 
   const historyFile = path.resolve(cli.historyFile);
   const history = await loadHistory(historyFile, cli.reset, cli.name);
-  history.msgs.push({
-    direction: "inbound",
-    body: cli.message,
-    sent_at: new Date().toISOString(),
-  });
+  const rajada = parseMensagensCli({ msg: cli.message, msgs: cli.messages });
+  const inicioDaRajada = relogioInicialDoTurno(
+    history.msgs,
+    cli.depoisDe === undefined ? undefined : parseDepoisDe(cli.depoisDe),
+    new Date(),
+  );
+  const { mensagens: mensagensDaRajada, relogioDoTurno } = construirRajada(
+    rajada,
+    inicioDaRajada,
+  );
+  history.msgs.push(...mensagensDaRajada);
 
   const pool = getRequestPool();
-  const deps = requestTurnDeps();
+  const deps = {
+    ...requestTurnDeps(),
+    // Cada leitura recebe uma cópia: nenhum consumidor consegue deslocar o
+    // relógio compartilhado do cenário por mutação acidental do Date.
+    clock: () => new Date(relogioDoTurno.getTime()),
+  };
   const versionId =
     cli.versionId ??
     (
@@ -126,6 +151,7 @@ async function main(): Promise<void> {
       runId,
       agent,
       context: scenarioContext(history.msgs, { name: history.nome }),
+      currentInboundText: rajada[0],
       contactId: null,
       channelId: null,
       catalogProductCodesAlreadySent: history.catalogProductCodesAlreadySent,
@@ -139,16 +165,17 @@ async function main(): Promise<void> {
     [runId, failure ? "failed" : "completed", cli.organizationId],
   );
 
-  writeLine(`\n=== CLIENTE (${history.nome}): ${cli.message}`);
+  writeLine(`\n=== CLIENTE (${history.nome}), RAJADA:`);
+  rajada.forEach((mensagem, index) => writeLine(`  ${index + 1}/${rajada.length} | ${mensagem}`));
   writeLine(
     `=== AGENTE (${Math.round((Date.now() - startedAt) / 1000)}s, versão ${agent.versionId.slice(0, 8)}${cli.promptFile ? ", PROMPT DE TESTE" : ""}):`,
   );
-  for (const candidate of result.candidates) {
+  for (const [index, candidate] of result.candidates.entries()) {
     writeLine(`  | ${candidate.body.replace(/\n/g, "\n  | ")}`);
     history.msgs.push({
       direction: "outbound",
       body: candidate.body,
-      sent_at: new Date().toISOString(),
+      sent_at: new Date(relogioDoTurno.getTime() + (index + 1) * 1_000).toISOString(),
     });
   }
   if (result.toolTrace.length > 0) {
@@ -169,6 +196,8 @@ async function main(): Promise<void> {
       writeLine(`  ! ${impediment.code}: ${impediment.message}`);
     }
   }
+  const respostas = result.candidates.length + result.envios.length;
+  writeLine(`RAJADA: ${rajada.length} mensagens recebidas, ${respostas} respondidas`);
 
   history.catalogProductCodesAlreadySent = [
     ...new Set([

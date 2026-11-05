@@ -23,7 +23,7 @@
     { "id": "vitrine", "lane": "agente", "label": "crm_send_vitrine opt-in e determinística" },
     { "id": "dedupe", "lane": "agente", "label": "Trava de parágrafo repetido no turno" },
     { "id": "anuncio", "lane": "agente", "label": "Guarda anúncio sem vitrine, uma recusa por turno" },
-    { "id": "sandbox", "lane": "agente", "label": "Simulador dry-run por organização" },
+    { "id": "sandbox", "lane": "agente", "label": "Simulador dry-run por organização", "sublabel": "rajada em ordem + relógio injetado, sem envio real" },
     { "id": "trace", "lane": "agente", "label": "PreviewResult: toolTrace e envios" },
     { "id": "fifo", "lane": "agente", "label": "Fila FIFO local ao turno" },
     { "id": "before", "lane": "agente", "label": "Cadeia before_send" },

@@ -45,3 +45,33 @@ it("o CLI grava somente o run dry-run e nunca toca entidades ou mídia do client
   expect(scriptSource).not.toMatch(/insert\s+into\s+(?:contacts|conversations|messages)/i);
   expect(scriptSource).not.toMatch(/storage\.(?:download|upload)/i);
 });
+
+it("rajada e tempo existem só no sandbox e entram pelo relógio injetado", () => {
+  expect(scriptSource).toContain("parseMensagensCli");
+  expect(scriptSource).toContain("parseDepoisDe");
+  expect(scriptSource).toContain("currentInboundText: rajada[0]");
+  expect(scriptSource).toContain("RAJADA: ${rajada.length} mensagens recebidas, ${respostas} respondidas");
+  expect(scriptSource).toMatch(
+    /clock: \(\) => new Date\(relogioDoTurno\.getTime\(\)\)/,
+  );
+  expect(source).toContain("previewGateContext(pool, preview, runLog, clock())");
+  expect(source).toContain("const agoraBlock = renderAgora(clock(), fusoDaOrg)");
+  expect(source).toMatch(
+    /preview\?\.kind === 'sandbox'[\s\S]{0,180}?msAteAJanelaAbrir\([\s\S]{0,120}?clock\(\)/,
+  );
+  expect(source).toContain("'outside_agent_business_hours'");
+  expect(scriptSource).not.toMatch(/Date\.now\s*=/);
+  expect(scriptSource).not.toMatch(/setSystemTime|useFakeTimers/);
+});
+
+it("sandbox e turno real chegam ao mesmo agrupador de mensagens", () => {
+  expect(source).toContain("export function agruparMensagensDoTurno(");
+  expect(source).toMatch(
+    /const currentInboundText\s*=\s*preview\?\.currentInboundText\s*\?\?/,
+  );
+  expect(source).toMatch(
+    /const \{ mensagemDoJob, inboundsPendentes \} = agruparMensagensDoTurno\(/,
+  );
+  expect(source).toMatch(/agruparMensagensDoTurno\(\s*openingContext\.context\.messages,/);
+  expect(source).toContain("inboundMessageId: payload.inbound_message_id");
+});
