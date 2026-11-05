@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
+import { CatalogPickerDialog } from "@/components/inbox/composer/CatalogPickerDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
 import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
@@ -35,6 +36,7 @@ import { useGhostReplySuggestion } from "@/hooks/inbox/useGhostReplySuggestion";
 import { imagemDoClipboard } from "@/lib/inbox/clipboard-image";
 import { interpolateTemplate } from "@/lib/inbox/template-vars";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export interface ComposerHandle {
   focus: () => void;
@@ -93,7 +95,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const t = useT();
   const [text, setText] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingCaption, setPendingCaption] = useState("");
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
+  const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [activeTemplateIndex, setActiveTemplateIndex] = useState(0);
   const [mode, setMode] = useState<"reply" | "note">("reply");
@@ -223,8 +227,33 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     requestAnimationFrame(() => taRef.current?.focus());
   }
 
-  function applyTemplate(t: MessageTemplate) {
-    const filled = interpolateTemplate(t.body, { name: contactName ?? null });
+  function applyTemplate(template: MessageTemplate) {
+    const filled = interpolateTemplate(template.body, { name: contactName ?? null });
+    const mediaUrl = template.media_storage_path
+      ? `/api/v1/message-templates/${template.id}/media`
+      : template.audio_storage_path
+        ? `/api/v1/message-templates/${template.id}/audio`
+        : null;
+    if (mediaUrl) {
+      void (async () => {
+        try {
+          const response = await fetch(mediaUrl, { credentials: "same-origin" });
+          if (!response.ok) throw new Error("shortcut_media_download_failed");
+          const blob = await response.blob();
+          const nome =
+            template.media_file_name ?? template.audio_file_name ?? `atalho-${template.id}`;
+          setPendingCaption(filled);
+          setPendingFile(
+            new File([blob], nome, { type: blob.type || "application/octet-stream" }),
+          );
+          setText("");
+          setMenuDismissed(true);
+        } catch {
+          toast.error(t("Não consegui carregar a mídia deste atalho."));
+        }
+      })();
+      return;
+    }
     setText(filled);
     setMenuDismissed(true);
     const ta = taRef.current;
@@ -415,8 +444,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             {mode === "reply" && (
               <AttachMenu
                 disabled={respostaBarrada}
-                onPick={setPendingFile}
+                onPick={(file) => {
+                  setPendingCaption("");
+                  setPendingFile(file);
+                }}
                 onPickContact={() => setContactPickerOpen(true)}
+                onPickCatalog={() => setCatalogPickerOpen(true)}
               />
             )}
             <EmojiButton
@@ -526,8 +559,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       </div>
       <AttachmentPreviewDialog
         file={pendingFile}
+        initialCaption={pendingCaption}
         sending={upload.isPending || send.isPending}
-        onCancel={() => setPendingFile(null)}
+        onCancel={() => {
+          setPendingFile(null);
+          setPendingCaption("");
+        }}
         onSend={async (caption) => {
           if (!pendingFile) return;
           try {
@@ -541,7 +578,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 media_mime: uploaded.media_mime,
                 media_size_bytes: uploaded.media_size_bytes,
               },
-              { onSuccess: () => setPendingFile(null) },
+              {
+                onSuccess: () => {
+                  setPendingFile(null);
+                  setPendingCaption("");
+                },
+              },
             );
           } catch {
             // toast já disparado pelo onError de useUploadMedia; dialog fica aberto p/ retry
@@ -571,6 +613,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             { onSuccess: () => setContactPickerOpen(false) },
           );
         }}
+      />
+      <CatalogPickerDialog
+        open={catalogPickerOpen}
+        onOpenChange={setCatalogPickerOpen}
+        conversationId={conversationId}
       />
     </>
   );

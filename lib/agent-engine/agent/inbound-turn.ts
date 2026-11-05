@@ -173,6 +173,12 @@ import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
+import {
+  executarEnvioDeItemDoCatalogo,
+  sendCatalogItemInputSchema,
+  type EstadoEnvioCatalogo,
+} from './send-catalog-item';
+import { criarFilaDeEnviosDoTurno } from './fila-de-envios-do-turno';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -192,6 +198,11 @@ export const AGENT_TOOL_DEFS = {
     inputSchema: z.object({
       body: z.string().min(1).describe('corpo da mensagem, em pt-br, pronto para envio'),
     }),
+  },
+  crm_send_catalog_item: {
+    description:
+      'Envia fotos e informações de UM produto ativo. Informe somente o código exato do catálogo e de 1 a 4 fotos. Preço, legenda e arquivos são resolvidos pelo servidor.',
+    inputSchema: sendCatalogItemInputSchema,
   },
   update_lead_state: {
     description:
@@ -2197,6 +2208,8 @@ async function executarTurnoDoAgente(
 
   // Estado do RUN — vive só neste closure (isolamento por construção, acc 3).
   let seq = 0;
+  const filaDeEnvios = criarFilaDeEnviosDoTurno();
+  const estadoEnvioCatalogo: EstadoEnvioCatalogo = { produtos: 0, imagens: 0 };
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
@@ -2412,7 +2425,7 @@ async function executarTurnoDoAgente(
     }),
     send_template: tool({
       ...AGENT_TOOL_DEFS.send_template,
-      execute: async ({ template_name, language, values }) => {
+      execute: ({ template_name, language, values }) => filaDeEnvios.enfileirar(async () => {
         if (seq >= maxSendsPerTurn) {
           return {
             ok: false,
@@ -2527,7 +2540,7 @@ async function executarTurnoDoAgente(
           };
         }
         return { ok: true, status: 'aceita_aguardando_canal' };
-      },
+      }),
     }),
     search_knowledge: tool({
       ...AGENT_TOOL_DEFS.search_knowledge,
@@ -2571,7 +2584,7 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body }) => {
+      execute: ({ body }) => filaDeEnvios.enfileirar(async () => {
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
@@ -2912,7 +2925,7 @@ async function executarTurnoDoAgente(
             },
           };
         }
-      },
+      }),
     }),
     update_lead_state: tool({
       ...AGENT_TOOL_DEFS.update_lead_state,
@@ -3117,6 +3130,101 @@ async function executarTurnoDoAgente(
   // está configurada — main.ts sempre a preenche pelos knobs do env; tenant/lead
   // vêm da ROW do job (closure), nunca do payload do modelo. É MUTANTE (cria
   // cron_job), por isso fica fora de READ_ONLY_TOOLS.
+  if (agentConfig?.toolIds.includes('crm_send_catalog_item')) {
+    rawTools.crm_send_catalog_item = tool({
+      ...AGENT_TOOL_DEFS.crm_send_catalog_item,
+      execute: (raw) => filaDeEnvios.enfileirar(async () => {
+        try {
+          return await executarEnvioDeItemDoCatalogo({
+            db: pool,
+            admin: deps.crmCfg.supabase,
+            organizationId: tenantId,
+            conversationId: input.conversationId,
+            input: sendCatalogItemInputSchema.parse(raw),
+            estado: estadoEnvioCatalogo,
+            maxSendsRestantes: () => Math.max(0, maxSendsPerTurn - seq),
+            enviar: async (candidato) => {
+              const hasOpenCase =
+                agentConfig.casesEnabled === true
+                  ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
+                  : false;
+              const chain = await runBeforeSend({
+                pool,
+                log: runLog,
+                agentOperation,
+                tenantId,
+                leadId,
+                jobId: liveJob().id,
+                channelSessionId: input.channelSessionId,
+                body: candidato.body,
+                optedOutThisTurn,
+                crmDailyLimit: null,
+                now: clock(),
+                sleep: deps.sleep,
+                lgpd,
+                casesEnabled: agentConfig.casesEnabled,
+                hasOpenCase,
+                openedCaseThisTurn,
+                humanPromiseExtraTargets: agentConfig.handoffKeywords,
+                enforceInternalVocabulary: false,
+                agenda: {
+                  active: agentConfig.toolIds.includes('crm_book_appointment'),
+                  toolCalledThisTurn: agendaToolCalledThisTurn,
+                },
+                ...(deps.knobs.disclosureMode !== undefined
+                  ? { disclosureMode: deps.knobs.disclosureMode }
+                  : {}),
+                ...(semanticClassifier !== undefined
+                  ? { classifyPromiseSemantic: semanticClassifier }
+                  : {}),
+                send: (finalBody: string) => {
+                  seq += 1;
+                  return liveChannel().send({
+                    tenantId,
+                    leadId,
+                    jobId: liveJob().id,
+                    jobClaim: claimOfJob(liveJob()),
+                    agentOperation,
+                    seq,
+                    conversationId: input.conversationId,
+                    body: finalBody,
+                    metadata: candidato.metadata,
+                    ...(candidato.media ? { media: candidato.media } : {}),
+                  });
+                },
+              });
+              if (chain.status === 'vetoed') {
+                return { status: 'failed' as const, code: chain.code, message: chain.message };
+              }
+              const outcome = chain.outcome;
+              outcomes.push(outcome);
+              if (outcome.kind === 'sent' || outcome.kind === 'already_sent') {
+                return { status: 'sent' as const, messageId: outcome.messageId ?? undefined };
+              }
+              if (outcome.kind === 'queued') {
+                return { status: 'queued' as const, messageId: outcome.messageId ?? undefined };
+              }
+              return {
+                status: 'failed' as const,
+                code: outcome.kind,
+                message: 'o canal não confirmou o envio',
+              };
+            },
+          });
+        } catch (err) {
+          noteRunError(err instanceof Error ? err : new Error(String(err)));
+          return {
+            ok: false,
+            error: {
+              code: 'internal_error',
+              message: 'erro interno ao enviar o produto; não diga que foi enviado.',
+            },
+          };
+        }
+      }),
+    });
+  }
+
   const followupKnobs = deps.knobs.followup;
   if (followupKnobs !== undefined) {
     rawTools.schedule_followup = tool({

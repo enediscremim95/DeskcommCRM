@@ -28,6 +28,12 @@ export interface ChannelSendInput {
   /** Último inbound que fazia parte da foto usada para produzir esta resposta. */
   respondedThroughInboundId?: string;
   body: string;
+  metadata?: Record<string, unknown>;
+  media?: {
+    storagePath: string;
+    mime: "image/jpeg" | "image/png";
+    sizeBytes: number;
+  };
   /**
    * Presente = este envio é um TEMPLATE aprovado, não texto livre.
    *

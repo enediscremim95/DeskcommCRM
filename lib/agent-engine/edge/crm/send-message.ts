@@ -61,6 +61,12 @@ export interface SendMessageInput {
   /** Último inbound que o contexto desta resposta já cobria. */
   respondedThroughInboundId?: string;
   body: string;
+  metadata?: Record<string, unknown>;
+  media?: {
+    storagePath: string;
+    mime: "image/jpeg" | "image/png";
+    sizeBytes: number;
+  };
   /**
    * Presente = envio de TEMPLATE. O `body` continua sendo o texto RENDERIZADO — é
    * ele que entra no hash de idempotência e é ele que os gates de conteúdo avaliaram.
@@ -166,10 +172,18 @@ export async function sendTurnMessage(
                 template_language: input.template.language,
                 template_values: input.template.values,
               }
-            : { type: 'text' as const }),
+            : input.media
+              ? {
+                  type: 'image' as const,
+                  media_storage_path: input.media.storagePath,
+                  media_mime: input.media.mime,
+                  media_size_bytes: input.media.sizeBytes,
+                }
+              : { type: 'text' as const }),
           body: input.body,
           metadata: {
             idempotency_key: idempotencyKey,
+            ...(input.metadata ?? {}),
             ...(input.respondedThroughInboundId
               ? { responded_through_inbound_id: input.respondedThroughInboundId }
               : {}),

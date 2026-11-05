@@ -100,6 +100,7 @@ end $$;
 
 
 
+
 ALTER FUNCTION "public"."emit_event"("p_event_type" "text", "p_entity_kind" "text", "p_entity_id" "uuid", "p_payload" "jsonb", "p_metadata" "jsonb", "p_organization_id" "uuid") OWNER TO "postgres";
 
 
@@ -27228,6 +27229,156 @@ notify pgrst, 'reload schema';
 -- END MIGRATION 0279 LEAD NOVO NO TOPO
 
 -- ---- VARREDURA histórica anon, reaplicada no bloco final abaixo (migration 0116) ----
+-- ---- catalogo e atalhos com midia (migration 0298) ----
+-- 0298: imagem e video em respostas rapidas, mais imagens persistentes do catalogo.
+--
+-- message_templates continua aceitando o audio legado. A nova midia e um unico
+-- anexo de imagem ou video, e a constraint impede dois anexos no mesmo atalho.
+alter table public.message_templates
+  add column if not exists media_storage_path text,
+  add column if not exists media_mime_type text,
+  add column if not exists media_file_name text,
+  add column if not exists media_size_bytes bigint,
+  add column if not exists media_kind text;
+
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'message_templates_media_complete'
+       and conrelid = 'public.message_templates'::regclass
+  ) then
+    alter table public.message_templates
+      add constraint message_templates_media_complete check (
+        (
+          media_storage_path is null
+          and media_mime_type is null
+          and media_file_name is null
+          and media_size_bytes is null
+          and media_kind is null
+        )
+        or
+        (
+          media_storage_path is not null
+          and media_mime_type is not null
+          and media_file_name is not null
+          and media_size_bytes > 0
+          and media_kind in ('image', 'video')
+        )
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'message_templates_one_attachment'
+       and conrelid = 'public.message_templates'::regclass
+  ) then
+    alter table public.message_templates
+      add constraint message_templates_one_attachment check (
+        not (audio_storage_path is not null and media_storage_path is not null)
+      );
+  end if;
+end $$;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'catalog-media',
+  'catalog-media',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png']::text[]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+-- Troca ou remocao de qualquer anexo do atalho entra na fila ja consumida pelo
+-- worker. O trigger nao toca no Storage dentro da transacao.
+create or replace function public.fn_enqueue_message_template_audio_cleanup()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public', 'pg_temp'
+as $$
+begin
+  if tg_op = 'DELETE' then
+    insert into public.storage_redaction_queue (
+      organization_id, request_id, bucket, object_path, status, attempts,
+      error_message, processed_at
+    )
+    select
+      old.organization_id, null, 'whatsapp-media', caminho,
+      'pending', 0, null, null
+    from unnest(array[old.audio_storage_path, old.media_storage_path]) caminho
+    where caminho is not null
+    on conflict (bucket, object_path) do update set
+      organization_id = excluded.organization_id,
+      request_id = null,
+      status = 'pending',
+      attempts = 0,
+      error_message = null,
+      processed_at = null,
+      enqueued_at = now();
+  else
+    insert into public.storage_redaction_queue (
+      organization_id, request_id, bucket, object_path, status, attempts,
+      error_message, processed_at
+    )
+    select
+      old.organization_id, null, 'whatsapp-media', caminho,
+      'pending', 0, null, null
+    from (
+      values
+        (
+          old.audio_storage_path,
+          old.audio_storage_path is distinct from new.audio_storage_path
+        ),
+        (
+          old.media_storage_path,
+          old.media_storage_path is distinct from new.media_storage_path
+        )
+    ) as removida(caminho, mudou)
+    where caminho is not null and mudou
+    on conflict (bucket, object_path) do update set
+      organization_id = excluded.organization_id,
+      request_id = null,
+      status = 'pending',
+      attempts = 0,
+      error_message = null,
+      processed_at = null,
+      enqueued_at = now();
+  end if;
+
+  return case when tg_op = 'DELETE' then old else new end;
+end;
+$$;
+
+revoke execute on function public.fn_enqueue_message_template_audio_cleanup()
+  from public, anon, authenticated;
+
+drop trigger if exists trg_message_template_audio_cleanup on public.message_templates;
+create trigger trg_message_template_audio_cleanup
+  before update of audio_storage_path, media_storage_path or delete
+  on public.message_templates
+  for each row execute function public.fn_enqueue_message_template_audio_cleanup();
+
+comment on column public.message_templates.media_storage_path is
+  'Imagem ou video privado da resposta rapida; remocoes entram em storage_redaction_queue.';
+comment on column public.message_templates.media_kind is
+  'Tipo provider-agnostic do anexo da resposta rapida: image ou video.';
+
+-- ---- catalogo do painel e legenda de atendimento (migration 0299) ----
+alter table public.catalog_products
+  add column if not exists legenda_atendimento text,
+  add column if not exists imagem_origem_url text;
+
+comment on column public.catalog_products.legenda_atendimento is
+  'Complemento opcional escrito no CRM e acrescentado ao fim da legenda enviada ao cliente.';
+comment on column public.catalog_products.imagem_origem_url is
+  'URL recebida do painel na última foto baixada com sucesso; evita baixar novamente sem mudança.';
+
+notify pgrst, 'reload schema';
+
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$
 declare
@@ -30188,6 +30339,118 @@ revoke all on function public.fn_reply_begin(uuid,uuid,uuid,uuid,uuid)
   from public,anon,authenticated;
 grant execute on function public.fn_reply_begin(uuid,uuid,uuid,uuid,uuid)
   to service_role;
+
+-- ---- 0300: identidade do produto do painel e galeria ordenada ----
+create table if not exists public.catalog_product_groups (
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  produto_codigo text not null,
+  nome text not null,
+  descricao text,
+  acompanha text[] not null default '{}',
+  categoria text,
+  ativo boolean not null default true,
+  origem text not null default 'painel',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (organization_id, produto_codigo)
+);
+alter table public.catalog_product_groups enable row level security;
+drop policy if exists catalog_product_groups_select on public.catalog_product_groups;
+create policy catalog_product_groups_select on public.catalog_product_groups for select using (
+  organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()
+);
+drop policy if exists catalog_product_groups_write on public.catalog_product_groups;
+create policy catalog_product_groups_write on public.catalog_product_groups
+  using (public.fn_is_platform_admin() or (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')))
+  with check (public.fn_is_platform_admin() or (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')));
+revoke all on public.catalog_product_groups from anon;
+grant select, insert, update, delete on public.catalog_product_groups to authenticated;
+grant all on public.catalog_product_groups to service_role;
+drop trigger if exists trg_catalog_product_groups_updated_at on public.catalog_product_groups;
+create trigger trg_catalog_product_groups_updated_at before update on public.catalog_product_groups
+  for each row execute function public.fn_set_updated_at();
+alter table public.catalog_products add column if not exists produto_codigo text,
+  add column if not exists opcao_preco text;
+-- Linhas legadas do painel não revelam o SKU pai. Não invente um grupo por
+-- código de linha: o importador do retrato completo religa as linhas válidas e
+-- desativa as linhas antigas que não existem mais no snapshot.
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'catalog_products_product_group_fk' and conrelid = 'public.catalog_products'::regclass) then
+    alter table public.catalog_products add constraint catalog_products_product_group_fk
+      foreign key (organization_id, produto_codigo)
+      references public.catalog_product_groups (organization_id, produto_codigo)
+      on update cascade on delete set null;
+  end if;
+end $$;
+create index if not exists catalog_products_org_parent_idx
+  on public.catalog_products (organization_id, produto_codigo, ativo);
+create table if not exists public.catalog_product_images (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null,
+  produto_codigo text not null,
+  posicao smallint not null,
+  storage_path text not null,
+  mime_type text not null,
+  size_bytes bigint not null,
+  source_hash text not null,
+  imagem_origem_url text not null,
+  created_at timestamptz not null default now(),
+  constraint catalog_product_images_parent_fk foreign key (organization_id, produto_codigo)
+    references public.catalog_product_groups (organization_id, produto_codigo) on update cascade on delete cascade,
+  constraint catalog_product_images_position_check check (posicao between 1 and 9),
+  constraint catalog_product_images_mime_check check (mime_type in ('image/jpeg', 'image/png')),
+  constraint catalog_product_images_size_check check (size_bytes between 1 and 5242880),
+  unique (organization_id, produto_codigo, posicao),
+  unique (organization_id, produto_codigo, source_hash)
+);
+create index if not exists catalog_product_images_org_parent_idx
+  on public.catalog_product_images (organization_id, produto_codigo, posicao);
+alter table public.catalog_product_images enable row level security;
+drop policy if exists catalog_product_images_select on public.catalog_product_images;
+create policy catalog_product_images_select on public.catalog_product_images for select using (
+  organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()
+);
+drop policy if exists catalog_product_images_write on public.catalog_product_images;
+create policy catalog_product_images_write on public.catalog_product_images
+  using (public.fn_is_platform_admin() or (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')))
+  with check (public.fn_is_platform_admin() or (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')));
+revoke all on public.catalog_product_images from anon;
+grant select, insert, update, delete on public.catalog_product_images to authenticated;
+grant all on public.catalog_product_images to service_role;
+create or replace function public.fn_sync_catalog_product_images(
+  p_organization_id uuid, p_produto_codigo text, p_images jsonb
+)
+returns void language plpgsql security definer set search_path to 'public', 'pg_temp'
+as $$
+begin
+  if jsonb_typeof(p_images) <> 'array' or jsonb_array_length(p_images) > 9 then
+    raise exception 'catalog_gallery_invalid' using errcode = '22023';
+  end if;
+  if not exists (select 1 from public.catalog_product_groups where organization_id = p_organization_id and produto_codigo = p_produto_codigo) then
+    raise exception 'catalog_parent_not_found' using errcode = '23503';
+  end if;
+  delete from public.catalog_product_images where organization_id = p_organization_id and produto_codigo = p_produto_codigo;
+  insert into public.catalog_product_images (
+    organization_id, produto_codigo, posicao, storage_path, mime_type,
+    size_bytes, source_hash, imagem_origem_url
+  )
+  select p_organization_id, p_produto_codigo, i.posicao, i.storage_path,
+    i.mime_type, i.size_bytes, i.source_hash, i.imagem_origem_url
+  from jsonb_to_recordset(p_images) as i(
+    posicao smallint, storage_path text, mime_type text, size_bytes bigint,
+    source_hash text, imagem_origem_url text
+  );
+end;
+$$;
+revoke execute on function public.fn_sync_catalog_product_images(uuid, text, jsonb) from public, anon, authenticated;
+grant execute on function public.fn_sync_catalog_product_images(uuid, text, jsonb) to service_role;
+comment on table public.catalog_product_groups is 'Identidade do produto no painel. O preco continua nas linhas vendaveis.';
+comment on table public.catalog_product_images is 'Galeria ordenada do SKU pai, com no maximo nove imagens no catalog-media.';
+comment on column public.catalog_products.produto_codigo is 'SKU pai do painel; nulo em itens manuais sem familia.';
+comment on column public.catalog_products.opcao_preco is 'Rotulo das dimensoes que alteram o preco.';
+notify pgrst, 'reload schema';
+
+-- END migration 0300: identidade do produto do painel e galeria ordenada
 
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.

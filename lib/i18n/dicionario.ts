@@ -37,6 +37,23 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Vem do painel": { es: "Viene del panel" },
+  "Nome, descrição, preço, foto e situação são alterados no painel de produtos.": {
+    es: "El nombre, la descripción, el precio, la foto y el estado se cambian en el panel de productos.",
+  },
+  "Legenda complementar do atendimento": { es: "Texto complementario de la atención" },
+  "Vai ao final da legenda enviada e é cortada no limite aceito pelo canal.": {
+    es: "Va al final del texto enviado y se recorta según el límite aceptado por el canal.",
+  },
+  "A foto deste produto é atualizada pelo painel.": {
+    es: "La foto de este producto se actualiza desde el panel.",
+  },
+  "Imagem externa: no envio, este produto sai como texto.": {
+    es: "Imagen externa: al enviarlo, este producto sale como texto.",
+  },
+  "O catálogo da loja. Produtos do painel mantêm nome, preço e foto sincronizados; o CRM acrescenta a legenda do atendimento.": {
+    es: "El catálogo de la tienda. Los productos del panel mantienen nombre, precio y foto sincronizados; el CRM agrega el texto de atención.",
+  },
   "Erro ao remover o áudio.": { es: "No se pudo eliminar el audio." },
   "Áudio é permitido apenas em resposta compartilhada.": { es: "El audio solo se permite en una respuesta compartida." },
   "O áudio precisa ter até 16 MB.": { es: "El audio debe tener hasta 16 MB." },
@@ -46,6 +63,7 @@ export const DICIONARIO: Traducoes = {
   "Erro ao vincular o áudio.": { es: "No se pudo vincular el audio." },
   "Áudio não encontrado.": { es: "Audio no encontrado." },
   "O texto foi salvo, mas o áudio não.": { es: "El texto se guardó, pero el audio no." },
+  "O texto foi salvo, mas o anexo não.": { es: "El texto se guardó, pero el archivo no." },
   "Áudio da equipe (opcional)": { es: "Audio del equipo (opcional)" },
   "O servidor converte para OGG/Opus para chegar como mensagem de voz.": { es: "El servidor convierte a OGG/Opus para que llegue como mensaje de voz." },
   "Remover áudio": { es: "Eliminar audio" },
@@ -8064,6 +8082,43 @@ export const DICIONARIO: Traducoes = {
   "Salvar produto": { es: "Guardar producto" },
   "em estoque": { es: "en stock" },
   "sem controle de estoque": { es: "sin control de stock" },
+  "Imagem do produto": { es: "Imagen del producto" },
+  "JPEG ou PNG até 5 MB.": { es: "JPEG o PNG de hasta 5 MB." },
+  "Produto ativo": { es: "Producto activo" },
+  "Produto atualizado": { es: "Producto actualizado" },
+  "Enviar produtos do catálogo": { es: "Enviar productos del catálogo" },
+  "Escolha até 10 produtos. Cada item será enviado com foto, nome, preço e descrição.": {
+    es: "Elija hasta 10 productos. Cada artículo se enviará con foto, nombre, precio y descripción.",
+  },
+  "Buscar produtos": { es: "Buscar productos" },
+  "Carregando catálogo…": { es: "Cargando catálogo…" },
+  "Nenhum produto ativo encontrado.": { es: "No se encontró ningún producto activo." },
+  "Produtos enviados.": { es: "Productos enviados." },
+  "Imagem ou vídeo da equipe (opcional)": { es: "Imagen o video del equipo (opcional)" },
+  "Remover mídia": { es: "Quitar archivo" },
+  "A mídia será removida ao salvar.": { es: "El archivo se quitará al guardar." },
+  "Não consegui carregar o catálogo.": { es: "No pude cargar el catálogo." },
+  "Não consegui carregar a mídia deste atalho.": {
+    es: "No pude cargar el archivo de este atajo.",
+  },
+  "O produto foi salvo, mas a imagem não.": {
+    es: "El producto se guardó, pero la imagen no.",
+  },
+  "Erro ao remover a mídia.": { es: "Error al quitar el archivo." },
+  "JPEG ou PNG até 5 MB. MP4 ou 3GPP até 16 MB.": {
+    es: "JPEG o PNG de hasta 5 MB. MP4 o 3GPP de hasta 16 MB.",
+  },
+  "Imagem do atalho": { es: "Imagen del atajo" },
+  "Escolha no máximo 10 produtos por envio.": {
+    es: "Elija como máximo 10 productos por envío.",
+  },
+  "Não consegui enviar os produtos.": { es: "No pude enviar los productos." },
+  "Alguns produtos não foram enviados. Confira a conversa.": {
+    es: "Algunos productos no se enviaron. Revise la conversación.",
+  },
+  "Os produtos aguardam a conexão do canal.": {
+    es: "Los productos esperan la conexión del canal.",
+  },
 
   // Chamada de voz WhatsApp (WaCalls, spec 18)
   // "Chamar", não "Ligar" — a chave já existe com outro sentido (ativar/toggle,

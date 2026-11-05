@@ -28,6 +28,18 @@ export const TOOLS_COMERCIO = declararTools([
     pacotes: ["vender", "atender"],
   },
   {
+    name: "crm_send_catalog_item",
+    category: "write",
+    rotulo: "Enviar produto com fotos",
+    explicacao:
+      "Envia ao cliente as fotos e o preço atual de um produto cadastrado, sem permitir que o assistente invente valor, legenda ou endereço de imagem.",
+    oQueToca: "Catálogo e conversa",
+    // Mesmo precedente de `crm_send_whatsapp_message`: fala com o cliente, então é risco crítico e NUNCA entra
+    // nas capacidades padrão de um agente novo; só quem escolhe a ferramenta de propósito a recebe.
+    risco: "critico",
+    pacotes: ["atender"],
+  },
+  {
     name: "crm_list_privacy_requests",
     category: "read",
     rotulo: "Ver pedidos de privacidade",

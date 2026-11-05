@@ -18,8 +18,8 @@ import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
-const COLS =
-  "id, organization_id, owner_user_id, title, body, shortcut, audio_storage_path, audio_mime_type, audio_file_name, audio_size_bytes, created_by_user_id, created_at, updated_at";
+const COLS: string =
+  "id, organization_id, owner_user_id, title, body, shortcut, audio_storage_path, audio_mime_type, audio_file_name, audio_size_bytes, media_storage_path, media_mime_type, media_file_name, media_size_bytes, media_kind, created_by_user_id, created_at, updated_at";
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     actorUserId: user.id,
     organizationId: org.orgId,
     resourceType: "message_template",
-    resourceId: data.id,
+    resourceId: (data as unknown as { id: string }).id,
     requestId,
     metadata: { shared, title },
   });
