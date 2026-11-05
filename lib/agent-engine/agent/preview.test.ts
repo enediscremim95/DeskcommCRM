@@ -2,7 +2,13 @@ import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels';
 import { describe, it, expect, vi } from 'vitest';
 import { tool } from '../edge/llm/run-model-call';
 import { z } from 'zod';
-import { applyPreviewPolicy, newPreviewResult, scenarioContext, type TurnPreview } from './preview';
+import {
+  applyPreviewPolicy,
+  newPreviewResult,
+  scenarioContext,
+  withPreviewToolTrace,
+  type TurnPreview,
+} from './preview';
 import { evaluateBeforeSend, type GateContext } from '../guardrails/before-send';
 import { PACING_DEFAULTS } from '../pacing/defaults';
 import { SPINNING_DEFAULTS } from '../spinning/defaults';
@@ -90,6 +96,17 @@ describe('preview policy shares gates and contains side effects', () => {
     expect(read).toHaveBeenCalledOnce();
     expect(p.result.candidates).toHaveLength(1);
   });
+  it.each(['crm_search_products', 'crm_search_knowledge', 'crm_get_lead'])(
+    'executes the organization-scoped read %s even without a scenario contact',
+    async (name) => {
+      const read = vi.fn(async () => ({ ok: true }));
+      const p = preview();
+      const tools = applyPreviewPolicy({ [name]: definition(read) }, p, gate(), () => []);
+      await execute(tools, name, { termo: 'kit' });
+      expect(read).toHaveBeenCalledOnce();
+      expect(p.result.impediments).toEqual([]);
+    },
+  );
   it('fails closed for unknown capability and never invokes it', async () => {
     const p = preview(),
       spy = vi.fn();
@@ -112,6 +129,35 @@ describe('preview policy shares gates and contains side effects', () => {
     expect(ctx).toEqual(before);
     expect(result.trace.length).toBeGreaterThan(1);
   });
+});
+
+it('traces every simulated tool result without PII, ids or message bodies', async () => {
+  const p = preview();
+  const tools = withPreviewToolTrace(
+    {
+      ok_tool: definition(() => ({ ok: true, produtos: [{ nome: 'Kit' }] })),
+      failed_tool: definition(() => ({ ok: false, error: { code: 'product_not_found' } })),
+      throwing_tool: definition(() => {
+        throw new Error('database unavailable');
+      }),
+    },
+    p,
+  );
+  await execute(tools, 'ok_tool', {
+      termo: 'kit',
+      lead_id: '99999999-9999-4999-8999-999999999999',
+      body: 'telefone 41999999999',
+      observacao: 'falar com cliente@example.com ou +55 (41) 99999-9999',
+  });
+  await execute(tools, 'failed_tool');
+  await expect(execute(tools, 'throwing_tool')).rejects.toThrow('database unavailable');
+  expect(p.result.toolTrace).toHaveLength(3);
+  expect(p.result.toolTrace.map((entry) => entry.ok)).toEqual([true, false, false]);
+  expect(JSON.stringify(p.result.toolTrace)).not.toContain('41999999999');
+  expect(JSON.stringify(p.result.toolTrace)).not.toContain('99999999-9999-4999-8999-999999999999');
+  expect(JSON.stringify(p.result.toolTrace)).not.toContain('cliente@example.com');
+  expect(JSON.stringify(p.result.toolTrace)).not.toContain('99999-9999');
+  expect(p.result.toolTrace[1]?.resultado).toBe('erro:product_not_found');
 });
 
 it('refreshes agenda read state for each candidate while writes stay proposals', async () => {
@@ -143,4 +189,12 @@ it('uses only supplied in-memory sample contact in sandbox', () => {
   const context = scenarioContext([], { name: 'Maria Cenário', phone: '+5511999999999' });
   expect(context.context.contact.name).toBe('Maria Cenário');
   expect(context.context.contact.phone).toBe('+5511999999999');
+});
+it('preserves the complete inbound and outbound history supplied by the caller', () => {
+  const messages = [
+    { direction: 'inbound' as const, body: 'Quero um kit', sent_at: '2026-11-05T12:00:00.000Z' },
+    { direction: 'outbound' as const, body: 'Qual modelo?', sent_at: '2026-11-05T12:00:01.000Z' },
+    { direction: 'inbound' as const, body: 'O azul', sent_at: '2026-11-05T12:00:02.000Z' },
+  ];
+  expect(scenarioContext(messages).context.messages).toEqual(messages);
 });

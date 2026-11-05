@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { QueryResult, QueryResultRow } from "pg";
 import { z } from "zod";
 
 import { montarLegendaDaTool, type LinhaDePrecoParaLegenda } from "@/lib/catalogo/legenda-da-tool";
@@ -34,6 +35,11 @@ export interface CandidatoCatalogo {
 export type ResultadoCandidatoCatalogo =
   | { status: "sent" | "queued"; messageId?: string }
   | { status: "failed"; code: string; message: string };
+export interface EnvioCatalogoSimulado {
+  produtoCodigo: string;
+  legenda: string;
+  imagens: Array<{ nome: string; url: string }>;
+}
 
 export async function executarEnvioDeItemDoCatalogo(args: {
   db: Queryable;
@@ -138,4 +144,74 @@ export async function executarEnvioDeItemDoCatalogo(args: {
     return { ok: false, error: { code: falhou.motivo, message: "o envio foi vetado ou falhou; não diga ao cliente que foi enviado." }, results: resultados };
   }
   return { ok: true, ja_enviado: false, produto_codigo: produto.produto_codigo, results: resultados };
+}
+
+/**
+ * Exercita a mesma validação do envio real sem consultar `messages`, materializar
+ * mídia ou alcançar o canal. A única troca é nas três portas de efeito da função
+ * real: a consulta de duplicidade, a cópia de Storage e o callback de envio.
+ */
+export async function simularEnvioDeItemDoCatalogo(args: {
+  db: Queryable;
+  admin: SupabaseClient;
+  organizationId: string;
+  input: z.infer<typeof sendCatalogItemInputSchema>;
+  estado: EstadoEnvioCatalogo;
+  maxSendsRestantes: () => number;
+  codigosJaEnviados: Set<string>;
+}): Promise<{ resultado: Record<string, unknown>; envio?: EnvioCatalogoSimulado }> {
+  const candidatos: CandidatoCatalogo[] = [];
+  const dbSemMensagens: Queryable = {
+    async query<R extends QueryResultRow = QueryResultRow>(
+      text: string,
+      values?: unknown[],
+    ): Promise<QueryResult<R>> {
+      if (text.includes("from messages") && text.includes("catalog_product_code")) {
+        const codigo = typeof values?.[2] === "string" ? values[2] : "";
+        return {
+          rows: [{ existe: args.codigosJaEnviados.has(codigo) }],
+        } as unknown as QueryResult<R>;
+      }
+      return args.db.query<R>(text, values);
+    },
+  };
+  const resultado = await executarEnvioDeItemDoCatalogo({
+    db: dbSemMensagens,
+    admin: args.admin,
+    organizationId: args.organizationId,
+    conversationId: "",
+    input: args.input,
+    estado: args.estado,
+    maxSendsRestantes: args.maxSendsRestantes,
+    materializar: async (_admin, _org, _conversation, foto) => ({
+      storagePath: foto.storage_path,
+      mime: foto.mime_type,
+      sizeBytes: foto.size_bytes,
+    }),
+    enviar: async (candidato) => {
+      candidatos.push(candidato);
+      return { status: "sent" };
+    },
+  });
+  if (resultado.ok !== true || resultado.ja_enviado === true) return { resultado };
+  const produtoCodigo =
+    typeof resultado.produto_codigo === "string" ? resultado.produto_codigo : "";
+  if (!produtoCodigo) return { resultado };
+  args.codigosJaEnviados.add(produtoCodigo);
+  const legenda = candidatos.find((candidato) => candidato.body)?.body ?? "";
+  const imagens = candidatos.flatMap((candidato) => {
+    const storagePath = candidato.media?.storagePath;
+    if (!storagePath) return [];
+    const publicUrl = args.admin.storage.from("catalog-media").getPublicUrl(storagePath).data.publicUrl;
+    return [
+      {
+        nome: storagePath.split("/").at(-1) ?? storagePath,
+        url: publicUrl,
+      },
+    ];
+  });
+  return {
+    resultado,
+    envio: { produtoCodigo, legenda, imagens },
+  };
 }
