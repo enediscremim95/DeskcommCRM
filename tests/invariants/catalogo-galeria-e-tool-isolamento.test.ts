@@ -47,6 +47,28 @@ describe("galeria e lookup da tool isolados por organização", () => {
     ).toBe(1);
   });
 
+  it("o agente lê somente o produto-pai da própria organização, mesmo com o mesmo SKU nas duas", () => {
+    expect(
+      countAs(AGENT_A, `select count(*) from public.catalog_product_groups where produto_codigo='MESMO-SKU';`),
+    ).toBe(1);
+    expect(
+      countAs(
+        AGENT_A,
+        `select count(*) from public.catalog_product_groups where organization_id='${ORG_B}';`,
+      ),
+    ).toBe(0);
+  });
+
+  it("o gerente da organização A não cria produto-pai na organização B", () => {
+    expect(
+      writeCountAs(
+        MANAGER_A,
+        `insert into public.catalog_product_groups (organization_id,produto_codigo,nome)
+         values ('${ORG_B}','SKU-FORJADO','Forjado')`,
+      ),
+    ).toBe(0);
+  });
+
   it("o gerente da organização A não grava foto no pai da organização B", () => {
     expect(
       writeCountAs(
