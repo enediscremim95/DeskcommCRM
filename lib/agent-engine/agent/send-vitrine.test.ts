@@ -3,7 +3,15 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type { VitrinesConfig } from "@/lib/ai/guardrails-schema";
-import { executarVitrine, sendVitrineInputSchema } from "./send-vitrine";
+import { DEFAULT_CHANNEL_PROVIDER } from "@/lib/channels";
+import { PACING_DEFAULTS } from "../pacing/defaults";
+import { SPINNING_DEFAULTS } from "../spinning/defaults";
+import { evaluateBeforeSend, type GateContext } from "../guardrails/before-send";
+import {
+  classificadorSemanticoParaMensagem,
+  executarVitrine,
+  sendVitrineInputSchema,
+} from "./send-vitrine";
 
 const vitrines: VitrinesConfig = {
   padrinhos: {
@@ -15,6 +23,29 @@ const vitrines: VitrinesConfig = {
     ],
   },
 };
+
+function contextoDoGate(body: string, optedOut = false): GateContext {
+  return {
+    now: new Date("2026-11-05T15:00:00Z"),
+    body,
+    optedOut,
+    provider: DEFAULT_CHANNEL_PROVIDER,
+    messagingWindow: { lastInboundAt: new Date("2026-11-05T14:00:00Z") },
+    pacing: {
+      knobs: PACING_DEFAULTS,
+      state: { lastSentAt: null, sentToday: 0, numberActivatedAt: null },
+      crmDailyLimit: null,
+    },
+    spinning: { knobs: SPINNING_DEFAULTS, window: [] },
+    promise: { table: null },
+    semanticPromise: null,
+    disclosure: { template: null, isFirstOutbound: false, mode: "inject" },
+    lgpd: null,
+    casesEnabled: false,
+    hasOpenCase: false,
+    openedCaseThisTurn: false,
+  };
+}
 
 function cenario(overrides: Partial<Parameters<typeof executarVitrine>[0]> = {}) {
   const ordem: string[] = [];
@@ -73,6 +104,92 @@ describe("crm_send_vitrine", () => {
       ],
       instrucao: expect.stringContaining("Não repita nome nem preço"),
     });
+  });
+
+  it("não chama classificador semântico que bloquearia intro e fechamento fixos", async () => {
+    const classificador = vi.fn(async (_body: string) => ({
+      isPromise: true,
+      suspectPhrase: "Consigo entregar amanhã sem custo de frete",
+    }));
+    const selecionado = classificadorSemanticoParaMensagem(
+      "texto_fixo_vitrine",
+      classificador,
+    );
+    const textos: string[] = [];
+    const c = cenario({
+      enviarTexto: vi.fn(async (body: string) => {
+        if (selecionado) {
+          const classificacao = await selecionado(body);
+          if (classificacao.isPromise) {
+            return {
+              status: "failed" as const,
+              code: "promise_semantic",
+              message: "bloqueado",
+            };
+          }
+        }
+        textos.push(body);
+        return { status: "sent" as const };
+      }),
+    });
+
+    const resultado = await executarVitrine(c.args);
+
+    expect(resultado).toMatchObject({ ok: true });
+    expect(textos).toEqual([vitrines.padrinhos!.intro, vitrines.padrinhos!.fechamento]);
+    expect(classificador).not.toHaveBeenCalled();
+  });
+
+  it("mantém texto do modelo sujeito ao gate semântico", async () => {
+    const classificador = vi.fn(async (_body: string) => ({
+      isPromise: true,
+      suspectPhrase: "entrego amanhã",
+    }));
+    const selecionado = classificadorSemanticoParaMensagem("modelo", classificador);
+    expect(selecionado).toBe(classificador);
+
+    const semanticPromise = await selecionado!("Consigo entregar amanhã.");
+    const resultado = evaluateBeforeSend({
+      ...contextoDoGate("Consigo entregar amanhã."),
+      semanticPromise,
+    });
+
+    expect(resultado.veto).toMatchObject({ code: "promise_semantic" });
+    expect(classificador).toHaveBeenCalledOnce();
+  });
+
+  it("mantém os gates determinísticos no texto fixo, inclusive opt-out", async () => {
+    const classificador = vi.fn(async (_body: string) => ({
+      isPromise: true,
+      suspectPhrase: "inventada",
+    }));
+    const selecionado = classificadorSemanticoParaMensagem(
+      "texto_fixo_vitrine",
+      classificador,
+    );
+    const c = cenario({
+      enviarTexto: vi.fn(async (body: string) => {
+        const resultado = evaluateBeforeSend({
+          ...contextoDoGate(body, true),
+          semanticPromise: selecionado ? await selecionado(body) : null,
+        });
+        return resultado.veto
+          ? {
+              status: "failed" as const,
+              code: resultado.veto.code,
+              message: resultado.veto.message,
+            }
+          : { status: "sent" as const };
+      }),
+    });
+    const resultado = await executarVitrine(c.args);
+
+    expect(resultado).toMatchObject({
+      ok: false,
+      error: { code: "contato_bloqueado" },
+    });
+    expect(classificador).not.toHaveBeenCalled();
+    expect(c.enviarItem).not.toHaveBeenCalled();
   });
 
   it("lista assuntos válidos quando o modelo pede um desconhecido", async () => {
@@ -142,5 +259,16 @@ describe("crm_send_vitrine", () => {
     expect(fonte).toMatch(/toolIds\.includes\('crm_send_vitrine'\)[\s\S]{0,120}Object\.keys\(agentConfig\.vitrines\)\.length > 0/);
     expect(fonte).toMatch(/emSandbox[\s\S]{0,8000}simularEnvioDeItemDoCatalogo/);
     expect(fonte).toContain("preview.result.envios.push");
+    const blocoTextoFixo = fonte.slice(
+      fonte.indexOf("enviarTexto: async (body, papel)"),
+      fonte.indexOf("enviarItem: async (item)"),
+    );
+    const blocoSendMessage = fonte.slice(
+      fonte.indexOf("send_message: tool({"),
+      fonte.indexOf("search_knowledge:", fonte.indexOf("send_message: tool({")),
+    );
+    expect(blocoTextoFixo).toContain("classificadorDoTextoFixoDaVitrine");
+    expect(blocoTextoFixo).not.toContain("classifyPromiseSemantic: semanticClassifier");
+    expect(blocoSendMessage).toContain("classifyPromiseSemantic: semanticClassifier");
   });
 });

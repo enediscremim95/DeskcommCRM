@@ -25,6 +25,7 @@ import {
   pularMensagemDuplicada,
   registrarMensagemEnviadaNoTurno,
 } from './dedupe-mensagem-turno';
+import type { GuardaAnuncioSemVitrine } from './anuncio-sem-vitrine';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -170,6 +171,7 @@ export function applyPreviewPolicy(
     limite?: number;
     contador?: { valor: number };
   },
+  guardaAnuncioSemVitrine?: GuardaAnuncioSemVitrine,
 ): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -205,6 +207,8 @@ export function applyPreviewPolicy(
                 });
                 if (duplicada) return duplicada;
               }
+              const anuncioSemVitrine = guardaAnuncioSemVitrine?.avaliar(body);
+              if (anuncioSemVitrine) return anuncioSemVitrine;
               if (
                 dedupe?.limite !== undefined &&
                 dedupe.contador !== undefined &&

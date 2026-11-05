@@ -161,7 +161,7 @@ describe("mapas de arquitetura — coerência interna", () => {
     ) as Mapa;
     const grau = (id: string) =>
       (m.edges ?? []).filter((e) => e.from === id || e.to === id).length;
-    for (const peca of ["vitrine", "dedupe"]) {
+    for (const peca of ["vitrine", "dedupe", "anuncio"]) {
       expect(grau(peca), `${peca} com menos de 2 arestas`).toBeGreaterThanOrEqual(2);
     }
   });

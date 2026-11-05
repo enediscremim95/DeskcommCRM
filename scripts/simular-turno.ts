@@ -173,7 +173,10 @@ async function main(): Promise<void> {
   history.catalogProductCodesAlreadySent = [
     ...new Set([
       ...history.catalogProductCodesAlreadySent,
-      ...result.envios.map((envio) => envio.produtoCodigo),
+      // Abertura e fechamento da vitrine entram em `envios` como texto, sem código de produto.
+      ...result.envios
+        .map((envio) => envio.produtoCodigo)
+        .filter((codigo): codigo is string => typeof codigo === "string" && codigo.length > 0),
     ]),
   ];
   await mkdir(path.dirname(historyFile), { recursive: true });

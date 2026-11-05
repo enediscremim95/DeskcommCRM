@@ -188,12 +188,17 @@ import {
   type ResultadoCandidatoCatalogo,
 } from './send-catalog-item';
 import { criarFilaDeEnviosDoTurno } from './fila-de-envios-do-turno';
-import { executarVitrine, sendVitrineInputSchema } from './send-vitrine';
+import {
+  classificadorSemanticoParaMensagem,
+  executarVitrine,
+  sendVitrineInputSchema,
+} from './send-vitrine';
 import {
   mensagemJaEnviadaNesteTurno,
   pularMensagemDuplicada,
   registrarMensagemEnviadaNoTurno,
 } from './dedupe-mensagem-turno';
+import { criarGuardaAnuncioSemVitrine } from './anuncio-sem-vitrine';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -2186,6 +2191,10 @@ async function executarTurnoDoAgente(
   const estadoEnvioCatalogo: EstadoEnvioCatalogo = { produtos: 0, imagens: 0 };
   const codigosDeCatalogoJaEnviados = new Set(preview?.catalogProductCodesAlreadySent ?? []);
   const mensagensEnviadasNesteTurno = new Set<string>();
+  const vitrineAtivaNesteAgente =
+    agentConfig?.toolIds.includes('crm_send_vitrine') === true &&
+    Object.keys(agentConfig.vitrines).length > 0;
+  const guardaAnuncioSemVitrine = criarGuardaAnuncioSemVitrine(vitrineAtivaNesteAgente);
   let previewContextDoTurno: Awaited<ReturnType<typeof previewGateContext>> | null = null;
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
@@ -2221,6 +2230,12 @@ async function executarTurnoDoAgente(
           { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
         )
     : undefined;
+  // Só intro/fechamento usam esta seleção. Texto do modelo continua recebendo
+  // `semanticClassifier` diretamente no send_message, como antes.
+  const classificadorDoTextoFixoDaVitrine = classificadorSemanticoParaMensagem(
+    'texto_fixo_vitrine',
+    semanticClassifier,
+  );
   let outOfTablePromiseAttempted = false;
   // Spec 15 (Wave 4 lê este flag): true quando open_human_case abriu um caso NESTE
   // turno — aqui só declara e seta; o consumo (ex.: guardrail de promessa) é da Wave 4.
@@ -2568,6 +2583,8 @@ async function executarTurnoDoAgente(
           log: runLog,
         });
         if (duplicada) return duplicada;
+        const anuncioSemVitrine = guardaAnuncioSemVitrine.avaliar(body);
+        if (anuncioSemVitrine) return anuncioSemVitrine;
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
@@ -3123,7 +3140,7 @@ async function executarTurnoDoAgente(
       ...AGENT_TOOL_DEFS.crm_send_catalog_item,
       execute: (raw) => filaDeEnvios.enfileirar(async () => {
         try {
-          return await executarEnvioDeItemDoCatalogo({
+          const resultado = await executarEnvioDeItemDoCatalogo({
             db: pool,
             admin: deps.crmCfg.supabase,
             organizationId: tenantId,
@@ -3199,6 +3216,10 @@ async function executarTurnoDoAgente(
               };
             },
           });
+          if (resultado.ok === true) {
+            guardaAnuncioSemVitrine.registrarSucessoDeCatalogoOuVitrine();
+          }
+          return resultado;
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
@@ -3228,6 +3249,9 @@ async function executarTurnoDoAgente(
                 codigosJaEnviados: codigosDeCatalogoJaEnviados,
               });
               if (simulado.envio) preview.result.envios.push(simulado.envio);
+              if (simulado.resultado.ok === true) {
+                guardaAnuncioSemVitrine.registrarSucessoDeCatalogoOuVitrine();
+              }
               return simulado.resultado;
             } catch (err) {
               noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -3244,10 +3268,7 @@ async function executarTurnoDoAgente(
     }
   }
 
-  if (
-    agentConfig?.toolIds.includes('crm_send_vitrine') &&
-    Object.keys(agentConfig.vitrines).length > 0
-  ) {
+  if (vitrineAtivaNesteAgente && agentConfig !== null) {
     rawTools.crm_send_vitrine = tool({
       ...AGENT_TOOL_DEFS.crm_send_vitrine,
       execute: (raw) =>
@@ -3255,7 +3276,7 @@ async function executarTurnoDoAgente(
           try {
             const inputVitrine = sendVitrineInputSchema.parse(raw);
             const emSandbox = preview?.kind === 'sandbox';
-            return await executarVitrine({
+            const resultado = await executarVitrine({
               input: inputVitrine,
               vitrines: agentConfig.vitrines,
               maxSendsRestantes: () =>
@@ -3303,8 +3324,8 @@ async function executarTurnoDoAgente(
                   const result = evaluateBeforeSend({
                     ...previewContextDoTurno,
                     body,
-                    semanticPromise: semanticClassifier
-                      ? await semanticClassifier(body)
+                    semanticPromise: classificadorDoTextoFixoDaVitrine
+                      ? await classificadorDoTextoFixoDaVitrine(body)
                       : null,
                   });
                   if (result.veto) {
@@ -3354,8 +3375,10 @@ async function executarTurnoDoAgente(
                   ...(deps.knobs.disclosureMode !== undefined
                     ? { disclosureMode: deps.knobs.disclosureMode }
                     : {}),
-                  ...(semanticClassifier !== undefined
-                    ? { classifyPromiseSemantic: semanticClassifier }
+                  // Texto fixo aprovado da loja não chama o classificador LLM.
+                  // Todos os demais gates determinísticos seguem na mesma cadeia.
+                  ...(classificadorDoTextoFixoDaVitrine !== undefined
+                    ? { classifyPromiseSemantic: classificadorDoTextoFixoDaVitrine }
                     : {}),
                   send: (finalBody: string) => {
                     seq += 1;
@@ -3495,6 +3518,10 @@ async function executarTurnoDoAgente(
                 });
               },
             });
+            if (resultado.ok === true) {
+              guardaAnuncioSemVitrine.registrarSucessoDeCatalogoOuVitrine();
+            }
+            return resultado;
           } catch (err) {
             noteRunError(err instanceof Error ? err : new Error(String(err)));
             return {
@@ -3836,6 +3863,7 @@ async function executarTurnoDoAgente(
               limite: maxSendsPerTurn,
               contador: enviosFisicosNoPreview,
             },
+            guardaAnuncioSemVitrine,
           )
         : rawTools;
     const toolsWithBreaker = wrapToolsWithBreaker(previewTools, {
