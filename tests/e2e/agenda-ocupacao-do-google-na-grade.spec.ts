@@ -86,7 +86,7 @@ async function entrar(page: Page, creds: Creds) {
   await page.getByLabel(/senha/i).fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
   await page.waitForURL(/\/app\/agenda(?:\/|\?|$)/, { timeout: 20_000 });
-  await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 25_000 });
+  await expect(page.locator('#conteudo-principal [data-testid="tela-agenda"]:visible')).toBeVisible({ timeout: 25_000 });
 }
 
 /** A conexão do Google que o evento externo pendura. Idempotente. */
@@ -172,7 +172,7 @@ test.describe("a ocupação do Google na grade da agenda", () => {
     // 2ª passada: RECARREGA e navega de novo. Depois disto a semente do servidor
     // não cobre mais a semana em tela — o que estiver desenhado veio da rota.
     await page.reload();
-    await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 25_000 });
+  await expect(page.locator('#conteudo-principal [data-testid="tela-agenda"]:visible')).toBeVisible({ timeout: 25_000 });
     const diasDepois = await irParaASemanaSeguinte(page);
     expect(diasDepois, "a semana desenhada mudou entre as duas passadas").toContain(alvo);
 
@@ -251,7 +251,7 @@ test.describe("a ocupação do Google na grade da agenda", () => {
     const eventoId = (evento as { id: string }).id;
 
     await page.reload();
-    await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 25_000 });
+  await expect(page.locator('#conteudo-principal [data-testid="tela-agenda"]:visible')).toBeVisible({ timeout: 25_000 });
     await irParaASemanaSeguinte(page);
     await expect(page.getByTestId(`agendamento-${eventoId}`)).toBeVisible({ timeout: 20_000 });
 
@@ -340,7 +340,7 @@ test.describe("a ocupação do Google na grade da agenda", () => {
     const nossoId = (nosso as { id: string }).id;
 
     await page.reload();
-    await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 25_000 });
+  await expect(page.locator('#conteudo-principal [data-testid="tela-agenda"]:visible')).toBeVisible({ timeout: 25_000 });
     await irParaASemanaSeguinte(page);
 
     const doGoogle = page.getByTestId(`agendamento-${eventoId}`);
