@@ -31,16 +31,31 @@ export interface TurnPreview {
   previous?: LeadCheckpointRow | null;
   notes?: Array<{ headline: string; body: string }>;
   feedback?: string;
+  /** Produtos já enviados em turnos anteriores deste cenário, nunca lidos de messages. */
+  catalogProductCodesAlreadySent?: string[];
   /** Null means a scenario, never a synthetic identifier passed to SQL. */
   contactId: string | null;
   channelId: string | null;
   gateContext?: GateContext;
   result: PreviewResult;
 }
+export interface PreviewCatalogDelivery {
+  produtoCodigo: string;
+  legenda: string;
+  imagens: Array<{ nome: string; url: string }>;
+}
+export interface PreviewToolTrace {
+  tool: string;
+  argumentos: unknown;
+  resultado: string;
+  ok: boolean;
+}
 export interface PreviewResult {
   checkpoint?: unknown;
   candidates: Array<{ body: string; citations: Citation[]; trace: GateTraceEntry[] }>;
   proposals: Array<{ tool: string; arguments: unknown }>;
+  envios: PreviewCatalogDelivery[];
+  toolTrace: PreviewToolTrace[];
   impediments: Array<{ code: string; message: string }>;
   restrictions: string[];
 }
@@ -48,6 +63,8 @@ export function newPreviewResult(): PreviewResult {
   return {
     candidates: [],
     proposals: [],
+    envios: [],
+    toolTrace: [],
     impediments: [],
     restrictions: [
       'preview_no_client_effects',
@@ -122,6 +139,9 @@ export async function previewGateContext(
   };
 }
 const SCENARIO_READS = new Set([
+  'crm_search_products',
+  'crm_search_knowledge',
+  'crm_get_lead',
   'crm_list_pipelines',
   'crm_list_stages',
   'crm_list_appointment_types',
@@ -146,6 +166,7 @@ export function applyPreviewPolicy(
       ].includes(name);
       const catalog = getToolByName(name);
       if (
+        (p.kind === 'sandbox' && name === 'crm_send_catalog_item') ||
         nativeRead ||
         (catalog?.category === 'read' && (p.contactId !== null || SCENARIO_READS.has(name)))
       )
@@ -221,6 +242,105 @@ export function applyPreviewPolicy(
               },
             };
           },
+        },
+      ];
+    }),
+  ) as ToolSet;
+}
+
+const TRACE_STRING_LIMIT = 160;
+const TRACE_ARRAY_LIMIT = 8;
+const TRACE_OBJECT_LIMIT = 12;
+const TRACE_SENSITIVE_KEY = /(?:^|_)(?:address|authorization|body|cep|contact|conversation|cpf|cnpj|document|email|endereco|lead_id|message|name|nome|password|phone|secret|token|user_id|whatsapp)(?:$|_)/i;
+
+function truncateTraceString(value: string): string {
+  const sanitized = value
+    .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, '[email]')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '[uuid]')
+    .replace(/(?:\+?\d[\d\s().-]{8,}\d)/g, '[telefone]')
+    .replace(/\b(?:bearer\s+|sk-|ghp_|xoxb-|cfut_)[A-Za-z0-9._-]+/gi, '[segredo]');
+  return sanitized.length <= TRACE_STRING_LIMIT
+    ? sanitized
+    : `${sanitized.slice(0, TRACE_STRING_LIMIT)}…`;
+}
+
+function traceArguments(value: unknown, key = '', depth = 0): unknown {
+  if (TRACE_SENSITIVE_KEY.test(key)) return '[omitido]';
+  if (depth >= 3) return '[truncado]';
+  if (typeof value === 'string') return truncateTraceString(value);
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value;
+  if (Array.isArray(value)) {
+    return value.slice(0, TRACE_ARRAY_LIMIT).map((item) => traceArguments(item, key, depth + 1));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .slice(0, TRACE_OBJECT_LIMIT)
+        .map(([childKey, child]) => [childKey, traceArguments(child, childKey, depth + 1)]),
+    );
+  }
+  return `[${typeof value}]`;
+}
+
+function traceResult(value: unknown): { ok: boolean; resultado: string } {
+  if (!value || typeof value !== 'object') {
+    return { ok: true, resultado: `resultado_${value === null ? 'nulo' : typeof value}` };
+  }
+  const record = value as Record<string, unknown>;
+  const error = record.error;
+  if (record.ok === false || error !== undefined) {
+    const code =
+      error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+        ? error.code
+        : typeof error === 'string'
+          ? error
+          : 'sem_codigo';
+    return { ok: false, resultado: `erro:${truncateTraceString(code)}` };
+  }
+  if (record.ja_enviado === true) return { ok: true, resultado: 'sucesso:ja_enviado' };
+  const fields = Object.keys(record).slice(0, TRACE_OBJECT_LIMIT);
+  const lists = fields.flatMap((field) =>
+    Array.isArray(record[field]) ? [`${field}=${record[field].length}`] : [],
+  );
+  return {
+    ok: true,
+    resultado: truncateTraceString(
+      `sucesso:campos=${fields.join(',') || 'nenhum'}${lists.length > 0 ? `;${lists.join(',')}` : ''}`,
+    ),
+  };
+}
+
+/** Instrumenta somente a prévia. O turno real nunca passa por este wrapper. */
+export function withPreviewToolTrace(tools: ToolSet, p: TurnPreview): ToolSet {
+  return Object.fromEntries(
+    Object.entries(tools).map(([name, definition]) => {
+      if (typeof definition.execute !== 'function') return [name, definition];
+      const executeOriginal = definition.execute.bind(definition);
+      return [
+        name,
+        {
+          ...definition,
+          execute: (async (...args: Parameters<typeof executeOriginal>) => {
+            try {
+              const result = await executeOriginal(...args);
+              const summary = traceResult(result);
+              p.result.toolTrace.push({
+                tool: name,
+                argumentos: traceArguments(args[0]),
+                resultado: summary.resultado,
+                ok: summary.ok,
+              });
+              return result;
+            } catch (error) {
+              p.result.toolTrace.push({
+                tool: name,
+                argumentos: traceArguments(args[0]),
+                resultado: `erro_lancado:${error instanceof Error ? error.name : 'desconhecido'}`,
+                ok: false,
+              });
+              throw error;
+            }
+          }) as typeof definition.execute,
         },
       ];
     }),

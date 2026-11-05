@@ -19,6 +19,8 @@
     { "id": "pais", "lane": "dados", "label": "SKU pai e linhas de preço" },
     { "id": "galeria", "lane": "dados", "label": "Galeria ordenada no catalog-media" },
     { "id": "tool", "lane": "agente", "label": "crm_send_catalog_item opt-in" },
+    { "id": "sandbox", "lane": "agente", "label": "Simulador dry-run por organização" },
+    { "id": "trace", "lane": "agente", "label": "PreviewResult: toolTrace e envios" },
     { "id": "fifo", "lane": "agente", "label": "Fila FIFO local ao turno" },
     { "id": "before", "lane": "agente", "label": "Cadeia before_send" },
     { "id": "sink", "lane": "canal", "label": "sendMessageHandler storage-first" }
@@ -32,6 +34,11 @@
     { "id": "e6", "from": "tool", "to": "fifo", "label": "ordem de emissão do turno" },
     { "id": "e7", "from": "fifo", "to": "before", "label": "uma execução por vez" },
     { "id": "e8", "from": "before", "to": "sink", "label": "veto ou mensagem" },
-    { "id": "e9", "from": "sink", "to": "tool", "label": "recibo por imagem" }
+    { "id": "e9", "from": "sink", "to": "tool", "label": "recibo por imagem" },
+    { "id": "e10", "from": "tool", "to": "sandbox", "label": "ramo sandbox troca apenas as portas de efeito" },
+    { "id": "e11", "from": "pais", "to": "sandbox", "label": "mesmas consultas por organização" },
+    { "id": "e12", "from": "galeria", "to": "sandbox", "label": "nomes e URLs sem copiar bytes" },
+    { "id": "e13", "from": "sandbox", "to": "trace", "label": "resultado curto de toda tool e fotos simuladas" },
+    { "id": "e14", "from": "trace", "to": "sandbox", "label": "códigos já enviados alimentam o turno seguinte" }
   ]
 }

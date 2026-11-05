@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { crmSearchProducts } from "./comercio";
 import type { McpContext } from "../types";
@@ -21,10 +21,16 @@ interface RespostaBusca {
  * cliente de verdade.
  */
 
-function ctxCom(produtos: Array<Record<string, unknown>>): McpContext {
+function ctxCom(
+  produtos: Array<Record<string, unknown>>,
+  observarEq: (coluna: string, valor: unknown) => void = () => undefined,
+): McpContext {
   const query = {
     select: () => query,
-    eq: () => query,
+    eq: (coluna: string, valor: unknown) => {
+      observarEq(coluna, valor);
+      return query;
+    },
     order: () => query,
     range: async () => ({ data: produtos, error: null, count: produtos.length }),
   };
@@ -58,6 +64,16 @@ const PRODUTO_MXN = {
 };
 
 describe("crm_search_products — preço na convenção da moeda", () => {
+  it("sempre filtra os produtos pela organização confiável do contexto", async () => {
+    const observarEq = vi.fn();
+    const ctx = ctxCom([PRODUTO_MXN], observarEq);
+    await crmSearchProducts.handler(
+      { termo: "iphone", limite: 8, somente_disponiveis: true },
+      ctx,
+    );
+    expect(observarEq).toHaveBeenCalledWith("organization_id", ctx.organizationId);
+  });
+
   it("cota o preço em MXN como um comerciante mexicano lê, não em pt-BR", async () => {
     const resultado = (await crmSearchProducts.handler(
       { termo: "iphone", limite: 8, somente_disponiveis: true },

@@ -43,6 +43,24 @@ describe('loadPublishedAgentConfig — campos de RAG', () => {
     const cfg = await loadPublishedAgentConfig(poolWith({ ...baseRow, active_kb_version_id: null }), 'org1', 'cs1');
     expect(cfg?.activeKbVersionId).toBeNull();
   });
+
+  it('split_por_paragrafo é opt-in e fica desligado quando a organização não tem a chave', async () => {
+    const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const desligado = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, split_por_paragrafo: false } }),
+      'org-desligada',
+      'cs1',
+    );
+    const ligado = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, split_por_paragrafo: true } }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChave?.splitPorParagrafo).toBe(false);
+    expect(desligado?.splitPorParagrafo).toBe(false);
+    expect(ligado?.splitPorParagrafo).toBe(true);
+  });
 });
 
 describe('loadPublishedAgentConfigById', () => {
