@@ -1,6 +1,11 @@
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
-import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
+import {
+  applyPreviewPolicy,
+  previewGateContext,
+  withPreviewToolTrace,
+  type TurnPreview,
+} from './preview';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -176,6 +181,7 @@ import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-
 import {
   executarEnvioDeItemDoCatalogo,
   sendCatalogItemInputSchema,
+  simularEnvioDeItemDoCatalogo,
   type EstadoEnvioCatalogo,
 } from './send-catalog-item';
 import { criarFilaDeEnviosDoTurno } from './fila-de-envios-do-turno';
@@ -2163,6 +2169,7 @@ async function executarTurnoDoAgente(
   let seq = 0;
   const filaDeEnvios = criarFilaDeEnviosDoTurno();
   const estadoEnvioCatalogo: EstadoEnvioCatalogo = { produtos: 0, imagens: 0 };
+  const codigosDeCatalogoJaEnviados = new Set(preview?.catalogProductCodesAlreadySent ?? []);
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
@@ -3170,6 +3177,37 @@ async function executarTurnoDoAgente(
         }
       }),
     });
+    if (preview?.kind === 'sandbox') {
+      rawTools.crm_send_catalog_item = tool({
+        ...AGENT_TOOL_DEFS.crm_send_catalog_item,
+        execute: (raw) =>
+          filaDeEnvios.enfileirar(async () => {
+            try {
+              const simulado = await simularEnvioDeItemDoCatalogo({
+                db: pool,
+                admin: deps.crmCfg.supabase,
+                organizationId: tenantId,
+                input: sendCatalogItemInputSchema.parse(raw),
+                estado: estadoEnvioCatalogo,
+                maxSendsRestantes: () =>
+                  Math.max(0, maxSendsPerTurn - estadoEnvioCatalogo.imagens),
+                codigosJaEnviados: codigosDeCatalogoJaEnviados,
+              });
+              if (simulado.envio) preview.result.envios.push(simulado.envio);
+              return simulado.resultado;
+            } catch (err) {
+              noteRunError(err instanceof Error ? err : new Error(String(err)));
+              return {
+                ok: false,
+                error: {
+                  code: 'internal_error',
+                  message: 'erro interno ao simular o produto; nenhum envio foi realizado.',
+                },
+              };
+            }
+          }),
+      });
+    }
   }
 
   const followupKnobs = deps.knobs.followup;
@@ -3494,11 +3532,12 @@ async function executarTurnoDoAgente(
             () => ({ agenda: { active: previewContext.agenda?.active ?? false, toolCalledThisTurn: agendaToolCalledThisTurn } }),
           )
         : rawTools;
-    const tools = wrapToolsWithBreaker(previewTools, {
+    const toolsWithBreaker = wrapToolsWithBreaker(previewTools, {
       thresholds: deps.knobs.breaker,
       readOnlyTools: READ_ONLY_TOOLS,
       log: runLog, // os warns dos gates do breaker saem carimbados com o run
     });
+    const tools = preview ? withPreviewToolTrace(toolsWithBreaker, preview) : toolsWithBreaker;
 
     // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
     // agnóstico) e sugere o estágio; a sugestão entra como HINT no SUFIXO por-lead — o modelo
