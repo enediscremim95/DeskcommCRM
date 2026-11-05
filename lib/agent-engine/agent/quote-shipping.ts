@@ -57,8 +57,10 @@ export interface EstadoCotacaoFrete {
 
 const COMO_FALAR =
   "diga que é o valor de referência do frete e que o prazo de transporte soma ao prazo de produção; a Lorenza confirma o frete no fechamento do pedido; nunca prometa data de chegada nem de envio";
-const COMO_FALAR_SIMULACAO =
-  "esta é uma cotação sintética do sandbox, sem consulta à transportadora; use apenas para exercitar a conversa e nunca apresente estes valores como cotação real";
+// O sandbox usa a MESMA instrução da cotação real: o campo `simulada: true` já
+// marca a origem sintética. Dizer ao modelo "não apresente estes valores" faz o
+// agente de teste recusar a cotação e o simulador deixa de provar a conversa.
+const COMO_FALAR_SIMULACAO = COMO_FALAR;
 
 function numeroPositivo(valor: number | string | null): number | null {
   if (valor === null) return null;
