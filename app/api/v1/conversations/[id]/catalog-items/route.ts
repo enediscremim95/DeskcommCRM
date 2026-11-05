@@ -7,10 +7,10 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { caminhoDaImagemDoCatalogo } from "@/lib/catalogo/caminho-da-imagem";
 import { montarLegendaDoProduto } from "@/lib/catalogo/mensagem-do-produto";
+import { materializarFotoDoCatalogo } from "@/lib/catalogo/materializar-foto";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { validarMidiaDeAtalho } from "@/lib/messaging/media/channel-limits";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -84,21 +84,19 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     try {
       const origem = caminhoDaImagemDoCatalogo(produto.imagem_url, authz.org.orgId, produto.id);
       if (origem) {
-        const { data: arquivo, error: downloadError } = await admin.storage
-          .from("catalog-media")
-          .download(origem);
-        if (downloadError || !arquivo) throw new Error("catalog_image_download_failed");
-        const buffer = Buffer.from(await arquivo.arrayBuffer());
-        const mime = arquivo.type || (origem.endsWith(".png") ? "image/png" : "image/jpeg");
-        const verdict = validarMidiaDeAtalho(mime, buffer.length);
-        if (!verdict.ok || verdict.kind !== "image") throw new Error("catalog_image_invalid");
-        mediaStoragePath = `${authz.org.orgId}/${conversationId}/catalog-${randomUUID()}.${mime === "image/png" ? "png" : "jpg"}`;
-        const { error: uploadError } = await admin.storage
-          .from("whatsapp-media")
-          .upload(mediaStoragePath, buffer, { contentType: mime, upsert: false });
-        if (uploadError) throw new Error("catalog_image_upload_failed");
-        mediaMime = mime;
-        mediaSizeBytes = buffer.length;
+        const materializada = await materializarFotoDoCatalogo(
+          admin,
+          authz.org.orgId,
+          conversationId,
+          {
+            storage_path: origem,
+            mime_type: origem.endsWith(".png") ? "image/png" : "image/jpeg",
+            size_bytes: 1,
+          },
+        );
+        mediaStoragePath = materializada.storagePath;
+        mediaMime = materializada.mime;
+        mediaSizeBytes = materializada.sizeBytes;
       }
       const mensagem = await sendMessageHandler(
         supabase,

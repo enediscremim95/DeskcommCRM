@@ -1,6 +1,7 @@
 const HOSTS_EXATOS = new Set([
   "produtos.sublimando.com.br",
   "sublimando-produtos.admsublimando.workers.dev",
+  "orgbling.s3.amazonaws.com",
 ]);
 
 const SUFIXOS_PERMITIDOS = [

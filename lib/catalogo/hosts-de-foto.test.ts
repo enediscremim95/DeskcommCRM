@@ -6,6 +6,7 @@ describe("allowlist fixa de fotos do painel", () => {
   it.each([
     "produtos.sublimando.com.br",
     "sublimando-produtos.admsublimando.workers.dev",
+    "orgbling.s3.amazonaws.com",
     "cdn.yampi.io",
     "imagens.loja.yampi.com.br",
     "cdn.bling.com.br",
@@ -34,5 +35,14 @@ describe("allowlist fixa de fotos do painel", () => {
     expect(() => urlDeFotoPermitida("https://produtos.sublimando.com.br:8443/foto.jpg")).toThrow(
       "foto_porta_nao_permitida",
     );
+  });
+
+  it("aceita query assinada no host exato, mas não aceita subdomínio parecido", () => {
+    expect(
+      urlDeFotoPermitida(
+        "https://orgbling.s3.amazonaws.com/tenant/foto?X-Amz-Signature=segredo",
+      ).hostname,
+    ).toBe("orgbling.s3.amazonaws.com");
+    expect(hostDeFotoPermitido("fake.orgbling.s3.amazonaws.com")).toBe(false);
   });
 });
