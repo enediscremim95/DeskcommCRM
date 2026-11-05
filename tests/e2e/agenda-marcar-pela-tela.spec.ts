@@ -157,7 +157,8 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
 
   // ── marcar, pela tela, como um humano faria ────────────────────────────
   await agenda.getByRole("button", { name: /novo agendamento/i }).click();
-  await expect(page.getByTestId("painel-de-marcacao").filter({ visible: true })).toBeVisible({
+  const painel = page.getByTestId("painel-de-marcacao").filter({ visible: true });
+  await expect(painel).toBeVisible({
     timeout: 10_000,
   });
 
@@ -194,7 +195,7 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
     );
   }
 
-  const horario = page.locator('[data-testid^="horario-"]').filter({ visible: true }).first();
+  const horario = painel.locator('[data-testid^="horario-"]').first();
   await expect(horario, "o dia foi escolhido e não veio horário nenhum").toBeVisible({ timeout: 15_000 });
   const rotulo = (await horario.getAttribute("data-testid"))!.replace("horario-", "");
   await horario.click();
@@ -205,7 +206,7 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
   await expect(page.getByTestId("confirmacao").filter({ visible: true })).toBeVisible({
     timeout: 10_000,
   });
-  await page.getByTestId("confirmar-marcacao").filter({ visible: true }).click();
+  await painel.getByTestId("confirmar-marcacao").click();
   await expect(page.getByTestId("ver-na-agenda").filter({ visible: true })).toBeVisible({
     timeout: 15_000,
   });
@@ -354,15 +355,20 @@ test("marcar pela ficha grava no lead exato e retira o horário livre", async ({
   const lead = (await leadRes.json()) as ApiOk<{ id: string }>;
 
   await page.goto(`/app/leads/${lead.data.id}`);
-  await expect(page.getByTestId("next-lead-tasks")).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: "Marcar compromisso" }).click();
-  await expect(page.getByTestId("painel-de-marcacao").filter({ visible: true })).toBeVisible({
+  const ficha = page.getByTestId("lead-page-workspace").filter({ visible: true });
+  await expect(ficha).toBeVisible({ timeout: 20_000 });
+  const proximasTarefas = ficha.getByTestId("next-lead-tasks");
+  await expect(proximasTarefas).toBeVisible({ timeout: 20_000 });
+  await proximasTarefas.getByRole("button", { name: "Marcar compromisso" }).click();
+
+  const painel = page.getByTestId("painel-de-marcacao").filter({ visible: true });
+  await expect(painel).toBeVisible({
     timeout: 15_000,
   });
-  await page.getByRole("button", { name: new RegExp(`^${creds.agenda.tipo_nome}`) }).click();
+  await painel.getByRole("button", { name: new RegExp(`^${creds.agenda.tipo_nome}`) }).click();
   await escolherPrimeiroDiaCheio(page);
 
-  const horario = page.locator('[data-testid^="horario-"]').filter({ visible: true }).first();
+  const horario = painel.locator('[data-testid^="horario-"]').first();
   await expect(horario).toBeVisible({ timeout: 15_000 });
   await horario.click();
 
@@ -371,7 +377,7 @@ test("marcar pela ficha grava no lead exato e retira o horário livre", async ({
       resposta.url().includes("/api/v1/agenda/agendamentos") &&
       resposta.request().method() === "POST",
   );
-  await page.getByTestId("confirmar-marcacao").filter({ visible: true }).click();
+  await painel.getByTestId("confirmar-marcacao").click();
   const resposta = await respostaDaMarcacao;
   expect(resposta.status()).toBe(201);
   const corpo = (await resposta.json()) as ApiOk<{
@@ -387,7 +393,9 @@ test("marcar pela ficha grava no lead exato e retira o horário livre", async ({
     lead_id: lead.data.id,
     owner_user_id: usuario.id,
   });
-  await expect(page.getByText("Marcado.", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Marcado.", { exact: true }).filter({ visible: true })).toBeVisible({
+    timeout: 15_000,
+  });
 
   const timelineRes = await page.request.get(`/api/v1/leads/${lead.data.id}/timeline`);
   expect(timelineRes.ok()).toBe(true);

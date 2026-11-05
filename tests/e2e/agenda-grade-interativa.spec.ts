@@ -107,6 +107,24 @@ function blocoLivre(page: Page) {
     .first();
 }
 
+/**
+ * Fixa a célula que estava em primeiro lugar antes de ler e clicar.
+ *
+ * Locators do Playwright são consultas vivas: chamar `getAttribute()` e depois
+ * `click()` num `.first()` reavalia qual é o primeiro elemento em cada ação.
+ * Enquanto a disponibilidade repinta, isso permitia ler 12:00 de uma célula e
+ * clicar 09:00 de outra. O `data-testid` identifica a célula estável da grade.
+ */
+async function blocoLivreFixado(page: Page) {
+  const primeiro = blocoLivre(page);
+  const testid = await primeiro.getAttribute("data-testid");
+  expect(testid, "o primeiro bloco livre não tem identidade estável").toBeTruthy();
+
+  const fixado = telaDaAgendaVisivel(page).getByTestId(testid!);
+  await expect(fixado, `a célula ${testid} sumiu antes do clique`).toHaveCount(1);
+  return fixado;
+}
+
 /** Um bloco recusado que NÃO é do passado — o que tem de explicar a regra. */
 function blocoBloqueado(page: Page) {
   return telaDaAgendaVisivel(page)
@@ -153,7 +171,7 @@ test("clicar num bloco livre abre a marcação NAQUELE horário", async ({ page 
   await escolherOTipoDoSeed(page, creds.agenda!.tipo_nome);
   await irParaASemanaIntegra(page);
 
-  const bloco = blocoLivre(page);
+  const bloco = await blocoLivreFixado(page);
   // O bloco oferece o horário PUBLICADO que começa dentro dele, e o anuncia no
   // nome acessível ("Marcar às 09:30 de 28 de agosto"). É esse horário que tem
   // de reaparecer no painel — e não a hora do bloco, que pode ser outra quando
@@ -224,7 +242,7 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
       .catch(() => undefined);
   });
 
-  const origem = blocoLivre(page);
+  const origem = await blocoLivreFixado(page);
   const testidOrigem = (await origem.getAttribute("data-testid"))!;
   await origem.click();
   await expect(page.getByTestId("painel-de-marcacao").filter({ visible: true })).toBeVisible({
@@ -302,21 +320,21 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
   // `pointermove` de verdade, e um salto único não desenha o fantasma.
   await page.mouse.move(caixaAlvo.x + caixaAlvo.width / 2, caixaAlvo.y + 4, { steps: 12 });
   await expect(
-    page.getByTestId("fantasma-do-arraste"),
+    telaDaAgendaVisivel(page).getByTestId("fantasma-do-arraste"),
     "arrastar não desenhou onde o card cairia — o gesto não está sendo capturado",
   ).toBeVisible();
   await page.screenshot({ path: "evidence/calendario/grade-arraste-fantasma.png" });
   await page.mouse.up();
 
   // ── confirmação ANTES de consumar: remarcar avisa quem está do outro lado ──
-  const confirmacao = page.getByTestId("confirmar-remarcacao");
+  const confirmacao = telaDaAgendaVisivel(page).getByTestId("confirmar-remarcacao");
   await expect(
     confirmacao,
     "soltar remarcou sem perguntar — o cliente do outro lado recebe aviso de remarcação",
   ).toBeVisible({ timeout: 10_000 });
   await expect(confirmacao).toContainText(horarioOferecido);
   await page.screenshot({ path: "evidence/calendario/grade-confirma-antes-de-remarcar.png" });
-  await page.getByTestId("confirmar-remarcacao-botao").click();
+  await telaDaAgendaVisivel(page).getByTestId("confirmar-remarcacao-botao").click();
 
   // ── ⚠️ A PROVA NÃO É A TELA ───────────────────────────────────────────
   //
@@ -396,7 +414,7 @@ test("arrastar para fora da disponibilidade é RECUSADO e o card volta", async (
       .catch(() => undefined);
   });
 
-  const origem = blocoLivre(page);
+  const origem = await blocoLivreFixado(page);
   const testidOrigem = (await origem.getAttribute("data-testid"))!;
   await origem.click();
   await expect(page.getByTestId("painel-de-marcacao").filter({ visible: true })).toBeVisible({
@@ -448,14 +466,19 @@ test("arrastar para fora da disponibilidade é RECUSADO e o card volta", async (
   });
   // O fantasma existe e está marcado como INVÁLIDO — o gesto continua legível,
   // e a recusa é vista antes de soltar em vez de o card voltar sem explicação.
-  await expect(page.getByTestId("fantasma-do-arraste")).toHaveAttribute("data-valido", "false");
+  await expect(telaDaAgendaVisivel(page).getByTestId("fantasma-do-arraste")).toHaveAttribute(
+    "data-valido",
+    "false",
+  );
   await page.mouse.up();
 
   // Recusa explícita, com o motivo. E NENHUMA confirmação: remarcar para um
   // horário fora da disponibilidade publicada não é uma pergunta a fazer.
-  await expect(page.getByTestId("remarcacao-recusada")).toBeVisible({ timeout: 10_000 });
+  await expect(telaDaAgendaVisivel(page).getByTestId("remarcacao-recusada")).toBeVisible({
+    timeout: 10_000,
+  });
   await page.screenshot({ path: "evidence/calendario/grade-arraste-recusado.png" });
-  await expect(page.getByTestId("confirmar-remarcacao")).toHaveCount(0);
+  await expect(telaDaAgendaVisivel(page).getByTestId("confirmar-remarcacao")).toHaveCount(0);
 
   // O CARD VOLTOU. Não basta não ter remarcado: o card tem de estar onde
   // estava, senão a tela mente sobre o estado real.

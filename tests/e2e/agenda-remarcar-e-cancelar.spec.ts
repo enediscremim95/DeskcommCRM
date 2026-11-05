@@ -5,7 +5,11 @@ import * as path from "node:path";
 
 import { test, expect } from "@playwright/test";
 
-import { escolherDiaDesenhado, irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
+import {
+  escolherDiaDesenhado,
+  irParaASemanaSeguinte,
+  telaDaAgendaVisivel,
+} from "./helpers/agenda-semana-integra";
 
 /**
  * REMARCAR E CANCELAR PELA TELA — as duas ações que só a IA conseguia fazer.
@@ -81,7 +85,7 @@ async function entrar(page: PlaywrightTestTypes.Page, creds: Creds): Promise<str
   await page.getByRole("button", { name: /entrar/i }).click();
   await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
   await page.goto("/app/agenda");
-  await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 20_000 });
+  await expect(telaDaAgendaVisivel(page)).toBeVisible({ timeout: 20_000 });
   // ⚠️ A SEMANA SEGUINTE, e ela é a condição de os dois casos existirem.
   //
   // O caso de remarcar precisa de DOIS horários livres no mesmo dia ("só havia
@@ -99,17 +103,18 @@ async function marcarUm(
   tipoNome: string,
   dias: readonly string[],
 ): Promise<string> {
-  await page.getByRole("button", { name: /novo agendamento/i }).click();
-  await expect(page.getByTestId("painel-de-marcacao")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("tipos-de-agendamento")).toBeVisible({ timeout: 10_000 });
-  await page.getByRole("button", { name: new RegExp(`^${tipoNome}`) }).click();
+  await telaDaAgendaVisivel(page).getByRole("button", { name: /novo agendamento/i }).click();
+  const painel = page.getByTestId("painel-de-marcacao").filter({ visible: true });
+  await expect(painel).toBeVisible({ timeout: 10_000 });
+  await expect(painel.getByTestId("tipos-de-agendamento")).toBeVisible({ timeout: 10_000 });
+  await painel.getByRole("button", { name: new RegExp(`^${tipoNome}`) }).click();
   await escolherDiaDesenhado(page, dias);
-  const horario = page.locator('[data-testid^="horario-"]').first();
+  const horario = painel.locator('[data-testid^="horario-"]').first();
   await expect(horario).toBeVisible({ timeout: 15_000 });
   const rotulo = (await horario.getAttribute("data-testid"))!.replace("horario-", "");
   await horario.click();
-  await page.getByTestId("confirmar-marcacao").click();
-  await expect(page.getByTestId("ver-na-agenda")).toBeVisible({ timeout: 15_000 });
+  await painel.getByTestId("confirmar-marcacao").click();
+  await expect(painel.getByTestId("ver-na-agenda")).toBeVisible({ timeout: 15_000 });
   await page.keyboard.press("Escape");
   return rotulo;
 }
@@ -125,7 +130,7 @@ test("cancelar pela tela: o motivo é exigido, e o compromisso sai dos próximos
   const diasDaSemana = await entrar(page, creds);
   await marcarUm(page, creds.agenda.tipo_nome, diasDaSemana);
 
-  const historico = page.getByTestId("historico-da-agenda");
+  const historico = telaDaAgendaVisivel(page).getByTestId("historico-da-agenda");
   const cancelarBotao = historico.getByRole("button", { name: /^Cancelar$/ }).first();
 
   // ── A asserção que nomeia o defeito ────────────────────────────────────
@@ -146,16 +151,17 @@ test("cancelar pela tela: o motivo é exigido, e o compromisso sai dos próximos
   const antesCancelados = await historico.getByRole("tab", { name: /Cancelados/ }).textContent();
 
   await cancelarBotao.click();
-  await expect(page.getByTestId("painel-de-cancelamento")).toBeVisible({ timeout: 10_000 });
+  const painel = page.getByTestId("painel-de-cancelamento").filter({ visible: true });
+  await expect(painel).toBeVisible({ timeout: 10_000 });
 
-  const confirmar = page.getByTestId("confirmar-cancelamento");
+  const confirmar = painel.getByTestId("confirmar-cancelamento");
   // O mínimo de 3 é o da ROTA. A tela o respeita para não produzir um 422 que a
   // pessoa não tem como prever.
   await expect(confirmar, "aceitou confirmar sem motivo — a rota devolveria 422").toBeDisabled();
-  await page.getByTestId("motivo-do-cancelamento").fill("ab");
+  await painel.getByTestId("motivo-do-cancelamento").fill("ab");
   await expect(confirmar, "dois caracteres passam, e a rota exige três").toBeDisabled();
 
-  await page.getByTestId("motivo-do-cancelamento").fill("o paciente pediu por telefone");
+  await painel.getByTestId("motivo-do-cancelamento").fill("o paciente pediu por telefone");
   await expect(confirmar).toBeEnabled();
 
   await confirmar.click();
@@ -175,7 +181,7 @@ test("remarcar pela tela: o painel abre em modo remarcar e o horário muda", asy
   const diasDaSemana = await entrar(page, creds);
   const rotuloOriginal = await marcarUm(page, creds.agenda.tipo_nome, diasDaSemana);
 
-  const historico = page.getByTestId("historico-da-agenda");
+  const historico = telaDaAgendaVisivel(page).getByTestId("historico-da-agenda");
   const remarcarBotao = historico.getByRole("button", { name: /^Remarcar$/ }).first();
   await expect(
     remarcarBotao,
@@ -189,19 +195,22 @@ test("remarcar pela tela: o painel abre em modo remarcar e o horário muda", asy
   await expect(page.getByRole("heading", { name: /Remarcar agendamento/ })).toBeVisible({
     timeout: 10_000,
   });
+  const painel = page.getByTestId("painel-de-marcacao").filter({ visible: true });
 
   await escolherDiaDesenhado(page, diasDaSemana);
 
   // Um horário DIFERENTE do original — senão "remarcou" e "não mudou nada" são
   // indistinguíveis, e a asserção passaria pelo motivo errado.
-  const outro = page.locator(`[data-testid^="horario-"]:not([data-testid="horario-${rotuloOriginal}"])`).first();
+  const outro = painel
+    .locator(`[data-testid^="horario-"]:not([data-testid="horario-${rotuloOriginal}"])`)
+    .first();
   await expect(outro, "só havia um horário livre — o cenário não distingue remarcar de repetir").toBeVisible({
     timeout: 15_000,
   });
   const rotuloNovo = (await outro.getAttribute("data-testid"))!.replace("horario-", "");
   expect(rotuloNovo).not.toBe(rotuloOriginal);
   await outro.click();
-  await page.getByTestId("confirmar-marcacao").click();
+  await painel.getByTestId("confirmar-marcacao").click();
 
   await expect
     .poll(async () => (await historico.textContent()) ?? "", {
