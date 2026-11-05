@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agente envia produto do catálogo",
+    "subtitle": "retrato do painel, galeria por SKU pai e saída pela cadeia before_send",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "fonte", "label": "Fonte" },
+    { "id": "dados", "label": "Dados" },
+    { "id": "agente", "label": "Agente" },
+    { "id": "canal", "label": "Canal" }
+  ],
+  "mainPath": ["retrato", "importador", "pais", "tool", "fifo", "before", "sink"],
+  "nodes": [
+    { "id": "retrato", "lane": "fonte", "label": "Retrato JSON do painel" },
+    { "id": "importador", "lane": "fonte", "label": "Importador dry-run ou aplicar" },
+    { "id": "pais", "lane": "dados", "label": "SKU pai e linhas de preço" },
+    { "id": "galeria", "lane": "dados", "label": "Galeria ordenada no catalog-media" },
+    { "id": "tool", "lane": "agente", "label": "crm_send_catalog_item opt-in" },
+    { "id": "fifo", "lane": "agente", "label": "Fila FIFO local ao turno" },
+    { "id": "before", "lane": "agente", "label": "Cadeia before_send" },
+    { "id": "sink", "lane": "canal", "label": "sendMessageHandler storage-first" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "retrato", "to": "importador", "label": "snapshot validado" },
+    { "id": "e2", "from": "importador", "to": "pais", "label": "upsert por org e código" },
+    { "id": "e3", "from": "importador", "to": "galeria", "label": "sync atômico por hash" },
+    { "id": "e4", "from": "pais", "to": "tool", "label": "preço e opção do servidor" },
+    { "id": "e5", "from": "galeria", "to": "tool", "label": "fotos do mesmo tenant" },
+    { "id": "e6", "from": "tool", "to": "fifo", "label": "ordem de emissão do turno" },
+    { "id": "e7", "from": "fifo", "to": "before", "label": "uma execução por vez" },
+    { "id": "e8", "from": "before", "to": "sink", "label": "veto ou mensagem" },
+    { "id": "e9", "from": "sink", "to": "tool", "label": "recibo por imagem" }
+  ]
+}

@@ -60,6 +60,7 @@ function conversationRow(shape: ConversationShape = {}): Row {
     channel_session_id: SESSION,
     is_group: shape.isGroup ?? false,
     group_chat_id: shape.groupChatId ?? null,
+    last_inbound_at: new Date().toISOString(),
     contacts: {
       phone_number: shape.phoneNumber === undefined ? '+5531999998888' : shape.phoneNumber,
       wa_identity: shape.waIdentity ?? null,

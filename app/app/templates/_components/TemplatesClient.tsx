@@ -105,6 +105,21 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                       {t("Seu navegador não consegue reproduzir este áudio.")}
                     </audio>
                   ) : null}
+                  {template.media_storage_path && template.media_kind === "image" ? (
+                    <img
+                      src={`/api/v1/message-templates/${template.id}/media`}
+                      alt={template.media_file_name ?? t("Imagem do atalho")}
+                      className="mt-2 max-h-32 rounded-md object-contain"
+                    />
+                  ) : null}
+                  {template.media_storage_path && template.media_kind === "video" ? (
+                    <video
+                      src={`/api/v1/message-templates/${template.id}/media`}
+                      controls
+                      preload="metadata"
+                      className="mt-2 max-h-32 rounded-md"
+                    />
+                  ) : null}
                 </div>
                 {canModify && (
                   <div className="flex shrink-0 gap-1">

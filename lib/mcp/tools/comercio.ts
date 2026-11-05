@@ -73,6 +73,28 @@ const produtosInputShape = {
   somente_disponiveis: z.boolean().optional().default(true),
 };
 
+const enviarProdutoInputShape = {
+  codigo: z.string().trim().min(1).max(120),
+  quantas_fotos: z.number().int().min(1).max(4).optional().default(3),
+};
+
+export const crmSendCatalogItem: McpToolDefinition<typeof enviarProdutoInputShape> = {
+  name: "crm_send_catalog_item",
+  description:
+    "Envia um item ativo do catálogo com preço e fotos resolvidos pelo servidor. Informe apenas o código exato retornado pela busca e, opcionalmente, de 1 a 4 fotos. Nunca forneça preço, legenda ou URL.",
+  inputSchema: enviarProdutoInputShape,
+  category: "write",
+  requiresRole: "ai_operator",
+  requiresScope: "mcp:write",
+  handler: async () => ({
+    ok: false,
+    error: {
+      code: "agent_harness_required",
+      message: "esta capacidade só executa dentro do turno do agente, com os guardrails de envio",
+    },
+  }),
+};
+
 /**
  * O aviso que a busca manda junto com o resultado.
  *

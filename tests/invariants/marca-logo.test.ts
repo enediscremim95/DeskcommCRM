@@ -210,14 +210,19 @@ describe("o bucket público é UM, e é o dos logos", () => {
     expect(linha).toBe("true|524288|image/png,image/jpeg");
   });
 
-  it("NENHUM outro bucket é público — a exceção continua sendo exceção", () => {
+  it("NENHUM outro bucket é público — as exceções continuam sendo exceção", () => {
     // Sem este caso, "o bucket público é só o de logos" é prosa. Com ele, tornar
     // `whatsapp-media` público (que exporia o histórico de todos os clientes)
     // reprova o CI.
     const publicos = lastLine(
       sql(`select coalesce(string_agg(id, ',' order by id), 'NENHUM') from storage.buckets where public;`),
     );
-    expect(publicos).toBe("brand-logos");
+    // `catalog-media` é a segunda exceção declarada (migration 0298): foto de
+    // produto do catálogo, que a própria empresa manda ao cliente e que aparece
+    // num `<img>` da tela de produtos e do seletor da conversa. Não guarda
+    // conversa nem dado pessoal. O caminho começa pela organização e leva um UUID
+    // por arquivo. Qualquer OUTRO bucket público continua reprovando aqui.
+    expect(publicos).toBe("brand-logos,catalog-media");
   });
 
   it("NENHUMA policy de `storage.objects` nomeia o bucket — escrita só por service_role", () => {

@@ -2073,3 +2073,27 @@ gerado em Chromium nas três larguras e mede fluxo, palco e navegação.
 A jornada real no WhatsApp Web depende de uma conta pareada e não é alegada por
 um teste sintético. O recorte automatizado cobre pacote, origem, autenticação,
 RLS, conversão de áudio, estrutura da chamada PTT e a tela controlada no CRM.
+
+## Catálogo e atalhos com mídia na conversa [P1]
+
+| # | Caso | Resultado exigido |
+| --- | --- | --- |
+| CM1 | Gerente cadastra produto com descrição, preço e imagem | O produto aparece na lista com a imagem persistente e continua editável |
+| CM2 | Atendente abre o Catálogo dentro de uma conversa | Vê somente produtos ativos da própria organização e escolhe até dez |
+| CM3 | Atendente confirma vários produtos | Cada item sai com foto, nome, preço e descrição curta; falha ou fila é informada sem declarar sucesso falso |
+| CM4 | Gerente acrescenta imagem ou vídeo a um atalho compartilhado | A mídia respeita tipo e tamanho do canal; escolher `/atalho` abre a prévia com legenda antes de enviar |
+| CM5 | Janela de 24 horas fechada | Servidor recusa o envio livre com `window_closed`, mesmo que a tela esteja desatualizada |
+| CM6 | Tenant tenta usar produto ou atalho vizinho | RLS e filtros explícitos por `organization_id` devolvem zero itens e não produzem mensagem |
+| CM7 | Gerente importa o retrato JSON do painel | O CRM faz upsert por código dentro da organização autenticada, sobrescreve os campos comerciais, desativa somente produtos do painel que sumiram e relata cada falha de foto sem perder o produto |
+| CM8 | Gerente abre ou tenta alterar um produto vindo do painel | A tela mostra “Vem do painel”, bloqueia nome, descrição, preço, foto e estado; API recusa alteração ou exclusão com 409, mas a legenda do atendimento continua editável |
+| CM9 | Produto aponta para arquivo de outra organização | O envio trata como produto sem foto e nenhuma rota remove o arquivo fora do prefixo da organização autenticada |
+
+Prova automatizada adicionada em `tests/e2e/catalogo-e-atalhos-midia.spec.ts`, incluída
+no gate `SPECS_PARTE_3`. Nesta entrega a spec não foi executada porque o ambiente
+local não possui Docker. Os contratos de limite, permissão, janela, isolamento e
+falha parcial foram exercitados por testes unitários; a RLS permanece coberta pelos
+invariantes de banco e precisa passar no Postgres efêmero antes da publicação.
+
+A segunda rodada acrescenta testes unitários das jornadas CM7 a CM9 e um invariante
+para as colunas da migration `0299`. A prova visual da tela bloqueada ainda depende
+da execução E2E em ambiente local completo.
