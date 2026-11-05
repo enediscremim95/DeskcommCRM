@@ -12,6 +12,7 @@ import {
 import { evaluateBeforeSend, type GateContext } from '../guardrails/before-send';
 import { PACING_DEFAULTS } from '../pacing/defaults';
 import { SPINNING_DEFAULTS } from '../spinning/defaults';
+import { criarGuardaAnuncioSemVitrine } from './anuncio-sem-vitrine';
 const gate = (): GateContext => ({
   now: new Date('2026-09-07T15:00:00Z'),
   body: 'Olá, posso ajudar?',
@@ -52,6 +53,67 @@ async function execute(t: ReturnType<typeof applyPreviewPolicy>, name: string, a
   return t[name]!.execute!(args, { toolCallId: 'test', messages: [], context: undefined });
 }
 describe('preview policy shares gates and contains side effects', () => {
+  it('barra um anúncio no sandbox sem consumir o teto e libera a segunda tentativa', async () => {
+    const p = preview();
+    const contador = { valor: 0 };
+    const tools = applyPreviewPolicy(
+      { send_message: definition(vi.fn()) },
+      p,
+      gate(),
+      () => [],
+      undefined,
+      undefined,
+      { enviadas: new Set(), log: { warn: vi.fn() }, limite: 1, contador },
+      criarGuardaAnuncioSemVitrine(true),
+    );
+
+    const recusada = await execute(tools, 'send_message', {
+      body: 'Já te mostro os modelos.',
+    });
+    expect(recusada).toMatchObject({
+      ok: false,
+      error: { code: 'anuncio_sem_vitrine' },
+    });
+    expect(contador.valor).toBe(0);
+    expect(p.result.candidates).toHaveLength(0);
+
+    const liberada = await execute(tools, 'send_message', {
+      body: 'Vou te enviar as fotos.',
+    });
+    expect(liberada).toMatchObject({ ok: true, status: 'simulated' });
+    expect(contador.valor).toBe(1);
+    expect(p.result.candidates).toHaveLength(1);
+  });
+
+  it('mantém no sandbox a mesma precedência do turno real: dedupe antes da guarda', async () => {
+    const p = preview();
+    const enviadas = new Set(['já te mostro os modelos.']);
+    const guarda = criarGuardaAnuncioSemVitrine(true);
+    const tools = applyPreviewPolicy(
+      { send_message: definition(vi.fn()) },
+      p,
+      gate(),
+      () => [],
+      undefined,
+      undefined,
+      { enviadas, log: { warn: vi.fn() } },
+      guarda,
+    );
+
+    const duplicada = await execute(tools, 'send_message', {
+      body: 'Já te mostro os modelos.',
+    });
+    expect(duplicada).toEqual({ ok: true, status: 'duplicate_skipped' });
+
+    const recusada = await execute(tools, 'send_message', {
+      body: 'Vou te enviar as fotos.',
+    });
+    expect(recusada).toMatchObject({
+      ok: false,
+      error: { code: 'anuncio_sem_vitrine' },
+    });
+  });
+
   it('registers text and mutation proposals without calling either operational executor', async () => {
     const send = vi.fn(),
       write = vi.fn(),

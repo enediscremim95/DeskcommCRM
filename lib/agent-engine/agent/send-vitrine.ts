@@ -20,6 +20,17 @@ interface ItemPlanejado {
   inspecao: Extract<InspecaoDeItemDoCatalogo, { status: "ready" }>;
 }
 
+/**
+ * A camada semântica fiscaliza texto livre do modelo. Abertura e fechamento da
+ * vitrine vêm da configuração aprovada da loja e, por isso, não chamam LLM.
+ */
+export function classificadorSemanticoParaMensagem<T>(
+  origem: "modelo" | "texto_fixo_vitrine",
+  classificador: T | undefined,
+): T | undefined {
+  return origem === "modelo" ? classificador : undefined;
+}
+
 export interface ItemMostradoNaVitrine {
   codigo: string;
   titulo: string;

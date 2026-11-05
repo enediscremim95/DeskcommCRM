@@ -17,11 +17,15 @@ it("mantém envio real e instrumentação do sandbox em ramos separados", () => 
     "if (agentConfig?.toolIds.includes('crm_send_catalog_item'))",
   );
   const sandboxStart = source.indexOf("if (preview?.kind === 'sandbox')", catalogStart);
-  const catalogEnd = source.indexOf("agentConfig?.toolIds.includes('crm_send_vitrine')", sandboxStart);
+  const catalogEnd = source.indexOf(
+    'if (vitrineAtivaNesteAgente && agentConfig !== null)',
+    sandboxStart,
+  );
   const realBranch = source.slice(catalogStart, sandboxStart);
   const sandboxBranch = source.slice(sandboxStart, catalogEnd);
 
   expect(catalogStart).toBeGreaterThan(-1);
+  expect(catalogEnd).toBeGreaterThan(sandboxStart);
   expect(realBranch).toContain("executarEnvioDeItemDoCatalogo");
   expect(realBranch).toContain("runBeforeSend");
   expect(realBranch).toContain("liveChannel().send");
