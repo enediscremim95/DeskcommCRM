@@ -1151,6 +1151,16 @@ export const DICIONARIO: Traducoes = {
   "Modelo do cadastro; nenhuma versão publicada ainda.": {
     es: "Modelo del registro; todavía no hay versión publicada.",
   },
+  "Onde o agente está no ar": { es: "Dónde está el agente en el aire" },
+  "No ar": { es: "En el aire" },
+  "Não está no ar": { es: "No está en el aire" },
+  "Canal não encontrado": { es: "Canal no encontrado" },
+  "Publicado, mas o número está desconectado": {
+    es: "Publicado, pero el número está desconectado",
+  },
+  "Publicado, mas o atendimento automático está desligado neste número": {
+    es: "Publicado, pero la atención automática está desactivada en este número",
+  },
   Tipo: { es: "Tipo" },
   Prioridade: { es: "Prioridad" },
   Visualizar: { es: "Ver" },
