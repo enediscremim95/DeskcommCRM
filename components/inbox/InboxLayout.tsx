@@ -514,6 +514,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
               <ConversationHeader conversation={selectedConversation} />
               <div className="min-h-0 flex-1 overflow-hidden">
                 <ChatThread
+                  key={selectedConversation.id}
                   conversationId={selectedConversation.id}
                   onResponder={setRespondendo}
                   onActivityChange={handleThreadActivityChange}

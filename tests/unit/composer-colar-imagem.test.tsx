@@ -30,6 +30,7 @@ vi.mock("@/hooks/inbox/useSendMessage", () => ({
 
 import { Composer } from "@/components/inbox/Composer";
 import { imagemDoClipboard } from "@/lib/inbox/clipboard-image";
+import { desmontarDialogRadix } from "@/tests/helpers/radix-dialog";
 
 const CARIMBO = new Date("2026-08-07T19:26:03.000Z");
 
@@ -111,7 +112,7 @@ describe("Composer — colar imagem", () => {
   });
 
   it("colar imagem abre o preview e enviar dispara upload + send", async () => {
-    renderComposer();
+    const view = renderComposer();
     fireEvent.paste(campo(), { clipboardData: clipboard({ files: [png()] }) });
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
@@ -125,6 +126,7 @@ describe("Composer — colar imagem", () => {
         expect.anything(),
       ),
     );
+    await desmontarDialogRadix(view.unmount);
   });
 
   it("colar TEXTO não abre preview e não cancela o paste do browser", () => {
@@ -145,7 +147,7 @@ describe("Composer — colar imagem", () => {
   });
 
   it("com anexo já em preview, colar não substitui em silêncio o que o operador escolheu", async () => {
-    renderComposer();
+    const view = renderComposer();
     fireEvent.click(screen.getByRole("button", { name: /anexar/i }));
     const inputDoc = document.querySelector('input[accept^=".pdf"]') as HTMLInputElement;
     const doc = new File([new Uint8Array([1])], "contrato-assinado.pdf", { type: "application/pdf" });
@@ -157,6 +159,7 @@ describe("Composer — colar imagem", () => {
     fireEvent.paste(campo(), { clipboardData: clipboard({ files: [png()] }) });
 
     expect(screen.getByText("contrato-assinado.pdf")).toBeInTheDocument();
+    await desmontarDialogRadix(view.unmount);
   });
 
   it("composer desabilitado ignora a colagem", () => {

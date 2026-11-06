@@ -3,7 +3,7 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, Check, Checks, Robot, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, Check, Checks, PaperPlaneTilt, Robot, WarningOctagon } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
@@ -27,6 +27,10 @@ interface Props {
   debugCitations?: boolean;
   /** Escolher esta mensagem para responder "em cima" dela. */
   onResponder?: (m: Message) => void;
+  onEncaminhar?: (m: Message) => void;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onToggleSelection?: (m: Message) => void;
   /** A mensagem citada por ESTA, quando houver — desenha o fio. */
   citada?: Message | null;
   /**
@@ -40,6 +44,13 @@ interface Props {
    * "Atendente", que é verdadeiro para todo mundo.
    */
   viewerUserId?: string | null;
+}
+
+export function isForwardableMessage(message: Message): boolean {
+  if (message.revoked_at || message.status === "failed") return false;
+  if (message.type === "internal_note" || message.metadata?.internal_note === true) return false;
+  if (message.type === "system" || message.metadata?.system_event === true) return false;
+  return ["text", "image", "video", "document", "audio"].includes(message.type);
 }
 
 function AckIndicator({ status, t }: { status: string; t: (texto: string) => string }) {
@@ -59,6 +70,10 @@ export function MessageBubble({
   message,
   debugCitations,
   onResponder,
+  onEncaminhar,
+  selectionMode = false,
+  selected = false,
+  onToggleSelection,
   citada,
   viewerUserId,
 }: Props) {
@@ -79,6 +94,7 @@ export function MessageBubble({
   // texto não aparece: mostrá-lo seria expor justamente o que o cliente pediu
   // para tirar do ar.
   const apagada = Boolean(message.revoked_at);
+  const encaminhavel = isForwardableMessage(message);
   const editada = Boolean(message.edited_at) && !apagada;
   const aiGenerated = isAiGeneratedMessage(message.metadata);
   const citations = extractCitations(message.metadata);
@@ -123,6 +139,15 @@ export function MessageBubble({
         isOutbound ? "justify-end" : "justify-start",
       )}
     >
+      {selectionMode && encaminhavel && (
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelection?.(message)}
+          aria-label={t("Selecionar esta mensagem")}
+          className="h-4 w-4 shrink-0 accent-primary"
+        />
+      )}
       {/*
         RESPONDER — aparece ao passar o mouse, como no WhatsApp Web.
         Fica FORA da bolha para não disputar espaço com o texto, e do lado de
@@ -156,6 +181,16 @@ export function MessageBubble({
           )}
         >
           <ArrowBendUpLeft size={14} />
+        </button>
+      )}
+      {onEncaminhar && encaminhavel && isOutbound && !selectionMode && (
+        <button
+          type="button"
+          onClick={() => onEncaminhar(message)}
+          aria-label={t("Encaminhar esta mensagem")}
+          className="rounded-md p-1 text-muted-foreground opacity-100 transition-opacity hover:bg-muted [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <PaperPlaneTilt size={14} />
         </button>
       )}
       <div
@@ -265,6 +300,9 @@ export function MessageBubble({
             // divergência só aparece quando alguém cobra o que não foi.
             <span title={t("O autor editou esta mensagem")}>{t("editada")}</span>
           )}
+          {message.metadata?.forwarded === true && (
+            <span className="mr-auto text-[10px] italic opacity-80">{t("Encaminhada")}</span>
+          )}
           <span>{time}</span>
           {showCitationButton && (
             <CitationButton citations={citations} messageId={message.id} />
@@ -312,6 +350,16 @@ export function MessageBubble({
           )}
         >
           <ArrowBendUpLeft size={14} />
+        </button>
+      )}
+      {onEncaminhar && encaminhavel && !isOutbound && !selectionMode && (
+        <button
+          type="button"
+          onClick={() => onEncaminhar(message)}
+          aria-label={t("Encaminhar esta mensagem")}
+          className="rounded-md p-1 text-muted-foreground opacity-100 transition-opacity hover:bg-muted [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <PaperPlaneTilt size={14} />
         </button>
       )}
     </div>
