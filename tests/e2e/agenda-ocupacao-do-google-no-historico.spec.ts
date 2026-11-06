@@ -6,7 +6,10 @@ import { test, expect, type Page } from "@playwright/test";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
-import { irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
+import {
+  irParaASemanaSeguinte,
+  telaDaAgendaVisivel,
+} from "./helpers/agenda-semana-integra";
 
 /**
  * A OCUPAÇÃO DO GOOGLE NA LISTA "PRÓXIMOS" — e os dois botões que ela não
@@ -70,7 +73,7 @@ async function entrar(page: Page, creds: Creds) {
   await page.getByRole("button", { name: /entrar/i }).click();
   await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
   await page.goto("/app/agenda");
-  await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 25_000 });
+  await expect(telaDaAgendaVisivel(page)).toBeVisible({ timeout: 25_000 });
 }
 
 async function instanteNoDia(page: Page, dia: string, hora: number): Promise<string> {
@@ -142,8 +145,9 @@ test("a ocupação do Google não oferece Remarcar nem Cancelar no histórico", 
   const eventoId = (evento as { id: string }).id;
 
   await page.reload();
-  await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 25_000 });
+  await expect(telaDaAgendaVisivel(page)).toBeVisible({ timeout: 25_000 });
   await irParaASemanaSeguinte(page);
+  const agenda = telaDaAgendaVisivel(page);
 
   // ─── O INVARIANTE, e ele NÃO é "a linha existe e está cinza" ──────────────
   //
@@ -166,7 +170,7 @@ test("a ocupação do Google não oferece Remarcar nem Cancelar no histórico", 
   // O que NÃO pode é a terceira: aparecer com botão vivo, que responde 404
   // porque o id é de `calendar_external_events` e a rota procura em
   // `calendar_appointments`.
-  const linha = page.getByTestId(`linha-${eventoId}`);
+  const linha = agenda.getByTestId(`linha-${eventoId}`);
   const apareceNoHistorico = await linha.isVisible().catch(() => false);
 
   await page.screenshot({
@@ -175,12 +179,12 @@ test("a ocupação do Google não oferece Remarcar nem Cancelar no histórico", 
 
   if (apareceNoHistorico) {
     await expect(
-      page.getByTestId(`cancelar-${eventoId}`),
+      agenda.getByTestId(`cancelar-${eventoId}`),
       "«Cancelar» está habilitado numa ocupação do Google: o id é de " +
         "calendar_external_events e a rota DELETE procura em calendar_appointments",
     ).toBeDisabled();
     await expect(
-      page.getByTestId(`remarcar-${eventoId}`),
+      agenda.getByTestId(`remarcar-${eventoId}`),
       "«Remarcar» está habilitado numa ocupação do Google — espelho somente-leitura",
     ).toBeDisabled();
   }
@@ -202,15 +206,15 @@ test("a ocupação do Google não oferece Remarcar nem Cancelar no histórico", 
 
   if (nosso) {
     const idNosso = (nosso as { id: string }).id;
-    const linhaNossa = page.getByTestId(`linha-${idNosso}`);
+    const linhaNossa = agenda.getByTestId(`linha-${idNosso}`);
     if (await linhaNossa.isVisible().catch(() => false)) {
       await expect(
-        page.getByTestId(`cancelar-${idNosso}`),
+        agenda.getByTestId(`cancelar-${idNosso}`),
         "«Cancelar» ficou desabilitado num agendamento NOSSO — o conserto da " +
           "ocupação do Google não pode desligar a ação de quem tem ação",
       ).toBeEnabled();
       await expect(
-        page.getByTestId(`remarcar-${idNosso}`),
+        agenda.getByTestId(`remarcar-${idNosso}`),
         "«Remarcar» ficou desabilitado num agendamento NOSSO",
       ).toBeEnabled();
     }

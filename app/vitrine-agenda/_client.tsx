@@ -17,6 +17,7 @@ import type { VisaoDaAgenda } from "@/components/agenda/tipos";
 import { EmptyAgenda } from "@/components/empty";
 import { Button } from "@/components/ui/button";
 import { CalendarPlus, CaretLeft, CaretRight } from "@/lib/ui/icons";
+import { FUSO_PADRAO } from "@/lib/tempo/fusos";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 
@@ -171,6 +172,7 @@ export function VitrineDaAgenda() {
           visao={visao}
           ancora={ANCORA}
           agora={ANCORA}
+          fuso={FUSO_PADRAO}
           pessoas={PESSOAS}
           agendamentos={visiveis}
           className="h-[560px]"
@@ -186,6 +188,7 @@ export function VitrineDaAgenda() {
           ancora={ANCORA}
           agora={ANCORA}
           responsavel={PESSOAS[0]!}
+          fuso={FUSO_PADRAO}
           horariosPorDia={HORARIOS_POR_DIA}
           quemSeraAtendido={{ nome: "Marina Alves", aceitaMensagem: true }}
         />
@@ -200,6 +203,7 @@ export function VitrineDaAgenda() {
           ancora={ANCORA}
           agora={ANCORA}
           responsavel={PESSOAS[2]!}
+          fuso={FUSO_PADRAO}
           horariosPorDia={HORARIOS_POR_DIA}
           quemSeraAtendido={{ nome: "Pedro Lima", aceitaMensagem: false }}
         />
@@ -214,6 +218,7 @@ export function VitrineDaAgenda() {
           agendamentos={AGENDAMENTOS}
           pessoas={PESSOAS}
           agora={ANCORA}
+          fuso={FUSO_PADRAO}
           className="h-[420px]"
         />
       </Secao>
@@ -227,6 +232,7 @@ export function VitrineDaAgenda() {
           ancora={ANCORA}
           agora={ANCORA}
           responsavel={PESSOAS[3]!}
+          fuso={FUSO_PADRAO}
           horariosPorDia={{}}
           publicouHorarios={false}
           fusoSuposto

@@ -1,5 +1,9 @@
 import { expect, type Page } from "@playwright/test";
 
+import { telaDaAgendaVisivel } from "./agenda-raiz-visivel";
+
+export { configuracaoDaAgendaVisivel, telaDaAgendaVisivel } from "./agenda-raiz-visivel";
+
 /**
  * A SEMANA ÍNTEGRA — o único lugar destas specs onde "que dia é hoje" entra na
  * conta, e ele entra DECLARADO.
@@ -64,14 +68,15 @@ const DIAS_POR_SEMANA = 7;
  * busca quando o recorte muda, e medir no meio da troca lê a semana velha.
  */
 export async function irParaASemanaSeguinte(page: Page): Promise<string[]> {
-  const colunas = page.locator('[data-testid^="coluna-dia-"]');
+  const agenda = telaDaAgendaVisivel(page);
+  const colunas = agenda.locator('[data-testid^="coluna-dia-"]');
   await expect(
     colunas.first(),
     "a grade não desenhou dia nenhum — a tela da agenda não chegou a montar",
   ).toBeAttached({ timeout: 25_000 });
   const antes = await diasDesenhados(page);
 
-  await page.getByTestId("periodo-seguinte").click();
+  await agenda.getByTestId("periodo-seguinte").click();
 
   await expect
     .poll(async () => (await diasDesenhados(page))[0] ?? "", {
@@ -113,7 +118,7 @@ export async function irParaASemanaDoCompromisso(page: Page, instanteISO: string
   }, instanteISO);
 
   await expect(
-    page.locator('[data-testid^="coluna-dia-"]').first(),
+    telaDaAgendaVisivel(page).locator('[data-testid^="coluna-dia-"]').first(),
     "a grade não desenhou dia nenhum — a tela da agenda não chegou a montar",
   ).toBeAttached({ timeout: 25_000 });
 
@@ -136,7 +141,7 @@ export async function irParaASemanaDoCompromisso(page: Page, instanteISO: string
 /** Os dias que a grade desenha AGORA, lidos da própria tela. */
 export async function diasDesenhados(page: Page): Promise<string[]> {
   return (
-    await page
+    await telaDaAgendaVisivel(page)
       .locator('[data-testid^="coluna-dia-"]')
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!.replace("coluna-dia-", "")))
   ).sort();
@@ -161,8 +166,11 @@ async function abrirMesQueTemVaga(
   mensagemSemVaga: string,
   mensagemMesSeguinte: string,
 ): Promise<boolean> {
-  const diaDisponivel = page.locator('[data-testid^="dia-"][data-disponivel="true"]').first();
-  const mesSeguinte = page.getByTestId("mes-seguinte");
+  const diaDisponivel = page
+    .locator('[data-testid^="dia-"][data-disponivel="true"]')
+    .filter({ visible: true })
+    .first();
+  const mesSeguinte = page.getByTestId("mes-seguinte").filter({ visible: true });
 
   await expect
     .poll(
@@ -195,6 +203,7 @@ export async function escolherDiaDesenhado(page: Page, dias: readonly string[]):
     (
       await page
         .locator('[data-testid^="dia-"][data-disponivel="true"]')
+        .filter({ visible: true })
         .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!.slice(4)))
     ).filter((k) => dias.includes(k));
 
@@ -209,9 +218,12 @@ export async function escolherDiaDesenhado(page: Page, dias: readonly string[]):
 
   let candidatos = await disponiveis();
   if (candidatos.length === 0 && !jaAvancouOMes) {
-    await page.getByTestId("mes-seguinte").click();
+    await page.getByTestId("mes-seguinte").filter({ visible: true }).click();
     await expect(
-      page.locator('[data-testid^="dia-"][data-disponivel="true"]').first(),
+      page
+        .locator('[data-testid^="dia-"][data-disponivel="true"]')
+        .filter({ visible: true })
+        .first(),
       "nem o mês seguinte oferece dia — a janela de busca do painel é de 30 dias",
     ).toBeVisible({ timeout: 20_000 });
     candidatos = await disponiveis();
@@ -223,7 +235,7 @@ export async function escolherDiaDesenhado(page: Page, dias: readonly string[]):
     `nenhum dia da semana desenhada (${dias.join(", ")}) está disponível no painel — ` +
       "o alvo e a grade deixariam de falar do mesmo período",
   ).toBeTruthy();
-  await page.getByTestId(`dia-${escolhido}`).click();
+  await page.getByTestId(`dia-${escolhido}`).filter({ visible: true }).click();
   return escolhido!;
 }
 
@@ -271,6 +283,7 @@ async function diasCheios(page: Page): Promise<string[]> {
     });
     const chaves = await page
       .locator('[data-testid^="dia-"][data-disponivel="true"]')
+      .filter({ visible: true })
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!.slice(4)));
     // `yyyy-MM-dd` compara como texto na mesma ordem em que compara como data.
     return chaves.filter((k) => k > hoje).sort();
@@ -301,9 +314,12 @@ async function diasCheios(page: Page): Promise<string[]> {
   // mês seguinte, e o mini-calendário só torna clicável o que é `isSameMonth` do
   // mês em tela. Sem este passo as specs reprovariam nos dias 30/31 — a mesma
   // classe de vermelho-por-calendário que este módulo existe para fechar.
-  await page.getByTestId("mes-seguinte").click();
+  await page.getByTestId("mes-seguinte").filter({ visible: true }).click();
   await expect(
-    page.locator('[data-testid^="dia-"][data-disponivel="true"]').first(),
+    page
+      .locator('[data-testid^="dia-"][data-disponivel="true"]')
+      .filter({ visible: true })
+      .first(),
     "nem o mês seguinte oferece dia — a janela de busca da tela é de 30 dias",
   ).toBeVisible({ timeout: 20_000 });
   return varrer();
@@ -322,7 +338,7 @@ function exigirDia(cheios: readonly string[], qual: string): string {
 /** O PRIMEIRO dia cheio que o painel oferece. Clica nele e devolve a chave. */
 export async function escolherPrimeiroDiaCheio(page: Page): Promise<string> {
   const dia = exigirDia(await diasCheios(page), "primeiro");
-  await page.getByTestId(`dia-${dia}`).click();
+  await page.getByTestId(`dia-${dia}`).filter({ visible: true }).click();
   return dia;
 }
 
@@ -338,6 +354,6 @@ export async function escolherPrimeiroDiaCheio(page: Page): Promise<string> {
  */
 export async function escolherUltimoDiaCheio(page: Page): Promise<string> {
   const dia = exigirDia(await diasCheios(page), "ultimo");
-  await page.getByTestId(`dia-${dia}`).click();
+  await page.getByTestId(`dia-${dia}`).filter({ visible: true }).click();
   return dia;
 }
