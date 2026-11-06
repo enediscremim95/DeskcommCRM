@@ -12,17 +12,18 @@ describe("fitToBudget — mídia no contexto", () => {
     ], 100000, "UTC");
     const body = ctx.messages[0]!.body;
     expect(body).toContain("quero o tênis 42"); // conteúdo derivado presente
-    expect(body).toContain("um áudio"); // enquadrado pelo tipo
-    expect(body).toMatch(/não.*ver\/ouvir mídia/i); // instrução anti-reflexo de negação
+    expect(body).toContain("áudio da cliente, transcrito");
+    expect(body).toMatch(/CONTEÚDO NÃO CONFIÁVEL/i);
     expect(ctx.messages[0]!.type).toBe("audio");
     expect(ctx.messages[0]!.media_storage_path).toBe("p");
   });
 
-  it("mídia SEM derivado ainda cai no marcador [tipo]", () => {
+  it("mídia sem derivado recebe aviso curto e instrutivo", () => {
     const ctx = __test_fitToBudget(base, [
       { direction: "inbound", type: "image", body: null, media_url: "u", media_storage_path: "p", media_mime: "image/jpeg", media_derived_text: null, sent_at: new Date("2026-07-22T10:00:00Z") },
     ], 100000, "UTC");
-    expect(ctx.messages[0]!.body).toBe("[image]");
+    expect(ctx.messages[0]!.body).toContain("não foi possível ler");
+    expect(ctx.messages[0]!.body).toContain("Peça a informação por escrito");
   });
 
   it("texto puro inalterado", () => {

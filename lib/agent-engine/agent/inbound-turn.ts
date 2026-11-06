@@ -6,6 +6,7 @@ import {
   withPreviewToolTrace,
   type TurnPreview,
 } from './preview';
+import { previewFixtureRegistry } from './preview-fixture';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -4480,10 +4481,25 @@ async function executarTurnoDoAgente(
 }
 
 export async function runAgentPreview(
-  deps: InboundTurnDeps,
+  inputDeps: InboundTurnDeps,
   pool: pg.Pool,
   preview: TurnPreview,
 ): Promise<void> {
+  const deps: InboundTurnDeps = {
+    ...inputDeps,
+    registry: previewFixtureRegistry(),
+    embed: async () => ({
+      embedding: Array(1536).fill(0.1),
+      promptTokens: 0,
+      model: 'text-embedding-3-small',
+    }),
+    llmCfg: {
+      ...inputDeps.llmCfg,
+      anthropicApiKey: 'preview-sem-rede',
+      openaiApiKey: 'preview-sem-rede',
+      openrouterApiKey: 'preview-sem-rede',
+    },
+  };
   await executarTurnoDoAgente(
     deps,
     null,

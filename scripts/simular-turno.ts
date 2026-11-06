@@ -13,6 +13,7 @@ import { runAgentPreview } from "@/lib/agent-engine/agent/inbound-turn";
 import { newPreviewResult, scenarioContext } from "@/lib/agent-engine/agent/preview";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { formatMediaForTurn } from "@/lib/messaging/media/turn-text";
 
 const messageSchema = z.object({
   direction: z.enum(["inbound", "outbound"]),
@@ -63,17 +64,29 @@ async function main(): Promise<void> {
       agentId: z.string().uuid(),
       versionId: z.string().uuid().optional(),
       historyFile: z.string().min(1),
-      message: z.string().min(1),
+      message: z.string(),
+      mediaKind: z.enum(["audio", "imagem", "video", "documento"]).optional(),
+      mediaText: z.string().min(1).optional(),
       promptFile: z.string().min(1).optional(),
       name: z.string().min(1).max(200).optional(),
       reset: z.boolean(),
+    })
+    .superRefine((value, context) => {
+      if (!value.message.trim() && !value.mediaKind) {
+        context.addIssue({ code: "custom", message: "informe --msg ou --midia" });
+      }
+      if (value.mediaKind && !value.mediaText) {
+        context.addIssue({ code: "custom", message: "--midia exige --midia-texto" });
+      }
     })
     .parse({
       organizationId: requiredOption("org-id"),
       agentId: requiredOption("agente-id"),
       versionId: option("versao-id"),
       historyFile: requiredOption("hist"),
-      message: requiredOption("msg"),
+      message: option("msg") ?? "",
+      mediaKind: option("midia"),
+      mediaText: option("midia-texto"),
       promptFile: option("prompt"),
       name: option("nome"),
       reset: process.argv.includes("--novo"),
@@ -81,9 +94,22 @@ async function main(): Promise<void> {
 
   const historyFile = path.resolve(cli.historyFile);
   const history = await loadHistory(historyFile, cli.reset, cli.name);
+  const mediaType = cli.mediaKind === "imagem"
+    ? "image"
+    : cli.mediaKind === "documento"
+      ? "document"
+      : cli.mediaKind;
+  const inboundBody = mediaType && cli.mediaText
+    ? formatMediaForTurn({
+        type: mediaType,
+        caption: cli.message,
+        derived: cli.mediaText,
+        simulated: true,
+      })
+    : cli.message;
   history.msgs.push({
     direction: "inbound",
-    body: cli.message,
+    body: inboundBody,
     sent_at: new Date().toISOString(),
   });
 
@@ -139,7 +165,7 @@ async function main(): Promise<void> {
     [runId, failure ? "failed" : "completed", cli.organizationId],
   );
 
-  writeLine(`\n=== CLIENTE (${history.nome}): ${cli.message}`);
+  writeLine(`\n=== CLIENTE (${history.nome}): ${inboundBody}`);
   writeLine(
     `=== AGENTE (${Math.round((Date.now() - startedAt) / 1000)}s, versão ${agent.versionId.slice(0, 8)}${cli.promptFile ? ", PROMPT DE TESTE" : ""}):`,
   );
