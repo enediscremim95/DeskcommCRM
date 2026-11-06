@@ -210,6 +210,13 @@ import {
   resultadoDeEnvioSemAnuncio,
 } from './anuncio-sem-vitrine';
 import { filtrarSaudacaoRepetida } from './saudacao-repetida';
+import {
+  concluirHandoffAutomaticoNaPromessa,
+  criarEstadoHandoffAutomaticoNaPromessa,
+  MOTIVO_HANDOFF_AUTOMATICO_NA_PROMESSA,
+  registrarHandoffRealizadoNesteTurno,
+  registrarMensagemParaHandoffAutomatico,
+} from './promessa-sem-handoff';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -2208,6 +2215,7 @@ async function executarTurnoDoAgente(
   const estadoCotacaoFrete: EstadoCotacaoFrete = { cotacoes: 0 };
   const codigosDeCatalogoJaEnviados = new Set(preview?.catalogProductCodesAlreadySent ?? []);
   const mensagensEnviadasNesteTurno = new Set<string>();
+  const estadoHandoffAutomatico = criarEstadoHandoffAutomaticoNaPromessa();
   const vitrineAtivaNesteAgente =
     agentConfig?.toolIds.includes('crm_send_vitrine') === true &&
     Object.keys(agentConfig.vitrines).length > 0;
@@ -2883,6 +2891,7 @@ async function executarTurnoDoAgente(
             outcome.kind === 'queued'
           ) {
             registrarMensagemEnviadaNoTurno(bodyParaEnvio, mensagensEnviadasNesteTurno);
+            registrarMensagemParaHandoffAutomatico(estadoHandoffAutomatico, bodyParaEnvio);
           }
           if (outcome.kind === 'sent' && pendingCitations.length > 0) {
             try {
@@ -3164,6 +3173,7 @@ async function executarTurnoDoAgente(
             raw,
           );
           if (!res.ok) return res; // erro de ensino (payload fora da whitelist)
+          registrarHandoffRealizadoNesteTurno(estadoHandoffAutomatico);
           return { ok: true, status: res.status, message: res.message };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -3960,6 +3970,7 @@ async function executarTurnoDoAgente(
               contador: enviosFisicosNoPreview,
             },
             guardaAnuncioSemVitrine,
+            estadoHandoffAutomatico,
           )
         : rawTools;
     const toolsWithBreaker = wrapToolsWithBreaker(previewTools, {
@@ -4144,6 +4155,38 @@ async function executarTurnoDoAgente(
       },
       { registry: deps.registry, log: runLog },
     );
+
+    // Fechamento compartilhado do efeito de FALAR: roda depois que todas as
+    // tools do Conversador terminaram, mas antes do checkpoint. Assim uma falha
+    // da 2ª chamada de modelo não deixa sem dono a promessa que já chegou ao
+    // cliente. Real e sandbox atravessam este MESMO ponto.
+    await concluirHandoffAutomaticoNaPromessa({
+      ativo: agentConfig?.handoffAutomaticoNaPromessa === true,
+      estado: estadoHandoffAutomatico,
+      sandbox: preview !== undefined,
+      conversaEmAtendimentoHumano: () =>
+        preview ? Promise.resolve(false) : isLeadInHandoff(pool, tenantId, leadId),
+      aplicarHandoff: async () => {
+        if (preview) throw new Error('preview_handoff_effect_forbidden');
+        await performHumanHandoff(
+          pool,
+          { tenantId, leadId, conversationId: input.conversationId },
+          {
+            reason: MOTIVO_HANDOFF_AUTOMATICO_NA_PROMESSA,
+            conversationSummary: buildHandoffSummary(previous),
+            log: runLog,
+          },
+        );
+      },
+      registrarSandbox: (code) => {
+        preview?.result.impediments.push({
+          code,
+          message:
+            'A resposta prometeu uma conferência humana; no atendimento real a conversa seria passada para uma pessoa.',
+        });
+      },
+      log: runLog,
+    });
 
     // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
     // promessa fora de tabela (F4-01). Ambos estão determinados aqui (o jailbreak rodou na

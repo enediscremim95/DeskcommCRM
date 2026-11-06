@@ -168,6 +168,20 @@ describe("mapas de arquitetura — coerência interna", () => {
     expect((m.nodes ?? []).find((node) => node.id === "anuncio")?.label).toContain("remove só");
     expect((m.nodes ?? []).find((node) => node.id === "saudacao")?.label).toContain("12 horas");
   });
+
+  it("a promessa explícita sem passagem está ligada ao turno e ao handoff humano", () => {
+    const m = JSON.parse(
+      fs.readFileSync(path.join(DIR, "agent-turn.workflow.json"), "utf8"),
+    ) as Mapa;
+    const grau = (id: string) =>
+      (m.edges ?? []).filter((e) => e.from === id || e.to === id).length;
+    expect(grau("promessa-handoff")).toBeGreaterThanOrEqual(2);
+    expect(
+      (m.edges ?? []).some(
+        (e) => e.from === "promessa-handoff" && e.to === "handoff",
+      ),
+    ).toBe(true);
+  });
 });
 
 /**

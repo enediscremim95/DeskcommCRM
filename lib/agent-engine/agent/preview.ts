@@ -31,6 +31,11 @@ import {
   type GuardaAnuncioSemVitrine,
 } from './anuncio-sem-vitrine';
 import { filtrarSaudacaoRepetida } from './saudacao-repetida';
+import {
+  registrarHandoffRealizadoNesteTurno,
+  registrarMensagemParaHandoffAutomatico,
+  type EstadoHandoffAutomaticoNaPromessa,
+} from './promessa-sem-handoff';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -177,6 +182,7 @@ export function applyPreviewPolicy(
     contador?: { valor: number };
   },
   guardaAnuncioSemVitrine?: GuardaAnuncioSemVitrine,
+  handoffAutomatico?: EstadoHandoffAutomaticoNaPromessa,
 ): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -266,6 +272,9 @@ export function applyPreviewPolicy(
                 citations: citations(),
                 trace: result.trace,
               });
+              if (handoffAutomatico) {
+                registrarMensagemParaHandoffAutomatico(handoffAutomatico, result.body);
+              }
               if (dedupe) {
                 registrarMensagemEnviadaNoTurno(body, dedupe.enviadas);
                 if (dedupe.contador) dedupe.contador.valor += 1;
@@ -300,6 +309,9 @@ export function applyPreviewPolicy(
                 'provide_case_update',
               ].includes(name)
             ) {
+              if (name === 'request_human_handoff' && handoffAutomatico) {
+                registrarHandoffRealizadoNesteTurno(handoffAutomatico);
+              }
               p.result.proposals.push({ tool: name, arguments: args });
               return {
                 ok: true,

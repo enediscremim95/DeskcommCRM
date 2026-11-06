@@ -16,6 +16,20 @@ describe('agentPatchSchema, sem_saudacao_repetida', () => {
   });
 });
 
+describe('agentPatchSchema, handoff_automatico_na_promessa', () => {
+  it.each([true, false])('aceita booleano: %p', (value) => {
+    expect(
+      agentPatchSchema.safeParse({ config: { handoff_automatico_na_promessa: value } }).success,
+    ).toBe(true);
+  });
+
+  it.each(['true', 1, null])('rejeita valor não booleano: %p', (value) => {
+    expect(
+      agentPatchSchema.safeParse({ config: { handoff_automatico_na_promessa: value } }).success,
+    ).toBe(false);
+  });
+});
+
 describe('agentPatchSchema, max_sends_per_turn', () => {
   it.each([1, 6, 12])('aceita inteiro dentro da faixa: %i', (value) => {
     const parsed = agentPatchSchema.safeParse({ config: { max_sends_per_turn: value } });
