@@ -16,6 +16,20 @@ describe('agentPatchSchema, sem_saudacao_repetida', () => {
   });
 });
 
+describe('agentPatchSchema, vitrine_por_gatilho', () => {
+  it.each([true, false])('aceita booleano: %p', (value) => {
+    expect(
+      agentPatchSchema.safeParse({ config: { vitrine_por_gatilho: value } }).success,
+    ).toBe(true);
+  });
+
+  it.each(['true', 1, null])('rejeita valor não booleano: %p', (value) => {
+    expect(
+      agentPatchSchema.safeParse({ config: { vitrine_por_gatilho: value } }).success,
+    ).toBe(false);
+  });
+});
+
 describe('agentPatchSchema, max_sends_per_turn', () => {
   it.each([1, 6, 12])('aceita inteiro dentro da faixa: %i', (value) => {
     const parsed = agentPatchSchema.safeParse({ config: { max_sends_per_turn: value } });
@@ -89,6 +103,31 @@ describe('agentPatchSchema, vitrines', () => {
         { itens: [{ codigo: `C${i}`, titulo: `Título ${i}` }] },
       ]),
     );
+    expect(agentPatchSchema.safeParse({ config: { vitrines } }).success).toBe(false);
+  });
+
+  it('aceita gatilhos literais curtos sem interpretar metacaracteres', () => {
+    const vitrines = {
+      padrinhos: {
+        itens: [{ codigo: 'KRAFT', titulo: 'Kit Afeto' }],
+        gatilhos: ['presente para padrinhos', 'louça (cristã)', 'kit + caixa'],
+      },
+    };
+    expect(agentPatchSchema.safeParse({ config: { vitrines } }).success).toBe(true);
+  });
+
+  it.each([
+    Array.from({ length: 21 }, (_, i) => `gatilho ${i}`),
+    ['x'.repeat(81)],
+    ['linha 1\nlinha 2'],
+    [''],
+  ])('rejeita limites inválidos de gatilhos: %p', (gatilhos) => {
+    const vitrines = {
+      padrinhos: {
+        itens: [{ codigo: 'KRAFT', titulo: 'Kit Afeto' }],
+        gatilhos,
+      },
+    };
     expect(agentPatchSchema.safeParse({ config: { vitrines } }).success).toBe(false);
   });
 });

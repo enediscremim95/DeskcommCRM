@@ -74,6 +74,18 @@ describe('loadPublishedAgentConfig — campos de RAG', () => {
     expect(ligado?.semSaudacaoRepetida).toBe(true);
   });
 
+  it('vitrine_por_gatilho é opt-in por agente e ausência mantém o padrão desligado', async () => {
+    const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const ligado = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, vitrine_por_gatilho: true } }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChave?.vitrinePorGatilho).toBe(false);
+    expect(ligado?.vitrinePorGatilho).toBe(true);
+  });
+
   it('max_sends_per_turn é opt-in por agente e ausência não muda outra organização', async () => {
     const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
     const sublimando = await loadPublishedAgentConfig(
@@ -156,6 +168,7 @@ describe('config.vitrines', () => {
             padrinhos: {
               intro: 'Separei dois modelos pra você 🥰',
               itens: [{ codigo: 'SUBLI-KRAFT', titulo: 'Kit kraft' }],
+              gatilhos: ['presente para padrinhos'],
             },
           },
         },
@@ -168,6 +181,7 @@ describe('config.vitrines', () => {
     expect(comVitrine?.vitrines.padrinhos).toMatchObject({
       intro: 'Separei dois modelos pra você 🥰',
       itens: [{ codigo: 'SUBLI-KRAFT', titulo: 'Kit kraft', fotos: 2 }],
+      gatilhos: ['presente para padrinhos'],
     });
   });
 

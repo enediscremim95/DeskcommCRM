@@ -210,6 +210,7 @@ import {
   resultadoDeEnvioSemAnuncio,
 } from './anuncio-sem-vitrine';
 import { filtrarSaudacaoRepetida } from './saudacao-repetida';
+import { executarVitrinePorGatilho } from './vitrine-por-gatilho';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -2208,6 +2209,7 @@ async function executarTurnoDoAgente(
   const estadoCotacaoFrete: EstadoCotacaoFrete = { cotacoes: 0 };
   const codigosDeCatalogoJaEnviados = new Set(preview?.catalogProductCodesAlreadySent ?? []);
   const mensagensEnviadasNesteTurno = new Set<string>();
+  const assuntosDeVitrineChamadosNesteTurno = new Set<string>();
   const vitrineAtivaNesteAgente =
     agentConfig?.toolIds.includes('crm_send_vitrine') === true &&
     Object.keys(agentConfig.vitrines).length > 0;
@@ -3351,13 +3353,17 @@ async function executarTurnoDoAgente(
     });
   }
 
+  let executarVitrineNoTurno:
+    | ((raw: unknown, origem: 'modelo' | 'gatilho') => Promise<Record<string, unknown>>)
+    | null = null;
   if (vitrineAtivaNesteAgente && agentConfig !== null) {
-    rawTools.crm_send_vitrine = tool({
-      ...AGENT_TOOL_DEFS.crm_send_vitrine,
-      execute: (raw) =>
-        filaDeEnvios.enfileirar(async () => {
+    executarVitrineNoTurno = (raw, origem) =>
+      filaDeEnvios.enfileirar(async () => {
           try {
             const inputVitrine = sendVitrineInputSchema.parse(raw);
+            if (origem === 'modelo') {
+              assuntosDeVitrineChamadosNesteTurno.add(inputVitrine.assunto);
+            }
             const emSandbox = preview?.kind === 'sandbox';
             const resultado = await executarVitrine({
               input: inputVitrine,
@@ -3628,7 +3634,10 @@ async function executarTurnoDoAgente(
               },
             };
           }
-        }),
+        });
+    rawTools.crm_send_vitrine = tool({
+      ...AGENT_TOOL_DEFS.crm_send_vitrine,
+      execute: (raw) => executarVitrineNoTurno!(raw, 'modelo'),
     });
   }
 
@@ -4180,6 +4189,63 @@ async function executarTurnoDoAgente(
     // (é onde a fita inteira é re-serializada num prompt) — o conteúdo durável já foi para
     // lead_notes pelo flush (F3-07), então o stub não perde nada recuperável. Opera SÓ no
     // sufixo por-lead, nunca no prefixo estável (regra de cache 15).
+    // O gatilho roda depois da resposta normal do agente e antes do checkpoint.
+    // Ele compartilha a mesma fila e o mesmo executor do crm_send_vitrine, então
+    // não cria uma segunda porta de envio nem fura guardrails, teto ou dedupe.
+    if (agentConfig !== null && executarVitrineNoTurno !== null) {
+      const mensagensDoCliente = [...new Set([mensagemDoJob, ...inboundsPendentes])].filter(
+        (mensagem) => mensagem.trim() !== '',
+      );
+      await executarVitrinePorGatilho({
+        ativa: agentConfig.vitrinePorGatilho === true,
+        ferramentaDisponivel: vitrineAtivaNesteAgente,
+        vitrines: agentConfig.vitrines,
+        mensagensDoCliente,
+        assuntosChamadosNesteTurno: assuntosDeVitrineChamadosNesteTurno,
+        emAtendimentoHumano: () =>
+          preview ? Promise.resolve(false) : isLeadInHandoff(pool, tenantId, leadId),
+        assuntoJaMostrado: async (_assunto, vitrine) => {
+          for (const item of vitrine.itens) {
+            const inspecao = await inspecionarItemDoCatalogo({
+              db: pool,
+              organizationId: tenantId,
+              conversationId: input.conversationId,
+              input: { codigo: item.codigo, quantas_fotos: item.fotos },
+              ...(preview?.kind === 'sandbox'
+                ? { codigosJaEnviados: codigosDeCatalogoJaEnviados }
+                : {}),
+            });
+            if (inspecao.status === 'already_sent') return true;
+          }
+          return false;
+        },
+        executar: (assunto) => executarVitrineNoTurno!({ assunto }, 'gatilho'),
+        log: runLog,
+        ...(preview?.kind === 'sandbox'
+          ? {
+              registrarRastro: (rastro: {
+                assunto: string;
+                ok: boolean;
+                produtosMostrados: number;
+              }) => {
+                preview.result.toolTrace.push({
+                  tool: 'vitrine_por_gatilho',
+                  argumentos: { assunto: rastro.assunto },
+                  resultado: rastro.ok
+                    ? `sucesso:produtos=${rastro.produtosMostrados}`
+                    : 'erro:envio_da_vitrine',
+                  ok: rastro.ok,
+                });
+              },
+            }
+          : {}),
+      });
+      if (runError !== null) throw runError;
+      if (outcomes.some((o) => o.kind === 'failed')) {
+        throw new Error('envio marcado como failed pelo CRM, run re-tentado pela fila');
+      }
+    }
+
     const responseMessages =
       deps.knobs.prune !== undefined
         ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
