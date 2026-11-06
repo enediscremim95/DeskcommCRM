@@ -6,7 +6,6 @@ import {
   withPreviewToolTrace,
   type TurnPreview,
 } from './preview';
-import { previewFixtureRegistry } from './preview-fixture';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -4692,25 +4691,15 @@ async function executarTurnoDoAgente(
 }
 
 export async function runAgentPreview(
-  inputDeps: InboundTurnDeps,
+  deps: InboundTurnDeps,
   pool: pg.Pool,
   preview: TurnPreview,
 ): Promise<void> {
-  const deps: InboundTurnDeps = {
-    ...inputDeps,
-    registry: previewFixtureRegistry(),
-    embed: async () => ({
-      embedding: Array(1536).fill(0.1),
-      promptTokens: 0,
-      model: 'text-embedding-3-small',
-    }),
-    llmCfg: {
-      ...inputDeps.llmCfg,
-      anthropicApiKey: 'preview-sem-rede',
-      openaiApiKey: 'preview-sem-rede',
-      openrouterApiKey: 'preview-sem-rede',
-    },
-  };
+  // O modelo de linguagem do sandbox é o que o CHAMADOR fornece (modelo real no
+  // simulador e no "Testar agente"; o modelo fixo só entra pela chave de QA
+  // `INTERNAL_AGENT_RUN_STUB` em `requestTurnDeps`). O que o sandbox não pode
+  // fazer é LER MÍDIA pela rede: isso é garantido porque a derivação roda no
+  // worker de mídia e o simulador injeta a leitura sintética já pronta.
   await executarTurnoDoAgente(
     deps,
     null,

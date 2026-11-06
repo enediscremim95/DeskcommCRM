@@ -1,10 +1,10 @@
 /** Controlled provider for the existing INTERNAL_AGENT_RUN_STUB QA switch.
  * Only substitutes the provider seam: tools, retrieval, gates and closing remain real.
  */
+import { randomUUID } from 'node:crypto';
 import { createFakeRegistry } from '../edge/llm/providers';
 export function previewFixtureRegistry() {
-  let toolCallSequence = 0;
-  const registry = createFakeRegistry(async (options) => {
+  return createFakeRegistry(async (options) => {
     const text = JSON.stringify(options.prompt);
     const toolResults = options.prompt.filter((m) => m.role === 'tool').flatMap((m) => m.content);
     const saw = (name: string) => toolResults.some((r) => 'toolName' in r && r.toolName === name);
@@ -47,7 +47,7 @@ export function previewFixtureRegistry() {
       if (name)
         content.push({
           type: 'tool-call',
-          toolCallId: `preview-tool-${++toolCallSequence}`,
+          toolCallId: randomUUID(),
           toolName: name,
           input: JSON.stringify(
             name === 'search_knowledge'
@@ -72,11 +72,4 @@ export function previewFixtureRegistry() {
       warnings: [],
     };
   });
-  const fixture = registry.anthropic!;
-  return {
-    ...registry,
-    openai: fixture,
-    openrouter: fixture,
-    google: fixture,
-  };
 }

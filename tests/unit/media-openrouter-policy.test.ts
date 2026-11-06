@@ -105,10 +105,12 @@ describe("texto de mídia no turno", () => {
     expect(simulator).toContain("simulated: true");
   });
 
-  it("runAgentPreview força registry e embedding sem rede", async () => {
+  it("runAgentPreview usa o modelo que o chamador fornece, nunca um registro fixo", async () => {
+    // Regressão medida na CI: forçar `previewFixtureRegistry()` aqui trocava o modelo
+    // real do simulador por um modelo falso e quebrava `autonomia-preview-core`.
     const source = await readFile("lib/agent-engine/agent/inbound-turn.ts", "utf8");
     const preview = source.slice(source.indexOf("export async function runAgentPreview"));
-    expect(preview).toContain("registry: previewFixtureRegistry()");
-    expect(preview).toContain("embed: async () =>");
+    expect(preview).not.toContain("previewFixtureRegistry");
+    expect(preview).not.toContain("preview-sem-rede");
   });
 });
