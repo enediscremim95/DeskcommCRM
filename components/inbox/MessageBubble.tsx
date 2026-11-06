@@ -47,8 +47,9 @@ interface Props {
 }
 
 export function isForwardableMessage(message: Message): boolean {
-  if (message.revoked_at || message.status === "failed" || message.sent_via === "system") return false;
-  if (message.metadata?.internal_note === true || message.metadata?.system_event === true) return false;
+  if (message.revoked_at || message.status === "failed") return false;
+  if (message.type === "internal_note" || message.metadata?.internal_note === true) return false;
+  if (message.type === "system" || message.metadata?.system_event === true) return false;
   return ["text", "image", "video", "document", "audio"].includes(message.type);
 }
 

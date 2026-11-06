@@ -17,6 +17,7 @@ import { useContactList } from "@/hooks/contacts/useContactList";
 import { useT } from "@/hooks/i18n/useT";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { randomId } from "@/lib/random-id";
 import { MagnifyingGlass, UserCircle } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import type { Contact } from "@/lib/types/contacts";
@@ -127,7 +128,7 @@ export function ForwardDialog({
 
   async function send() {
     if (selected.size === 0 || sending) return;
-    const requestId = crypto.randomUUID();
+    const requestId = randomId();
     setSending(true);
     setResults([]);
     const escolhidos = [...selected.values()];

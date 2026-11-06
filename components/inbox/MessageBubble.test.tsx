@@ -188,8 +188,10 @@ describe("MessageBubble — encaminhamento", () => {
   it.each([
     ["apagada", { revoked_at: "2026-11-06T10:00:00.000Z" }],
     ["falha", { status: "failed" }],
-    ["nota interna", { metadata: { internal_note: true } }],
-    ["evento de sistema", { sent_via: "system" }],
+    ["nota interna pelo tipo", { type: "internal_note" }],
+    ["nota interna pelos metadados", { metadata: { internal_note: true } }],
+    ["evento de sistema pelo tipo", { type: "system" }],
+    ["evento de sistema pelos metadados", { metadata: { system_event: true } }],
     ["tipo não suportado", { type: "location" }],
   ])("não mostra o botão para mensagem %s", (_label, overrides) => {
     render(<MessageBubble message={msg(overrides as Partial<Message>)} onEncaminhar={vi.fn()} />);

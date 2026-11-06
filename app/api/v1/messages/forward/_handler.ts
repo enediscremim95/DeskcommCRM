@@ -68,7 +68,7 @@ function erroEhDestinoExistente(error: unknown): boolean {
 function motivoParaPular(m: MensagemOrigem): string | null {
   if (m.revoked_at) return "message_revoked";
   if (m.metadata?.internal_note === true || m.type === "internal_note") return "internal_note";
-  if (m.sent_via === "system" || m.metadata?.system_event === true || m.type === "system") return "system_event";
+  if (m.metadata?.system_event === true || m.type === "system") return "system_event";
   if (m.status === "failed") return "message_failed";
   if (!TIPOS_ENCAMINHAVEIS.has(m.type)) return "unsupported_type";
   if (m.type === "text" && !m.body?.trim()) return "empty_message";

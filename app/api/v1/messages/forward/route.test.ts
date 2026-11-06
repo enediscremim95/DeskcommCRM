@@ -15,6 +15,7 @@ const DESTINO_1 = "00000000-0000-4000-8000-000000000011";
 const DESTINO_2 = "00000000-0000-4000-8000-000000000012";
 const MSG_1 = "00000000-0000-4000-8000-000000000021";
 const MSG_2 = "00000000-0000-4000-8000-000000000022";
+const MSG_3 = "00000000-0000-4000-8000-000000000023";
 const REQUEST_1 = "00000000-0000-4000-8000-000000000031";
 const REQUEST_2 = "00000000-0000-4000-8000-000000000032";
 
@@ -131,6 +132,24 @@ describe("POST /api/v1/messages/forward", () => {
     expect(result.destinations[0]?.messages).toEqual([
       expect.objectContaining({ source_message_id: MSG_1, status: "skipped", reason: "message_revoked" }),
       expect.objectContaining({ source_message_id: MSG_2, status: "skipped", reason: "internal_note" }),
+    ]);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+  });
+
+  it("pula evento de sistema identificado pelo tipo ou pelos metadados", async () => {
+    const db = banco({
+      messages: [
+        mensagem({ id: MSG_2, type: "system" }),
+        mensagem({ id: MSG_3, metadata: { system_event: true } }),
+      ],
+      destinations: [destino(DESTINO_1)],
+    });
+    const result = await forwardMessagesHandler(db as never, admin() as never, ctx, {
+      message_ids: [MSG_2, MSG_3], destination_conversation_ids: [DESTINO_1],
+    });
+    expect(result.destinations[0]?.messages).toEqual([
+      expect.objectContaining({ source_message_id: MSG_2, status: "skipped", reason: "system_event" }),
+      expect.objectContaining({ source_message_id: MSG_3, status: "skipped", reason: "system_event" }),
     ]);
     expect(sendMessageHandler).not.toHaveBeenCalled();
   });

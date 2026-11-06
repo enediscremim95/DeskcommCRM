@@ -57,9 +57,20 @@ describe("no celular o botão de responder aparece", () => {
 
   it("os DOIS botões (entrada e saída) seguem a mesma regra", () => {
     // São dois elementos espelhados. Consertar um e esquecer o outro deixaria a
-    // metade da conversa sem resposta possível no celular.
-    const comRegra = [...BOLHA.matchAll(/\[@media\(hover:hover\)\]:opacity-0/g)];
-    expect(comRegra.length, "um dos dois botões ficou de fora").toBe(2);
+    // metade da conversa sem resposta possível no celular. Procura apenas os
+    // botões de responder: outras ações da bolha podem seguir a mesma regra.
+    const botoesResponder = BOLHA
+      .split("onClick={() => onResponder(message)}")
+      .slice(1)
+      .map((trecho) => trecho.split("</button>", 1)[0] ?? "");
+    expect(botoesResponder, "um dos dois botões ficou de fora").toHaveLength(2);
+    expect(
+      botoesResponder.every((classes) =>
+        classes.includes("[@media(hover:hover)]:opacity-0") &&
+        classes.includes("[@media(hover:hover)]:group-hover:opacity-100"),
+      ),
+      "um dos dois botões deixou de condicionar a visibilidade ao hover",
+    ).toBe(true);
   });
 
   it("o teclado também alcança", () => {
