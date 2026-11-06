@@ -4208,12 +4208,21 @@ async function executarTurnoDoAgente(
         preview ? Promise.resolve(false) : isLeadInHandoff(pool, tenantId, leadId),
       aplicarHandoff: async () => {
         if (preview) throw new Error('preview_handoff_effect_forbidden');
+        // Nenhuma passagem sai calada (guarda `handoff-avisa-o-lead`): a promessa
+        // do agente ("vou conferir com a equipe") não é o aviso padrão da
+        // passagem, que também diz como a equipe responde. Motivo `outro`: texto
+        // genérico de escalação, sem afirmar o que a cliente pediu.
+        const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+          ...avisoDaEscalacao().base,
+          motivo: 'outro',
+        });
         await performHumanHandoff(
           pool,
           { tenantId, leadId, conversationId: input.conversationId },
           {
             reason: MOTIVO_HANDOFF_AUTOMATICO_NA_PROMESSA,
             conversationSummary: buildHandoffSummary(previous),
+            avisoAoLead: aviso,
             log: runLog,
           },
         );
