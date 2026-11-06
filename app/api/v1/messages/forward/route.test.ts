@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ApiError } from "@/lib/api/types";
 import { DEFAULT_CHANNEL_PROVIDER } from "@/lib/channels";
 import { forwardMessagesSchema } from "@/lib/schemas";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
@@ -108,13 +107,13 @@ describe("POST /api/v1/messages/forward", () => {
 
   it("recusa mensagem de outra organização", async () => {
     const db = banco({ messages: [mensagem({ organization_id: OUTRA_ORG })], destinations: [destino(DESTINO_1)] });
-    await expect(executar(db)).rejects.toMatchObject<ApiError>({ status: 403, code: "forbidden" });
+    await expect(executar(db)).rejects.toMatchObject({ status: 403, code: "forbidden" });
     expect(sendMessageHandler).not.toHaveBeenCalled();
   });
 
   it("recusa destino de outra organização ou fora do acesso do usuário", async () => {
     const db = banco({ messages: [mensagem()], destinations: [destino(DESTINO_1, OUTRA_ORG)] });
-    await expect(executar(db)).rejects.toMatchObject<ApiError>({ status: 403, code: "forbidden" });
+    await expect(executar(db)).rejects.toMatchObject({ status: 403, code: "forbidden" });
     expect(sendMessageHandler).not.toHaveBeenCalled();
   });
 
