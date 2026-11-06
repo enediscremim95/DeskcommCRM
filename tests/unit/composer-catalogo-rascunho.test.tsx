@@ -93,6 +93,13 @@ vi.mock("@/components/inbox/composer/CatalogPickerDialog", () => ({
 
 import { Composer } from "@/components/inbox/Composer";
 
+function respostaComBlob(blob: Blob): Response {
+  return {
+    ok: true,
+    blob: async () => blob,
+  } as unknown as Response;
+}
+
 function renderComposer() {
   return render(
     <QueryClientProvider client={new QueryClient()}>
@@ -105,10 +112,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(globalThis, "fetch")
     .mockResolvedValueOnce(
-      new Response(new Blob([new Uint8Array([1])], { type: "image/png" }), { status: 200 }),
+      respostaComBlob(new Blob([new Uint8Array([1])], { type: "image/png" })),
     )
     .mockResolvedValueOnce(
-      new Response(new Blob([new Uint8Array([2])], { type: "image/png" }), { status: 200 }),
+      respostaComBlob(new Blob([new Uint8Array([2])], { type: "image/png" })),
     );
 });
 
