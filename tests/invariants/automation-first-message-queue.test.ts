@@ -328,8 +328,19 @@ describe("migrations 0293 a 0296, 0302 e 0304, fila da primeira mensagem", () =>
 
     sql(`
       update public.automation_first_message_queue
-      set message_parts = '["Primeira", "Segunda", "Terceira"]'::jsonb,
-          sent_part_count = 1,
+      set message_parts = '[
+            "Primeira", "Segunda",
+            {"tipo":"imagem","arquivo":"natal/01.jpg"},
+            {"tipo":"imagem","arquivo":"natal/02.jpg"},
+            {"tipo":"imagem","arquivo":"natal/03.jpg"},
+            {"tipo":"imagem","arquivo":"natal/04.jpg"},
+            {"tipo":"imagem","arquivo":"natal/05.jpg"},
+            {"tipo":"imagem","arquivo":"natal/06.jpg"},
+            {"tipo":"imagem","arquivo":"natal/07.jpg"},
+            {"tipo":"imagem","arquivo":"natal/08.jpg"},
+            "Décima primeira", "Décima segunda", "Décima terceira"
+          ]'::jsonb,
+          sent_part_count = 12,
           outbound_message_ids = array['${randomUUID()}'::uuid]
       where id = '${QUEUE}';
     `);
@@ -343,7 +354,7 @@ describe("migrations 0293 a 0296, 0302 e 0304, fila da primeira mensagem", () =>
     expect(() =>
       sql(`
         update public.automation_first_message_queue
-        set sent_part_count = 5
+        set sent_part_count = 14
         where id = '${QUEUE}';
       `),
     ).toThrow();
