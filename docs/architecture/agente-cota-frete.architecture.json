@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agente cota frete de forma opt-in",
+    "subtitle": "catálogo e configuração do tenant entram numa cotação de referência, sem criar envio nem etiqueta",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "config", "label": "Configuração" },
+    { "id": "dados", "label": "Dados" },
+    { "id": "agente", "label": "Turno do agente" },
+    { "id": "externo", "label": "Cotação externa" },
+    { "id": "sandbox", "label": "Sandbox" },
+    { "id": "continuidade", "label": "Continuidade humana" }
+  ],
+  "mainPath": ["agente", "tool", "fifo", "configuracao", "catalogo", "cliente", "calculate", "resultado"],
+  "nodes": [
+    { "id": "operador", "lane": "config", "label": "Operador local autorizado" },
+    { "id": "script", "lane": "config", "label": "configurar-frete simula por padrão" },
+    { "id": "configuracao", "lane": "dados", "label": "Configuração cifrada por organização" },
+    { "id": "painel", "lane": "dados", "label": "Peso e medidas por SKU" },
+    { "id": "catalogo", "lane": "dados", "label": "Item ativo, preço e embalagem" },
+    { "id": "agente", "lane": "agente", "label": "Agente com capacidade marcada" },
+    { "id": "tool", "lane": "agente", "label": "crm_quote_shipping opt-in" },
+    { "id": "fifo", "lane": "agente", "label": "Fila FIFO do turno" },
+    { "id": "cliente", "lane": "externo", "label": "Cliente somente de cotação" },
+    { "id": "calculate", "lane": "externo", "label": "POST me/shipment/calculate" },
+    { "id": "preview", "lane": "sandbox", "label": "runAgentPreview sem token" },
+    { "id": "sintetica", "lane": "sandbox", "label": "Cotação determinística simulada" },
+    { "id": "resultado", "lane": "continuidade", "label": "Valor e prazo de referência" },
+    { "id": "lorenza", "lane": "continuidade", "label": "Lorenza confirma no fechamento" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "operador", "to": "script", "label": "id e slug conferidos" },
+    { "id": "e2", "from": "script", "to": "operador", "label": "resumo sem segredo" },
+    { "id": "e3", "from": "script", "to": "configuracao", "label": "upsert só com --aplicar" },
+    { "id": "e4", "from": "configuracao", "to": "tool", "label": "origem, allowlist e token cifrado" },
+    { "id": "e5", "from": "painel", "to": "catalogo", "label": "caixa mais pesada da linha de preço" },
+    { "id": "e6", "from": "catalogo", "to": "tool", "label": "preço e embalagem do tenant" },
+    { "id": "e7", "from": "agente", "to": "tool", "label": "CEP, código e quantidade" },
+    { "id": "e8", "from": "tool", "to": "fifo", "label": "até duas cotações" },
+    { "id": "e9", "from": "fifo", "to": "cliente", "label": "turno real preserva a ordem" },
+    { "id": "e10", "from": "cliente", "to": "calculate", "label": "somente cálculo" },
+    { "id": "e11", "from": "calculate", "to": "cliente", "label": "serviços disponíveis" },
+    { "id": "e12", "from": "cliente", "to": "resultado", "label": "até três opções" },
+    { "id": "e13", "from": "preview", "to": "fifo", "label": "mesma ordem do turno" },
+    { "id": "e14", "from": "fifo", "to": "sintetica", "label": "sandbox não chama rede" },
+    { "id": "e15", "from": "catalogo", "to": "sintetica", "label": "embalagem do painel" },
+    { "id": "e16", "from": "sintetica", "to": "resultado", "label": "simulada true" },
+    { "id": "e17", "from": "resultado", "to": "agente", "label": "como falar sem prometer data" },
+    { "id": "e18", "from": "resultado", "to": "lorenza", "label": "confirmação humana" },
+    { "id": "e19", "from": "lorenza", "to": "agente", "label": "continuidade do fechamento" },
+    { "id": "e20", "from": "tool", "to": "resultado", "label": "erro instrutivo ou referência" }
+  ]
+}

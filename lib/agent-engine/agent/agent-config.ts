@@ -62,6 +62,8 @@ export interface PublishedAgentConfig {
   splitMaxChars: number;
   /** Opt-in em ai_agents.config.split_por_paragrafo; ausente = false. */
   splitPorParagrafo: boolean;
+  /** Opt-in em ai_agents.config.sem_saudacao_repetida; ausente = false. */
+  semSaudacaoRepetida?: boolean;
   /** Opt-in em ai_agents.config.max_sends_per_turn; null = teto global da instalação. */
   maxSendsPerTurn: number | null;
   /** Vitrines determinísticas por assunto; mapa vazio = ferramenta ausente. */
@@ -193,6 +195,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     rag_top_k?: unknown;
     rag_similarity_threshold?: unknown;
     split_por_paragrafo?: unknown;
+    sem_saudacao_repetida?: unknown;
     max_sends_per_turn?: unknown;
     vitrines?: unknown;
   };
@@ -234,6 +237,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,
     splitPorParagrafo: cfg.split_por_paragrafo === true,
+    semSaudacaoRepetida: cfg.sem_saudacao_repetida === true,
     maxSendsPerTurn:
       typeof cfg.max_sends_per_turn === 'number' &&
       Number.isInteger(cfg.max_sends_per_turn) &&

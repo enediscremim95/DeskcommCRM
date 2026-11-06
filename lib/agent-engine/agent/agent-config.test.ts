@@ -62,6 +62,18 @@ describe('loadPublishedAgentConfig — campos de RAG', () => {
     expect(ligado?.splitPorParagrafo).toBe(true);
   });
 
+  it('sem_saudacao_repetida é opt-in por agente e ausência mantém o padrão desligado', async () => {
+    const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const ligado = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, sem_saudacao_repetida: true } }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChave?.semSaudacaoRepetida).toBe(false);
+    expect(ligado?.semSaudacaoRepetida).toBe(true);
+  });
+
   it('max_sends_per_turn é opt-in por agente e ausência não muda outra organização', async () => {
     const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
     const sublimando = await loadPublishedAgentConfig(

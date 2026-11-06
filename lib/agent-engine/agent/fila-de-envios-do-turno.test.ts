@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { criarFilaDeEnviosDoTurno } from "./fila-de-envios-do-turno";
+import { criarGuardaAnuncioSemVitrine } from "./anuncio-sem-vitrine";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -54,5 +55,34 @@ describe("fila FIFO das tools que enviam mensagem", () => {
     expect(recebido).toEqual(esperado);
     expect(enviar).toHaveBeenCalledOnce();
     expect(enviar).toHaveBeenCalledWith("mensagem única");
+  });
+
+  it("preserva ordem e teto quando um anúncio parcial perde parágrafos", async () => {
+    const fila = criarFilaDeEnviosDoTurno();
+    const guarda = criarGuardaAnuncioSemVitrine(true);
+    const enviados: string[] = [];
+    let seq = 0;
+    const teto = 2;
+    const enviar = (body: string) =>
+      fila.enfileirar(async () => {
+        const avaliacao = guarda.avaliar(body);
+        if (avaliacao && "ok" in avaliacao) return avaliacao;
+        const final = avaliacao?.status === "pronta_sem_anuncio" ? avaliacao.body : body;
+        if (seq >= teto) return { ok: false, error: { code: "max_sends_per_turn" } };
+        seq += 1;
+        enviados.push(final);
+        return { ok: true };
+      });
+
+    await Promise.all([
+      enviar("Primeira útil.\n\nEssas são as canecas personalizadas que temos com nome."),
+      enviar("Segunda útil."),
+    ]);
+    expect(enviados).toEqual(["Primeira útil.", "Segunda útil."]);
+    expect(seq).toBe(2);
+    await expect(enviar("Terceira útil.")).resolves.toMatchObject({
+      ok: false,
+      error: { code: "max_sends_per_turn" },
+    });
   });
 });

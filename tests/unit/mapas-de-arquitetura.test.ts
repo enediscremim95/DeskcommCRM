@@ -161,10 +161,12 @@ describe("mapas de arquitetura — coerência interna", () => {
     ) as Mapa;
     const grau = (id: string) =>
       (m.edges ?? []).filter((e) => e.from === id || e.to === id).length;
-    for (const peca of ["vitrine", "dedupe", "anuncio"]) {
+    for (const peca of ["vitrine", "dedupe", "anuncio", "saudacao"]) {
       expect(grau(peca), `${peca} com menos de 2 arestas`).toBeGreaterThanOrEqual(2);
     }
-    expect((m.nodes ?? []).find((node) => node.id === "dedupe")?.label).toContain("parágrafo");
+    expect((m.nodes ?? []).find((node) => node.id === "dedupe")?.label).toContain("parecido");
+    expect((m.nodes ?? []).find((node) => node.id === "anuncio")?.label).toContain("remove só");
+    expect((m.nodes ?? []).find((node) => node.id === "saudacao")?.label).toContain("12 horas");
     const sandbox = (m.nodes ?? []).find((node) => node.id === "sandbox");
     expect(sandbox?.sublabel).toContain("rajada");
     expect(sandbox?.sublabel).toContain("relógio");

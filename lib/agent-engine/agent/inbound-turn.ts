@@ -189,6 +189,12 @@ import {
 } from './send-catalog-item';
 import { criarFilaDeEnviosDoTurno } from './fila-de-envios-do-turno';
 import {
+  executarCotacaoDeFrete,
+  quoteShippingInputSchema,
+  simularCotacaoDeFrete,
+  type EstadoCotacaoFrete,
+} from './quote-shipping';
+import {
   classificadorSemanticoParaMensagem,
   executarVitrine,
   sendVitrineInputSchema,
@@ -199,7 +205,11 @@ import {
   registrarMensagemEnviadaNoTurno,
   resultadoDeEnvioSemRepeticao,
 } from './dedupe-mensagem-turno';
-import { criarGuardaAnuncioSemVitrine } from './anuncio-sem-vitrine';
+import {
+  criarGuardaAnuncioSemVitrine,
+  resultadoDeEnvioSemAnuncio,
+} from './anuncio-sem-vitrine';
+import { filtrarSaudacaoRepetida } from './saudacao-repetida';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -229,6 +239,11 @@ export const AGENT_TOOL_DEFS = {
     description:
       'Mostra uma sequência fixa de produtos configurada pela loja. Informe somente o assunto; produtos, ordem, fotos, títulos, preços e textos são resolvidos pelo servidor.',
     inputSchema: sendVitrineInputSchema,
+  },
+  crm_quote_shipping: {
+    description:
+      'Cota o frete de itens ativos. Informe somente CEP, código exato do catálogo e quantidade. O servidor resolve origem, preço, peso, medidas e serviços; trate o resultado como referência, nunca como promessa de data.',
+    inputSchema: quoteShippingInputSchema,
   },
   update_lead_state: {
     description:
@@ -2221,12 +2236,16 @@ async function executarTurnoDoAgente(
   const enviosFisicosNoPreview = { valor: 0 };
   const filaDeEnvios = criarFilaDeEnviosDoTurno();
   const estadoEnvioCatalogo: EstadoEnvioCatalogo = { produtos: 0, imagens: 0 };
+  const estadoCotacaoFrete: EstadoCotacaoFrete = { cotacoes: 0 };
   const codigosDeCatalogoJaEnviados = new Set(preview?.catalogProductCodesAlreadySent ?? []);
   const mensagensEnviadasNesteTurno = new Set<string>();
   const vitrineAtivaNesteAgente =
     agentConfig?.toolIds.includes('crm_send_vitrine') === true &&
     Object.keys(agentConfig.vitrines).length > 0;
-  const guardaAnuncioSemVitrine = criarGuardaAnuncioSemVitrine(vitrineAtivaNesteAgente);
+  const guardaAnuncioSemVitrine = criarGuardaAnuncioSemVitrine(
+    vitrineAtivaNesteAgente,
+    runLog,
+  );
   let previewContextDoTurno: Awaited<ReturnType<typeof previewGateContext>> | null = null;
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
@@ -2619,7 +2638,22 @@ async function executarTurnoDoAgente(
         }
         const bodySemRepeticao = filtroMensagem.body;
         const anuncioSemVitrine = guardaAnuncioSemVitrine.avaliar(bodySemRepeticao);
-        if (anuncioSemVitrine) return anuncioSemVitrine;
+        if (anuncioSemVitrine && 'ok' in anuncioSemVitrine) return anuncioSemVitrine;
+        const bodySemAnuncio =
+          anuncioSemVitrine?.status === 'pronta_sem_anuncio'
+            ? anuncioSemVitrine.body
+            : bodySemRepeticao;
+        const filtroSaudacao = filtrarSaudacaoRepetida({
+          body: bodySemAnuncio,
+          ativa: agentConfig?.semSaudacaoRepetida === true,
+          mensagens: openingContext.context.messages,
+          agora: clock(),
+          log: runLog,
+        });
+        if (filtroSaudacao.status === 'duplicate_skipped') {
+          return { ok: true, status: 'duplicate_skipped' };
+        }
+        const bodyParaEnvio = filtroSaudacao.body;
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
@@ -2658,7 +2692,7 @@ async function executarTurnoDoAgente(
         // turno. A detecção é determinística (decidePromise); sem tabela do tenant = no-op.
         if (
           promiseTable !== null &&
-          !decidePromise({ candidate: bodySemRepeticao, table: promiseTable }).allow
+          !decidePromise({ candidate: bodyParaEnvio, table: promiseTable }).allow
         ) {
           outOfTablePromiseAttempted = true;
         }
@@ -2686,7 +2720,7 @@ async function executarTurnoDoAgente(
             leadId,
             jobId: liveJob().id,
             channelSessionId: input.channelSessionId,
-            body: bodySemRepeticao,
+            body: bodyParaEnvio,
             optedOutThisTurn,
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
             // no runtime — null cai nos degraus de warm-up (conservadores). Injetar
@@ -2798,7 +2832,7 @@ async function executarTurnoDoAgente(
               },
               {
                 title: 'Atendimento que precisa de um humano',
-                summary: bodySemRepeticao, // a mensagem-promessa que a IA tentou enviar
+                summary: bodyParaEnvio, // a mensagem-promessa que a IA tentou enviar
                 blocker:
                   'Aberto automaticamente: a IA prometeu envolver um humano e não abriu o caso (fail-safe do guardrail).',
                 source: 'guardrail_autofallback',
@@ -2879,7 +2913,7 @@ async function executarTurnoDoAgente(
             outcome.kind === 'already_sent' ||
             outcome.kind === 'queued'
           ) {
-            registrarMensagemEnviadaNoTurno(bodySemRepeticao, mensagensEnviadasNesteTurno);
+            registrarMensagemEnviadaNoTurno(bodyParaEnvio, mensagensEnviadasNesteTurno);
           }
           if (outcome.kind === 'sent' && pendingCitations.length > 0) {
             try {
@@ -2904,6 +2938,8 @@ async function executarTurnoDoAgente(
             outcome.kind === 'already_sent' ||
             outcome.kind === 'queued'
           ) {
+            const semAnuncio = resultadoDeEnvioSemAnuncio(anuncioSemVitrine);
+            if (semAnuncio) return semAnuncio;
             const semRepeticao = resultadoDeEnvioSemRepeticao(filtroMensagem);
             if (semRepeticao) return semRepeticao;
           }
@@ -3309,6 +3345,41 @@ async function executarTurnoDoAgente(
           }),
       });
     }
+  }
+
+  if (agentConfig?.toolIds.includes('crm_quote_shipping')) {
+    rawTools.crm_quote_shipping = tool({
+      ...AGENT_TOOL_DEFS.crm_quote_shipping,
+      execute: (raw) =>
+        filaDeEnvios.enfileirar(async () => {
+          try {
+            const inputFrete = quoteShippingInputSchema.parse(raw);
+            if (preview?.kind === 'sandbox') {
+              return await simularCotacaoDeFrete({
+                db: pool,
+                organizationId: tenantId,
+                input: inputFrete,
+                estado: estadoCotacaoFrete,
+              });
+            }
+            return await executarCotacaoDeFrete({
+              db: pool,
+              organizationId: tenantId,
+              input: inputFrete,
+              estado: estadoCotacaoFrete,
+            });
+          } catch (err) {
+            noteRunError(err instanceof Error ? err : new Error(String(err)));
+            return {
+              ok: false,
+              error: {
+                code: 'internal_error',
+                message: 'erro interno ao cotar o frete; passe para uma pessoa.',
+              },
+            };
+          }
+        }),
+    });
   }
 
   if (vitrineAtivaNesteAgente && agentConfig !== null) {

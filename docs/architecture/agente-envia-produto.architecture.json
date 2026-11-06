@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Agente envia produto e vitrine determinística do catálogo",
-    "subtitle": "configuração opt-in, galeria por SKU pai, dedupe do turno e saída pela cadeia before_send",
+    "subtitle": "configuração opt-in, galeria por SKU pai, filtros por parágrafo e saída pela cadeia before_send",
     "quality_profile": "standard"
   },
   "lanes": [
@@ -12,7 +12,7 @@
     { "id": "agente", "label": "Agente" },
     { "id": "canal", "label": "Canal" }
   ],
-  "mainPath": ["retrato", "importador", "pais", "vitrine", "fifo", "dedupe", "anuncio", "before", "sink"],
+  "mainPath": ["retrato", "importador", "pais", "vitrine", "fifo", "dedupe", "anuncio", "saudacao", "before", "sink"],
   "nodes": [
     { "id": "retrato", "lane": "fonte", "label": "Retrato JSON do painel" },
     { "id": "importador", "lane": "fonte", "label": "Importador dry-run ou aplicar" },
@@ -21,8 +21,11 @@
     { "id": "tool", "lane": "agente", "label": "crm_send_catalog_item opt-in" },
     { "id": "configvitrine", "lane": "dados", "label": "ai_agents.config.vitrines validado" },
     { "id": "vitrine", "lane": "agente", "label": "crm_send_vitrine opt-in e determinística" },
-    { "id": "dedupe", "lane": "agente", "label": "Trava de parágrafo repetido no turno" },
-    { "id": "anuncio", "lane": "agente", "label": "Guarda anúncio sem vitrine, uma recusa por turno" },
+    { "id": "dedupe", "lane": "agente", "label": "Trava de parágrafo idêntico ou parecido no turno" },
+    { "id": "anuncio", "lane": "agente", "label": "Guarda anúncio sem vitrine, remove só o anúncio ou recusa se total" },
+    { "id": "configsaudacao", "lane": "dados", "label": "ai_agents.config.sem_saudacao_repetida opt-in" },
+    { "id": "historico", "lane": "dados", "label": "Histórico com origem interna e sent_at" },
+    { "id": "saudacao", "lane": "agente", "label": "Trava de saudação repetida em 12 horas" },
     { "id": "sandbox", "lane": "agente", "label": "Simulador dry-run por organização", "sublabel": "rajada em ordem + relógio injetado, sem envio real" },
     { "id": "trace", "lane": "agente", "label": "PreviewResult: toolTrace e envios" },
     { "id": "fifo", "lane": "agente", "label": "Fila FIFO local ao turno" },
@@ -53,8 +56,12 @@
     { "id": "e21", "from": "dedupe", "to": "trace", "label": "remoção gera warn só com contagens e toolTrace" },
     { "id": "e22", "from": "vitrine", "to": "sandbox", "label": "troca canal e messages por envios simulados" },
     { "id": "e23", "from": "sandbox", "to": "vitrine", "label": "toolTrace confirma ordem e resultado" },
-    { "id": "e24", "from": "anuncio", "to": "before", "label": "texto permitido segue para os gates e o teto" },
+    { "id": "e24", "from": "anuncio", "to": "saudacao", "label": "somente parágrafos permitidos seguem" },
     { "id": "e25", "from": "vitrine", "to": "anuncio", "label": "sucesso desarma a guarda no restante do turno" },
-    { "id": "e26", "from": "tool", "to": "anuncio", "label": "item enviado também desarma a guarda" }
+    { "id": "e26", "from": "tool", "to": "anuncio", "label": "item enviado também desarma a guarda" },
+    { "id": "e27", "from": "configsaudacao", "to": "saudacao", "label": "padrão false, habilitação por agente" },
+    { "id": "e28", "from": "sink", "to": "historico", "label": "mensagem persistida com sent_via e sent_at" },
+    { "id": "e29", "from": "historico", "to": "saudacao", "label": "outbound da IA nas últimas 12 horas" },
+    { "id": "e30", "from": "saudacao", "to": "before", "label": "corpo final segue para gates e teto" }
   ]
 }
