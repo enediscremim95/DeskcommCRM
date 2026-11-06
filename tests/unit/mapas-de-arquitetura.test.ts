@@ -28,7 +28,7 @@ interface Mapa {
   schema_version?: number;
   lanes?: Array<{ id: string; label: string }>;
   mainPath?: string[];
-  nodes?: Array<{ id: string; lane: string; label: string }>;
+  nodes?: Array<{ id: string; lane: string; label: string; sublabel?: string }>;
   edges?: Array<{ id: string; from: string; to: string; label?: string }>;
 }
 
@@ -176,6 +176,9 @@ describe("mapas de arquitetura — coerência interna", () => {
     expect((m.nodes ?? []).find((node) => node.id === "dedupe")?.label).toContain("parecido");
     expect((m.nodes ?? []).find((node) => node.id === "anuncio")?.label).toContain("remove só");
     expect((m.nodes ?? []).find((node) => node.id === "saudacao")?.label).toContain("12 horas");
+    const sandbox = (m.nodes ?? []).find((node) => node.id === "sandbox");
+    expect(sandbox?.sublabel).toContain("rajada");
+    expect(sandbox?.sublabel).toContain("relógio");
   });
 });
 

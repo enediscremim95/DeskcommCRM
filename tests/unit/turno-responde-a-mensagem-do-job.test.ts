@@ -85,12 +85,12 @@ describe("fiação — o id sai do payload e chega ao sinal do turno", () => {
   });
 
   it("a mensagem que o turno RESPONDE é a linha canônica, não a última do histórico", () => {
-    // O nome mudou de `inboundSignal` para `mensagemDoJob` quando as duas
-    // perguntas do turno se separaram — o que o turno RESPONDE (pinado no job) e
-    // o que o cliente DISSE e ainda não foi respondido (a rajada inteira). Ver
-    // `rajada-nao-cala-o-pedido-de-humano.test.ts`.
+    // O agrupador é compartilhado pelo turno real e pelo sandbox. A mensagem
+    // pinada continua prioritária e a chamada permanece no ponto que separa o
+    // que o turno RESPONDE da rajada inteira que o cliente DISSE.
+    expect(FONTE).toMatch(/mensagemDoJob:\s*currentInboundText \?\? latestInboundSignal\(/);
     expect(FONTE).toMatch(
-      /const mensagemDoJob =\s*currentInboundText \?\? latestInboundSignal\(/,
+      /const \{ mensagemDoJob, inboundsPendentes \} = agruparMensagensDoTurno\(/,
     );
   });
 

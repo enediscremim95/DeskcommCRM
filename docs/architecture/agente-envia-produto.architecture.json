@@ -29,7 +29,7 @@
     { "id": "configsaudacao", "lane": "dados", "label": "ai_agents.config.sem_saudacao_repetida opt-in" },
     { "id": "historico", "lane": "dados", "label": "Histórico com origem interna e sent_at" },
     { "id": "saudacao", "lane": "agente", "label": "Trava de saudação repetida em 12 horas" },
-    { "id": "sandbox", "lane": "agente", "label": "Simulador dry-run por organização" },
+    { "id": "sandbox", "lane": "agente", "label": "Simulador dry-run por organização", "sublabel": "rajada em ordem + relógio injetado, sem envio real" },
     { "id": "trace", "lane": "agente", "label": "PreviewResult: toolTrace e envios" },
     { "id": "fifo", "lane": "agente", "label": "Fila FIFO local ao turno" },
     { "id": "before", "lane": "agente", "label": "Cadeia before_send" },
