@@ -185,6 +185,7 @@ function corpoDaTela(over: Linha = {}): Linha {
     channel_session_id: CANAL,
     window_start_hour: 7,
     window_end_hour: 22,
+    window_saturday_end_hour: null,
     throttle_ms: 1200,
     jitter_max_ms: 800,
     allow_sunday: null,
@@ -236,6 +237,16 @@ describe("PUT /api/v1/ai/pacing — data em branco não impede salvar a janela",
     // Rejuvenescer o número em silêncio o rebaixaria a 20 envios/dia — o mesmo
     // teto que o operador abriu esta ficha para corrigir.
     expect(db.knobs?.number_activated_at).toBe(DATA_JA_SALVA);
+  });
+
+  it("grava o fim próprio do sábado enviado pela tela", async () => {
+    authOk();
+    const db = makeDb(null);
+    const { PUT } = await import("@/app/api/v1/ai/pacing/route");
+    const res = await PUT(put(corpoDaTela({ window_saturday_end_hour: 14 })));
+
+    expect(res.status).toBe(200);
+    expect(db.knobs?.window_saturday_end_hour).toBe(14);
   });
 
   it("data informada continua sendo gravada (o campo não virou decorativo)", async () => {

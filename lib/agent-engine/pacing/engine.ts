@@ -52,6 +52,7 @@ export type PacingDecision =
   | { allow: false; code: PacingVetoCode; nextAllowedAt: Date; reason: string };
 
 const DAY_MS = 86_400_000;
+const MAX_OPEN_WINDOW_SEARCH_DAYS = 14;
 
 export function decidePacing(input: PacingInput): PacingDecision {
   const { now, knobs, state, crmDailyLimit } = input;
@@ -66,7 +67,7 @@ export function decidePacing(input: PacingInput): PacingDecision {
       code: 'outside_window',
       nextAllowedAt,
       reason:
-        `fora da janela de envio (${knobs.windowStartHour}h-${knobs.windowEndHour}h` +
+        `fora da janela de envio (${descricaoDaJanela(knobs)}` +
         `${knobs.allowSunday ? '' : ', sem domingo'}, ${knobs.timezone}); ` +
         `agende para ${formatInTz(nextAllowedAt, knobs.timezone)} (abertura da janela + jitter)`,
     };
@@ -218,30 +219,82 @@ export function proximaAberturaDaJanela(
 
 function insideWindow(wall: Wall, knobs: PacingKnobs): boolean {
   if (!knobs.allowSunday && wall.weekday === 'Sun') return false;
-  return wall.h >= knobs.windowStartHour && wall.h < knobs.windowEndHour;
+  const endHour = windowEndHourFor(wall, knobs);
+  if (endHour <= knobs.windowStartHour) return false;
+  return wall.h >= knobs.windowStartHour && wall.h < endHour;
+}
+
+function windowEndHourFor(wall: Pick<Wall, 'weekday'>, knobs: PacingKnobs): number {
+  return wall.weekday === 'Sat'
+    ? (knobs.windowSaturdayEndHour ?? knobs.windowEndHour)
+    : knobs.windowEndHour;
+}
+
+function dayHasOpenWindow(wall: Pick<Wall, 'weekday'>, knobs: PacingKnobs): boolean {
+  if (!knobs.allowSunday && wall.weekday === 'Sun') return false;
+  return windowEndHourFor(wall, knobs) > knobs.windowStartHour;
+}
+
+/** Descrição humana da mesma janela que o motor aplica. */
+export function descricaoDaJanela(knobs: PacingKnobs): string {
+  const sabado = knobs.windowSaturdayEndHour;
+  return `${knobs.windowStartHour}h-${knobs.windowEndHour}h` +
+    (sabado === null ? '' : `, sábado até ${sabado}h`);
 }
 
 /** Próxima abertura de janela ESTRITAMENTE depois de `now` (pula domingo se evitado). */
 function nextWindowOpen(now: Date, knobs: PacingKnobs): Date {
   const w = wallClock(now, knobs.timezone);
-  for (let add = 0; ; add += 1) {
+  const candidateToday = instantFromWall(
+    w.y,
+    w.mo,
+    w.d,
+    knobs.windowStartHour,
+    knobs.timezone,
+  );
+  const firstAdd = candidateToday.getTime() > now.getTime() ? 0 : 1;
+  const fallback = instantFromWall(
+    w.y,
+    w.mo,
+    w.d + firstAdd,
+    knobs.windowStartHour,
+    knobs.timezone,
+  );
+
+  for (let add = firstAdd; add <= MAX_OPEN_WINDOW_SEARCH_DAYS; add += 1) {
     // Date.UTC normaliza overflow de dia/mês em instantFromWall.
     const candidate = instantFromWall(w.y, w.mo, w.d + add, knobs.windowStartHour, knobs.timezone);
-    if (candidate.getTime() <= now.getTime()) continue;
-    if (!knobs.allowSunday && wallClock(candidate, knobs.timezone).weekday === 'Sun') continue;
+    if (!dayHasOpenWindow(wallClock(candidate, knobs.timezone), knobs)) continue;
     return candidate;
   }
+
+  return fallback;
 }
 
 /** Abertura do PRÓXIMO dia permitido (cap diário reseta na meia-noite local). */
 function nextDayOpen(now: Date, knobs: PacingKnobs): Date {
   const w = wallClock(now, knobs.timezone);
-  for (let add = 1; ; add += 1) {
+  const fallback = instantFromWall(
+    w.y,
+    w.mo,
+    w.d + 1,
+    knobs.windowStartHour,
+    knobs.timezone,
+  );
+
+  for (let add = 1; add <= MAX_OPEN_WINDOW_SEARCH_DAYS; add += 1) {
     const candidate = instantFromWall(w.y, w.mo, w.d + add, knobs.windowStartHour, knobs.timezone);
-    if (!knobs.allowSunday && wallClock(candidate, knobs.timezone).weekday === 'Sun') continue;
+    if (!dayHasOpenWindow(wallClock(candidate, knobs.timezone), knobs)) continue;
     return candidate;
   }
+
+  return fallback;
 }
+
+// Exportados apenas para a regressão que garante que configuração inválida
+// nunca prende o worker em busca infinita.
+export const __nextWindowOpenParaTeste = nextWindowOpen;
+export const __nextDayOpenParaTeste = nextDayOpen;
 
 /** Render local legível para a mensagem de veto (pt-br vê hora do SEU fuso). */
 function formatInTz(instant: Date, timezone: string): string {

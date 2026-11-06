@@ -51,6 +51,11 @@ describe("produto vindo do painel na tela", () => {
     expect(screen.getByTestId("produto-descricao")).toBeDisabled();
     expect(screen.getByTestId("produto-preco")).toBeDisabled();
     expect(screen.getByTestId("produto-legenda-atendimento")).not.toBeDisabled();
+    expect(
+      screen.getByText(
+        "Quando preenchida, substitui a descrição na mensagem enviada. Nome e preço permanecem.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("produto-imagem")).not.toBeInTheDocument();
     expect(screen.queryByTestId("alternar-SUBLI-1")).not.toBeInTheDocument();
   });

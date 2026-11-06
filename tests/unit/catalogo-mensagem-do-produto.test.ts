@@ -38,7 +38,7 @@ describe("legenda do produto enviada na conversa", () => {
     ).toBe("Produto\nR$ 10,00");
   });
 
-  it("acrescenta a legenda do atendimento por último", () => {
+  it("substitui a descrição pela legenda personalizada, preservando nome e preço", () => {
     expect(
       montarLegendaDoProduto({
         nome: "Produto",
@@ -47,12 +47,10 @@ describe("legenda do produto enviada na conversa", () => {
         descricao: "Descrição do painel",
         legenda_atendimento: "Prazo combinado após a aprovação da arte.",
       }),
-    ).toBe(
-      "Produto\nR$ 10,00\nDescrição do painel\nPrazo combinado após a aprovação da arte.",
-    );
+    ).toBe("Produto\nR$ 10,00\nPrazo combinado após a aprovação da arte.");
   });
 
-  it("corta somente o complemento para respeitar o teto da legenda", () => {
+  it("corta somente a legenda personalizada para respeitar o teto", () => {
     const legenda = montarLegendaDoProduto({
       nome: "Produto",
       preco_cents: 1000,

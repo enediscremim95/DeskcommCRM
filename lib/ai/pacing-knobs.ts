@@ -113,6 +113,13 @@ export const pacingKnobsUpdateSchema = z
     jitter_max_ms: z.number().int().min(0).max(KNOB_BOUNDS.intervalMaxMs).nullable().optional(),
     window_start_hour: z.number().int().min(0).max(KNOB_BOUNDS.hourLastStart).nullable().optional(),
     window_end_hour: z.number().int().min(1).max(KNOB_BOUNDS.hourEnd).nullable().optional(),
+    window_saturday_end_hour: z
+      .number()
+      .int()
+      .min(0)
+      .max(KNOB_BOUNDS.hourEnd)
+      .nullable()
+      .optional(),
     allow_sunday: z.boolean().nullable().optional(),
     timezone: z
       .string()
@@ -163,6 +170,7 @@ export interface ChannelKnobsRow {
   jitter_max_ms: number | null;
   window_start_hour: number | null;
   window_end_hour: number | null;
+  window_saturday_end_hour: number | null;
   allow_sunday: boolean | null;
   timezone: string | null;
   warmup_daily_caps: unknown;
@@ -186,6 +194,8 @@ export function effectiveKnobs(row: ChannelKnobsRow | null): PacingKnobs {
     jitterMaxMs: row?.jitter_max_ms ?? PACING_DEFAULTS.jitterMaxMs,
     windowStartHour: row?.window_start_hour ?? PACING_DEFAULTS.windowStartHour,
     windowEndHour: row?.window_end_hour ?? PACING_DEFAULTS.windowEndHour,
+    windowSaturdayEndHour:
+      row?.window_saturday_end_hour ?? PACING_DEFAULTS.windowSaturdayEndHour,
     allowSunday: row?.allow_sunday ?? PACING_DEFAULTS.allowSunday,
     timezone: row?.timezone ?? PACING_DEFAULTS.timezone,
     warmupDailyCaps: parseWarmupCaps(row?.warmup_daily_caps) ?? PACING_DEFAULTS.warmupDailyCaps,
