@@ -97,6 +97,28 @@ export function partesNoFuso(instante: Date, fuso: string): ParedeLida {
 }
 
 /**
+ * Um instante representado como `Date` de parede no fuso pedido.
+ *
+ * O valor devolvido NÃO é o instante original: os campos locais do `Date`
+ * (`getFullYear`, `getHours` e os formatadores do date-fns) passam a reproduzir
+ * o relógio daquele fuso. Ele existe só para apresentação e geometria de tela.
+ * Persistência, comparação cronológica e chamadas de API continuam usando o
+ * instante ISO original.
+ */
+export function dataNaParedeDoFuso(instante: Date | string, fuso: string): Date {
+  const data = typeof instante === "string" ? new Date(instante) : instante;
+  const p = partesNoFuso(data, fuso);
+  return new Date(p.ano, p.mes - 1, p.dia, p.hora, p.minuto, p.segundo);
+}
+
+/** Minuto do dia que o relógio do fuso mostra naquele instante. */
+export function minutoDoDiaNoFuso(instante: Date | string, fuso: string): number {
+  const data = typeof instante === "string" ? new Date(instante) : instante;
+  const p = partesNoFuso(data, fuso);
+  return p.hora * 60 + p.minuto;
+}
+
+/**
  * Offset do fuso NAQUELE instante, em minutos (São Paulo no inverno = -180).
  *
  * Não é constante por fuso: é isto que o horário de verão muda.
@@ -193,6 +215,26 @@ export function instanteDe(paredePedida: HoraDeParede, fuso: string): Date {
   // horário de verão). Fica o MAIOR — o primeiro instante que de fato existiu.
   // `Math.min` aqui devolveria a véspera em todo fuso de offset positivo.
   return new Date(Math.max(primeiro, segundo));
+}
+
+/**
+ * Um `Date` usado como calendário de parede → o instante real naquele fuso.
+ *
+ * Complementa `dataNaParedeDoFuso`: esta função é usada quando a tela escolhe
+ * uma borda de dia/semana e precisa consultar a API com um ISO verdadeiro.
+ */
+export function instanteDaDataDeParede(data: Date, fuso: string): Date {
+  return instanteDe(
+    {
+      ano: data.getFullYear(),
+      mes: data.getMonth() + 1,
+      dia: data.getDate(),
+      hora: data.getHours(),
+      minuto: data.getMinutes(),
+      segundo: data.getSeconds(),
+    },
+    fuso,
+  );
 }
 
 /** O dia local (`YYYY-MM-DD`) daquele instante — a régua que casa com a exceção por data. */

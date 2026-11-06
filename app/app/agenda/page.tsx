@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 
 import { enderecoDeRetorno, faltaParaConectarOGoogle, googleEstaConfigurado } from "@/lib/agenda/google/config";
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
+import { dataNaParedeDoFuso, instanteDaDataDeParede } from "@/lib/agenda/fuso";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
+import { FUSO_PADRAO } from "@/lib/tempo/fusos";
 
 import type { Agendamento as AgendamentoDaTela } from "@/components/agenda/tipos";
 
@@ -21,11 +23,9 @@ export const dynamic = "force-dynamic";
  * `auth.uid()` viria null e a RLS esconderia tudo. É a razão estrutural que o
  * resto do produto já segue.
  *
- * O FUSO É DA APRESENTAÇÃO, não da regra (decisão 4 da entrega): quem está em
- * Manaus vê a grade no horário de Manaus, enquanto as janelas de trabalho
- * continuam valendo no fuso da jornada. São perguntas diferentes e por isso duas
- * fontes — e este campo do perfil, oferecido pela tela há meses, ganha aqui o
- * primeiro leitor de verdade.
+ * O FUSO VISÍVEL É O DA ORGANIZAÇÃO. Slots, cartões, histórico, confirmação e
+ * a coluna onde o compromisso cai precisam compartilhar a mesma régua; usar o
+ * fuso do navegador em qualquer uma dessas bordas desloca só metade da tela.
  */
 /**
  * O embed do PostgREST devolve objeto quando a FK é para-um e array quando o
@@ -43,11 +43,6 @@ export default async function AgendaPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
-
-  // `user.timezone` e não `user_metadata.timezone`: o AuthUser deste projeto
-  // não expõe o metadata cru — ele extrai o que toda tela precisa no primeiro
-  // render, como já fazia com o `locale`. O fuso entrou lá pela mesma razão.
-  const fusoDeApresentacao = user.timezone ?? null;
 
   // Resolvido no SERVIDOR: `GOOGLE_CALENDAR_*` é env de servidor e não pode
   // atravessar para o cliente. A tela recebe o booleano e a lista do que falta,
@@ -77,9 +72,21 @@ export default async function AgendaPage() {
    */
   const supabase = await createClient();
 
-  // A semana da âncora, que é o que a grade abre por padrão.
-  const inicio = startOfWeek(new Date(), { weekStartsOn: 0 });
-  const fim = addDays(inicio, 7);
+  const { data: organizacao } = await supabase
+    .from("organizations")
+    .select("timezone")
+    .eq("id", activeOrg.orgId)
+    .maybeSingle();
+  const fusoDaOrganizacao = organizacao?.timezone ?? FUSO_PADRAO;
+
+  // A semana da âncora NO CALENDÁRIO DA ORGANIZAÇÃO. `inicio` e `fim` voltam a
+  // ser instantes reais antes da consulta, para a borda não depender do TZ do
+  // processo que renderiza o RSC.
+  const hojeNaOrganizacao = dataNaParedeDoFuso(new Date(), fusoDaOrganizacao);
+  const inicioNaParede = startOfWeek(hojeNaOrganizacao, { weekStartsOn: 0 });
+  const fimNaParede = addDays(inicioNaParede, 7);
+  const inicio = instanteDaDataDeParede(inicioNaParede, fusoDaOrganizacao);
+  const fim = instanteDaDataDeParede(fimNaParede, fusoDaOrganizacao);
 
   // `.eq("organization_id", activeOrg.orgId)` em TODA consulta desta página, e
   // não só a RLS. A `fn_user_org_ids()` que as policies usam devolve TODAS as
@@ -196,7 +203,7 @@ export default async function AgendaPage() {
 
   return (
     <AgendaClient
-      fusoDeApresentacao={fusoDeApresentacao}
+      fusoDaOrganizacao={fusoDaOrganizacao}
       googleConfigurado={googleConfigurado}
       contaConectada={conexoes?.map(c => c.account_email).join(", ") || null}
       enderecoDeRetorno={enderecoDeRetorno()}

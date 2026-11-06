@@ -1,6 +1,6 @@
 ---
 impacto: capacidade_nova
 secao: corrigido
-titulo: A grade confirma o mesmo horário que foi clicado
+titulo: A Agenda inteira usa o fuso da organização
 ---
-A Agenda passa a posicionar os horários livres no fuso da organização, evitando que um bloco clicado mostre outro horário na confirmação quando o navegador está em um fuso diferente.
+A Agenda passa a posicionar e anunciar horários livres, cartões, confirmações e histórico no fuso da organização, inclusive na virada do dia, sem depender do fuso do navegador.

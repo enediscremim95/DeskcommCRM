@@ -10,6 +10,7 @@ import * as React from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { dataNaParedeDoFuso } from "@/lib/agenda/fuso";
 import { cn } from "@/lib/utils";
 
 import { AvatarDaPessoa } from "./AvatarDaPessoa";
@@ -86,6 +87,7 @@ export function HistoricoDaAgenda({
   agendamentos,
   pessoas,
   agora,
+  fuso,
   onRemarcar,
   onCancelar,
   onRealizado,
@@ -95,6 +97,8 @@ export function HistoricoDaAgenda({
   agendamentos: Agendamento[];
   pessoas: Pessoa[];
   agora: Date;
+  /** Fuso IANA da organização, usado em toda data e hora visível. */
+  fuso: string;
   onRemarcar?: (id: string) => void;
   onCancelar?: (id: string) => void;
   /**
@@ -174,7 +178,8 @@ export function HistoricoDaAgenda({
             {daAba.map((a) => {
               const pessoa = pessoas.find((p) => p.id === a.responsavelId);
               const variante = VARIANTE_DA_SITUACAO[a.situacao];
-              const comeca = new Date(a.comeca);
+              const comeca = dataNaParedeDoFuso(a.comeca, fuso);
+              const termina = dataNaParedeDoFuso(a.termina, fuso);
               return (
                 <li
                   key={a.id}
@@ -193,7 +198,7 @@ export function HistoricoDaAgenda({
                     <div className="text-[11px] tabular-nums text-text-muted">
                       {format(comeca, "HH:mm")}
                       {" – "}
-                      {format(new Date(a.termina), "HH:mm")}
+                      {format(termina, "HH:mm")}
                     </div>
                   </div>
                   <div className="min-w-0 flex-1">

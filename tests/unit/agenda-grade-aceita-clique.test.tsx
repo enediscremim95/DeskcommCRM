@@ -37,13 +37,18 @@ import type { Agendamento, Pessoa } from "@/components/agenda/tipos";
 afterEach(cleanup);
 
 /** Quarta-feira, 08:00 da manhã — antes das faixas usadas nos casos. */
-const AGORA = new Date("2026-08-26T08:00:00");
+const AGORA = new Date("2026-08-26T08:00:00-03:00");
 const DIA = "2026-08-26";
+const FUSO = "America/Sao_Paulo";
 
 const PESSOAS: Pessoa[] = [{ id: "p1", nome: "Ana", trilha: 1 }];
 
 function publicado(hhmm: string) {
   return { instante: `${DIA}T${hhmm}:00.000`, rotulo: hhmm };
+}
+
+function instanteEmSaoPaulo(hhmm: string): string {
+  return new Date(`${DIA}T${hhmm}:00-03:00`).toISOString();
 }
 
 function interacao(sobre: Partial<InteracaoDaGrade> = {}): InteracaoDaGrade {
@@ -62,6 +67,7 @@ function montar(sobre: { interacao?: InteracaoDaGrade; agendamentos?: Agendament
       visao="dia"
       ancora={new Date(`${DIA}T12:00:00`)}
       agora={AGORA}
+      fuso={FUSO}
       pessoas={PESSOAS}
       agendamentos={sobre.agendamentos ?? []}
       interacao={sobre.interacao}
@@ -114,8 +120,8 @@ describe("compromisso cancelado não tranca o horário que ele liberou", () => {
     id: "c1",
     titulo: "Consulta",
     responsavelId: "p1",
-    comeca: `${DIA}T14:00:00`,
-    termina: `${DIA}T14:30:00`,
+    comeca: instanteEmSaoPaulo("14:00"),
+    termina: instanteEmSaoPaulo("14:30"),
     origem: "ui",
     situacao: "cancelled",
   };
@@ -180,8 +186,8 @@ describe("o bloco recusado DIZ por quê — a razão sai da mesma conta que o ap
       id: "a1",
       titulo: "Consulta",
       responsavelId: "p1",
-      comeca: `${DIA}T11:00:00`,
-      termina: `${DIA}T11:30:00`,
+      comeca: instanteEmSaoPaulo("11:00"),
+      termina: instanteEmSaoPaulo("11:30"),
       origem: "ui",
       situacao: "confirmed",
     };
@@ -213,6 +219,77 @@ describe("a geometria é a régua da grade, e o teste mede contra ela", () => {
     expect(bloco.style.top).toBe("96px");
     expect(bloco.style.height).toBe("24px");
   });
+
+  it("posiciona e anuncia o cartão no fuso da organização com o processo em UTC", () => {
+    const tzAnterior = process.env.TZ;
+    process.env.TZ = "UTC";
+    try {
+      const compromisso: Agendamento = {
+        id: "utc-1",
+        titulo: "Consulta",
+        responsavelId: "p1",
+        // 12:30Z = 09:30 em São Paulo.
+        comeca: "2026-11-09T12:30:00.000Z",
+        termina: "2026-11-09T13:00:00.000Z",
+        origem: "ui",
+        situacao: "confirmed",
+      };
+      render(
+        <GradeDaAgenda
+          visao="dia"
+          ancora={new Date("2026-11-09T12:00:00")}
+          agora={new Date("2026-11-09T11:00:00.000Z")}
+          fuso={FUSO}
+          pessoas={PESSOAS}
+          agendamentos={[compromisso]}
+        />,
+      );
+
+      const card = screen.getByTestId("agendamento-utc-1");
+      expect(card).toHaveAttribute("aria-label", expect.stringContaining("09:30 às 10:00"));
+      expect(card.style.top).toBe("120px");
+    } finally {
+      if (tzAnterior === undefined) delete process.env.TZ;
+      else process.env.TZ = tzAnterior;
+    }
+  });
+
+  it("põe o cartão na coluna do dia da organização, não no dia UTC", () => {
+    const tzAnterior = process.env.TZ;
+    process.env.TZ = "UTC";
+    try {
+      const compromisso: Agendamento = {
+        id: "virada-utc",
+        titulo: "Retorno noturno",
+        responsavelId: "p1",
+        // Ainda é dia 9 às 22:30 em São Paulo, embora em UTC já seja dia 10.
+        comeca: "2026-11-10T01:30:00.000Z",
+        termina: "2026-11-10T02:00:00.000Z",
+        origem: "ui",
+        situacao: "confirmed",
+      };
+      render(
+        <GradeDaAgenda
+          visao="mes"
+          ancora={new Date("2026-11-15T12:00:00")}
+          agora={new Date("2026-11-01T12:00:00.000Z")}
+          fuso={FUSO}
+          pessoas={PESSOAS}
+          agendamentos={[compromisso]}
+        />,
+      );
+
+      expect(screen.getByTestId("celula-mes-2026-11-09")).toContainElement(
+        screen.getByTestId("chip-mes-virada-utc"),
+      );
+      expect(screen.getByTestId("celula-mes-2026-11-10")).not.toContainElement(
+        screen.getByTestId("chip-mes-virada-utc"),
+      );
+    } finally {
+      if (tzAnterior === undefined) delete process.env.TZ;
+      else process.env.TZ = tzAnterior;
+    }
+  });
 });
 
 describe("remarcar pelo TECLADO — o mesmo mecanismo do arraste", () => {
@@ -220,8 +297,8 @@ describe("remarcar pelo TECLADO — o mesmo mecanismo do arraste", () => {
     id: "a1",
     titulo: "Consulta",
     responsavelId: "p1",
-    comeca: `${DIA}T14:00:00`,
-    termina: `${DIA}T14:30:00`,
+    comeca: instanteEmSaoPaulo("14:00"),
+    termina: instanteEmSaoPaulo("14:30"),
     origem: "ui",
     situacao: "confirmed",
   };
