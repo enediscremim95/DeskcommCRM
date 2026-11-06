@@ -5,12 +5,16 @@ import { z } from "zod";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { caminhoDaImagemDoCatalogo } from "@/lib/catalogo/caminho-da-imagem";
+import { caminhoDaImagemDoCatalogoNaOrganizacao } from "@/lib/catalogo/caminho-da-imagem";
 import { montarLegendaDoProduto } from "@/lib/catalogo/mensagem-do-produto";
-import { materializarFotoDoCatalogo } from "@/lib/catalogo/materializar-foto";
+import {
+  materializarFotoDoCatalogo,
+  type FotoDoCatalogoParaEnvio,
+} from "@/lib/catalogo/materializar-foto";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -20,6 +24,16 @@ const schema = z.object({ product_ids: z.array(z.string().uuid()).min(1).max(10)
 
 interface RouteCtx {
   params: Promise<{ id: string }>;
+}
+
+interface FotoDaGaleria extends FotoDoCatalogoParaEnvio {
+  produto_codigo: string;
+  posicao: number;
+  size_bytes: number;
+}
+
+function mimeDaImagem(caminho: string): "image/jpeg" | "image/png" {
+  return caminho.toLocaleLowerCase("pt-BR").endsWith(".png") ? "image/png" : "image/jpeg";
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
@@ -56,17 +70,54 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const { data: produtos, error: produtosError } = await supabase
     .from("catalog_products")
-    .select("id, nome, descricao, preco_cents, moeda, imagem_url, legenda_atendimento")
+    .select(
+      "id, nome, descricao, preco_cents, moeda, imagem_url, legenda_atendimento, produto_codigo",
+    )
     .eq("organization_id", authz.org.orgId)
     .eq("ativo", true)
     .in("id", parsed.data.product_ids);
   if (produtosError)
     return fail("internal_error", t("Erro ao ler o catálogo."), 500, { requestId });
   const porId = new Map((produtos ?? []).map((produto) => [produto.id, produto]));
+  const produtosQuePrecisamDaGaleria = (produtos ?? []).filter(
+    (produto) => !produto.imagem_url?.trim() && produto.produto_codigo,
+  );
+  const codigosDaGaleria = [
+    ...new Set(
+      produtosQuePrecisamDaGaleria.flatMap((produto) =>
+        produto.produto_codigo ? [produto.produto_codigo] : [],
+      ),
+    ),
+  ];
+  const primeiraFotoPorCodigo = new Map<string, FotoDaGaleria>();
+  if (codigosDaGaleria.length > 0) {
+    const { data: fotos, error: fotosError } = await supabase
+      .from("catalog_product_images")
+      .select("produto_codigo, posicao, storage_path, mime_type, size_bytes")
+      .eq("organization_id", authz.org.orgId)
+      .in("produto_codigo", codigosDaGaleria)
+      .order("posicao", { ascending: true });
+    if (fotosError) {
+      for (const produto of produtosQuePrecisamDaGaleria) {
+        logger.warn("[catalog-items] foto do produto indisponível", {
+          organization_id: authz.org.orgId,
+          product_id: produto.id,
+          reason: "catalog_gallery_lookup_failed",
+        });
+      }
+    } else {
+      for (const foto of (fotos ?? []) as FotoDaGaleria[]) {
+        if (!primeiraFotoPorCodigo.has(foto.produto_codigo)) {
+          primeiraFotoPorCodigo.set(foto.produto_codigo, foto);
+        }
+      }
+    }
+  }
   const admin = createAdminClient();
   const resultados: Array<{
     product_id: string;
     status: "sent" | "queued" | "failed";
+    photo: "missing" | "sent";
     message_id?: string;
     reason?: string;
   }> = [];
@@ -74,30 +125,57 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   for (const productId of parsed.data.product_ids) {
     const produto = porId.get(productId);
     if (!produto) {
-      resultados.push({ product_id: productId, status: "failed", reason: "product_not_found" });
+      resultados.push({
+        product_id: productId,
+        status: "failed",
+        photo: "missing",
+        reason: "product_not_found",
+      });
       continue;
     }
     const legenda = montarLegendaDoProduto(produto);
     let mediaStoragePath: string | undefined;
     let mediaMime: string | undefined;
     let mediaSizeBytes: number | undefined;
-    try {
-      const origem = caminhoDaImagemDoCatalogo(produto.imagem_url, authz.org.orgId, produto.id);
+    let foto: FotoDoCatalogoParaEnvio | undefined;
+    if (produto.imagem_url?.trim()) {
+      const origem = caminhoDaImagemDoCatalogoNaOrganizacao(produto.imagem_url, authz.org.orgId);
       if (origem) {
+        foto = {
+          storage_path: origem,
+          mime_type: mimeDaImagem(origem),
+          size_bytes: 1,
+        };
+      } else {
+        logger.warn("[catalog-items] foto do produto indisponível", {
+          organization_id: authz.org.orgId,
+          product_id: produto.id,
+          reason: "catalog_image_not_owned",
+        });
+      }
+    } else if (produto.produto_codigo) {
+      foto = primeiraFotoPorCodigo.get(produto.produto_codigo);
+    }
+    if (foto) {
+      try {
         const materializada = await materializarFotoDoCatalogo(
           admin,
           authz.org.orgId,
           conversationId,
-          {
-            storage_path: origem,
-            mime_type: origem.endsWith(".png") ? "image/png" : "image/jpeg",
-            size_bytes: 1,
-          },
+          foto,
         );
         mediaStoragePath = materializada.storagePath;
         mediaMime = materializada.mime;
         mediaSizeBytes = materializada.sizeBytes;
+      } catch (error) {
+        logger.warn("[catalog-items] foto do produto indisponível", {
+          organization_id: authz.org.orgId,
+          product_id: produto.id,
+          reason: error instanceof Error ? error.message : "catalog_image_materialization_failed",
+        });
       }
+    }
+    try {
       const mensagem = await sendMessageHandler(
         supabase,
         {
@@ -123,6 +201,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         resultados.push({
           product_id: productId,
           status: "failed",
+          photo: mediaStoragePath ? "sent" : "missing",
           message_id: mensagem.id,
           reason: mensagem.error_code ?? "send_failed",
         });
@@ -130,6 +209,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         resultados.push({
           product_id: productId,
           status: mensagem.status === "queued" ? "queued" : "sent",
+          photo: mediaStoragePath ? "sent" : "missing",
           message_id: mensagem.id,
         });
       }
@@ -137,6 +217,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       resultados.push({
         product_id: productId,
         status: "failed",
+        photo: mediaStoragePath ? "sent" : "missing",
         reason: error instanceof Error ? error.message : "send_failed",
       });
     }
