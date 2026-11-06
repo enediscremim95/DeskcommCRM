@@ -143,6 +143,14 @@
       "tag": "veto = HARD"
     },
     {
+      "id": "promessa-handoff",
+      "lane": "guardrails",
+      "col": 5,
+      "type": "security",
+      "label": "Promessa sem passagem",
+      "sublabel": "opt-in por agente · fechamento determinístico · sandbox só registra"
+    },
+    {
       "id": "handoff",
       "lane": "humano",
       "col": 3,
@@ -378,11 +386,25 @@
       "id": "turn-handoff",
       "from": "turn",
       "to": "handoff",
-      "label": "handoff",
+      "label": "handoff explícito",
       "variant": "security",
       "fromSide": "bottom",
       "toSide": "top",
       "route": "drop"
+    },
+    {
+      "id": "turn-promessa-handoff",
+      "from": "turn",
+      "to": "promessa-handoff",
+      "label": "mensagem enviada no turno",
+      "variant": "security"
+    },
+    {
+      "id": "promessa-handoff-humano",
+      "from": "promessa-handoff",
+      "to": "handoff",
+      "label": "promessa_de_conferir_sem_passar",
+      "variant": "security"
     },
     {
       "id": "memoryscreen-orgmemory",

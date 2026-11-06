@@ -125,6 +125,7 @@ export const agentConfigSchema = z.object({
   split_por_paragrafo: z.boolean().default(false),
   sem_saudacao_repetida: z.boolean().default(false),
   vitrine_por_gatilho: z.boolean().default(false),
+  handoff_automatico_na_promessa: z.boolean().default(false),
   max_sends_per_turn: z.number().int().min(1).max(12).nullable().optional(),
   vitrines: vitrinesConfigSchema.optional(),
 });
@@ -140,6 +141,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   split_por_paragrafo: false,
   sem_saudacao_repetida: false,
   vitrine_por_gatilho: false,
+  handoff_automatico_na_promessa: false,
 };
 
 // ---------------------------------------------------------------------------

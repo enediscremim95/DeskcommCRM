@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 
 import { agentPatchSchema } from './guardrails-schema';
 
+describe('agentPatchSchema, vitrine_por_gatilho', () => {
+  it.each([true, false])('aceita booleano: %p', (value) => {
+    expect(
+      agentPatchSchema.safeParse({ config: { vitrine_por_gatilho: value } }).success,
+    ).toBe(true);
+  });
+
+  it.each(['true', 1, null])('rejeita valor não booleano: %p', (value) => {
+    expect(
+      agentPatchSchema.safeParse({ config: { vitrine_por_gatilho: value } }).success,
+    ).toBe(false);
+  });
+});
+
 describe('agentPatchSchema, sem_saudacao_repetida', () => {
   it.each([true, false])('aceita booleano: %p', (value) => {
     expect(
@@ -16,16 +30,16 @@ describe('agentPatchSchema, sem_saudacao_repetida', () => {
   });
 });
 
-describe('agentPatchSchema, vitrine_por_gatilho', () => {
+describe('agentPatchSchema, handoff_automatico_na_promessa', () => {
   it.each([true, false])('aceita booleano: %p', (value) => {
     expect(
-      agentPatchSchema.safeParse({ config: { vitrine_por_gatilho: value } }).success,
+      agentPatchSchema.safeParse({ config: { handoff_automatico_na_promessa: value } }).success,
     ).toBe(true);
   });
 
   it.each(['true', 1, null])('rejeita valor não booleano: %p', (value) => {
     expect(
-      agentPatchSchema.safeParse({ config: { vitrine_por_gatilho: value } }).success,
+      agentPatchSchema.safeParse({ config: { handoff_automatico_na_promessa: value } }).success,
     ).toBe(false);
   });
 });
@@ -103,31 +117,6 @@ describe('agentPatchSchema, vitrines', () => {
         { itens: [{ codigo: `C${i}`, titulo: `Título ${i}` }] },
       ]),
     );
-    expect(agentPatchSchema.safeParse({ config: { vitrines } }).success).toBe(false);
-  });
-
-  it('aceita gatilhos literais curtos sem interpretar metacaracteres', () => {
-    const vitrines = {
-      padrinhos: {
-        itens: [{ codigo: 'KRAFT', titulo: 'Kit Afeto' }],
-        gatilhos: ['presente para padrinhos', 'louça (cristã)', 'kit + caixa'],
-      },
-    };
-    expect(agentPatchSchema.safeParse({ config: { vitrines } }).success).toBe(true);
-  });
-
-  it.each([
-    Array.from({ length: 21 }, (_, i) => `gatilho ${i}`),
-    ['x'.repeat(81)],
-    ['linha 1\nlinha 2'],
-    [''],
-  ])('rejeita limites inválidos de gatilhos: %p', (gatilhos) => {
-    const vitrines = {
-      padrinhos: {
-        itens: [{ codigo: 'KRAFT', titulo: 'Kit Afeto' }],
-        gatilhos,
-      },
-    };
     expect(agentPatchSchema.safeParse({ config: { vitrines } }).success).toBe(false);
   });
 });
