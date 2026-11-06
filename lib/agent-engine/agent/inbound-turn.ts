@@ -126,7 +126,7 @@ import {
   catalogoEntregueAoOperador,
 } from './entrega-de-capacidade';
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
-import { matchesHandoffKeyword } from './agent-config';
+import { loadPublishedAgentConfig, matchesHandoffKeyword } from './agent-config';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
 import {
   descricaoDaJanela,
@@ -445,6 +445,12 @@ export const AGENT_TOOL_DEFS = {
  * que o modelo não fez não vale um cliente sem resposta.
  */
 export const MAX_VETOS_DE_VOCABULARIO_INTERNO = 2;
+
+/**
+ * Termo configurado nunca ganha fail-open: a 1ª recusa ensina, a 2ª passa a
+ * conversa silenciosamente para a Central.
+ */
+export const MAX_VETOS_DE_TERMO_PROIBIDO = 2;
 
 /**
  * O mesmo degrau para o veto de `false_empty_inbound`, e pela mesma assimetria.
@@ -1538,8 +1544,26 @@ export async function runAgentTurn(
       // pagar por um adapter que só o caminho de erro usa. Sem `agentActorId` de
       // propósito — quando o teto estoura antes da primeira chamada, não houve
       // agente resolvido para creditar.
-      avisarLead: () =>
-        avisarLeadLendoOContato(
+      avisarLead: async () => {
+        let escalacaoSilenciosa = input.resolvedAgent?.config?.escalacaoSilenciosa === true;
+        if (input.resolvedAgent?.config === undefined) {
+          try {
+            const config = await loadPublishedAgentConfig(
+              pool,
+              job.organization_id,
+              input.channelSessionId,
+            );
+            escalacaoSilenciosa = config?.escalacaoSilenciosa === true;
+          } catch (err) {
+            // Se nem a configuração pode ser lida, a direção segura é não vazar
+            // um aviso que o agente talvez tenha proibido. O handoff segue.
+            escalacaoSilenciosa = true;
+            logDaEscolta.warn('orçamento: config do agente não lida; aviso externo suprimido', {
+              error: err instanceof Error ? err.message.slice(0, 120) : 'erro desconhecido',
+            });
+          }
+        }
+        return avisarLeadLendoOContato(
           pool,
           {
             tenantId: job.organization_id,
@@ -1550,6 +1574,7 @@ export async function runAgentTurn(
           },
           {
             motivo: 'orcamento_de_ia',
+            silencioso: escalacaoSilenciosa,
             channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(
               pool,
             ),
@@ -1560,7 +1585,8 @@ export async function runAgentTurn(
               : {}),
             ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
           },
-        ),
+        );
+      },
       log: logDaEscolta,
     },
     () => executarTurnoDoAgente(deps, job, pool, ctx, input),
@@ -2045,6 +2071,7 @@ async function executarTurnoDoAgente(
       log: runLog,
       lgpd,
       agentId: agentConfig?.agentId ?? null,
+      silencioso: agentConfig?.escalacaoSilenciosa === true,
       ...(deps.knobs.disclosureMode !== undefined
         ? { disclosureMode: deps.knobs.disclosureMode }
         : {}),
@@ -2314,6 +2341,9 @@ async function executarTurnoDoAgente(
   // (`internal_vocabulary_leak`): 1º veto no turno ensina o modelo a reescrever; persistir
   // solta o envio com registro. Por turno (closure), nunca cross-turno.
   let internalVocabularyVetoCount = 0;
+  // Ao persistir, não existe fail-open: a conversa vai para a Central sem que
+  // a frase proibida nem um aviso de sistema cheguem ao cliente.
+  let termoProibidoVetoCount = 0;
   // Uma recusa deste tipo devolve o texto confirmado ao modelo para que ele
   // reescreva antes de falar com o cliente. Não gasta envio nem toca no canal.
   let falseEmptyInboundVetoCount = 0;
@@ -2760,6 +2790,7 @@ async function executarTurnoDoAgente(
             // não é dele, e a única saída seria o silêncio. O follow-up determinístico
             // idem (ver GateContext.internalVocabularyEnforced).
             enforceInternalVocabulary: true,
+            termosProibidosAoCliente: agentConfig?.termosProibidosAoCliente ?? [],
             // Mesmo padrão do vocabulário interno: só o `send_message` arma — é o único
             // corpo escrito pelo modelo. `active` segue a MESMA condição de
             // `AGENDA_SYSTEM_BLOCK` (crm_book_appointment publicado); sem ela o gate
@@ -2829,6 +2860,41 @@ async function executarTurnoDoAgente(
               }),
           };
           let chain = await runBeforeSend(beforeSendArgs);
+          if (chain.status === 'vetoed' && chain.code === 'termo_proibido_ao_cliente') {
+            termoProibidoVetoCount += 1;
+            if (termoProibidoVetoCount < MAX_VETOS_DE_TERMO_PROIBIDO) {
+              return { ok: false, error: { code: chain.code, message: chain.message } };
+            }
+
+            const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+              ...avisoDaEscalacao().base,
+              motivo: 'outro',
+              // Este fallback é silencioso mesmo se a outra chave estiver desligada.
+              silencioso: true,
+            });
+            await performHumanHandoff(
+              pool,
+              { tenantId, leadId, conversationId: input.conversationId },
+              {
+                reason: 'termo_proibido_repetido',
+                conversationSummary: buildHandoffSummary(previous),
+                inboxTitle: 'Resposta bloqueada duas vezes: assumir a conversa',
+                avisoAoLead: aviso,
+                log: runLog,
+              },
+            );
+            registrarHandoffRealizadoNesteTurno(estadoHandoffAutomatico);
+            runLog.warn('termo proibido repetido: conversa passada silenciosamente para a Central', {
+              vetos: termoProibidoVetoCount,
+            });
+            return {
+              ok: true,
+              status: 'handoff_solicitado',
+              message:
+                'A mensagem não foi enviada. A conversa foi passada internamente para uma pessoa. ' +
+                'Encerre o turno agora.',
+            };
+          }
           if (chain.status === 'vetoed' && chain.code === 'case_promise_without_case') {
             // Wave 4 — fail-safe da invariante sagrada: o lead NUNCA recebe promessa-de-
             // humano sem caso aberto. 1ª vez no turno: erro-de-ensino (o modelo re-tenta —
@@ -3198,7 +3264,7 @@ async function executarTurnoDoAgente(
           // diferentes. Confiamos na fala dele e registramos que o piso não foi
           // preciso.
           const aviso =
-            seq === 0
+            seq === 0 || agentConfig?.escalacaoSilenciosa === true
               ? await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
                   ...avisoDaEscalacao().base,
                   motivo: 'pediu_humano',

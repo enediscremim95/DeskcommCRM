@@ -23,6 +23,8 @@ import {
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 
 const ASSUNTO_DE_VITRINE = /^[a-z0-9_]{1,40}$/;
+const MAX_TERMOS_PROIBIDOS = 40;
+const MAX_CARACTERES_TERMO_PROIBIDO = 80;
 
 /**
  * Leitura defensiva do jsonb livre. Uma vitrine inválida some sozinha; as
@@ -40,6 +42,32 @@ export function lerVitrines(valor: unknown): VitrinesConfig {
     vitrines[assunto] = parsed.data;
   }
   return vitrines;
+}
+
+/**
+ * Leitura defensiva do jsonb livre. O PATCH já valida a forma, mas SQL e clones
+ * antigos podem escrever direto no banco. Só strings curtas e não vazias chegam
+ * ao gate; duplicatas sem diferença de caixa/acento são descartadas.
+ */
+export function lerTermosProibidosAoCliente(valor: unknown): string[] {
+  if (!Array.isArray(valor)) return [];
+
+  const vistos = new Set<string>();
+  const termos: string[] = [];
+  for (const candidato of valor) {
+    if (termos.length >= MAX_TERMOS_PROIBIDOS) break;
+    if (typeof candidato !== 'string' || /[\r\n]/u.test(candidato)) continue;
+    const termo = candidato.trim();
+    if (termo === '' || termo.length > MAX_CARACTERES_TERMO_PROIBIDO) continue;
+    const chave = termo
+      .toLocaleLowerCase('pt-BR')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/gu, '');
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    termos.push(termo);
+  }
+  return termos;
 }
 
 export interface PublishedAgentConfig {
@@ -68,6 +96,10 @@ export interface PublishedAgentConfig {
   vitrinePorGatilho?: boolean;
   /** Opt-in em ai_agents.config.handoff_automatico_na_promessa; ausente = false. */
   handoffAutomaticoNaPromessa: boolean;
+  /** Opt-in: handoff continua por dentro, sem aviso automático ao cliente. */
+  escalacaoSilenciosa: boolean;
+  /** Expressões que uma resposta do modelo nunca pode mostrar ao cliente. */
+  termosProibidosAoCliente: string[];
   /** Opt-in em ai_agents.config.max_sends_per_turn; null = teto global da instalação. */
   maxSendsPerTurn: number | null;
   /** Vitrines determinísticas por assunto; mapa vazio = ferramenta ausente. */
@@ -202,6 +234,8 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     sem_saudacao_repetida?: unknown;
     vitrine_por_gatilho?: unknown;
     handoff_automatico_na_promessa?: unknown;
+    escalacao_silenciosa?: unknown;
+    termos_proibidos_ao_cliente?: unknown;
     max_sends_per_turn?: unknown;
     vitrines?: unknown;
   };
@@ -246,6 +280,8 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     semSaudacaoRepetida: cfg.sem_saudacao_repetida === true,
     vitrinePorGatilho: cfg.vitrine_por_gatilho === true,
     handoffAutomaticoNaPromessa: cfg.handoff_automatico_na_promessa === true,
+    escalacaoSilenciosa: cfg.escalacao_silenciosa === true,
+    termosProibidosAoCliente: lerTermosProibidosAoCliente(cfg.termos_proibidos_ao_cliente),
     maxSendsPerTurn:
       typeof cfg.max_sends_per_turn === 'number' &&
       Number.isInteger(cfg.max_sends_per_turn) &&
