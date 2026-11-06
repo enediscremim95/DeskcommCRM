@@ -158,7 +158,7 @@ describe("Composer — colar imagem", () => {
 
     fireEvent.paste(campo(), { clipboardData: clipboard({ files: [png()] }) });
 
-    expect(screen.getByText("contrato-assinado.pdf")).toBeInTheDocument();
+    expect(screen.getAllByText("contrato-assinado.pdf").length).toBeGreaterThan(0);
     await desmontarDialogRadix(view.unmount);
   });
 

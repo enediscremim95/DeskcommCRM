@@ -37,27 +37,30 @@ function ehImagem(tipo: string | undefined): boolean {
  *   anexo rastreável depois, na lista de mídia da conversa.
  */
 export function imagemDoClipboard(dados: DataTransfer | null, carimbo: Date): File | null {
-  if (!dados) return null;
+  return imagensDoClipboard(dados, carimbo)[0] ?? null;
+}
 
-  const daLista = Array.from(dados.files ?? []).find((f) => ehImagem(f.type));
-  const dosItens = daLista
-    ? null
-    : Array.from(dados.items ?? [])
-        .filter((i) => i.kind === "file" && ehImagem(i.type))
-        .map((i) => i.getAsFile())
-        .find((f): f is File => f !== null);
+/** Todas as imagens do clipboard, preservando a ordem e sem duplicar files/items. */
+export function imagensDoClipboard(dados: DataTransfer | null, carimbo: Date): File[] {
+  if (!dados) return [];
+  const fromFiles = Array.from(dados.files ?? []).filter(
+    (file) => ehImagem(file.type) && file.size > 0,
+  );
+  const source =
+    fromFiles.length > 0
+      ? fromFiles
+      : Array.from(dados.items ?? [])
+          .filter((item) => item.kind === "file" && ehImagem(item.type))
+          .map((item) => item.getAsFile())
+          .filter((file): file is File => file !== null && file.size > 0);
 
-  const arquivo = daLista ?? dosItens ?? null;
-  // Arquivo de 0 byte existe (colagem de uma referência que o browser não
-  // conseguiu materializar) e subiria só para o servidor recusar com
-  // "Arquivo vazio" — melhor tratar como "não havia imagem" e deixar o
-  // Ctrl+V seguir seu caminho normal.
-  if (!arquivo || arquivo.size <= 0) return null;
-
-  return new File([arquivo], nomeDaColagem(arquivo, carimbo), {
-    type: arquivo.type,
-    lastModified: arquivo.lastModified,
-  });
+  return source.map(
+    (arquivo) =>
+      new File([arquivo], nomeDaColagem(arquivo, carimbo), {
+        type: arquivo.type,
+        lastModified: arquivo.lastModified,
+      }),
+  );
 }
 
 /**

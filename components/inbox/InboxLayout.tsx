@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -16,7 +16,7 @@ import {
 import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
 import { ConversationList } from "./ConversationList";
 import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
-import { ChatThread, type ThreadActivity } from "./ChatThread";
+import { ChatThread, type ChatThreadHandle, type ThreadActivity } from "./ChatThread";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
 import { RetentionNotice } from "./RetentionNotice";
@@ -33,6 +33,12 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { cn } from "@/lib/utils";
 import { comandoDaConversa, comandosDaFila } from "@/lib/inbox/comando-da-conversa";
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
+import { filesFromDrop, isFileDrag } from "@/lib/inbox/attachment-queue";
+import {
+  crmPanelPreferenceKey,
+  readCrmPanelCollapsed,
+  writeCrmPanelCollapsed,
+} from "@/lib/inbox/inbox-preferences";
 
 /**
  * QUAL COLUNA APARECE NO CELULAR — as duas saem da MESMA pergunta.
@@ -58,6 +64,15 @@ export function colunasDoCelular(temSelecao: boolean): { lista: string; conversa
     conversa: temSelecao ? "flex" : "hidden md:flex",
   };
 }
+
+export function inboxGridColumns(crmPanelCollapsed: boolean): string {
+  return crmPanelCollapsed
+    ? "xl:grid-cols-[272px_1fr] 2xl:grid-cols-[300px_1fr]"
+    : "xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]";
+}
+
+export const CRM_SHEET_BAR_CLASS =
+  "flex items-center gap-1 border-b border-border px-1 py-1 xl:hidden";
 
 /**
  * O QUE CADA ABA SIGNIFICA. Exportada porque é a definição em si — o defeito
@@ -157,6 +172,9 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const [helpOpen, setHelpOpen] = useState(false);
   /** A ficha do contato como painel deslizante — só existe abaixo do `xl`. */
   const [fichaAberta, setFichaAberta] = useState(false);
+  const [fichaRecolhida, setFichaRecolhida] = useState(false);
+  const [arrastandoArquivos, setArrastandoArquivos] = useState(false);
+  const dragDepth = useRef(0);
   /**
    * A mensagem escolhida para responder "em cima".
    *
@@ -177,6 +195,26 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
    */
   const { data: automaticoDaOrg } = useAutomaticoAtivo();
   const composerRef = useRef<ComposerHandle | null>(null);
+  const threadRef = useRef<ChatThreadHandle | null>(null);
+
+  const panelPreferenceKey = crmPanelPreferenceKey(user.id);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (active) setFichaRecolhida(readCrmPanelCollapsed(window.localStorage, panelPreferenceKey));
+    });
+    return () => {
+      active = false;
+    };
+  }, [panelPreferenceKey]);
+
+  const toggleFichaDesktop = useCallback(() => {
+    setFichaRecolhida((current) => {
+      const next = !current;
+      writeCrmPanelCollapsed(window.localStorage, panelPreferenceKey, next);
+      return next;
+    });
+  }, [panelPreferenceKey]);
 
   const filters: ConversationsFilters = useMemo(
     () => ({
@@ -366,6 +404,34 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       ? t("Contato anonimizado — não é possível enviar mensagens.")
       : null;
 
+  const dragFiles = (event: DragEvent<HTMLDivElement>): File[] =>
+    filesFromDrop(event.dataTransfer);
+
+  const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth.current += 1;
+    setArrastandoArquivos(true);
+  };
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  };
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(event.dataTransfer)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setArrastandoArquivos(false);
+  };
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    const files = dragFiles(event);
+    if (files.length === 0) return;
+    event.preventDefault();
+    dragDepth.current = 0;
+    setArrastandoArquivos(false);
+    composerRef.current?.enqueueFiles(files);
+  };
+
   // Altura da grade: a conta desconta TUDO que fica acima e abaixo dela.
   //   3.5rem            TopBar (`h-14`, em components/shell/TopBar.tsx)
   //   2 * --space-6     padding do <main> do AppShell (`p-6`, em cima e embaixo)
@@ -409,7 +475,10 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   return (
     <OpenConversationProvider conversationId={selectedId}>
       <div
-        className="grid h-[calc(100dvh-3.5rem-2*var(--space-6))] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]"
+        className={cn(
+          "grid h-[calc(100dvh-3.5rem-2*var(--space-6))] w-full grid-cols-1 md:grid-cols-[300px_1fr]",
+          inboxGridColumns(fichaRecolhida),
+        )}
         /*
          * O ESTADO DO TEMPO REAL, LEGÍVEL DE FORA — mesmo par que o dossiê do lead
          * já publica (`LeadDossier`), e pela mesma razão: quando a entrega morre,
@@ -474,7 +543,22 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         escondido — deixando o dono numa tela vazia, sem sequer o botão de
         voltar, porque ele morava dentro do ramo da conversa carregada.
       */}
-        <div className={cn("h-full min-h-0 flex-col md:flex", colunas.conversa)}>
+        <div
+          className={cn("relative h-full min-h-0 flex-col md:flex", colunas.conversa)}
+          data-testid="conversation-column"
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {arrastandoArquivos && selectedConversation ? (
+            <div
+              className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-background/90 text-sm font-medium text-primary"
+              data-testid="conversation-drop-overlay"
+            >
+              {t("Solte os arquivos para anexar")}
+            </div>
+          ) : null}
           {/*
           A barra do celular vive FORA do ramo da conversa carregada: o caminho
           de volta tem de existir inclusive quando não há o que mostrar — é aí
@@ -482,17 +566,17 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
           conversa, e só aparece quando há uma.
         */}
           {selectedId && (
-            <div className="flex items-center gap-1 border-b border-border px-1 py-1 md:hidden">
+            <div className={CRM_SHEET_BAR_CLASS}>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-9 gap-1 px-2"
+                className="h-9 gap-1 px-2 md:hidden"
                 onClick={() => handleSelect(null)}
               >
                 <CaretLeft size={16} />
                 {t("Conversas")}
               </Button>
-              <div className="flex-1" />
+              <div className="flex-1 md:hidden" />
               {selectedConversation && (
                 <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
                   <SheetTrigger asChild>
@@ -511,9 +595,14 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
           )}
           {selectedConversation ? (
             <>
-              <ConversationHeader conversation={selectedConversation} />
+              <ConversationHeader
+                conversation={selectedConversation}
+                crmPanelCollapsed={fichaRecolhida}
+                onToggleCrmPanel={toggleFichaDesktop}
+              />
               <div className="min-h-0 flex-1 overflow-hidden">
                 <ChatThread
+                  ref={threadRef}
                   key={selectedConversation.id}
                   conversationId={selectedConversation.id}
                   onResponder={setRespondendo}
@@ -538,8 +627,11 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
                   )}
                 </div>
                 <Composer
+                  key={`${orgId ?? ""}:${user.id}:${selectedConversation.id}`}
                   ref={composerRef}
                   conversationId={selectedConversation.id}
+                  organizationId={orgId ?? ""}
+                  userId={user.id}
                   blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
                   janelaFechada={motivoDaJanela}
                   disabled={selectedConversation.status === "closed"}
@@ -566,9 +658,11 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
           )}
         </div>
 
-        <div className="hidden h-full min-h-0 xl:block">
-          <CRMSidePanel conversation={selectedConversation} />
-        </div>
+        {!fichaRecolhida ? (
+          <div className="hidden h-full min-h-0 xl:block">
+            <CRMSidePanel conversation={selectedConversation} />
+          </div>
+        ) : null}
 
         <InboxKeyboardShortcuts
           visibleIds={visibleIds}
@@ -577,6 +671,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
           onFocusReply={handleFocusReply}
           onClaim={supportReadonly ? () => {} : handleClaim}
           onClose={supportReadonly ? () => {} : handleClose}
+          onSearch={() => threadRef.current?.openSearch()}
           onToggleHelp={() => setHelpOpen((v) => !v)}
         />
         <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />

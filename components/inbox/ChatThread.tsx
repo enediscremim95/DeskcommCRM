@@ -4,7 +4,15 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import type { Locale } from "date-fns";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
@@ -21,6 +29,8 @@ import { useDebugToggle } from "@/hooks/ai/useDebugToggle";
 import { useActiveOrg, usePermission, useUser } from "@/hooks/auth/AuthProvider";
 import type { Message, Note } from "@/lib/types/messaging";
 import { PaperPlaneTilt, X } from "@/lib/ui/icons";
+import { ConversationSearch } from "./ConversationSearch";
+import { messageDomId } from "@/lib/inbox/message-dom";
 
 type EstadoHistorico = "parado" | "carregando" | "store_desligado";
 
@@ -35,6 +45,11 @@ export interface ThreadActivity {
   conversationId: string;
   lastInboundAt: string | null;
   lastOutboundAt: string | null;
+}
+
+export interface ChatThreadHandle {
+  openSearch: () => void;
+  jumpToMessage: (messageId: string) => Promise<void>;
 }
 
 export interface ThreadContextItem {
@@ -77,12 +92,10 @@ function dayLabel(
   return format(d, "dd/MM/yyyy", { locale: locale });
 }
 
-export function ChatThread({
-  conversationId,
-  onResponder,
-  contextItems = [],
-  onActivityChange,
-}: Props) {
+export const ChatThread = forwardRef<ChatThreadHandle, Props>(function ChatThread(
+  { conversationId, onResponder, contextItems = [], onActivityChange },
+  ref,
+) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useMessagesRealtime(conversationId);
@@ -106,6 +119,8 @@ export function ChatThread({
   const [selecionando, setSelecionando] = useState(false);
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [encaminharIds, setEncaminharIds] = useState<string[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   // Suporte somente leitura não escreve nada, nem o histórico: o servidor
   // recusaria, e a tentativa já contaria como escrita.
   const suporteSomenteLeitura = currentUser?.support?.access_mode === "support_readonly";
@@ -117,6 +132,37 @@ export function ChatThread({
         : "carregando";
 
   const messages: Message[] = useMemo(() => q.data?.pages.flatMap((p) => p.data) ?? [], [q.data]);
+
+  const jumpToMessage = useCallback(
+    async (messageId: string) => {
+      let element = document.getElementById(messageDomId(messageId));
+      if (!element) {
+        await q.loadAroundMessage(messageId);
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        element = document.getElementById(messageDomId(messageId));
+      }
+      if (!element) {
+        toast.error(t("Mensagem não encontrada."));
+        return;
+      }
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedMessageId(messageId);
+      window.setTimeout(
+        () => setHighlightedMessageId((current) => (current === messageId ? null : current)),
+        1_800,
+      );
+    },
+    [q, t],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openSearch: () => setSearchOpen(true),
+      jumpToMessage,
+    }),
+    [jumpToMessage],
+  );
 
   const activity = useMemo<ThreadActivity | null>(() => {
     if (!conversationId) return null;
@@ -357,10 +403,18 @@ export function ChatThread({
     return (
       <div
         {...sinalDoCanal}
-        className="flex h-full flex-col items-center justify-center text-sm text-muted-foreground"
+        className="flex h-full flex-col text-sm text-muted-foreground"
       >
-        {avisoHistorico}
-        {t("Nenhuma mensagem nesta conversa.")}
+        <ConversationSearch
+          conversationId={conversationId}
+          open={searchOpen}
+          onOpenChange={setSearchOpen}
+          onJump={jumpToMessage}
+        />
+        <div className="flex flex-1 flex-col items-center justify-center">
+          {avisoHistorico}
+          {t("Nenhuma mensagem nesta conversa.")}
+        </div>
       </div>
     );
   }
@@ -378,6 +432,12 @@ export function ChatThread({
   return (
     <div {...sinalDoCanal} className="flex h-full flex-col">
       {avisoHistorico}
+      <ConversationSearch
+        conversationId={conversationId}
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onJump={jumpToMessage}
+      />
       {!suporteSomenteLeitura && (
         <div className="flex min-h-10 items-center gap-2 border-b border-border px-3 py-1 text-sm">
           {selecionando ? (
@@ -465,6 +525,8 @@ export function ChatThread({
                   // CRM — inclusive nas do colega, porque `sent_via='user'` só
                   // registra que um humano digitou, nunca qual.
                   viewerUserId={currentUser.id}
+                  highlighted={highlightedMessageId === item.data.id}
+                  onGoToMessage={jumpToMessage}
                 />
               ),
             )}
@@ -485,4 +547,4 @@ export function ChatThread({
       )}
     </div>
   );
-}
+});

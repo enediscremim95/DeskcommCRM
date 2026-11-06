@@ -334,6 +334,8 @@ export type ListConversationsQuery = z.infer<typeof listConversationsQuerySchema
 
 export const listMessagesQuerySchema = z.object({
   cursor: z.string().optional(),
+  /** Carrega uma janela centrada nesta mensagem para busca/citação. */
+  around_message_id: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 

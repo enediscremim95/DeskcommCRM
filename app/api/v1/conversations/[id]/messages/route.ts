@@ -43,6 +43,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const url = new URL(req.url);
   const qsParsed = listMessagesQuerySchema.safeParse({
     cursor: url.searchParams.get("cursor") ?? undefined,
+    around_message_id: url.searchParams.get("around_message_id") ?? undefined,
     limit: url.searchParams.get("limit") ?? undefined,
   });
   if (!qsParsed.success) {

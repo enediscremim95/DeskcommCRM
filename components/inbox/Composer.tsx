@@ -2,6 +2,7 @@
 import { useT } from "@/hooks/i18n/useT";
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -37,17 +38,31 @@ import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia } from "@/hooks/inbox/useUploadMedia";
 import { useReplySuggestion } from "@/hooks/inbox/useReplySuggestion";
 import { useGhostReplySuggestion } from "@/hooks/inbox/useGhostReplySuggestion";
-import { imagemDoClipboard } from "@/lib/inbox/clipboard-image";
+import { imagensDoClipboard } from "@/lib/inbox/clipboard-image";
 import { interpolateTemplate } from "@/lib/inbox/template-vars";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import {
+  createAttachmentQueueItems,
+  processAttachmentQueue,
+  skipFailedAttachment,
+  type AttachmentQueueItem,
+} from "@/lib/inbox/attachment-queue";
+import {
+  composerDraftKey,
+  readComposerDraft,
+  writeComposerDraft,
+} from "@/lib/inbox/composer-draft";
 
 export interface ComposerHandle {
   focus: () => void;
+  enqueueFiles: (files: File[]) => void;
 }
 
 interface Props {
   conversationId: string;
+  organizationId?: string;
+  userId?: string;
   disabled?: boolean;
   /** Set true when contact is blocked / anonymized — explanation shown. */
   blockedReason?: string | null;
@@ -83,6 +98,8 @@ interface Props {
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   {
     conversationId,
+    organizationId,
+    userId,
     disabled,
     blockedReason,
     janelaFechada,
@@ -97,9 +114,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   ref,
 ) {
   const t = useT();
-  const [text, setText] = useState("");
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [pendingCaption, setPendingCaption] = useState("");
+  const draftKey =
+    organizationId && userId ? composerDraftKey(organizationId, userId, conversationId) : null;
+  const [text, setText] = useState(() =>
+    typeof window === "undefined" || !draftKey
+      ? ""
+      : readComposerDraft(window.localStorage, draftKey),
+  );
+  const [attachments, setAttachments] = useState<AttachmentQueueItem[]>([]);
+  const attachmentsRef = useRef<AttachmentQueueItem[]>([]);
+  const [activeAttachmentId, setActiveAttachmentId] = useState<string | null>(null);
+  const [queueRunning, setQueueRunning] = useState(false);
+  const queueRunningRef = useRef(false);
   const [catalogDraftQueue, setCatalogDraftQueue] = useState<RascunhoDoCatalogo[]>([]);
   const [catalogDraftTotal, setCatalogDraftTotal] = useState(0);
   const [catalogDraftPosition, setCatalogDraftPosition] = useState(0);
@@ -128,9 +154,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   );
   const activeTemplate = visibleTemplates[normalizedActiveIndex];
 
-  useImperativeHandle(ref, () => ({
-    focus: () => taRef.current?.focus(),
-  }));
+  useEffect(() => {
+    if (typeof window !== "undefined" && draftKey) {
+      writeComposerDraft(window.localStorage, draftKey, text);
+    }
+  }, [draftKey, text]);
 
   // send/createNote fora do disable: o texto some na hora do envio; travar o campo
   // até a API voltar impedia digitar a próxima mensagem com o campo ainda cheio.
@@ -139,6 +167,41 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   // nota interna nunca chega ao cliente, e é onde o atendente registra por que
   // a conversa esfriou — barrá-la tira exatamente o que ainda dá para fazer.
   const respostaBarrada = isDisabled || (mode === "reply" && !!janelaFechada);
+  const updateAttachments = useCallback(
+    (next: AttachmentQueueItem[] | ((current: AttachmentQueueItem[]) => AttachmentQueueItem[])) => {
+      const resolved = typeof next === "function" ? next(attachmentsRef.current) : next;
+      attachmentsRef.current = resolved;
+      setAttachments(resolved);
+      setActiveAttachmentId((current) =>
+        current && resolved.some((item) => item.id === current)
+          ? current
+          : (resolved.find((item) => item.status !== "sent" && item.status !== "skipped")?.id ??
+            resolved[0]?.id ??
+            null),
+      );
+    },
+    [],
+  );
+
+  const enqueueFiles = useCallback(
+    (files: File[]) => {
+      if (mode !== "reply" || respostaBarrada || files.length === 0) return;
+      const { accepted, rejected } = createAttachmentQueueItems(files);
+      for (const rejectedFile of rejected) {
+        toast.error(`${rejectedFile.file.name}: ${t(rejectedFile.message)}`);
+      }
+      if (accepted.length === 0) return;
+      // Anexo já pendente não é substituído: a nova seleção entra no fim.
+      updateAttachments((current) => [...current, ...accepted]);
+    },
+    [mode, respostaBarrada, t, updateAttachments],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({ focus: () => taRef.current?.focus(), enqueueFiles }),
+    [enqueueFiles],
+  );
   const clienteAguardaResposta = Boolean(
     lastInboundAt && (!lastOutboundAt || Date.parse(lastInboundAt) > Date.parse(lastOutboundAt)),
   );
@@ -169,7 +232,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   useEffect(() => {
     if (
       catalogDraftQueue.length === 0 ||
-      pendingFile ||
+      attachments.length > 0 ||
       catalogTextDraftActive ||
       catalogDraftLoading
     ) {
@@ -200,13 +263,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       .then(async (response) => {
         if (!response.ok) throw new Error("catalog_photo_load_failed");
         const blob = await response.blob();
-        setPendingCaption(proximo.legenda);
         setCatalogPreviewActive(true);
-        setPendingFile(
-          new File([blob], proximo.foto!.nome_do_arquivo, {
+        const file = new File([blob], proximo.foto!.nome_do_arquivo, {
             type: blob.type || proximo.foto!.mime,
-          }),
-        );
+          });
+        const created = createAttachmentQueueItems([file]).accepted.map((item) => ({
+          ...item,
+          caption: proximo.legenda,
+        }));
+        updateAttachments(created);
       })
       .catch(() => {
         toast.warning(t("Não consegui carregar a foto. A legenda ficou no rascunho."));
@@ -217,8 +282,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     catalogDraftLoading,
     catalogDraftQueue,
     catalogTextDraftActive,
-    pendingFile,
+    attachments.length,
     t,
+    updateAttachments,
   ]);
 
   const catalogSequenceLabel =
@@ -316,10 +382,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           const blob = await response.blob();
           const nome =
             template.media_file_name ?? template.audio_file_name ?? `atalho-${template.id}`;
-          setPendingCaption(filled);
-          setPendingFile(
-            new File([blob], nome, { type: blob.type || "application/octet-stream" }),
-          );
+          const file = new File([blob], nome, { type: blob.type || "application/octet-stream" });
+          const created = createAttachmentQueueItems([file]).accepted.map((item) => ({
+            ...item,
+            caption: filled,
+          }));
+          updateAttachments((current) => [...current, ...created]);
           setText("");
           setMenuDismissed(true);
         } catch {
@@ -346,16 +414,51 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    *
    * As três guardas antes de olhar o clipboard não são zelo: em "Nota interna"
    * não existe anexo (a nota é só texto e o envio nem passa pelo upload), com
-   * um anexo já em preview a colagem substituiria em silêncio o que o operador
-   * escolheu, e desabilitado é desabilitado. Em qualquer um desses casos o
-   * Ctrl+V precisa continuar sendo o Ctrl+V de sempre.
+   * uma fila já aberta recebe as novas imagens ao final, sem substituir o que
+   * o operador escolheu, e desabilitado é desabilitado.
    */
   function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
-    if (mode !== "reply" || respostaBarrada || pendingFile) return;
-    const imagem = imagemDoClipboard(e.clipboardData, new Date());
-    if (!imagem) return; // colagem de texto segue o caminho normal do browser
+    if (mode !== "reply" || respostaBarrada) return;
+    const imagens = imagensDoClipboard(e.clipboardData, new Date());
+    if (imagens.length === 0) return; // colagem de texto segue o caminho normal do browser
     e.preventDefault();
-    setPendingFile(imagem);
+    enqueueFiles(imagens);
+  }
+
+  async function runAttachmentQueue(): Promise<void> {
+    if (queueRunningRef.current || attachmentsRef.current.length === 0) return;
+    queueRunningRef.current = true;
+    setQueueRunning(true);
+    try {
+      const result = await processAttachmentQueue(
+        attachmentsRef.current,
+        async (item) => {
+          const uploaded = await upload.mutateAsync({ conversationId, file: item.file });
+          await new Promise<void>((resolve, reject) => {
+            send.mutate(
+              {
+                conversation_id: conversationId,
+                type: uploaded.kind,
+                body: item.caption.trim() || undefined,
+                media_storage_path: uploaded.storage_path,
+                media_mime: uploaded.media_mime,
+                media_size_bytes: uploaded.media_size_bytes,
+              },
+              { onSuccess: () => resolve(), onError: reject },
+            );
+          });
+        },
+        updateAttachments,
+      );
+      updateAttachments(result.items);
+      if (result.status === "completed") {
+        updateAttachments([]);
+        setCatalogPreviewActive(false);
+      }
+    } finally {
+      queueRunningRef.current = false;
+      setQueueRunning(false);
+    }
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -524,10 +627,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             {mode === "reply" && (
               <AttachMenu
                 disabled={respostaBarrada}
-                onPick={(file) => {
-                  setPendingCaption("");
+                onPick={(files) => {
                   setCatalogPreviewActive(false);
-                  setPendingFile(file);
+                  enqueueFiles(files);
                 }}
                 onPickContact={() => setContactPickerOpen(true)}
                 onPickCatalog={() => setCatalogPickerOpen(true)}
@@ -639,40 +741,31 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         </div>
       </div>
       <AttachmentPreviewDialog
-        file={pendingFile}
-        initialCaption={pendingCaption}
+        items={attachments}
+        activeItemId={activeAttachmentId}
         sequenceLabel={catalogPreviewActive ? catalogSequenceLabel : undefined}
-        sending={upload.isPending || send.isPending}
+        sending={queueRunning || upload.isPending || send.isPending}
+        onSelectItem={setActiveAttachmentId}
+        onCaptionChange={(id, caption) =>
+          updateAttachments((current) =>
+            current.map((item) => (item.id === id ? { ...item, caption } : item)),
+          )
+        }
         onCancel={() => {
-          setPendingFile(null);
-          setPendingCaption("");
+          updateAttachments([]);
           setCatalogPreviewActive(false);
         }}
-        onSend={async (caption) => {
-          if (!pendingFile) return;
-          try {
-            const uploaded = await upload.mutateAsync({ conversationId, file: pendingFile });
-            send.mutate(
-              {
-                conversation_id: conversationId,
-                type: uploaded.kind,
-                body: caption || undefined,
-                media_storage_path: uploaded.storage_path,
-                media_mime: uploaded.media_mime,
-                media_size_bytes: uploaded.media_size_bytes,
-              },
-              {
-                onSuccess: () => {
-                  setPendingFile(null);
-                  setPendingCaption("");
-                  setCatalogPreviewActive(false);
-                },
-              },
-            );
-          } catch {
-            // toast já disparado pelo onError de useUploadMedia; dialog fica aberto p/ retry
-            return;
-          }
+        onSend={() => void runAttachmentQueue()}
+        onRetry={() => void runAttachmentQueue()}
+        onSkip={() => {
+          const failed = attachmentsRef.current.find((item) => item.status === "failed");
+          if (!failed) return;
+          updateAttachments(skipFailedAttachment(attachmentsRef.current, failed.id));
+          void runAttachmentQueue();
+        }}
+        onCancelRemaining={() => {
+          updateAttachments([]);
+          setCatalogPreviewActive(false);
         }}
       />
       <ContactPickerDialog

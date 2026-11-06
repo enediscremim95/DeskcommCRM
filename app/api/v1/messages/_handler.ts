@@ -186,6 +186,66 @@ export async function listMessagesHandler(
   conversationId: string,
   q: ListMessagesQuery,
 ): Promise<ListMessagesResult> {
+  if (q.around_message_id) {
+    const { data: anchor, error: anchorError } = await supabase
+      .from("messages")
+      .select("id, sent_at")
+      .eq("id", q.around_message_id)
+      .eq("conversation_id", conversationId)
+      .eq("organization_id", ctx.organization_id)
+      .maybeSingle();
+    if (anchorError) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, anchorError.message);
+    }
+    if (!anchor) {
+      throw new ApiError(
+        404,
+        "not_found",
+        undefined,
+        ctx.requestId,
+        traduzir("Mensagem não encontrada.", ctx.idioma ?? "pt-BR"),
+      );
+    }
+
+    const olderLimit = Math.ceil(q.limit / 2);
+    const newerLimit = Math.floor(q.limit / 2);
+    const olderQuery = supabase
+      .from("messages")
+      .select(MSG_COLS)
+      .eq("conversation_id", conversationId)
+      .eq("organization_id", ctx.organization_id)
+      .or(
+        `sent_at.lt.${anchor.sent_at},and(sent_at.eq.${anchor.sent_at},id.lte.${anchor.id})`,
+      )
+      .order("sent_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(olderLimit);
+    const newerQuery = supabase
+      .from("messages")
+      .select(MSG_COLS)
+      .eq("conversation_id", conversationId)
+      .eq("organization_id", ctx.organization_id)
+      .or(
+        `sent_at.gt.${anchor.sent_at},and(sent_at.eq.${anchor.sent_at},id.gt.${anchor.id})`,
+      )
+      .order("sent_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(newerLimit);
+    const [older, newer] = await Promise.all([olderQuery, newerQuery]);
+    if (older.error || newer.error) {
+      throw new ApiError(
+        500,
+        "internal_error",
+        undefined,
+        ctx.requestId,
+        older.error?.message ?? newer.error?.message,
+      );
+    }
+    const beforeAndAnchor = ((older.data ?? []) as unknown as Message[]).reverse();
+    const after = (newer.data ?? []) as unknown as Message[];
+    return { messages: [...beforeAndAnchor, ...after], cursor: null, has_more: false };
+  }
+
   // A CONSULTA VAI DO MAIS NOVO PARA O MAIS VELHO — de propósito.
   //
   // Antes era `ascending: true`: a primeira página trazia as `limit` mensagens
