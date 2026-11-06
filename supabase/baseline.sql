@@ -30191,13 +30191,13 @@ set message_parts = null
 where message_parts is not null
   and case
     when jsonb_typeof(message_parts) = 'array'
-      then jsonb_array_length(message_parts) not between 2 and 4
+      then jsonb_array_length(message_parts) not between 2 and 13
     else true
   end;
 
 update public.automation_first_message_queue
-set sent_part_count = greatest(0, least(4, coalesce(sent_part_count, 0))),
-    outbound_message_ids = coalesce(outbound_message_ids[1:4], '{}'::uuid[]);
+set sent_part_count = greatest(0, least(13, coalesce(sent_part_count, 0))),
+    outbound_message_ids = coalesce(outbound_message_ids[1:13], '{}'::uuid[]);
 
 alter table public.automation_first_message_queue
   drop constraint if exists automation_first_message_queue_message_parts_check;
@@ -30207,7 +30207,7 @@ alter table public.automation_first_message_queue
     message_parts is null
     or case
       when jsonb_typeof(message_parts) = 'array'
-        then jsonb_array_length(message_parts) between 2 and 4
+        then jsonb_array_length(message_parts) between 2 and 13
       else false
     end
   );
@@ -30216,16 +30216,16 @@ alter table public.automation_first_message_queue
   drop constraint if exists automation_first_message_queue_sent_part_count_check;
 alter table public.automation_first_message_queue
   add constraint automation_first_message_queue_sent_part_count_check
-  check (sent_part_count between 0 and 4);
+  check (sent_part_count between 0 and 13);
 
 alter table public.automation_first_message_queue
   drop constraint if exists automation_first_message_queue_outbound_message_ids_check;
 alter table public.automation_first_message_queue
   add constraint automation_first_message_queue_outbound_message_ids_check
-  check (cardinality(outbound_message_ids) <= 4);
+  check (cardinality(outbound_message_ids) <= 13);
 
 comment on column public.automation_first_message_queue.message_parts is
-  'Snapshot das bolhas já renderizadas. NULL preserva itens legados de mensagem única.';
+  'Snapshot de até treze bolhas já renderizadas, texto ou imagem. NULL preserva itens legados de mensagem única.';
 comment on column public.automation_first_message_queue.sent_part_count is
   'Quantidade de bolhas confirmadas como enviadas; retry continua deste índice.';
 comment on column public.automation_first_message_queue.outbound_message_ids is

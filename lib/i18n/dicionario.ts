@@ -5231,6 +5231,7 @@ export const DICIONARIO: Traducoes = {
   "Adicionar tag ao contato": { es: "Agregar etiqueta al contacto" },
   "Remover tag": { es: "Quitar etiqueta" },
   "Saudação por horário": { es: "Saludo según la hora" },
+  "Primeiro nome": { es: "Primer nombre" },
   "Tags da conversa": { es: "Etiquetas de la conversación" },
 
   // ─── Inbox: janela de 24h fechada / seletor de modelo aprovado ───

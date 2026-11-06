@@ -1,21 +1,33 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { getAction } from "@/lib/automation/actions";
 import "@/lib/automation/actions/register-all";
+import {
+  bolhaDeMensagemSchema,
+  caminhoDeAtivoDeImagemValido,
+  ehBolhaDeImagem,
+  erroDaListaDeBolhas,
+  MAX_BOLHAS_PRIMEIRA_MENSAGEM,
+  type BolhaDeImagem,
+  type BolhaDeMensagem,
+} from "@/lib/automation/bolha-de-mensagem";
+import { reportarEnvio, type MensagemEnviada } from "@/lib/automation/desfecho-do-envio";
 import { buildContext } from "@/lib/automation/engine";
 import {
   CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
   EVENTO_FILA_PRIMEIRA_MENSAGEM,
   FILA_PRIMEIRA_MENSAGEM_DEFAULTS,
   idDaBolhaFilaPrimeiraMensagem,
-  pausaEntreBolhasSegundos,
+  pausaEntrePartesSegundos,
   semMarcadorDaFila,
   type ItemFilaPrimeiraMensagem,
 } from "@/lib/automation/fila-primeira-mensagem";
 import { adiarAteAJanelaAbrir, knobsDoCanal } from "@/lib/automation/janela-do-canal";
-import { renderTemplate } from "@/lib/automation/template";
+import { renderTemplate, type RenderTemplateOptions } from "@/lib/automation/template";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { proximaAberturaDaJanela } from "@/lib/agent-engine/pacing/engine";
+import { serviceForAutomation } from "@/lib/atendimento/origem-automacao";
 import { capabilitiesOf, type ChannelProvider } from "@/lib/channels";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { comandoDaConversa, silencioVigente } from "@/lib/inbox/comando-da-conversa";
@@ -24,6 +36,7 @@ import {
   houveRespostaHumanaDepoisDoEvento,
 } from "@/lib/messaging/resposta-humana";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
+import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 
@@ -170,7 +183,7 @@ export interface RuntimeFilaPrimeiraMensagem {
   prepararPartes(item: ItemFilaPrimeiraMensagem): Promise<ItemFilaPrimeiraMensagem>;
   enviarBolha(
     item: ItemFilaPrimeiraMensagem,
-    body: string,
+    bolha: BolhaDeMensagem,
     index: number,
   ): Promise<ActionResultDetail>;
   registrarBolha(
@@ -212,12 +225,12 @@ async function esperaMaximaExcedidaAntesDosAdiamentos(
   return motivo === "espera_maxima_excedida" ? motivo : null;
 }
 
-function partesDoItem(item: ItemFilaPrimeiraMensagem): string[] {
+function partesDoItem(item: ItemFilaPrimeiraMensagem): BolhaDeMensagem[] {
   if (
     Array.isArray(item.message_parts) &&
     item.message_parts.length >= 2 &&
-    item.message_parts.length <= 4 &&
-    item.message_parts.every((part) => typeof part === "string" && part.trim().length > 0)
+    item.message_parts.length <= MAX_BOLHAS_PRIMEIRA_MENSAGEM &&
+    item.message_parts.every((part) => bolhaDeMensagemSchema.safeParse(part).success)
   ) {
     return item.message_parts;
   }
@@ -254,6 +267,24 @@ async function processarBolhas(
   runtime: RuntimeFilaPrimeiraMensagem,
   original: ItemFilaPrimeiraMensagem,
 ): Promise<HandlerResult> {
+  const partesBrutas = original.message_parts ?? original.action_config.templates;
+  if (partesBrutas !== undefined && partesBrutas !== null) {
+    const erroDasPartes = erroDaListaDeBolhas(partesBrutas);
+    if (erroDasPartes) {
+      const result: ActionResultDetail = {
+        type: "send_whatsapp_message",
+        status: "failed",
+        error: erroDasPartes,
+      };
+      await runtime.finalizar(original, result);
+      await runtime.acordarOrigem(original);
+      return {
+        consumer_key: CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
+        status: "ok",
+        detail: erroDasPartes,
+      };
+    }
+  }
   const item = await runtime.prepararPartes(original);
   const parts = partesDoItem(item);
   if (parts.length === 0) {
@@ -294,7 +325,9 @@ async function processarBolhas(
     if (result.status === "success") {
       if (index === 0) await runtime.depoisDaPrimeiraBolha(item);
       if (index < parts.length - 1) {
-        await runtime.pausarEntreBolhas(pausaEntreBolhasSegundos(item) * 1_000);
+        await runtime.pausarEntreBolhas(
+          pausaEntrePartesSegundos(item, parts[index]!, parts[index + 1]!) * 1_000,
+        );
       }
       continue;
     }
@@ -679,6 +712,20 @@ interface OrigemDaFila {
   context: Record<string, unknown>;
 }
 
+export function renderizarBolhaDaFila(
+  bolha: BolhaDeMensagem,
+  context: Record<string, unknown>,
+  options: RenderTemplateOptions,
+): BolhaDeMensagem {
+  if (typeof bolha === "string") return renderTemplate(bolha, context, options);
+  return {
+    ...bolha,
+    ...(bolha.legenda !== undefined
+      ? { legenda: renderTemplate(bolha.legenda, context, options) }
+      : {}),
+  };
+}
+
 async function carregarOrigemDaFila(
   admin: SupabaseClient,
   item: ItemFilaPrimeiraMensagem,
@@ -717,9 +764,142 @@ function configDaBolha(
     fila: _fila,
     templates: _templates,
     pausa_entre_bolhas_segundos: _pausa,
+    pausa_entre_imagens_segundos: _pausaImagens,
     ...restante
   } = actionConfig;
   return { ...restante, template: body };
+}
+
+function contextoDaBolha(
+  admin: SupabaseClient,
+  item: ItemFilaPrimeiraMensagem,
+  origem: OrigemDaFila,
+  index: number,
+): ActionCtx {
+  const internalMessageId = idDaBolhaFilaPrimeiraMensagem(item.id, index);
+  return {
+    admin,
+    organizationId: item.organization_id,
+    ruleId: item.rule_id,
+    ruleName: origem.rule.name,
+    event: origem.event,
+    context: origem.context,
+    requestId: `first-message:${item.id}:${index}`,
+    actionIndex: item.action_index,
+    humanPacingManaged: true,
+    internalMessageId,
+    messageMetadata: {
+      idempotency_key: `first-message:${item.id}:${index}`,
+      first_message_queue_part_index: index,
+    },
+    serviceBoundaries: new Map(),
+  };
+}
+
+function erroEhDestinoDeStorageExistente(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { statusCode?: string | number; message?: string; error?: string };
+  const status = String(candidate.statusCode ?? "");
+  const texto = `${candidate.error ?? ""} ${candidate.message ?? ""}`.toLocaleLowerCase();
+  return status === "409" || texto.includes("already exists") || texto.includes("duplicate");
+}
+
+function mimeDaImagem(arquivo: string): "image/jpeg" | "image/png" | "image/webp" {
+  if (arquivo.endsWith(".png")) return "image/png";
+  if (arquivo.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
+}
+
+export async function copiarAtivoDaFilaParaConversa(
+  admin: SupabaseClient,
+  item: ItemFilaPrimeiraMensagem,
+  imagem: BolhaDeImagem,
+  index: number,
+): Promise<{ storagePath: string; mime: "image/jpeg" | "image/png" | "image/webp" }> {
+  if (!caminhoDeAtivoDeImagemValido(imagem.arquivo)) {
+    throw new Error(`first_message_queue_invalid_image_path:${imagem.arquivo}`);
+  }
+  const extension = imagem.arquivo.split(".").at(-1)!;
+  const sourcePath = `${item.organization_id}/ativos/${imagem.arquivo}`;
+  const storagePath = `${item.organization_id}/${item.conversation_id}/first-message-${idDaBolhaFilaPrimeiraMensagem(item.id, index)}.${extension}`;
+  const { error } = await admin.storage
+    .from("whatsapp-media")
+    .copy(sourcePath, storagePath);
+  if (error && !erroEhDestinoDeStorageExistente(error)) {
+    throw new Error(`first_message_queue_image_copy_failed:${error.message}`);
+  }
+  return { storagePath, mime: mimeDaImagem(imagem.arquivo) };
+}
+
+async function enviarImagemDaFila(
+  admin: SupabaseClient,
+  item: ItemFilaPrimeiraMensagem,
+  origem: OrigemDaFila,
+  imagem: BolhaDeImagem,
+  index: number,
+): Promise<ActionResultDetail> {
+  const ctx = contextoDaBolha(admin, item, origem, index);
+  const guarda = checarGuardasDeContato(ctx);
+  if (!guarda.ok) {
+    return {
+      type: "send_whatsapp_message",
+      status: "skipped",
+      detail: { reason: guarda.reason },
+    };
+  }
+  if (guarda.contact.id !== item.contact_id) {
+    return {
+      type: "send_whatsapp_message",
+      status: "failed",
+      error: "first_message_queue_contact_mismatch",
+    };
+  }
+  try {
+    const boundary = await serviceForAutomation(ctx, guarda.contact.id, item.channel_session_id);
+    if (boundary.conversation_id !== item.conversation_id) {
+      return {
+        type: "send_whatsapp_message",
+        status: "failed",
+        error: "first_message_queue_conversation_mismatch",
+      };
+    }
+    const media = await copiarAtivoDaFilaParaConversa(admin, item, imagem, index);
+    const message = await sendMessageHandler(
+      admin,
+      {
+        organization_id: item.organization_id,
+        serviceBoundary: boundary,
+        proactiveContext: {
+          organizationId: item.organization_id,
+          contactId: item.contact_id,
+        },
+        actor: { type: "webhook_source", id: item.rule_id },
+        requestId: ctx.requestId,
+        internalMessageId: ctx.internalMessageId,
+      },
+      {
+        conversation_id: item.conversation_id,
+        type: "image",
+        ...(imagem.legenda ? { body: imagem.legenda } : {}),
+        media_storage_path: media.storagePath,
+        media_mime: media.mime,
+        metadata: {
+          ...ctx.messageMetadata,
+          first_message_queue_asset: imagem.arquivo,
+        },
+      } as Parameters<typeof sendMessageHandler>[2],
+    );
+    return await reportarEnvio(
+      ctx,
+      "send_whatsapp_message",
+      message as unknown as MensagemEnviada,
+      item.conversation_id,
+    );
+  } catch (error) {
+    throw error instanceof Error
+      ? error
+      : new Error(`first_message_queue_image_send_failed:${String(error)}`);
+  }
 }
 
 async function finalizarNoBanco(
@@ -806,12 +986,13 @@ function runtimeReal(
       if (Array.isArray(item.message_parts)) return item;
       const templates = item.action_config.templates;
       if (!Array.isArray(templates)) return item;
+      const parsedTemplates = templates.map((template) => bolhaDeMensagemSchema.parse(template));
       const origem = await carregarOrigemDaFila(admin, item);
       if (!origem) return item;
       const knobs = await knobsDoCanal(admin, item.organization_id, item.channel_session_id);
       const renderedAt = now();
-      const messageParts = templates.map((template) =>
-        renderTemplate(String(template), origem.context, {
+      const messageParts = parsedTemplates.map((template) =>
+        renderizarBolhaDaFila(template, origem.context, {
           now: renderedAt,
           timezone: knobs.timezone,
         }),
@@ -826,7 +1007,7 @@ function runtimeReal(
       item.message_parts = messageParts;
       return item;
     },
-    async enviarBolha(item, body, index) {
+    async enviarBolha(item, bolha, index) {
       const origem = await carregarOrigemDaFila(admin, item);
       if (!origem?.rule.is_active) {
         return {
@@ -834,6 +1015,9 @@ function runtimeReal(
           status: "skipped",
           detail: { reason: "regra_indisponivel" },
         };
+      }
+      if (ehBolhaDeImagem(bolha)) {
+        return enviarImagemDaFila(admin, item, origem, bolha, index);
       }
       const executor = getAction("send_whatsapp_message");
       if (!executor) {
@@ -843,25 +1027,11 @@ function runtimeReal(
           error: "send_whatsapp_action_unavailable",
         };
       }
-      const internalMessageId = idDaBolhaFilaPrimeiraMensagem(item.id, index);
-      const ctx: ActionCtx = {
-        admin,
-        organizationId: item.organization_id,
-        ruleId: item.rule_id,
-        ruleName: origem.rule.name,
-        event: origem.event,
-        context: origem.context,
-        requestId: `first-message:${item.id}:${index}`,
-        actionIndex: item.action_index,
-        humanPacingManaged: true,
-        internalMessageId,
-        messageMetadata: {
-          idempotency_key: `first-message:${item.id}:${index}`,
-          first_message_queue_part_index: index,
-        },
-        serviceBoundaries: new Map(),
-      };
-      return executor.execute(ctx, configDaBolha(semMarcadorDaFila(item.action_config), body));
+      const ctx = contextoDaBolha(admin, item, origem, index);
+      return executor.execute(
+        ctx,
+        configDaBolha(semMarcadorDaFila(item.action_config), bolha),
+      );
     },
     async registrarBolha(item, index, result) {
       const messageId =
