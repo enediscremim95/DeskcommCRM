@@ -52,7 +52,7 @@
     { "id": "fila", "lane": "fila", "col": 4, "type": "service", "label": "job_queue · followup_turn", "sublabel": "o envio passa pelos portões" },
     { "id": "risco", "lane": "fila", "col": 5, "type": "service", "label": "classifyRisk + resolveStageWindow", "sublabel": "fonte ÚNICA de esfriamento" },
     { "id": "reativacoes", "lane": "fila", "col": 4, "type": "database", "label": "crm_lead_reactivations", "sublabel": "decisão + fotografia dos fatos + prazo longo" },
-    { "id": "automacao", "lane": "fila", "col": 3, "type": "service", "label": "automation_rules", "sublabel": "mensagem fixa · resposta humana vence · cursor durável" },
+    { "id": "automacao", "lane": "fila", "col": 3, "type": "service", "label": "automation_rules", "sublabel": "condição por origem · mensagem fixa · resposta humana vence · cursor durável" },
 
     { "id": "inbox", "lane": "fora", "col": 4, "type": "frontend", "label": "agent_inbox_items", "sublabel": "demanda sem dono não mora no Kanban" }
   ],
@@ -116,8 +116,8 @@
     { "id": "e57", "from": "risco", "to": "reativacoes", "label": "lead frio → sugestão idempotente" },
     { "id": "e58", "from": "reativacoes", "to": "inbox", "label": "Aprovar · Não aprovar" },
     { "id": "e59", "from": "inbox", "to": "leads", "label": "aprovar move para a etapa configurada", "route": "highlight" },
-    { "id": "e60", "from": "leads", "to": "eventlog", "label": "lead.stage_changed" },
-    { "id": "e61", "from": "eventlog", "to": "automacao", "label": "regra fixa selecionada" },
+    { "id": "e60", "from": "leads", "to": "eventlog", "label": "lead.created · lead.stage_changed" },
+    { "id": "e61", "from": "eventlog", "to": "automacao", "label": "regra filtra lead.source e seleciona a ação" },
     { "id": "e62", "from": "automacao", "to": "fila", "label": "janela · limite · ritmo humano · bloqueio · consentimento" },
     { "id": "e63", "from": "reativacoes", "to": "risco", "label": "recusa só volta com fato novo ou prazo", "route": "drop" },
     { "id": "e64", "from": "automacao", "to": "eventlog", "label": "espera persiste cursor + retry_at; worker segue livre", "route": "highlight" },
