@@ -21,9 +21,9 @@ function deps(over: Partial<Parameters<typeof deriveVideoText>[1]> = {}) {
   return {
     transcriber: { transcribe: vi.fn(async () => "olá quero comprar o produto") },
     describeImage: vi.fn(async () => "pessoa segurando um tênis vermelho"),
-    // runFfmpeg fake: "cria" audio.ogg + 2 frames no mapa de arquivos.
+    // runFfmpeg fake: "cria" audio.mp3 + 2 frames no mapa de arquivos.
     runFfmpeg: vi.fn(async (args: string[]) => {
-      if (args.includes("audio.ogg")) files["audio.ogg"] = Buffer.from([1, 2, 3]);
+      if (args.includes("audio.mp3")) files["audio.mp3"] = Buffer.from([1, 2, 3]);
       else {
         files["frame-01.jpg"] = Buffer.from([1]);
         files["frame-02.jpg"] = Buffer.from([2]);
@@ -48,7 +48,7 @@ describe("deriveVideoText", () => {
   it("vídeo SEM áudio → só as cenas (transcrição vazia não quebra)", async () => {
     const d = deps({
       runFfmpeg: vi.fn(async (args: string[]) => {
-        if (args.includes("audio.ogg")) throw new Error("no audio stream");
+        if (args.includes("audio.mp3")) throw new Error("no audio stream");
         files["frame-01.jpg"] = Buffer.from([1]);
       }),
     });

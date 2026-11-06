@@ -4709,6 +4709,11 @@ export async function runAgentPreview(
   pool: pg.Pool,
   preview: TurnPreview,
 ): Promise<void> {
+  // O modelo de linguagem do sandbox é o que o CHAMADOR fornece (modelo real no
+  // simulador e no "Testar agente"; o modelo fixo só entra pela chave de QA
+  // `INTERNAL_AGENT_RUN_STUB` em `requestTurnDeps`). O que o sandbox não pode
+  // fazer é LER MÍDIA pela rede: isso é garantido porque a derivação roda no
+  // worker de mídia e o simulador injeta a leitura sintética já pronta.
   await executarTurnoDoAgente(
     deps,
     null,

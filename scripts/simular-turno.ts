@@ -17,6 +17,7 @@ import { runAgentPreview } from "@/lib/agent-engine/agent/inbound-turn";
 import { newPreviewResult, scenarioContext } from "@/lib/agent-engine/agent/preview";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { formatMediaForTurn } from "@/lib/messaging/media/turn-text";
 import {
   construirRajada,
   parseDepoisDe,
@@ -76,9 +77,26 @@ async function main(): Promise<void> {
       message: z.string().optional(),
       messages: z.string().optional(),
       depoisDe: z.string().optional(),
+      mediaKind: z.enum(["audio", "imagem", "video", "documento"]).optional(),
+      mediaText: z.string().min(1).optional(),
       promptFile: z.string().min(1).optional(),
       name: z.string().min(1).max(200).optional(),
       reset: z.boolean(),
+    })
+    .superRefine((value, context) => {
+      if (
+        value.message === undefined &&
+        value.messages === undefined &&
+        !value.mediaKind
+      ) {
+        context.addIssue({ code: "custom", message: "informe --msg, --msgs ou --midia" });
+      }
+      if (value.message !== undefined && value.messages !== undefined) {
+        context.addIssue({ code: "custom", message: "informe apenas uma opção: --msg ou --msgs" });
+      }
+      if (value.mediaKind && !value.mediaText) {
+        context.addIssue({ code: "custom", message: "--midia exige --midia-texto" });
+      }
     })
     .parse({
       organizationId: requiredOption("org-id"),
@@ -88,6 +106,8 @@ async function main(): Promise<void> {
       message: option("msg"),
       messages: option("msgs"),
       depoisDe: option("depois-de"),
+      mediaKind: option("midia"),
+      mediaText: option("midia-texto"),
       promptFile: option("prompt"),
       name: option("nome"),
       reset: process.argv.includes("--novo"),
@@ -95,7 +115,27 @@ async function main(): Promise<void> {
 
   const historyFile = path.resolve(cli.historyFile);
   const history = await loadHistory(historyFile, cli.reset, cli.name);
-  const rajada = parseMensagensCli({ msg: cli.message, msgs: cli.messages });
+  const mediaType = cli.mediaKind === "imagem"
+    ? "image"
+    : cli.mediaKind === "documento"
+      ? "document"
+      : cli.mediaKind;
+  // A mídia simulada passa pelo MESMO formatador do turno real e entra como a
+  // ÚLTIMA mensagem da rajada (depois de eventuais --msgs); a legenda é o --msg.
+  const mensagemDeMidia = mediaType && cli.mediaText
+    ? formatMediaForTurn({
+        type: mediaType,
+        caption: cli.message,
+        derived: cli.mediaText,
+        simulated: true,
+      })
+    : null;
+  const rajada = mensagemDeMidia
+    ? [
+        ...(cli.messages !== undefined ? parseMensagensCli({ msgs: cli.messages }) : []),
+        mensagemDeMidia,
+      ]
+    : parseMensagensCli({ msg: cli.message, msgs: cli.messages });
   const inicioDaRajada = relogioInicialDoTurno(
     history.msgs,
     cli.depoisDe === undefined ? undefined : parseDepoisDe(cli.depoisDe),
