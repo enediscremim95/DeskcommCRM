@@ -244,10 +244,13 @@ export function MessageBubble({
           Mostra de quem era e um trecho. `line-clamp-2` porque serve para
           reconhecer, não para reler: a original está logo acima no histórico.
         */}
-        {message.reply_to_message_id && (
+        {(message.reply_to_message_id || citada) && (
           <button
             type="button"
-            onClick={() => void onGoToMessage?.(message.reply_to_message_id!)}
+            onClick={() => {
+              const alvo = message.reply_to_message_id ?? citada?.id;
+              if (alvo) void onGoToMessage?.(alvo);
+            }}
             aria-label={t("Ir para a mensagem citada")}
             className={cn(
               "mb-1 block w-full rounded-md border-l-2 px-2 py-1 text-left text-xs",

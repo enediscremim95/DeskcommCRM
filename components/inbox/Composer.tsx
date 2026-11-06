@@ -116,11 +116,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const t = useT();
   const draftKey =
     organizationId && userId ? composerDraftKey(organizationId, userId, conversationId) : null;
-  const [text, setText] = useState(() =>
-    typeof window === "undefined" || !draftKey
-      ? ""
-      : readComposerDraft(window.localStorage, draftKey),
-  );
+  // O rascunho vem do localStorage DEPOIS da hidratação (efeito abaixo): ler o
+  // navegador no inicializador do useState faria o cliente divergir do HTML do servidor.
+  const [text, setText] = useState("");
+  const [draftLoadedKey, setDraftLoadedKey] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<AttachmentQueueItem[]>([]);
   const attachmentsRef = useRef<AttachmentQueueItem[]>([]);
   const [activeAttachmentId, setActiveAttachmentId] = useState<string | null>(null);
@@ -155,10 +154,21 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const activeTemplate = visibleTemplates[normalizedActiveIndex];
 
   useEffect(() => {
-    if (typeof window !== "undefined" && draftKey) {
+    if (typeof window === "undefined" || !draftKey) {
+      setDraftLoadedKey(null);
+      return;
+    }
+    setText(readComposerDraft(window.localStorage, draftKey));
+    setDraftLoadedKey(draftKey);
+  }, [draftKey]);
+
+  useEffect(() => {
+    // Só grava depois de carregar o rascunho desta conversa: antes disso o campo
+    // está vazio e gravaria por cima do que o atendente deixou guardado.
+    if (typeof window !== "undefined" && draftKey && draftLoadedKey === draftKey) {
       writeComposerDraft(window.localStorage, draftKey, text);
     }
-  }, [draftKey, text]);
+  }, [draftKey, draftLoadedKey, text]);
 
   // send/createNote fora do disable: o texto some na hora do envio; travar o campo
   // até a API voltar impedia digitar a próxima mensagem com o campo ainda cheio.
