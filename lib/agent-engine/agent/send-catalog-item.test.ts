@@ -5,7 +5,9 @@ import type { Queryable } from "../queue/queue";
 import { criarFilaDeEnviosDoTurno } from "./fila-de-envios-do-turno";
 import {
   executarEnvioDeItemDoCatalogo,
+  inspecionarItemDoCatalogo,
   sendCatalogItemInputSchema,
+  simularEnvioDeItemDoCatalogo,
   type EstadoEnvioCatalogo,
 } from "./send-catalog-item";
 
@@ -33,6 +35,7 @@ function banco(opcoes: { produto?: boolean; duplicado?: boolean } = {}): Queryab
         return { rows: opcoes.produto === false ? [] : [produto] };
       }
       if (sql.includes("select exists")) return { rows: [{ existe: opcoes.duplicado === true }] };
+      if (sql.includes("select count(*)::int")) return { rows: [{ total: fotos.length }] };
       if (sql.includes("from catalog_product_images")) return { rows: fotos };
       if (sql.includes("from catalog_products") && sql.includes("produto_codigo=$2")) {
         return { rows: [produto, { ...produto, codigo: "PRECO-B", preco_cents: 15000 }] };
@@ -144,5 +147,101 @@ describe("crm_send_catalog_item", () => {
       results: [{ status: "sent" }, { status: "failed", motivo: "channel_failed" }],
     });
     expect(args.enviar).toHaveBeenCalledTimes(2);
+  });
+
+  it("simula com a mesma validação sem consultar messages, baixar, gravar ou enviar mídia", async () => {
+    const db = banco();
+    const getPublicUrl = vi.fn((storagePath: string) => ({
+      data: { publicUrl: `https://crm.example/storage/v1/object/public/catalog-media/${storagePath}` },
+    }));
+    const admin = {
+      storage: {
+        from: vi.fn(() => ({ getPublicUrl })),
+      },
+    } as unknown as SupabaseClient;
+    const codigosJaEnviados = new Set<string>();
+    const estado: EstadoEnvioCatalogo = { produtos: 0, imagens: 0 };
+    const args = {
+      db,
+      admin,
+      organizationId: "org",
+      input: { codigo: "PRECO-A", quantas_fotos: 3 },
+      estado,
+      maxSendsRestantes: () => 8 - estado.imagens,
+      codigosJaEnviados,
+    };
+
+    const primeira = await simularEnvioDeItemDoCatalogo(args);
+    expect(primeira.resultado).toMatchObject({
+      ok: true,
+      ja_enviado: false,
+      produto_codigo: "PAI-1",
+    });
+    expect(primeira.envio).toMatchObject({
+      produtoCodigo: "PAI-1",
+      legenda: expect.stringContaining("R$ 123,45"),
+      imagens: [
+        { nome: "1.jpg", url: expect.stringContaining("/catalog-media/org/PAI-1/1.jpg") },
+        { nome: "2.jpg", url: expect.stringContaining("/catalog-media/org/PAI-1/2.jpg") },
+        { nome: "3.jpg", url: expect.stringContaining("/catalog-media/org/PAI-1/3.jpg") },
+      ],
+    });
+    const segunda = await simularEnvioDeItemDoCatalogo(args);
+    expect(segunda).toEqual({ resultado: expect.objectContaining({ ok: true, ja_enviado: true }) });
+    expect(codigosJaEnviados).toEqual(new Set(["PAI-1"]));
+    expect(vi.mocked(db.query).mock.calls.some(([sql]) => sql.includes("from messages"))).toBe(false);
+    expect(getPublicUrl).toHaveBeenCalledTimes(3);
+  });
+
+  it("escopa todas as leituras da simulação à organização recebida", async () => {
+    const db = banco();
+    const admin = {
+      storage: {
+        from: () => ({
+          getPublicUrl: (storagePath: string) => ({ data: { publicUrl: storagePath } }),
+        }),
+      },
+    } as unknown as SupabaseClient;
+    await simularEnvioDeItemDoCatalogo({
+      db,
+      admin,
+      organizationId: "org-do-teste",
+      input: { codigo: "PRECO-A", quantas_fotos: 3 },
+      estado: { produtos: 0, imagens: 0 },
+      maxSendsRestantes: () => 8,
+      codigosJaEnviados: new Set(),
+    });
+    const consultasAoCatalogo = vi
+      .mocked(db.query)
+      .mock.calls.filter(([sql]) => sql.includes("catalog_products") || sql.includes("catalog_product_images"));
+    expect(consultasAoCatalogo.length).toBeGreaterThan(0);
+    expect(consultasAoCatalogo.every(([, values]) => values?.[0] === "org-do-teste")).toBe(true);
+  });
+
+  it("inspeciona a unidade inteira sem consultar outro tenant", async () => {
+    const db = banco();
+    const inspecao = await inspecionarItemDoCatalogo({
+      db,
+      organizationId: "org-vitrine",
+      conversationId: "conv-vitrine",
+      input: { codigo: "PRECO-A", quantas_fotos: 3 },
+    });
+
+    expect(inspecao).toMatchObject({
+      status: "ready",
+      produtoCodigo: "PAI-1",
+      mensagensFisicas: 3,
+      precoResumo: expect.stringMatching(/123,45/),
+    });
+    expect(
+      vi.mocked(db.query).mock.calls.every(([, values]) => values?.[0] === "org-vitrine"),
+    ).toBe(true);
+  });
+
+  it("a vitrine injeta o título fixo na legenda sem aceitar texto do modelo", async () => {
+    const args = base({ tituloFixo: "Kit Afeto com caixa kraft" });
+    await executarEnvioDeItemDoCatalogo(args);
+    const primeiro = vi.mocked(args.enviar).mock.calls[0]?.[0];
+    expect(primeiro?.body.split("\n")[0]).toBe("Kit Afeto com caixa kraft");
   });
 });

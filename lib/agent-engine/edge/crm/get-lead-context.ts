@@ -34,6 +34,12 @@ export interface LeadContextKnobs {
   maxTokens: number;
 }
 
+/**
+ * Origem operacional usada só pelo runtime. Symbol não entra em JSON, portanto
+ * não expõe `sent_via` ao prompt nem altera o orçamento do contexto.
+ */
+export const ORIGEM_INTERNA_DA_MENSAGEM = Symbol('origem-interna-da-mensagem');
+
 /** Uma mensagem do histórico, já curada. */
 export interface LeadContextMessage {
   direction: 'inbound' | 'outbound';
@@ -53,6 +59,7 @@ export interface LeadContextMessage {
   type?: string;
   media_storage_path?: string | null;
   media_mime?: string | null;
+  [ORIGEM_INTERNA_DA_MENSAGEM]?: string;
 }
 
 /**
@@ -182,6 +189,7 @@ interface HistoryRow {
   media_mime: string | null;
   media_derived_text: string | null;
   sent_at: Date;
+  sent_via?: string;
 }
 
 export async function getLeadContext(
@@ -239,7 +247,7 @@ export async function getLeadContext(
     ? (
         await db.query<HistoryRow>(
           `select id, direction, type, body, media_url, media_storage_path, media_mime,
-                  media_derived_text, sent_at
+                  media_derived_text, sent_at, sent_via
            from messages
            where organization_id = $1 and conversation_id = $2
              and direction in ('inbound', 'outbound')
@@ -343,6 +351,7 @@ function fitToBudget(
       // Hora de PAREDE do tenant, não UTC cru — ver o comentário de `sent_at` na
       // interface acima e o cabeçalho de `isoLocalComOffset`.
       sent_at: isoLocalComOffset(m.sent_at, fuso),
+      ...(m.sent_via ? { [ORIGEM_INTERNA_DA_MENSAGEM]: m.sent_via } : {}),
       ...(hasMedia ? { type: m.type, media_storage_path: m.media_storage_path, media_mime: m.media_mime } : {}),
     };
   });

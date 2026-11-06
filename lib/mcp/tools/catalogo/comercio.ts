@@ -40,6 +40,28 @@ export const TOOLS_COMERCIO = declararTools([
     pacotes: ["atender"],
   },
   {
+    name: "crm_send_vitrine",
+    category: "write",
+    rotulo: "Mostrar vitrine de produtos",
+    explicacao:
+      "Envia uma sequência pronta de produtos com fotos, títulos e valores cadastrados, na ordem definida pela loja e sem deixar o assistente trocar versões ou repetir preços.",
+    oQueToca: "Catálogo e conversa",
+    risco: "critico",
+    pacotes: ["atender"],
+  },
+  {
+    name: "crm_quote_shipping",
+    category: "write",
+    rotulo: "Calcular o frete do pedido",
+    explicacao:
+      "Calcula valor e prazo de transporte com o CEP e os itens cadastrados, sem aceitar preço, peso ou serviço inventado pelo assistente.",
+    oQueToca: "Frete e catálogo",
+    // Como o envio de produto, só entra por escolha individual. A configuração
+    // da organização continua desligada e nenhum pacote a ativa sozinho.
+    risco: "critico",
+    pacotes: ["atender"],
+  },
+  {
     name: "crm_list_privacy_requests",
     category: "read",
     rotulo: "Ver pedidos de privacidade",

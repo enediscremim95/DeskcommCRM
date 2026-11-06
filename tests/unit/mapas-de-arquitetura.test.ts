@@ -154,6 +154,20 @@ describe("mapas de arquitetura — coerência interna", () => {
       expect(grau(peca), `${peca} com menos de 2 arestas — é ilha pelo invariante 1`).toBeGreaterThanOrEqual(2);
     }
   });
+
+  it("a vitrine determinística e o dedupe do turno estão ligados ao fluxo real", () => {
+    const m = JSON.parse(
+      fs.readFileSync(path.join(DIR, "agente-envia-produto.architecture.json"), "utf8"),
+    ) as Mapa;
+    const grau = (id: string) =>
+      (m.edges ?? []).filter((e) => e.from === id || e.to === id).length;
+    for (const peca of ["vitrine", "dedupe", "anuncio", "saudacao"]) {
+      expect(grau(peca), `${peca} com menos de 2 arestas`).toBeGreaterThanOrEqual(2);
+    }
+    expect((m.nodes ?? []).find((node) => node.id === "dedupe")?.label).toContain("parecido");
+    expect((m.nodes ?? []).find((node) => node.id === "anuncio")?.label).toContain("remove só");
+    expect((m.nodes ?? []).find((node) => node.id === "saudacao")?.label).toContain("12 horas");
+  });
 });
 
 /**

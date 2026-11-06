@@ -32,6 +32,13 @@ const opcaoPrecoSchema = z.object({
     )
     .default([]),
 });
+const embalagemSchema = z.object({
+  sku: z.string().trim().min(1).max(120),
+  peso_kg: z.number().finite().positive(),
+  altura_cm: z.number().finite().positive(),
+  largura_cm: z.number().finite().positive(),
+  comprimento_cm: z.number().finite().positive(),
+});
 export const retratoDoPainelSchema = z.object({
   gerado_em: z.string().optional(),
   produtos: z
@@ -48,6 +55,9 @@ export const retratoDoPainelSchema = z.object({
         opcoes: z.record(z.string(), z.array(z.string())).default({}),
         opcoes_precos: z.record(z.string(), opcaoPrecoSchema).default({}),
         variacoes: z.array(variacaoSchema).max(2_000).default([]),
+        peso_medidas: z
+          .object({ opcoes: z.array(embalagemSchema).max(2_000).default([]) })
+          .optional(),
         fotos: z.array(fotoSchema).max(MAX_FOTOS).default([]),
       }),
     )
@@ -65,6 +75,11 @@ export interface LinhaNormalizadaDoPainel {
   opcao_preco: string | null;
   preco_cents: number;
   ativo: boolean;
+  peso_kg: number | null;
+  altura_cm: number | null;
+  largura_cm: number | null;
+  comprimento_cm: number | null;
+  embalagem_estimada: boolean;
 }
 
 export interface ProdutoNormalizadoDoPainel {
@@ -110,6 +125,21 @@ function ativa(situacao: string, grupo: string): boolean {
 
 export function normalizarRetratoDoPainel(retrato: RetratoDoPainel): ProdutoNormalizadoDoPainel[] {
   return retrato.produtos.map((produto) => {
+    const embalagemPorSku = new Map(
+      (produto.peso_medidas?.opcoes ?? []).map((opcao) => [opcao.sku, opcao]),
+    );
+    const camposDeEmbalagem = (sku: string) => {
+      const embalagem = embalagemPorSku.get(sku);
+      return {
+        peso_kg: embalagem?.peso_kg ?? null,
+        altura_cm: embalagem?.altura_cm ?? null,
+        largura_cm: embalagem?.largura_cm ?? null,
+        comprimento_cm: embalagem?.comprimento_cm ?? null,
+        // O painel atual não declara medição real. Só uma ação futura e
+        // explícita poderá mudar este campo para false.
+        embalagem_estimada: true,
+      };
+    };
     const dimensoesDePreco = Object.entries(produto.opcoes_precos)
       .filter(([, regra]) => regra.muda_preco)
       .map(([nome]) => nome)
@@ -118,7 +148,17 @@ export function normalizarRetratoDoPainel(retrato: RetratoDoPainel): ProdutoNorm
     for (const variacao of produto.variacoes) {
       const partes = dimensoesDePreco.map((dimensao) => `${dimensao}: ${variacao.atributos[dimensao] ?? ""}`);
       const chave = partes.join("\u001f") || produto.sku;
-      if (porCombinacao.has(chave)) continue;
+      const candidata = camposDeEmbalagem(variacao.codigo);
+      const existente = porCombinacao.get(chave);
+      if (existente) {
+        // Variações de cor podem compartilhar a mesma linha de preço. A caixa
+        // mais pesada governa a cotação dessa linha; o código vendável continua
+        // sendo o primeiro, como antes da chegada das medidas.
+        if ((candidata.peso_kg ?? -1) > (existente.peso_kg ?? -1)) {
+          Object.assign(existente, candidata);
+        }
+        continue;
+      }
       porCombinacao.set(chave, {
         codigo: variacao.codigo,
         produto_codigo: produto.sku,
@@ -128,6 +168,7 @@ export function normalizarRetratoDoPainel(retrato: RetratoDoPainel): ProdutoNorm
         opcao_preco: partes.length > 0 ? partes.join("; ") : null,
         preco_cents: centavos(variacao.preco),
         ativo: ativa(produto.situacao, produto.grupo),
+        ...candidata,
       });
     }
     if (porCombinacao.size === 0) {
@@ -142,6 +183,7 @@ export function normalizarRetratoDoPainel(retrato: RetratoDoPainel): ProdutoNorm
           opcao_preco: null,
           preco_cents: centavos(preco),
           ativo: ativa(produto.situacao, produto.grupo),
+          ...camposDeEmbalagem(produto.sku),
         });
       }
     }
@@ -193,6 +235,11 @@ interface ProdutoAtual {
   origem: string;
   produto_codigo: string | null;
   opcao_preco: string | null;
+  peso_kg: number | string | null;
+  altura_cm: number | string | null;
+  largura_cm: number | string | null;
+  comprimento_cm: number | string | null;
+  embalagem_estimada: boolean;
 }
 
 interface FotoAtual {
@@ -222,6 +269,8 @@ export function planejarGaleria(
 }
 
 function linhaMudou(atual: ProdutoAtual | undefined, linha: LinhaNormalizadaDoPainel): boolean {
+  const igual = (a: number | string | null | undefined, b: number | null) =>
+    a == null ? b === null : b !== null && Number(a) === b;
   return (
     !atual ||
     atual.origem !== "painel" ||
@@ -231,7 +280,12 @@ function linhaMudou(atual: ProdutoAtual | undefined, linha: LinhaNormalizadaDoPa
     atual.preco_cents !== linha.preco_cents ||
     atual.ativo !== linha.ativo ||
     atual.produto_codigo !== linha.produto_codigo ||
-    atual.opcao_preco !== linha.opcao_preco
+    atual.opcao_preco !== linha.opcao_preco ||
+    !igual(atual.peso_kg, linha.peso_kg) ||
+    !igual(atual.altura_cm, linha.altura_cm) ||
+    !igual(atual.largura_cm, linha.largura_cm) ||
+    !igual(atual.comprimento_cm, linha.comprimento_cm) ||
+    (atual.embalagem_estimada ?? true) !== linha.embalagem_estimada
   );
 }
 
@@ -261,7 +315,9 @@ export async function importarCatalogoDoPainel(
   for (let inicio = 0; ; inicio += TAMANHO_PAGINA) {
     const { data, error } = await admin
       .from("catalog_products")
-      .select("id,codigo,nome,descricao,categoria,preco_cents,ativo,origem,produto_codigo,opcao_preco")
+      .select(
+        "id,codigo,nome,descricao,categoria,preco_cents,ativo,origem,produto_codigo,opcao_preco,peso_kg,altura_cm,largura_cm,comprimento_cm,embalagem_estimada",
+      )
       .eq("organization_id", orgId)
       .order("id", { ascending: true })
       .range(inicio, inicio + TAMANHO_PAGINA - 1);

@@ -68,8 +68,11 @@ function primeiroParagrafoReal(descricao: string | null): string | null {
 export function montarLegendaDaTool(
   selecionada: LinhaDePrecoParaLegenda,
   opcoes: LinhaDePrecoParaLegenda[],
+  options: { tituloFixo?: string } = {},
 ): string {
-  const linhas = [cortarNoLimiteDePalavra(limpar(selecionada.nome), 90)];
+  const linhas = [
+    cortarNoLimiteDePalavra(limpar(options.tituloFixo ?? selecionada.nome), 90),
+  ];
   if (selecionada.opcao_preco) linhas.push(limpar(selecionada.opcao_preco));
   linhas.push(moeda(selecionada.preco_cents, selecionada.moeda));
   if (opcoes.length > 1) {

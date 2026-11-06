@@ -24,7 +24,14 @@ describe("loadEnv — vazio é ausente (contrato BYOK do README)", () => {
     const env = loadEnv({ ...REQUIRED, AGENT_MAX_STEPS: "" });
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.AGENT_MAX_STEPS).toBe(8); // default, não NaN de coerce('')
+    expect(env.MAX_SENDS_PER_TURN).toBe(3);
     expect(env.AGENT_DISPATCH_CONSUMER).toBe("engine");
+  });
+
+  it("MAX_SENDS_PER_TURN configurado continua sendo o fallback global", () => {
+    const env = loadEnv({ ...REQUIRED, MAX_SENDS_PER_TURN: "5" });
+
+    expect(env.MAX_SENDS_PER_TURN).toBe(5);
   });
 
   it("obrigatória VAZIA = erro claro nomeando a var (fail-fast preservado)", () => {

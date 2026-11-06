@@ -15,7 +15,32 @@
  */
 import type pg from 'pg';
 
+import {
+  vitrineSchema,
+  type VitrineConfig,
+  type VitrinesConfig,
+} from '@/lib/ai/guardrails-schema';
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
+
+const ASSUNTO_DE_VITRINE = /^[a-z0-9_]{1,40}$/;
+
+/**
+ * Leitura defensiva do jsonb livre. Uma vitrine inválida some sozinha; as
+ * vizinhas válidas continuam disponíveis e nenhuma forma inesperada lança.
+ */
+export function lerVitrines(valor: unknown): VitrinesConfig {
+  if (valor === null || typeof valor !== 'object' || Array.isArray(valor)) return {};
+
+  const vitrines: Record<string, VitrineConfig> = {};
+  for (const [assunto, candidata] of Object.entries(valor)) {
+    if (Object.keys(vitrines).length >= 12) break;
+    if (!ASSUNTO_DE_VITRINE.test(assunto)) continue;
+    const parsed = vitrineSchema.safeParse(candidata);
+    if (!parsed.success) continue;
+    vitrines[assunto] = parsed.data;
+  }
+  return vitrines;
+}
 
 export interface PublishedAgentConfig {
   operationMode?: 'automatic' | 'assisted';
@@ -35,6 +60,14 @@ export interface PublishedAgentConfig {
   handoffToolEnabled: boolean;
   splitMessages: boolean;
   splitMaxChars: number;
+  /** Opt-in em ai_agents.config.split_por_paragrafo; ausente = false. */
+  splitPorParagrafo: boolean;
+  /** Opt-in em ai_agents.config.sem_saudacao_repetida; ausente = false. */
+  semSaudacaoRepetida?: boolean;
+  /** Opt-in em ai_agents.config.max_sends_per_turn; null = teto global da instalação. */
+  maxSendsPerTurn: number | null;
+  /** Vitrines determinísticas por assunto; mapa vazio = ferramenta ausente. */
+  vitrines: VitrinesConfig;
   /** input multimodal (imagem/áudio/pdf) habilitado no turno (Onda 3). */
   multimodalInput: boolean;
   /** tools open_human_case/provide_case_update habilitadas no turno (spec 15). */
@@ -158,7 +191,14 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
 /** Mapeamento Row (snake_case do banco) → PublishedAgentConfig, compartilhado
  * pelas duas variantes de loader (por channel_session e por agent id). */
 function mapAgentConfigRow(r: Row): PublishedAgentConfig {
-  const cfg = (r.config ?? {}) as { rag_top_k?: unknown; rag_similarity_threshold?: unknown };
+  const cfg = (r.config ?? {}) as {
+    rag_top_k?: unknown;
+    rag_similarity_threshold?: unknown;
+    split_por_paragrafo?: unknown;
+    sem_saudacao_repetida?: unknown;
+    max_sends_per_turn?: unknown;
+    vitrines?: unknown;
+  };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
     Number.isInteger(cfg.rag_top_k) &&
@@ -196,6 +236,16 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     handoffToolEnabled: r.handoff_tool_enabled,
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,
+    splitPorParagrafo: cfg.split_por_paragrafo === true,
+    semSaudacaoRepetida: cfg.sem_saudacao_repetida === true,
+    maxSendsPerTurn:
+      typeof cfg.max_sends_per_turn === 'number' &&
+      Number.isInteger(cfg.max_sends_per_turn) &&
+      cfg.max_sends_per_turn >= 1 &&
+      cfg.max_sends_per_turn <= 12
+        ? cfg.max_sends_per_turn
+        : null,
+    vitrines: lerVitrines(cfg.vitrines),
     multimodalInput: r.multimodal_input,
     casesEnabled: r.cases_enabled,
     toolIds: r.tool_ids ?? [],

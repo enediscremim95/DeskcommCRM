@@ -372,4 +372,34 @@ describe("POST /api/v1/products/import-painel", () => {
       linhasAtivasDoPainel.length,
     );
   });
+
+  it("grava peso e medidas pelo SKU e mantém a embalagem como estimada", async () => {
+    const { POST } = await import("./route");
+    await POST(
+      pedido([
+        produto("KIT-FRETE", {
+          peso_medidas: {
+            opcoes: [
+              {
+                sku: "KIT-FRETE",
+                peso_kg: 2.75,
+                altura_cm: 15,
+                largura_cm: 25,
+                comprimento_cm: 35,
+              },
+            ],
+          },
+        }),
+      ]),
+    );
+
+    expect(linhas[0]).toMatchObject({
+      codigo: "KIT-FRETE",
+      peso_kg: 2.75,
+      altura_cm: 15,
+      largura_cm: 25,
+      comprimento_cm: 35,
+      embalagem_estimada: true,
+    });
+  });
 });
