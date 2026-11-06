@@ -211,6 +211,14 @@ import {
   resultadoDeEnvioSemAnuncio,
 } from './anuncio-sem-vitrine';
 import { filtrarSaudacaoRepetida } from './saudacao-repetida';
+import { executarVitrinePorGatilho } from './vitrine-por-gatilho';
+import {
+  concluirHandoffAutomaticoNaPromessa,
+  criarEstadoHandoffAutomaticoNaPromessa,
+  MOTIVO_HANDOFF_AUTOMATICO_NA_PROMESSA,
+  registrarHandoffRealizadoNesteTurno,
+  registrarMensagemParaHandoffAutomatico,
+} from './promessa-sem-handoff';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -1365,6 +1373,22 @@ export function inboundsNaoRespondidos(messages: readonly LeadContextMessage[]):
 }
 
 /**
+ * Reconstrói a visão da rajada que o turno usa depois da coalescência do drain.
+ * O job real e o sandbox passam por este mesmo ponto: a mensagem pinada define
+ * a fonte prioritária, enquanto o histórico completo preserva cada inbound não
+ * respondida, em ordem e sem concatenar o conteúdo.
+ */
+export function agruparMensagensDoTurno(
+  messages: readonly LeadContextMessage[],
+  currentInboundText: string | null | undefined,
+): { mensagemDoJob: string; inboundsPendentes: string[] } {
+  return {
+    mensagemDoJob: currentInboundText ?? latestInboundSignal(messages),
+    inboundsPendentes: inboundsNaoRespondidos(messages),
+  };
+}
+
+/**
  * Parâmetros do run que DIFEREM entre inbound (F2-09) e follow-up (F3-03): os ids
  * de envio (de fonte confiável — payload do drain no inbound, row do lead no
  * follow-up, nunca do payload do modelo) e a montagem da mensagem de abertura,
@@ -1822,6 +1846,19 @@ async function executarTurnoDoAgente(
       );
     }
   }
+  if (preview?.kind === 'sandbox' && agentConfig?.janelaDeAtendimento != null) {
+    const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, clock());
+    if (esperaMs !== null) {
+      preview.result.impediments.push({
+        code: 'outside_agent_business_hours',
+        message:
+          'O relógio simulado está fora do horário de funcionamento do agente. ' +
+          `No turno real, o job aguardaria ${esperaMs} ms até a próxima abertura.`,
+      });
+      preview.result.restrictions.push('agent_business_hours_closed');
+      return;
+    }
+  }
 
   // Fase 3: grava a decisão de roteamento e a aderência da conversa ao agente.
   // Fire-and-forget — falha de telemetria nunca derruba a resposta ao lead.
@@ -1950,13 +1987,14 @@ async function executarTurnoDoAgente(
     throw new Error(`abertura do turno falhou em get_lead_context (${openingContext.error.code})`);
   }
   const currentInboundText =
-    input.inboundMessageId === undefined
+    preview?.currentInboundText ??
+    (input.inboundMessageId === undefined
       ? null
       : await loadInboundBodyForJob(pool, {
           tenantId,
           conversationId: input.conversationId,
           inboundMessageId: input.inboundMessageId,
-        });
+        }));
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
   // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
@@ -2029,9 +2067,10 @@ async function executarTurnoDoAgente(
   //    Handoff, opt-out e urgência leem daqui: são coisas que não podem passar
   //    despercebidas só porque chegaram na segunda mensagem de uma rajada, que o
   //    drain coalesce no job da primeira.
-  const mensagemDoJob =
-    currentInboundText ?? latestInboundSignal(openingContext.context.messages);
-  const inboundsPendentes = inboundsNaoRespondidos(openingContext.context.messages);
+  const { mensagemDoJob, inboundsPendentes } = agruparMensagensDoTurno(
+    openingContext.context.messages,
+    currentInboundText,
+  );
   if (
     !preview &&
     inboundsPendentes.some(
@@ -2209,6 +2248,8 @@ async function executarTurnoDoAgente(
   const estadoCotacaoFrete: EstadoCotacaoFrete = { cotacoes: 0 };
   const codigosDeCatalogoJaEnviados = new Set(preview?.catalogProductCodesAlreadySent ?? []);
   const mensagensEnviadasNesteTurno = new Set<string>();
+  const assuntosDeVitrineChamadosNesteTurno = new Set<string>();
+  const estadoHandoffAutomatico = criarEstadoHandoffAutomaticoNaPromessa();
   const vitrineAtivaNesteAgente =
     agentConfig?.toolIds.includes('crm_send_vitrine') === true &&
     Object.keys(agentConfig.vitrines).length > 0;
@@ -2884,6 +2925,7 @@ async function executarTurnoDoAgente(
             outcome.kind === 'queued'
           ) {
             registrarMensagemEnviadaNoTurno(bodyParaEnvio, mensagensEnviadasNesteTurno);
+            registrarMensagemParaHandoffAutomatico(estadoHandoffAutomatico, bodyParaEnvio);
           }
           if (outcome.kind === 'sent' && pendingCitations.length > 0) {
             try {
@@ -3165,6 +3207,7 @@ async function executarTurnoDoAgente(
             raw,
           );
           if (!res.ok) return res; // erro de ensino (payload fora da whitelist)
+          registrarHandoffRealizadoNesteTurno(estadoHandoffAutomatico);
           return { ok: true, status: res.status, message: res.message };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -3352,13 +3395,17 @@ async function executarTurnoDoAgente(
     });
   }
 
+  let executarVitrineNoTurno:
+    | ((raw: unknown, origem: 'modelo' | 'gatilho') => Promise<Record<string, unknown>>)
+    | null = null;
   if (vitrineAtivaNesteAgente && agentConfig !== null) {
-    rawTools.crm_send_vitrine = tool({
-      ...AGENT_TOOL_DEFS.crm_send_vitrine,
-      execute: (raw) =>
-        filaDeEnvios.enfileirar(async () => {
+    executarVitrineNoTurno = (raw, origem) =>
+      filaDeEnvios.enfileirar(async () => {
           try {
             const inputVitrine = sendVitrineInputSchema.parse(raw);
+            if (origem === 'modelo') {
+              assuntosDeVitrineChamadosNesteTurno.add(inputVitrine.assunto);
+            }
             const emSandbox = preview?.kind === 'sandbox';
             const resultado = await executarVitrine({
               input: inputVitrine,
@@ -3629,7 +3676,10 @@ async function executarTurnoDoAgente(
               },
             };
           }
-        }),
+        });
+    rawTools.crm_send_vitrine = tool({
+      ...AGENT_TOOL_DEFS.crm_send_vitrine,
+      execute: (raw) => executarVitrineNoTurno!(raw, 'modelo'),
     });
   }
 
@@ -3961,6 +4011,7 @@ async function executarTurnoDoAgente(
               contador: enviosFisicosNoPreview,
             },
             guardaAnuncioSemVitrine,
+            estadoHandoffAutomatico,
           )
         : rawTools;
     const toolsWithBreaker = wrapToolsWithBreaker(previewTools, {
@@ -4146,6 +4197,38 @@ async function executarTurnoDoAgente(
       { registry: deps.registry, log: runLog },
     );
 
+    // Fechamento compartilhado do efeito de FALAR: roda depois que todas as
+    // tools do Conversador terminaram, mas antes do checkpoint. Assim uma falha
+    // da 2ª chamada de modelo não deixa sem dono a promessa que já chegou ao
+    // cliente. Real e sandbox atravessam este MESMO ponto.
+    await concluirHandoffAutomaticoNaPromessa({
+      ativo: agentConfig?.handoffAutomaticoNaPromessa === true,
+      estado: estadoHandoffAutomatico,
+      sandbox: preview !== undefined,
+      conversaEmAtendimentoHumano: () =>
+        preview ? Promise.resolve(false) : isLeadInHandoff(pool, tenantId, leadId),
+      aplicarHandoff: async () => {
+        if (preview) throw new Error('preview_handoff_effect_forbidden');
+        await performHumanHandoff(
+          pool,
+          { tenantId, leadId, conversationId: input.conversationId },
+          {
+            reason: MOTIVO_HANDOFF_AUTOMATICO_NA_PROMESSA,
+            conversationSummary: buildHandoffSummary(previous),
+            log: runLog,
+          },
+        );
+      },
+      registrarSandbox: (code) => {
+        preview?.result.impediments.push({
+          code,
+          message:
+            'A resposta prometeu uma conferência humana; no atendimento real a conversa seria passada para uma pessoa.',
+        });
+      },
+      log: runLog,
+    });
+
     // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
     // promessa fora de tabela (F4-01). Ambos estão determinados aqui (o jailbreak rodou na
     // abertura; as tentativas de envio já passaram pelo loop). Dispara escalação humana em
@@ -4181,6 +4264,63 @@ async function executarTurnoDoAgente(
     // (é onde a fita inteira é re-serializada num prompt) — o conteúdo durável já foi para
     // lead_notes pelo flush (F3-07), então o stub não perde nada recuperável. Opera SÓ no
     // sufixo por-lead, nunca no prefixo estável (regra de cache 15).
+    // O gatilho roda depois da resposta normal do agente e antes do checkpoint.
+    // Ele compartilha a mesma fila e o mesmo executor do crm_send_vitrine, então
+    // não cria uma segunda porta de envio nem fura guardrails, teto ou dedupe.
+    if (agentConfig !== null && executarVitrineNoTurno !== null) {
+      const mensagensDoCliente = [...new Set([mensagemDoJob, ...inboundsPendentes])].filter(
+        (mensagem) => mensagem.trim() !== '',
+      );
+      await executarVitrinePorGatilho({
+        ativa: agentConfig.vitrinePorGatilho === true,
+        ferramentaDisponivel: vitrineAtivaNesteAgente,
+        vitrines: agentConfig.vitrines,
+        mensagensDoCliente,
+        assuntosChamadosNesteTurno: assuntosDeVitrineChamadosNesteTurno,
+        emAtendimentoHumano: () =>
+          preview ? Promise.resolve(false) : isLeadInHandoff(pool, tenantId, leadId),
+        assuntoJaMostrado: async (_assunto, vitrine) => {
+          for (const item of vitrine.itens) {
+            const inspecao = await inspecionarItemDoCatalogo({
+              db: pool,
+              organizationId: tenantId,
+              conversationId: input.conversationId,
+              input: { codigo: item.codigo, quantas_fotos: item.fotos },
+              ...(preview?.kind === 'sandbox'
+                ? { codigosJaEnviados: codigosDeCatalogoJaEnviados }
+                : {}),
+            });
+            if (inspecao.status === 'already_sent') return true;
+          }
+          return false;
+        },
+        executar: (assunto) => executarVitrineNoTurno!({ assunto }, 'gatilho'),
+        log: runLog,
+        ...(preview?.kind === 'sandbox'
+          ? {
+              registrarRastro: (rastro: {
+                assunto: string;
+                ok: boolean;
+                produtosMostrados: number;
+              }) => {
+                preview.result.toolTrace.push({
+                  tool: 'vitrine_por_gatilho',
+                  argumentos: { assunto: rastro.assunto },
+                  resultado: rastro.ok
+                    ? `sucesso:produtos=${rastro.produtosMostrados}`
+                    : 'erro:envio_da_vitrine',
+                  ok: rastro.ok,
+                });
+              },
+            }
+          : {}),
+      });
+      if (runError !== null) throw runError;
+      if (outcomes.some((o) => o.kind === 'failed')) {
+        throw new Error('envio marcado como failed pelo CRM, run re-tentado pela fila');
+      }
+    }
+
     const responseMessages =
       deps.knobs.prune !== undefined
         ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
@@ -4587,6 +4727,7 @@ export async function runAgentPreview(
         projeta,
         entregues,
         compromissosBlock,
+        currentInboundText,
       }) =>
         buildOpeningMessage(
           previous,
@@ -4596,6 +4737,7 @@ export async function runAgentPreview(
           projeta,
           entregues,
           compromissosBlock,
+          currentInboundText,
         ),
     },
     preview,
