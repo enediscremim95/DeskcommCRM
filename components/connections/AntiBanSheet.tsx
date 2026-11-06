@@ -36,6 +36,7 @@ interface Props {
 interface FormState {
   window_start_hour: string;
   window_end_hour: string;
+  window_saturday_end_hour: string;
   throttle_s: string;
   jitter_s: string;
   daily_message_limit: string;
@@ -51,6 +52,8 @@ function fromItem(item: PacingKnobsItem): FormState {
   return {
     window_start_hour: o?.window_start_hour != null ? String(o.window_start_hour) : "",
     window_end_hour: o?.window_end_hour != null ? String(o.window_end_hour) : "",
+    window_saturday_end_hour:
+      o?.window_saturday_end_hour != null ? String(o.window_saturday_end_hour) : "",
     throttle_s: o?.throttle_ms != null ? String(o.throttle_ms / 1000) : "",
     jitter_s: o?.jitter_max_ms != null ? String(o.jitter_max_ms / 1000) : "",
     daily_message_limit:
@@ -97,6 +100,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         channel_session_id: item.channel_session.id,
         window_start_hour: intOrNull(form.window_start_hour),
         window_end_hour: intOrNull(form.window_end_hour),
+        window_saturday_end_hour: intOrNull(form.window_saturday_end_hour),
         throttle_ms: msOrNull(form.throttle_s),
         jitter_max_ms: msOrNull(form.jitter_s),
         // `null` quando o Switch está no default: salvar esta ficha por outro
@@ -213,6 +217,31 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
             <p className="text-xs text-muted-foreground">
               {t(
                 "O assistente só envia mensagens dentro desta janela. Fora dela, a resposta fica agendada para a próxima abertura — você vê o motivo na conversa.",
+              )}
+            </p>
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-2">
+            <Label htmlFor="window-saturday-end-hour">{t("Hora de fim no sábado")}</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="window-saturday-end-hour"
+                type="number"
+                min={0}
+                max={24}
+                inputMode="numeric"
+                placeholder={String(eff.windowEndHour)}
+                value={form.window_saturday_end_hour}
+                onChange={(e) => set({ window_saturday_end_hour: e.target.value })}
+                disabled={!canWrite}
+                aria-label={t("Hora de fim da janela no sábado")}
+                className="w-20"
+              />
+              <span className="text-sm text-muted-foreground">h</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Em branco, o sábado usa o mesmo fim dos outros dias. Se o fim for menor ou igual à abertura, o sábado fica fechado.",
               )}
             </p>
           </fieldset>

@@ -37,5 +37,9 @@ export async function carregarAssistenteDeResposta(
     allowManagedReplyAssistant: true,
   });
   if (!agent || agent.operationMode !== "assisted" || !agent.pausedAt) return null;
+  // O rascunho entrega este `agent` ao mesmo `runAgentPreview` usado pelos
+  // demais agentes. Ali provider/model/credentialId viram `llmOverride` do seam
+  // único (`runModelCall`) e chegam ao registry, inclusive para OpenRouter.
+  // Não há cliente HTTP nem resolução de provedor paralela neste runtime.
   return { settings, agent };
 }

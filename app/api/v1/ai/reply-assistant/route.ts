@@ -10,6 +10,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import {
   escolherModeloDoAssistente,
   pedidoDoAssistenteSchema,
+  type ProvedorDoAssistente,
 } from "@/lib/ai/assistente-de-resposta/config";
 import {
   desligarAssistenteDeResposta,
@@ -74,7 +75,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   }
 
   const input = parsed.data as typeof parsed.data & {
-    provider: "anthropic" | "openai";
+    provider: ProvedorDoAssistente;
     credential_id: string;
     team_style: string;
     history_message_window: number;
@@ -118,7 +119,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   const availableModels = Array.isArray(credential.models_available)
     ? credential.models_available.filter((value): value is string => typeof value === "string")
     : null;
-  const model = escolherModeloDoAssistente(catalog ?? [], availableModels);
+  const model = escolherModeloDoAssistente(catalog ?? [], availableModels, input.provider);
   if (!model) {
     return fail(
       "model_not_available",

@@ -9,6 +9,7 @@
 export interface RetentionContext {
   window_start_hour: number;
   window_end_hour: number;
+  window_saturday_end_hour: number | null;
   allow_sunday: boolean;
   timezone: string;
 }
@@ -37,7 +38,10 @@ export function retentionCopy(
   ctx: RetentionContext,
   t: (texto: string) => string = (texto) => texto,
 ): RetentionCopy {
-  const janela = `${ctx.window_start_hour}h–${ctx.window_end_hour}h${ctx.allow_sunday ? "" : `, ${t("sem domingo")}`}`;
+  const sabado = ctx.window_saturday_end_hour;
+  const janela = `${ctx.window_start_hour}h–${ctx.window_end_hour}h` +
+    (sabado === null ? "" : `, ${t("sábado até")} ${sabado}h`) +
+    (ctx.allow_sunday ? "" : `, ${t("sem domingo")}`);
   const make = (kind: RetentionKind, description: string): RetentionCopy => ({
     kind,
     title: t(TITLES[kind]),

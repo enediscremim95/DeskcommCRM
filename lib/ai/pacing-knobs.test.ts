@@ -18,6 +18,7 @@ describe("pacing-knobs — validação com KNOB_BOUNDS (números nunca nascem aq
         throttle_ms: KNOB_BOUNDS.intervalMaxMs,
         window_start_hour: KNOB_BOUNDS.hourLastStart,
         window_end_hour: KNOB_BOUNDS.hourEnd,
+        window_saturday_end_hour: 0,
       }).success,
     ).toBe(true);
     expect(
@@ -32,6 +33,25 @@ describe("pacing-knobs — validação com KNOB_BOUNDS (números nunca nascem aq
         window_start_hour: KNOB_BOUNDS.hourLastStart + 1,
       }).success,
     ).toBe(false);
+  });
+
+  it("fim de sábado aceita 0 a 24 e pode fechar o sábado inteiro", () => {
+    for (const value of [0, 9, 24, null]) {
+      expect(
+        pacingKnobsUpdateSchema.safeParse({
+          channel_session_id: SESSION,
+          window_saturday_end_hour: value,
+        }).success,
+      ).toBe(true);
+    }
+    for (const value of [-1, 25]) {
+      expect(
+        pacingKnobsUpdateSchema.safeParse({
+          channel_session_id: SESSION,
+          window_saturday_end_hour: value,
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it("timezone IANA validada; campo desconhecido rejeitado (strict)", () => {
@@ -77,6 +97,7 @@ describe("pacing-knobs — validação com KNOB_BOUNDS (números nunca nascem aq
       jitter_max_ms: null,
       window_start_hour: 9,
       window_end_hour: null,
+      window_saturday_end_hour: 14,
       allow_sunday: null,
       timezone: null,
       warmup_daily_caps: null,
@@ -85,6 +106,7 @@ describe("pacing-knobs — validação com KNOB_BOUNDS (números nunca nascem aq
     expect(eff.jitterMaxMs).toBe(PACING_DEFAULTS.jitterMaxMs);
     expect(eff.windowStartHour).toBe(9);
     expect(eff.windowEndHour).toBe(PACING_DEFAULTS.windowEndHour);
+    expect(eff.windowSaturdayEndHour).toBe(14);
   });
 
   it("warmup jsonb inválido cai nos defaults (mesma leitura fail-closed do engine)", () => {
@@ -93,6 +115,7 @@ describe("pacing-knobs — validação com KNOB_BOUNDS (números nunca nascem aq
       jitter_max_ms: null,
       window_start_hour: null,
       window_end_hour: null,
+      window_saturday_end_hour: null,
       allow_sunday: null,
       timezone: null,
       warmup_daily_caps: [{ errado: true }],

@@ -20,6 +20,8 @@ const updateSchema = z
     min_interval_seconds: z.number().int().min(1).max(86_400).optional(),
     max_interval_seconds: z.number().int().min(1).max(86_400).optional(),
     daily_limit: z.number().int().min(1).max(10_000).optional(),
+    busy_minutes: z.number().int().min(0).max(60).optional(),
+    max_wait_hours: z.number().int().min(1).max(168).nullable().optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0);
@@ -31,6 +33,8 @@ interface KnobsFila {
   first_message_queue_daily_limit?: number | null;
   first_message_queue_paused?: boolean | null;
   first_message_queue_next_at?: string | null;
+  first_message_queue_busy_minutes?: number | null;
+  first_message_queue_max_wait_hours?: number | null;
 }
 
 async function canalExiste(organizationId: string, channelSessionId: string): Promise<boolean> {
@@ -49,7 +53,7 @@ async function estadoDaFila(organizationId: string, channelSessionId: string) {
   const { data: rawKnobs, error: knobsError } = await db
     .from("channel_knobs")
     .select(
-      "timezone, first_message_queue_min_interval_seconds, first_message_queue_max_interval_seconds, first_message_queue_daily_limit, first_message_queue_paused, first_message_queue_next_at",
+      "timezone, first_message_queue_min_interval_seconds, first_message_queue_max_interval_seconds, first_message_queue_daily_limit, first_message_queue_paused, first_message_queue_next_at, first_message_queue_busy_minutes, first_message_queue_max_wait_hours",
     )
     .eq("organization_id", organizationId)
     .eq("channel_session_id", channelSessionId)
@@ -91,6 +95,10 @@ async function estadoDaFila(organizationId: string, channelSessionId: string) {
       FILA_PRIMEIRA_MENSAGEM_DEFAULTS.maxIntervalSeconds,
     daily_limit:
       knobs.first_message_queue_daily_limit ?? FILA_PRIMEIRA_MENSAGEM_DEFAULTS.dailyLimit,
+    busy_minutes:
+      knobs.first_message_queue_busy_minutes ?? FILA_PRIMEIRA_MENSAGEM_DEFAULTS.busyMinutes,
+    max_wait_hours:
+      knobs.first_message_queue_max_wait_hours ?? FILA_PRIMEIRA_MENSAGEM_DEFAULTS.maxWaitHours,
     timezone,
   };
 }
@@ -163,6 +171,10 @@ export async function PATCH(req: NextRequest, { params }: Context): Promise<Resp
       first_message_queue_min_interval_seconds: min,
       first_message_queue_max_interval_seconds: max,
       first_message_queue_daily_limit: parsed.data.daily_limit ?? before.daily_limit,
+      first_message_queue_busy_minutes: parsed.data.busy_minutes ?? before.busy_minutes,
+      ...(parsed.data.max_wait_hours === undefined
+        ? {}
+        : { first_message_queue_max_wait_hours: parsed.data.max_wait_hours }),
       updated_at: new Date().toISOString(),
     },
     { onConflict: "organization_id,channel_session_id" },

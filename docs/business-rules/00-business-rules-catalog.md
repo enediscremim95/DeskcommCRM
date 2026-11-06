@@ -216,10 +216,10 @@ owner: Rafael Melgaço
 ### W-07 — Janela horária default 7h-22h, domingo LIBERADO
 - **Origem**: Sub-PRD 03 §3.7; domingo revisto pelo dono do produto em 2026-08-20
 - **Tipo**: Default com override
-- **Regra**: GIVEN automação tentando envio outbound; WHEN hora local do tenant está fora de 7h-22h; THEN o envio é enfileirado pra próximo horário válido. **Domingo não veta** por default (`allowSunday: true`).
+- **Regra**: GIVEN automação tentando envio outbound; WHEN hora local do tenant está fora da janela do canal; THEN o envio é enfileirado para o próximo horário válido. O sábado pode ter fim próprio (`window_saturday_end_hour`); nulo herda `window_end_hour`, e fim menor ou igual à abertura fecha o sábado inteiro. **Domingo não veta** por default (`allowSunday: true`).
 - **Por que o domingo saiu do veto**: a janela horária é CORTESIA, não anti-banimento — a distinção está em `lib/agent-engine/pacing/engine.ts` (o `banRisk` desarma warm-up, cap e throttle; a janela vale em todo canal). Calar o domingo INTEIRO num CRM de atendimento significa que quem escreve no domingo só é respondido na segunda: o custo cai sobre o cliente final, não sobre o risco de bloqueio. Quem faz prospecção ativa e prefere não incomodar no fim de semana desliga o knob.
 - **Enforcement**: Worker de envio (`decidePacing`).
-- **Configuração**: por canal, em Conexões → anti-banimento (`components/connections/AntiBanSheet.tsx` → `POST /api/v1/ai/pacing`), coluna `channel_knobs.allow_sunday`. `null` = default.
+- **Configuração**: por canal, em Conexões → anti-banimento (`components/connections/AntiBanSheet.tsx` → `PUT /api/v1/ai/pacing`), colunas `channel_knobs.window_start_hour`, `window_end_hour`, `window_saturday_end_hour` e `allow_sunday`. `null` = herdar o comportamento padrão.
 - **Override**: Atendente humano envia manualmente sem restrição (a regra é pra automações em massa).
 
 ### W-08 — Mídia outbound vai pra Storage, NUNCA inline base64
