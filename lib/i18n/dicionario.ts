@@ -54,6 +54,19 @@ export const DICIONARIO: Traducoes = {
   "O catálogo da loja. Produtos do painel mantêm nome, preço e foto sincronizados; o CRM acrescenta a legenda do atendimento.": {
     es: "El catálogo de la tienda. Los productos del panel mantienen nombre, precio y foto sincronizados; el CRM agrega el texto de atención.",
   },
+  "Legenda personalizada do atendimento": { es: "Texto personalizado de la atención" },
+  "Quando preenchida, substitui a descrição na mensagem enviada. Nome e preço permanecem.": {
+    es: "Cuando se completa, reemplaza la descripción en el mensaje enviado. El nombre y el precio se mantienen.",
+  },
+  "Alguns produtos foram enviados sem foto. O texto foi mantido.": {
+    es: "Algunos productos se enviaron sin foto. Se mantuvo el texto.",
+  },
+  "Hora de fim no sábado": { es: "Hora de cierre el sábado" },
+  "Hora de fim da janela no sábado": { es: "Hora de cierre de la ventana el sábado" },
+  "Em branco, o sábado usa o mesmo fim dos outros dias. Se o fim for menor ou igual à abertura, o sábado fica fechado.": {
+    es: "En blanco, el sábado usa la misma hora de cierre que los demás días. Si el cierre es menor o igual que la apertura, el sábado queda cerrado.",
+  },
+  "sábado até": { es: "sábado hasta" },
   "Erro ao remover o áudio.": { es: "No se pudo eliminar el audio." },
   "Áudio é permitido apenas em resposta compartilhada.": { es: "El audio solo se permite en una respuesta compartida." },
   "O áudio precisa ter até 16 MB.": { es: "El audio debe tener hasta 16 MB." },
