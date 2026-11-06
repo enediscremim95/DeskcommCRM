@@ -405,20 +405,20 @@ export function ProdutosClient({
           </div>
 
           <label className="mt-3 block text-sm">
-            {t("Legenda complementar do atendimento")}{" "}
+            {t("Legenda personalizada do atendimento")}{" "}
             <span className="text-muted-foreground">{t("(opcional)")}</span>
             <textarea
               value={rascunho.legendaAtendimento}
-              onChange={(e) =>
-                setRascunho({ ...rascunho, legendaAtendimento: e.target.value })
-              }
+              onChange={(e) => setRascunho({ ...rascunho, legendaAtendimento: e.target.value })}
               maxLength={4000}
               rows={3}
               className="mt-1 w-full rounded-md border px-3 py-2"
               data-testid="produto-legenda-atendimento"
             />
             <span className="mt-1 block text-xs text-muted-foreground">
-              {t("Vai ao final da legenda enviada e é cortada no limite aceito pelo canal.")}
+              {t(
+                "Quando preenchida, substitui a descrição na mensagem enviada. Nome e preço permanecem.",
+              )}
             </span>
           </label>
 

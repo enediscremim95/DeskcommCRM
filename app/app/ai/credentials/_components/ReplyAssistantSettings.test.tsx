@@ -42,4 +42,16 @@ describe("Assistente de resposta", () => {
     expect(screen.getByRole("button", { name: "Ligar assistente" })).toBeDisabled();
     expect(screen.getByText(/Somente uma pessoa administradora/)).toBeInTheDocument();
   });
+
+  it("oferece OpenRouter e adapta o campo de chave ao provedor", async () => {
+    api.get.mockResolvedValue({ data: { ...estado, provider: "openrouter" } });
+    render(<ReplyAssistantSettings canWrite />);
+    await screen.findByText("Desligado");
+
+    expect(screen.getByRole("combobox", { name: "Provedor" })).toHaveTextContent("OpenRouter");
+    expect(screen.getByPlaceholderText("Cole a chave da OpenRouter")).toHaveAttribute(
+      "type",
+      "password",
+    );
+  });
 });

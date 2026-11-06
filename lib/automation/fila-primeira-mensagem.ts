@@ -18,6 +18,8 @@ export const FILA_PRIMEIRA_MENSAGEM_DEFAULTS = {
   maxIntervalSeconds: 240,
   dailyLimit: 200,
   paused: false,
+  busyMinutes: 0,
+  maxWaitHours: 72,
   pauseBetweenPartsSeconds: 3,
 } as const;
 

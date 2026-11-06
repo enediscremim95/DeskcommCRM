@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PROVEDORES_DO_ASSISTENTE = ["anthropic", "openai"] as const;
+export const PROVEDORES_DO_ASSISTENTE = ["anthropic", "openai", "openrouter"] as const;
 export type ProvedorDoAssistente = (typeof PROVEDORES_DO_ASSISTENTE)[number];
 
 export const INSTRUCAO_PADRAO_DO_ASSISTENTE =
@@ -90,17 +90,35 @@ interface ModeloCandidato {
   is_default_for_provider?: boolean | null;
 }
 
+const MODELOS_PREFERIDOS_OPENROUTER = [
+  "anthropic/claude-haiku-5.5",
+  "anthropic/claude-sonnet-5.5",
+] as const;
+
 export function escolherModeloDoAssistente(
   catalogo: readonly ModeloCandidato[],
   modelosDaChave: readonly string[] | null,
+  provider?: ProvedorDoAssistente,
 ): string | null {
-  const disponiveis = modelosDaChave?.length ? new Set(modelosDaChave) : null;
-  const compativeis = catalogo.filter((modelo) => !disponiveis || disponiveis.has(modelo.model_id));
-  return (
-    compativeis.find((modelo) => modelo.is_default_for_provider)?.model_id ??
-    compativeis[0]?.model_id ??
-    null
+  const modelosDeclaradosPelaChave = (modelosDaChave ?? []).filter(
+    (modelo) => typeof modelo === "string" && modelo.trim().length > 0,
   );
+  const disponiveis = modelosDeclaradosPelaChave.length
+    ? new Set(modelosDeclaradosPelaChave)
+    : null;
+  const compativeis = catalogo.filter((modelo) => !disponiveis || disponiveis.has(modelo.model_id));
+  const padraoDoCatalogo = compativeis.find(
+    (modelo) => modelo.is_default_for_provider,
+  )?.model_id;
+
+  if (provider === "openrouter") {
+    const preferidoDeclarado = MODELOS_PREFERIDOS_OPENROUTER.find((modelo) =>
+      disponiveis?.has(modelo),
+    );
+    return padraoDoCatalogo ?? preferidoDeclarado ?? modelosDeclaradosPelaChave[0] ?? null;
+  }
+
+  return padraoDoCatalogo ?? compativeis[0]?.model_id ?? null;
 }
 
 /**

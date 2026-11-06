@@ -27,7 +27,13 @@ describe("carregar assistente de resposta", () => {
     const query = vi.fn(async () => ({
       rows: [{ id: "agent-A", config: { reply_assistant: settings } }],
     }));
-    loadById.mockResolvedValue({ operationMode: "assisted", pausedAt: "agora" });
+    loadById.mockResolvedValue({
+      operationMode: "assisted",
+      pausedAt: "agora",
+      provider: settings.provider,
+      model: settings.model,
+      credentialId: settings.credential_id,
+    });
     const result = await carregarAssistenteDeResposta(
       { query } as never,
       "11000000-0000-4000-8000-000000000002",
@@ -54,4 +60,39 @@ describe("carregar assistente de resposta", () => {
     loadById.mockResolvedValue({ operationMode: "automatic", pausedAt: null });
     await expect(carregarAssistenteDeResposta(pool as never, "org-A")).resolves.toBeNull();
   });
+
+  it.each(["anthropic", "openai", "openrouter"] as const)(
+    "preserva o binding publicado de %s para o seam único de IA",
+    async (provider) => {
+      const config = {
+        ...settings,
+        provider,
+        model:
+          provider === "openrouter" ? "anthropic/claude-haiku-5.5" : `${provider}-modelo`,
+      };
+      const pool = {
+        query: vi.fn(async () => ({
+          rows: [{ id: "agent-A", config: { reply_assistant: config } }],
+        })),
+      };
+      loadById.mockResolvedValue({
+        operationMode: "assisted",
+        pausedAt: "agora",
+        provider,
+        model: config.model,
+        credentialId: config.credential_id,
+      });
+
+      const result = await carregarAssistenteDeResposta(pool as never, "org-A");
+
+      expect(result?.agent).toEqual(
+        expect.objectContaining({
+          provider,
+          model: config.model,
+          credentialId: config.credential_id,
+        }),
+      );
+    },
+  );
+
 });
