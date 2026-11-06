@@ -26,7 +26,11 @@ import {
   registrarMensagemEnviadaNoTurno,
   resultadoDeEnvioSemRepeticao,
 } from './dedupe-mensagem-turno';
-import type { GuardaAnuncioSemVitrine } from './anuncio-sem-vitrine';
+import {
+  resultadoDeEnvioSemAnuncio,
+  type GuardaAnuncioSemVitrine,
+} from './anuncio-sem-vitrine';
+import { filtrarSaudacaoRepetida } from './saudacao-repetida';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -185,7 +189,9 @@ export function applyPreviewPolicy(
       const catalog = getToolByName(name);
       if (
         (p.kind === 'sandbox' &&
-          (name === 'crm_send_catalog_item' || name === 'crm_send_vitrine')) ||
+          (name === 'crm_send_catalog_item' ||
+            name === 'crm_send_vitrine' ||
+            name === 'crm_quote_shipping')) ||
         nativeRead ||
         (catalog?.category === 'read' && (p.contactId !== null || SCENARIO_READS.has(name)))
       )
@@ -213,8 +219,22 @@ export function applyPreviewPolicy(
                 }
                 body = filtro.body;
               }
-              const anuncioSemVitrine = guardaAnuncioSemVitrine?.avaliar(body);
-              if (anuncioSemVitrine) return anuncioSemVitrine;
+              const anuncioSemVitrine = guardaAnuncioSemVitrine?.avaliar(body) ?? null;
+              if (anuncioSemVitrine && 'ok' in anuncioSemVitrine) return anuncioSemVitrine;
+              if (anuncioSemVitrine?.status === 'pronta_sem_anuncio') {
+                body = anuncioSemVitrine.body;
+              }
+              const filtroSaudacao = filtrarSaudacaoRepetida({
+                body,
+                ativa: p.agent.semSaudacaoRepetida === true,
+                mensagens: p.context.context.messages,
+                agora: ctx.now,
+                log: dedupe?.log ?? { warn: () => undefined },
+              });
+              if (filtroSaudacao.status === 'duplicate_skipped') {
+                return { ok: true, status: 'duplicate_skipped' };
+              }
+              body = filtroSaudacao.body;
               if (
                 dedupe?.limite !== undefined &&
                 dedupe.contador !== undefined &&
@@ -250,6 +270,8 @@ export function applyPreviewPolicy(
                 registrarMensagemEnviadaNoTurno(body, dedupe.enviadas);
                 if (dedupe.contador) dedupe.contador.valor += 1;
               }
+              const semAnuncio = resultadoDeEnvioSemAnuncio(anuncioSemVitrine);
+              if (semAnuncio) return semAnuncio;
               const semRepeticao = filtro ? resultadoDeEnvioSemRepeticao(filtro) : null;
               if (semRepeticao) return semRepeticao;
               return {

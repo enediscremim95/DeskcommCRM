@@ -114,6 +114,7 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_send_whatsapp_message: "sem_funil",
   crm_send_catalog_item: "sem_funil",
   crm_send_vitrine: "sem_funil",
+  crm_quote_shipping: "sem_funil",
   crm_add_case_note: "sem_funil",
   crm_close_human_case: "sem_funil",
   crm_assign_conversation: "sem_funil",

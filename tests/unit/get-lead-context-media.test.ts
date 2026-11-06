@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { __test_fitToBudget } from "@/lib/agent-engine/edge/crm/get-lead-context";
+import {
+  __test_fitToBudget,
+  ORIGEM_INTERNA_DA_MENSAGEM,
+} from "@/lib/agent-engine/edge/crm/get-lead-context";
 
 // fitToBudget é interno; exportar como __test_fitToBudget (ver Step 3).
 describe("fitToBudget — mídia no contexto", () => {
@@ -31,6 +34,15 @@ describe("fitToBudget — mídia no contexto", () => {
       { direction: "inbound", type: "text", body: "oi", media_url: null, media_storage_path: null, media_mime: null, media_derived_text: null, sent_at: new Date("2026-07-22T10:00:00Z") },
     ], 100000, "UTC");
     expect(ctx.messages[0]!.body).toBe("oi");
+  });
+
+  it("carrega sent_via como origem interna sem serializar no contexto do modelo", () => {
+    const ctx = __test_fitToBudget(base, [
+      { direction: "outbound", type: "text", body: "oi", media_url: null, media_storage_path: null, media_mime: null, media_derived_text: null, sent_at: new Date("2026-07-22T10:00:00Z"), sent_via: "ai" },
+    ], 100000, "UTC");
+    expect(ctx.messages[0]![ORIGEM_INTERNA_DA_MENSAGEM]).toBe("ai");
+    expect(JSON.stringify(ctx)).not.toContain("sent_via");
+    expect(JSON.stringify(ctx)).not.toContain("origem-interna");
   });
 
   it("mídia com LEGENDA e derivado — os dois coexistem, legenda não mascara a descrição", () => {

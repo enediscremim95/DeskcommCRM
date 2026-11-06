@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import type { McpToolDefinition } from "../types";
+import { quoteShippingInputSchema } from "@/lib/agent-engine/agent/quote-shipping";
 import { buscarComRelaxamento } from "@/lib/catalogo/busca";
 import { formatCents } from "@/lib/money";
 
@@ -112,6 +113,25 @@ export const crmSendVitrine: McpToolDefinition<typeof enviarVitrineInputShape> =
     error: {
       code: "agent_harness_required",
       message: "esta capacidade só executa dentro do turno do agente, com os guardrails de envio",
+    },
+  }),
+};
+
+export const crmQuoteShipping: McpToolDefinition<typeof quoteShippingInputSchema.shape> = {
+  name: "crm_quote_shipping",
+  description:
+    "Cota o frete de 1 a 6 itens ativos usando somente CEP, código exato do catálogo e quantidade. Peso, medidas, preço, origem e serviços são resolvidos pelo servidor. O valor é referência e o prazo de transporte não inclui produção.",
+  inputSchema: quoteShippingInputSchema.shape,
+  // A cotação não altera o CRM, mas produz efeito externo no provedor. Mantê-la
+  // como escrita crítica impede ativação automática por pacote.
+  category: "write",
+  requiresRole: "ai_operator",
+  requiresScope: "mcp:write",
+  handler: async () => ({
+    ok: false,
+    error: {
+      code: "agent_harness_required",
+      message: "esta capacidade só executa dentro do turno do agente, na fila ordenada do atendimento",
     },
   }),
 };

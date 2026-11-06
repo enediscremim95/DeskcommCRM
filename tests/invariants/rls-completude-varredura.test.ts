@@ -76,6 +76,13 @@ interface Excecao {
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
   {
+    tabela: "organization_shipping_settings",
+    razao:
+      "tests/invariants/frete-configuracao-isolamento.test.ts — RLS ligada sem " +
+      "nenhuma policy; anon e authenticated sem privilégio de SELECT; só a " +
+      "service_role lê as configurações das duas organizações.",
+  },
+  {
     tabela: "organization_template_items",
     razao:
       "tests/invariants/template-de-organizacao-nao-vaza-entre-tenants.test.ts — " +
