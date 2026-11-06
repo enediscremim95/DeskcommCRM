@@ -74,6 +74,18 @@ describe('loadPublishedAgentConfig — campos de RAG', () => {
     expect(ligado?.semSaudacaoRepetida).toBe(true);
   });
 
+  it('vitrine_por_gatilho é opt-in por agente e ausência mantém o padrão desligado', async () => {
+    const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const ligado = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, vitrine_por_gatilho: true } }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChave?.vitrinePorGatilho).toBe(false);
+    expect(ligado?.vitrinePorGatilho).toBe(true);
+  });
+
   it('handoff_automatico_na_promessa é opt-in por agente e ausência mantém o padrão desligado', async () => {
     const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
     const desligado = await loadPublishedAgentConfig(

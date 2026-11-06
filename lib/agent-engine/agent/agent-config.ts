@@ -64,6 +64,8 @@ export interface PublishedAgentConfig {
   splitPorParagrafo: boolean;
   /** Opt-in em ai_agents.config.sem_saudacao_repetida; ausente = false. */
   semSaudacaoRepetida?: boolean;
+  /** Opt-in em ai_agents.config.vitrine_por_gatilho; ausente = false. */
+  vitrinePorGatilho?: boolean;
   /** Opt-in em ai_agents.config.handoff_automatico_na_promessa; ausente = false. */
   handoffAutomaticoNaPromessa: boolean;
   /** Opt-in em ai_agents.config.max_sends_per_turn; null = teto global da instalação. */
@@ -198,6 +200,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     rag_similarity_threshold?: unknown;
     split_por_paragrafo?: unknown;
     sem_saudacao_repetida?: unknown;
+    vitrine_por_gatilho?: unknown;
     handoff_automatico_na_promessa?: unknown;
     max_sends_per_turn?: unknown;
     vitrines?: unknown;
@@ -241,6 +244,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     splitMaxChars: r.split_max_chars,
     splitPorParagrafo: cfg.split_por_paragrafo === true,
     semSaudacaoRepetida: cfg.sem_saudacao_repetida === true,
+    vitrinePorGatilho: cfg.vitrine_por_gatilho === true,
     handoffAutomaticoNaPromessa: cfg.handoff_automatico_na_promessa === true,
     maxSendsPerTurn:
       typeof cfg.max_sends_per_turn === 'number' &&

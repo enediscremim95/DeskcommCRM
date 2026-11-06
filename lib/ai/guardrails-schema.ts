@@ -98,6 +98,7 @@ export const vitrineSchema = z
     intro: textoCurtoSemQuebra(120).optional(),
     fechamento: textoCurtoSemQuebra(120).optional(),
     itens: z.array(vitrineItemSchema).min(1).max(3),
+    gatilhos: z.array(textoCurtoSemQuebra(80)).max(20).optional(),
   })
   .strict();
 
@@ -123,6 +124,7 @@ export const agentConfigSchema = z.object({
   confidence_threshold: z.number().min(0).max(1).default(0.6),
   split_por_paragrafo: z.boolean().default(false),
   sem_saudacao_repetida: z.boolean().default(false),
+  vitrine_por_gatilho: z.boolean().default(false),
   handoff_automatico_na_promessa: z.boolean().default(false),
   max_sends_per_turn: z.number().int().min(1).max(12).nullable().optional(),
   vitrines: vitrinesConfigSchema.optional(),
@@ -138,6 +140,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   confidence_threshold: 0.6,
   split_por_paragrafo: false,
   sem_saudacao_repetida: false,
+  vitrine_por_gatilho: false,
   handoff_automatico_na_promessa: false,
 };
 

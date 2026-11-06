@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 
 import { agentPatchSchema } from './guardrails-schema';
 
+describe('agentPatchSchema, vitrine_por_gatilho', () => {
+  it.each([true, false])('aceita booleano: %p', (value) => {
+    expect(
+      agentPatchSchema.safeParse({ config: { vitrine_por_gatilho: value } }).success,
+    ).toBe(true);
+  });
+
+  it.each(['true', 1, null])('rejeita valor não booleano: %p', (value) => {
+    expect(
+      agentPatchSchema.safeParse({ config: { vitrine_por_gatilho: value } }).success,
+    ).toBe(false);
+  });
+});
+
 describe('agentPatchSchema, sem_saudacao_repetida', () => {
   it.each([true, false])('aceita booleano: %p', (value) => {
     expect(

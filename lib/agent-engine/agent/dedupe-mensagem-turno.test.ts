@@ -287,7 +287,7 @@ describe("dedupe de mensagem no mesmo turno", () => {
     const inicio = real.indexOf("send_message: tool({");
     const fim = real.indexOf("update_lead_state: tool({", inicio);
     const ramo = real.slice(inicio, fim);
-    const inicioVitrine = real.indexOf('rawTools.crm_send_vitrine = tool({');
+    const inicioVitrine = real.indexOf('let executarVitrineNoTurno:');
     const fimVitrine = real.indexOf('const followupKnobs', inicioVitrine);
     const ramoVitrine = real.slice(inicioVitrine, fimVitrine);
     expect(ramo.indexOf("filtrarMensagemDoTurno")).toBeGreaterThan(0);
