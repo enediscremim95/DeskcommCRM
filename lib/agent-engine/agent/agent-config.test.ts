@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type pg from 'pg';
 
-import { loadPublishedAgentConfig, loadPublishedAgentConfigById } from './agent-config';
+import { lerVitrines, loadPublishedAgentConfig, loadPublishedAgentConfigById } from './agent-config';
 
 const baseRow = {
   agent_id: 'a1', version_id: 'v1', agent_name: 'Vendedor', system_prompt: 'p',
@@ -43,6 +43,71 @@ describe('loadPublishedAgentConfig — campos de RAG', () => {
     const cfg = await loadPublishedAgentConfig(poolWith({ ...baseRow, active_kb_version_id: null }), 'org1', 'cs1');
     expect(cfg?.activeKbVersionId).toBeNull();
   });
+
+  it('split_por_paragrafo é opt-in e fica desligado quando a organização não tem a chave', async () => {
+    const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const desligado = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, split_por_paragrafo: false } }),
+      'org-desligada',
+      'cs1',
+    );
+    const ligado = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, split_por_paragrafo: true } }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChave?.splitPorParagrafo).toBe(false);
+    expect(desligado?.splitPorParagrafo).toBe(false);
+    expect(ligado?.splitPorParagrafo).toBe(true);
+  });
+
+  it('sem_saudacao_repetida é opt-in por agente e ausência mantém o padrão desligado', async () => {
+    const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const ligado = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, sem_saudacao_repetida: true } }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChave?.semSaudacaoRepetida).toBe(false);
+    expect(ligado?.semSaudacaoRepetida).toBe(true);
+  });
+
+  it('max_sends_per_turn é opt-in por agente e ausência não muda outra organização', async () => {
+    const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const sublimando = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, max_sends_per_turn: 6 } }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChave?.maxSendsPerTurn).toBeNull();
+    expect(sublimando?.maxSendsPerTurn).toBe(6);
+  });
+
+  it.each([null, 0, 13, 1.5, '6', Number.NaN])(
+    'max_sends_per_turn=%p inválido ou nulo cai no teto global',
+    async (value) => {
+      const cfg = await loadPublishedAgentConfig(
+        poolWith({ ...baseRow, config: { ...baseRow.config, max_sends_per_turn: value } }),
+        'org-config-invalida',
+        'cs1',
+      );
+
+      expect(cfg?.maxSendsPerTurn).toBeNull();
+    },
+  );
+
+  it.each([1, 12])('aceita max_sends_per_turn no limite da faixa: %i', async (value) => {
+    const cfg = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, max_sends_per_turn: value } }),
+      'org-config-valida',
+      'cs1',
+    );
+
+    expect(cfg?.maxSendsPerTurn).toBe(value);
+  });
 });
 
 describe('loadPublishedAgentConfigById', () => {
@@ -76,5 +141,47 @@ describe('loadPublishedAgentConfigById', () => {
     expect(cfg?.activeKbVersionId).toBe('kb-1');
     expect(cfg?.ragTopK).toBe(7);
     expect(cfg?.ragSimilarityThreshold).toBe(0.8);
+  });
+});
+
+describe('config.vitrines', () => {
+  it('lê vitrines válidas sem habilitar organizações sem opt-in', async () => {
+    const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const comVitrine = await loadPublishedAgentConfig(
+      poolWith({
+        ...baseRow,
+        config: {
+          ...baseRow.config,
+          vitrines: {
+            padrinhos: {
+              intro: 'Separei dois modelos pra você 🥰',
+              itens: [{ codigo: 'SUBLI-KRAFT', titulo: 'Kit kraft' }],
+            },
+          },
+        },
+      }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChave?.vitrines).toEqual({});
+    expect(comVitrine?.vitrines.padrinhos).toMatchObject({
+      intro: 'Separei dois modelos pra você 🥰',
+      itens: [{ codigo: 'SUBLI-KRAFT', titulo: 'Kit kraft', fotos: 2 }],
+    });
+  });
+
+  it('descarta somente assuntos inválidos e nunca lança com jsonb inesperado', () => {
+    expect(lerVitrines(null)).toEqual({});
+    expect(lerVitrines(['não', 'é', 'mapa'])).toEqual({});
+    expect(
+      lerVitrines({
+        valido: { itens: [{ codigo: 'A', titulo: 'Título válido' }] },
+        'Inválido': { itens: [{ codigo: 'B', titulo: 'Maiúscula no assunto' }] },
+        quebrado: { intro: 'uma\nduas', itens: [{ codigo: 'C', titulo: 'C' }] },
+      }),
+    ).toEqual({
+      valido: { itens: [{ codigo: 'A', titulo: 'Título válido', fotos: 2 }] },
+    });
   });
 });

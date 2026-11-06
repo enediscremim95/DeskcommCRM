@@ -40,8 +40,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { data: arquivo, error } = await createAdminClient()
     .storage.from("whatsapp-media")
     .download(data.audio_storage_path);
-  if (error || !arquivo)
-    return fail("not_found", t("Áudio não encontrado."), 404, { requestId });
+  if (error || !arquivo) return fail("not_found", t("Áudio não encontrado."), 404, { requestId });
   return new Response(await arquivo.arrayBuffer(), {
     headers: {
       "Content-Type": "audio/ogg; codecs=opus",
@@ -122,8 +121,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       audio_mime_type: voz.mime,
       audio_file_name: file.name.slice(0, 180) || "voz.ogg",
       audio_size_bytes: voz.buffer.length,
+      media_storage_path: null,
+      media_mime_type: null,
+      media_file_name: null,
+      media_size_bytes: null,
+      media_kind: null,
       updated_at: new Date().toISOString(),
-    })
+    } as never)
     .eq("id", id)
     .eq("organization_id", authz.org.orgId)
     .is("owner_user_id", null)

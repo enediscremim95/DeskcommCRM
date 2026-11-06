@@ -1,6 +1,11 @@
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
-import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
+import {
+  applyPreviewPolicy,
+  previewGateContext,
+  withPreviewToolTrace,
+  type TurnPreview,
+} from './preview';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -147,7 +152,7 @@ import {
 } from './skills';
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
-import { loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
+import { evaluateBeforeSend, loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
 import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
@@ -173,6 +178,38 @@ import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
+import {
+  executarEnvioDeItemDoCatalogo,
+  inspecionarItemDoCatalogo,
+  sendCatalogItemInputSchema,
+  simularEnvioDeItemDoCatalogo,
+  type CandidatoCatalogo,
+  type EstadoEnvioCatalogo,
+  type ResultadoCandidatoCatalogo,
+} from './send-catalog-item';
+import { criarFilaDeEnviosDoTurno } from './fila-de-envios-do-turno';
+import {
+  executarCotacaoDeFrete,
+  quoteShippingInputSchema,
+  simularCotacaoDeFrete,
+  type EstadoCotacaoFrete,
+} from './quote-shipping';
+import {
+  classificadorSemanticoParaMensagem,
+  executarVitrine,
+  sendVitrineInputSchema,
+} from './send-vitrine';
+import {
+  filtrarMensagemDoTurno,
+  mensagemJaEnviadaNesteTurno,
+  registrarMensagemEnviadaNoTurno,
+  resultadoDeEnvioSemRepeticao,
+} from './dedupe-mensagem-turno';
+import {
+  criarGuardaAnuncioSemVitrine,
+  resultadoDeEnvioSemAnuncio,
+} from './anuncio-sem-vitrine';
+import { filtrarSaudacaoRepetida } from './saudacao-repetida';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -192,6 +229,21 @@ export const AGENT_TOOL_DEFS = {
     inputSchema: z.object({
       body: z.string().min(1).describe('corpo da mensagem, em pt-br, pronto para envio'),
     }),
+  },
+  crm_send_catalog_item: {
+    description:
+      'Envia fotos e informações de UM produto ativo. Informe somente o código exato do catálogo e de 1 a 4 fotos. Preço, legenda e arquivos são resolvidos pelo servidor.',
+    inputSchema: sendCatalogItemInputSchema,
+  },
+  crm_send_vitrine: {
+    description:
+      'Mostra uma sequência fixa de produtos configurada pela loja. Informe somente o assunto; produtos, ordem, fotos, títulos, preços e textos são resolvidos pelo servidor.',
+    inputSchema: sendVitrineInputSchema,
+  },
+  crm_quote_shipping: {
+    description:
+      'Cota o frete de itens ativos. Informe somente CEP, código exato do catálogo e quantidade. O servidor resolve origem, preço, peso, medidas e serviços; trate o resultado como referência, nunca como promessa de data.',
+    inputSchema: quoteShippingInputSchema,
   },
   update_lead_state: {
     description:
@@ -2150,11 +2202,28 @@ async function executarTurnoDoAgente(
 
   // Estado do RUN — vive só neste closure (isolamento por construção, acc 3).
   let seq = 0;
+  const enviosFisicosNoPreview = { valor: 0 };
+  const filaDeEnvios = criarFilaDeEnviosDoTurno();
+  const estadoEnvioCatalogo: EstadoEnvioCatalogo = { produtos: 0, imagens: 0 };
+  const estadoCotacaoFrete: EstadoCotacaoFrete = { cotacoes: 0 };
+  const codigosDeCatalogoJaEnviados = new Set(preview?.catalogProductCodesAlreadySent ?? []);
+  const mensagensEnviadasNesteTurno = new Set<string>();
+  const vitrineAtivaNesteAgente =
+    agentConfig?.toolIds.includes('crm_send_vitrine') === true &&
+    Object.keys(agentConfig.vitrines).length > 0;
+  const guardaAnuncioSemVitrine = criarGuardaAnuncioSemVitrine(
+    vitrineAtivaNesteAgente,
+    runLog,
+  );
+  let previewContextDoTurno: Awaited<ReturnType<typeof previewGateContext>> | null = null;
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
   // barra o modelo sem gastar uma chamada de before-send à toa.
-  const maxSendsPerTurn = deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN;
+  const maxSendsPerTurn =
+    agentConfig?.maxSendsPerTurn ??
+    deps.knobs.maxSendsPerTurn ??
+    DEFAULT_MAX_SENDS_PER_TURN;
   // F3-11: estágio que o MODELO confirmou via update_lead_state neste turno (a máquina
   // F2-10 é a única porta). Comparado com a sugestão do classificador no fim → divergência.
   let confirmedStage: LeadStage | null = null;
@@ -2181,6 +2250,12 @@ async function executarTurnoDoAgente(
           { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
         )
     : undefined;
+  // Só intro/fechamento usam esta seleção. Texto do modelo continua recebendo
+  // `semanticClassifier` diretamente no send_message, como antes.
+  const classificadorDoTextoFixoDaVitrine = classificadorSemanticoParaMensagem(
+    'texto_fixo_vitrine',
+    semanticClassifier,
+  );
   let outOfTablePromiseAttempted = false;
   // Spec 15 (Wave 4 lê este flag): true quando open_human_case abriu um caso NESTE
   // turno — aqui só declara e seta; o consumo (ex.: guardrail de promessa) é da Wave 4.
@@ -2365,7 +2440,7 @@ async function executarTurnoDoAgente(
     }),
     send_template: tool({
       ...AGENT_TOOL_DEFS.send_template,
-      execute: async ({ template_name, language, values }) => {
+      execute: ({ template_name, language, values }) => filaDeEnvios.enfileirar(async () => {
         if (seq >= maxSendsPerTurn) {
           return {
             ok: false,
@@ -2477,7 +2552,7 @@ async function executarTurnoDoAgente(
           };
         }
         return { ok: true, status: 'aceita_aguardando_canal' };
-      },
+      }),
     }),
     search_knowledge: tool({
       ...AGENT_TOOL_DEFS.search_knowledge,
@@ -2521,7 +2596,33 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body }) => {
+      execute: ({ body }) => filaDeEnvios.enfileirar(async () => {
+        const filtroMensagem = filtrarMensagemDoTurno({
+          body,
+          enviadas: mensagensEnviadasNesteTurno,
+          log: runLog,
+        });
+        if (filtroMensagem.status === 'duplicate_skipped') {
+          return { ok: true, status: 'duplicate_skipped' };
+        }
+        const bodySemRepeticao = filtroMensagem.body;
+        const anuncioSemVitrine = guardaAnuncioSemVitrine.avaliar(bodySemRepeticao);
+        if (anuncioSemVitrine && 'ok' in anuncioSemVitrine) return anuncioSemVitrine;
+        const bodySemAnuncio =
+          anuncioSemVitrine?.status === 'pronta_sem_anuncio'
+            ? anuncioSemVitrine.body
+            : bodySemRepeticao;
+        const filtroSaudacao = filtrarSaudacaoRepetida({
+          body: bodySemAnuncio,
+          ativa: agentConfig?.semSaudacaoRepetida === true,
+          mensagens: openingContext.context.messages,
+          agora: clock(),
+          log: runLog,
+        });
+        if (filtroSaudacao.status === 'duplicate_skipped') {
+          return { ok: true, status: 'duplicate_skipped' };
+        }
+        const bodyParaEnvio = filtroSaudacao.body;
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
@@ -2560,7 +2661,7 @@ async function executarTurnoDoAgente(
         // turno. A detecção é determinística (decidePromise); sem tabela do tenant = no-op.
         if (
           promiseTable !== null &&
-          !decidePromise({ candidate: body, table: promiseTable }).allow
+          !decidePromise({ candidate: bodyParaEnvio, table: promiseTable }).allow
         ) {
           outOfTablePromiseAttempted = true;
         }
@@ -2588,7 +2689,7 @@ async function executarTurnoDoAgente(
             leadId,
             jobId: liveJob().id,
             channelSessionId: input.channelSessionId,
-            body,
+            body: bodyParaEnvio,
             optedOutThisTurn,
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
             // no runtime — null cai nos degraus de warm-up (conservadores). Injetar
@@ -2635,6 +2736,7 @@ async function executarTurnoDoAgente(
               sendInBubbles(finalBody, {
                 enabled: agentConfig?.splitMessages ?? false,
                 maxChars: agentConfig?.splitMaxChars ?? 600,
+                splitPorParagrafo: agentConfig?.splitPorParagrafo ?? false,
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
                 jitter: () => 1200 + Math.floor(Math.random() * 800), // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
                 // ANTES da 1ª bolha: "digitando…" + espera proporcional ao texto.
@@ -2699,7 +2801,7 @@ async function executarTurnoDoAgente(
               },
               {
                 title: 'Atendimento que precisa de um humano',
-                summary: body, // a mensagem-promessa que a IA tentou enviar
+                summary: bodyParaEnvio, // a mensagem-promessa que a IA tentou enviar
                 blocker:
                   'Aberto automaticamente: a IA prometeu envolver um humano e não abriu o caso (fail-safe do guardrail).',
                 source: 'guardrail_autofallback',
@@ -2775,6 +2877,13 @@ async function executarTurnoDoAgente(
           }
           const outcome = chain.outcome;
           outcomes.push(outcome);
+          if (
+            outcome.kind === 'sent' ||
+            outcome.kind === 'already_sent' ||
+            outcome.kind === 'queued'
+          ) {
+            registrarMensagemEnviadaNoTurno(bodyParaEnvio, mensagensEnviadasNesteTurno);
+          }
           if (outcome.kind === 'sent' && pendingCitations.length > 0) {
             try {
               await pool.query(
@@ -2792,6 +2901,16 @@ async function executarTurnoDoAgente(
               });
             }
             pendingCitations = [];
+          }
+          if (
+            outcome.kind === 'sent' ||
+            outcome.kind === 'already_sent' ||
+            outcome.kind === 'queued'
+          ) {
+            const semAnuncio = resultadoDeEnvioSemAnuncio(anuncioSemVitrine);
+            if (semAnuncio) return semAnuncio;
+            const semRepeticao = resultadoDeEnvioSemRepeticao(filtroMensagem);
+            if (semRepeticao) return semRepeticao;
           }
           switch (outcome.kind) {
             case 'deferred':
@@ -2859,7 +2978,7 @@ async function executarTurnoDoAgente(
             },
           };
         }
-      },
+      }),
     }),
     update_lead_state: tool({
       ...AGENT_TOOL_DEFS.update_lead_state,
@@ -3064,6 +3183,455 @@ async function executarTurnoDoAgente(
   // está configurada — main.ts sempre a preenche pelos knobs do env; tenant/lead
   // vêm da ROW do job (closure), nunca do payload do modelo. É MUTANTE (cria
   // cron_job), por isso fica fora de READ_ONLY_TOOLS.
+  if (agentConfig?.toolIds.includes('crm_send_catalog_item')) {
+    rawTools.crm_send_catalog_item = tool({
+      ...AGENT_TOOL_DEFS.crm_send_catalog_item,
+      execute: (raw) => filaDeEnvios.enfileirar(async () => {
+        try {
+          const resultado = await executarEnvioDeItemDoCatalogo({
+            db: pool,
+            admin: deps.crmCfg.supabase,
+            organizationId: tenantId,
+            conversationId: input.conversationId,
+            input: sendCatalogItemInputSchema.parse(raw),
+            estado: estadoEnvioCatalogo,
+            maxSendsRestantes: () => Math.max(0, maxSendsPerTurn - seq),
+            enviar: async (candidato) => {
+              const hasOpenCase =
+                agentConfig.casesEnabled === true
+                  ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
+                  : false;
+              const chain = await runBeforeSend({
+                pool,
+                log: runLog,
+                agentOperation,
+                tenantId,
+                leadId,
+                jobId: liveJob().id,
+                channelSessionId: input.channelSessionId,
+                body: candidato.body,
+                optedOutThisTurn,
+                crmDailyLimit: null,
+                now: clock(),
+                sleep: deps.sleep,
+                lgpd,
+                casesEnabled: agentConfig.casesEnabled,
+                hasOpenCase,
+                openedCaseThisTurn,
+                humanPromiseExtraTargets: agentConfig.handoffKeywords,
+                enforceInternalVocabulary: false,
+                agenda: {
+                  active: agentConfig.toolIds.includes('crm_book_appointment'),
+                  toolCalledThisTurn: agendaToolCalledThisTurn,
+                },
+                ...(deps.knobs.disclosureMode !== undefined
+                  ? { disclosureMode: deps.knobs.disclosureMode }
+                  : {}),
+                ...(semanticClassifier !== undefined
+                  ? { classifyPromiseSemantic: semanticClassifier }
+                  : {}),
+                send: (finalBody: string) => {
+                  seq += 1;
+                  return liveChannel().send({
+                    tenantId,
+                    leadId,
+                    jobId: liveJob().id,
+                    jobClaim: claimOfJob(liveJob()),
+                    agentOperation,
+                    seq,
+                    conversationId: input.conversationId,
+                    body: finalBody,
+                    metadata: candidato.metadata,
+                    ...(candidato.media ? { media: candidato.media } : {}),
+                  });
+                },
+              });
+              if (chain.status === 'vetoed') {
+                return { status: 'failed' as const, code: chain.code, message: chain.message };
+              }
+              const outcome = chain.outcome;
+              outcomes.push(outcome);
+              if (outcome.kind === 'sent' || outcome.kind === 'already_sent') {
+                return { status: 'sent' as const, messageId: outcome.messageId ?? undefined };
+              }
+              if (outcome.kind === 'queued') {
+                return { status: 'queued' as const, messageId: outcome.messageId ?? undefined };
+              }
+              return {
+                status: 'failed' as const,
+                code: outcome.kind,
+                message: 'o canal não confirmou o envio',
+              };
+            },
+          });
+          if (resultado.ok === true) {
+            guardaAnuncioSemVitrine.registrarSucessoDeCatalogoOuVitrine();
+          }
+          return resultado;
+        } catch (err) {
+          noteRunError(err instanceof Error ? err : new Error(String(err)));
+          return {
+            ok: false,
+            error: {
+              code: 'internal_error',
+              message: 'erro interno ao enviar o produto; não diga que foi enviado.',
+            },
+          };
+        }
+      }),
+    });
+    if (preview?.kind === 'sandbox') {
+      rawTools.crm_send_catalog_item = tool({
+        ...AGENT_TOOL_DEFS.crm_send_catalog_item,
+        execute: (raw) =>
+          filaDeEnvios.enfileirar(async () => {
+            try {
+              const simulado = await simularEnvioDeItemDoCatalogo({
+                db: pool,
+                admin: deps.crmCfg.supabase,
+                organizationId: tenantId,
+                input: sendCatalogItemInputSchema.parse(raw),
+                estado: estadoEnvioCatalogo,
+                maxSendsRestantes: () =>
+                  Math.max(0, maxSendsPerTurn - estadoEnvioCatalogo.imagens),
+                codigosJaEnviados: codigosDeCatalogoJaEnviados,
+              });
+              if (simulado.envio) preview.result.envios.push(simulado.envio);
+              if (simulado.resultado.ok === true) {
+                guardaAnuncioSemVitrine.registrarSucessoDeCatalogoOuVitrine();
+              }
+              return simulado.resultado;
+            } catch (err) {
+              noteRunError(err instanceof Error ? err : new Error(String(err)));
+              return {
+                ok: false,
+                error: {
+                  code: 'internal_error',
+                  message: 'erro interno ao simular o produto; nenhum envio foi realizado.',
+                },
+              };
+            }
+          }),
+      });
+    }
+  }
+
+  if (agentConfig?.toolIds.includes('crm_quote_shipping')) {
+    rawTools.crm_quote_shipping = tool({
+      ...AGENT_TOOL_DEFS.crm_quote_shipping,
+      execute: (raw) =>
+        filaDeEnvios.enfileirar(async () => {
+          try {
+            const inputFrete = quoteShippingInputSchema.parse(raw);
+            if (preview?.kind === 'sandbox') {
+              return await simularCotacaoDeFrete({
+                db: pool,
+                organizationId: tenantId,
+                input: inputFrete,
+                estado: estadoCotacaoFrete,
+              });
+            }
+            return await executarCotacaoDeFrete({
+              db: pool,
+              organizationId: tenantId,
+              input: inputFrete,
+              estado: estadoCotacaoFrete,
+            });
+          } catch (err) {
+            noteRunError(err instanceof Error ? err : new Error(String(err)));
+            return {
+              ok: false,
+              error: {
+                code: 'internal_error',
+                message: 'erro interno ao cotar o frete; passe para uma pessoa.',
+              },
+            };
+          }
+        }),
+    });
+  }
+
+  if (vitrineAtivaNesteAgente && agentConfig !== null) {
+    rawTools.crm_send_vitrine = tool({
+      ...AGENT_TOOL_DEFS.crm_send_vitrine,
+      execute: (raw) =>
+        filaDeEnvios.enfileirar(async () => {
+          try {
+            const inputVitrine = sendVitrineInputSchema.parse(raw);
+            const emSandbox = preview?.kind === 'sandbox';
+            const resultado = await executarVitrine({
+              input: inputVitrine,
+              vitrines: agentConfig.vitrines,
+              maxSendsRestantes: () =>
+                Math.max(
+                  0,
+                  maxSendsPerTurn - (emSandbox ? enviosFisicosNoPreview.valor : seq),
+                ),
+              produtosJaEnviadosNoTurno: estadoEnvioCatalogo.produtos,
+              imagensJaEnviadasNoTurno: estadoEnvioCatalogo.imagens,
+              textoConsumiraEnvio: (body) =>
+                !mensagemJaEnviadaNesteTurno(body, mensagensEnviadasNesteTurno),
+              inspecionarItem: (item) =>
+                inspecionarItemDoCatalogo({
+                  db: pool,
+                  organizationId: tenantId,
+                  conversationId: input.conversationId,
+                  input: { codigo: item.codigo, quantas_fotos: item.fotos },
+                  ...(emSandbox
+                    ? { codigosJaEnviados: codigosDeCatalogoJaEnviados }
+                    : {}),
+                }),
+              enviarTexto: async (body, papel) => {
+                const filtroMensagem = filtrarMensagemDoTurno({
+                  body,
+                  enviadas: mensagensEnviadasNesteTurno,
+                  log: runLog,
+                });
+                if (filtroMensagem.status === 'duplicate_skipped') {
+                  return { status: 'duplicate_skipped' as const };
+                }
+                const bodySemRepeticao = filtroMensagem.body;
+
+                if (emSandbox) {
+                  if (enviosFisicosNoPreview.valor >= maxSendsPerTurn) {
+                    return {
+                      status: 'failed' as const,
+                      code: 'max_sends_per_turn',
+                      message: 'o teto de mensagens deste turno foi atingido.',
+                    };
+                  }
+                  if (!preview || !previewContextDoTurno) {
+                    return {
+                      status: 'failed' as const,
+                      code: 'preview_context_unavailable',
+                      message: 'o contexto seguro da simulação não foi carregado.',
+                    };
+                  }
+                  const result = evaluateBeforeSend({
+                    ...previewContextDoTurno,
+                    body: bodySemRepeticao,
+                    semanticPromise: classificadorDoTextoFixoDaVitrine
+                      ? await classificadorDoTextoFixoDaVitrine(bodySemRepeticao)
+                      : null,
+                  });
+                  if (result.veto) {
+                    preview.result.impediments.push({
+                      code: result.veto.code,
+                      message: result.veto.message,
+                    });
+                    return {
+                      status: 'failed' as const,
+                      code: result.veto.code,
+                      message: result.veto.message,
+                    };
+                  }
+                  preview.result.envios.push({ tipo: 'texto', papel, texto: result.body });
+                  enviosFisicosNoPreview.valor += 1;
+                  registrarMensagemEnviadaNoTurno(
+                    bodySemRepeticao,
+                    mensagensEnviadasNesteTurno,
+                  );
+                  const semRepeticao = resultadoDeEnvioSemRepeticao(filtroMensagem);
+                  if (semRepeticao) return semRepeticao;
+                  return { status: 'sent' as const };
+                }
+
+                const hasOpenCase =
+                  agentConfig.casesEnabled === true
+                    ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
+                    : false;
+                const chain = await runBeforeSend({
+                  pool,
+                  log: runLog,
+                  agentOperation,
+                  tenantId,
+                  leadId,
+                  jobId: liveJob().id,
+                  channelSessionId: input.channelSessionId,
+                  body: bodySemRepeticao,
+                  optedOutThisTurn,
+                  crmDailyLimit: null,
+                  now: clock(),
+                  sleep: deps.sleep,
+                  lgpd,
+                  casesEnabled: agentConfig.casesEnabled,
+                  hasOpenCase,
+                  openedCaseThisTurn,
+                  humanPromiseExtraTargets: agentConfig.handoffKeywords,
+                  enforceInternalVocabulary: false,
+                  agenda: {
+                    active: agentConfig.toolIds.includes('crm_book_appointment'),
+                    toolCalledThisTurn: agendaToolCalledThisTurn,
+                  },
+                  ...(deps.knobs.disclosureMode !== undefined
+                    ? { disclosureMode: deps.knobs.disclosureMode }
+                    : {}),
+                  // Texto fixo aprovado da loja não chama o classificador LLM.
+                  // Todos os demais gates determinísticos seguem na mesma cadeia.
+                  ...(classificadorDoTextoFixoDaVitrine !== undefined
+                    ? { classifyPromiseSemantic: classificadorDoTextoFixoDaVitrine }
+                    : {}),
+                  send: (finalBody: string) => {
+                    seq += 1;
+                    return liveChannel().send({
+                      tenantId,
+                      leadId,
+                      jobId: liveJob().id,
+                      jobClaim: claimOfJob(liveJob()),
+                      agentOperation,
+                      seq,
+                      conversationId: input.conversationId,
+                      body: finalBody,
+                      metadata: { vitrine_text_role: papel },
+                    });
+                  },
+                });
+                if (chain.status === 'vetoed') {
+                  return { status: 'failed' as const, code: chain.code, message: chain.message };
+                }
+                const outcome = chain.outcome;
+                outcomes.push(outcome);
+                if (
+                  outcome.kind === 'sent' ||
+                  outcome.kind === 'already_sent' ||
+                  outcome.kind === 'queued'
+                ) {
+                  registrarMensagemEnviadaNoTurno(
+                    bodySemRepeticao,
+                    mensagensEnviadasNesteTurno,
+                  );
+                  const semRepeticao = resultadoDeEnvioSemRepeticao(filtroMensagem);
+                  if (semRepeticao) return semRepeticao;
+                }
+                if (outcome.kind === 'sent' || outcome.kind === 'already_sent') {
+                  return { status: 'sent' as const };
+                }
+                if (outcome.kind === 'queued') return { status: 'queued' as const };
+                return {
+                  status: 'failed' as const,
+                  code: outcome.kind,
+                  message: 'o canal não confirmou o envio do texto da vitrine',
+                };
+              },
+              enviarItem: async (item) => {
+                if (emSandbox) {
+                  const imagensAntes = estadoEnvioCatalogo.imagens;
+                  const simulado = await simularEnvioDeItemDoCatalogo({
+                    db: pool,
+                    admin: deps.crmCfg.supabase,
+                    organizationId: tenantId,
+                    input: { codigo: item.codigo, quantas_fotos: item.fotos },
+                    estado: estadoEnvioCatalogo,
+                    maxSendsRestantes: () =>
+                      Math.max(0, maxSendsPerTurn - enviosFisicosNoPreview.valor),
+                    codigosJaEnviados: codigosDeCatalogoJaEnviados,
+                    tituloFixo: item.titulo,
+                    limites: { produtos: 3, imagens: 12 },
+                  });
+                  enviosFisicosNoPreview.valor +=
+                    estadoEnvioCatalogo.imagens - imagensAntes;
+                  if (simulado.envio && preview) preview.result.envios.push(simulado.envio);
+                  return simulado.resultado;
+                }
+
+                return executarEnvioDeItemDoCatalogo({
+                  db: pool,
+                  admin: deps.crmCfg.supabase,
+                  organizationId: tenantId,
+                  conversationId: input.conversationId,
+                  input: { codigo: item.codigo, quantas_fotos: item.fotos },
+                  estado: estadoEnvioCatalogo,
+                  maxSendsRestantes: () => Math.max(0, maxSendsPerTurn - seq),
+                  tituloFixo: item.titulo,
+                  limites: { produtos: 3, imagens: 12 },
+                  enviar: async (candidato: CandidatoCatalogo): Promise<ResultadoCandidatoCatalogo> => {
+                    const hasOpenCase =
+                      agentConfig.casesEnabled === true
+                        ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
+                        : false;
+                    const chain = await runBeforeSend({
+                      pool,
+                      log: runLog,
+                      agentOperation,
+                      tenantId,
+                      leadId,
+                      jobId: liveJob().id,
+                      channelSessionId: input.channelSessionId,
+                      body: candidato.body,
+                      optedOutThisTurn,
+                      crmDailyLimit: null,
+                      now: clock(),
+                      sleep: deps.sleep,
+                      lgpd,
+                      casesEnabled: agentConfig.casesEnabled,
+                      hasOpenCase,
+                      openedCaseThisTurn,
+                      humanPromiseExtraTargets: agentConfig.handoffKeywords,
+                      enforceInternalVocabulary: false,
+                      agenda: {
+                        active: agentConfig.toolIds.includes('crm_book_appointment'),
+                        toolCalledThisTurn: agendaToolCalledThisTurn,
+                      },
+                      ...(deps.knobs.disclosureMode !== undefined
+                        ? { disclosureMode: deps.knobs.disclosureMode }
+                        : {}),
+                      ...(semanticClassifier !== undefined
+                        ? { classifyPromiseSemantic: semanticClassifier }
+                        : {}),
+                      send: (finalBody: string) => {
+                        seq += 1;
+                        return liveChannel().send({
+                          tenantId,
+                          leadId,
+                          jobId: liveJob().id,
+                          jobClaim: claimOfJob(liveJob()),
+                          agentOperation,
+                          seq,
+                          conversationId: input.conversationId,
+                          body: finalBody,
+                          metadata: candidato.metadata,
+                          ...(candidato.media ? { media: candidato.media } : {}),
+                        });
+                      },
+                    });
+                    if (chain.status === 'vetoed') {
+                      return { status: 'failed', code: chain.code, message: chain.message };
+                    }
+                    const outcome = chain.outcome;
+                    outcomes.push(outcome);
+                    if (outcome.kind === 'sent' || outcome.kind === 'already_sent') {
+                      return { status: 'sent', messageId: outcome.messageId ?? undefined };
+                    }
+                    if (outcome.kind === 'queued') {
+                      return { status: 'queued', messageId: outcome.messageId ?? undefined };
+                    }
+                    return {
+                      status: 'failed',
+                      code: outcome.kind,
+                      message: 'o canal não confirmou o envio',
+                    };
+                  },
+                });
+              },
+            });
+            if (resultado.ok === true) {
+              guardaAnuncioSemVitrine.registrarSucessoDeCatalogoOuVitrine();
+            }
+            return resultado;
+          } catch (err) {
+            noteRunError(err instanceof Error ? err : new Error(String(err)));
+            return {
+              ok: false,
+              error: {
+                code: 'internal_error',
+                message: 'erro interno ao enviar a vitrine; não diga que foi enviada.',
+              },
+            };
+          }
+        }),
+    });
+  }
+
   const followupKnobs = deps.knobs.followup;
   if (followupKnobs !== undefined) {
     rawTools.schedule_followup = tool({
@@ -3366,9 +3934,10 @@ async function executarTurnoDoAgente(
         ...rawTools.get_lead_note,
         execute: async () => ({ ok: true, notes: preview.notes ?? [] }),
       };
-    const previewContext = preview
+    previewContextDoTurno = preview
       ? await previewGateContext(pool, preview, runLog, clock())
       : null;
+    const previewContext = previewContextDoTurno;
     const previewTools =
       preview && previewContext
         ? applyPreviewPolicy(
@@ -3384,13 +3953,21 @@ async function executarTurnoDoAgente(
             () => pendingCitations,
             semanticClassifier,
             () => ({ agenda: { active: previewContext.agenda?.active ?? false, toolCalledThisTurn: agendaToolCalledThisTurn } }),
+            {
+              enviadas: mensagensEnviadasNesteTurno,
+              log: runLog,
+              limite: maxSendsPerTurn,
+              contador: enviosFisicosNoPreview,
+            },
+            guardaAnuncioSemVitrine,
           )
         : rawTools;
-    const tools = wrapToolsWithBreaker(previewTools, {
+    const toolsWithBreaker = wrapToolsWithBreaker(previewTools, {
       thresholds: deps.knobs.breaker,
       readOnlyTools: READ_ONLY_TOOLS,
       log: runLog, // os warns dos gates do breaker saem carimbados com o run
     });
+    const tools = preview ? withPreviewToolTrace(toolsWithBreaker, preview) : toolsWithBreaker;
 
     // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
     // agnóstico) e sugere o estágio; a sugestão entra como HINT no SUFIXO por-lead — o modelo
@@ -3652,7 +4229,11 @@ async function executarTurnoDoAgente(
 
     if (preview) {
       preview.result.checkpoint = content;
-      if (preview.result.candidates.length === 0 && preview.result.impediments.length === 0)
+      if (
+        preview.result.candidates.length === 0 &&
+        preview.result.envios.length === 0 &&
+        preview.result.impediments.length === 0
+      )
         preview.result.impediments.push({
           code: 'no_candidate',
           message: 'O agente não propôs uma resposta. Revise o cenário ou a configuração.',

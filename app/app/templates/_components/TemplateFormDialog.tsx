@@ -61,6 +61,22 @@ async function enviarAudio(templateId: string, file: File): Promise<void> {
   }
 }
 
+async function enviarMidia(templateId: string, file: File): Promise<void> {
+  const form = new FormData();
+  form.set("file", file);
+  const response = await fetch(`/api/v1/message-templates/${templateId}/media`, {
+    method: "POST",
+    body: form,
+    credentials: "same-origin",
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    throw new Error(body?.error?.message ?? "Erro ao enviar a mídia.");
+  }
+}
+
 export function TemplateFormDialog({ open, onOpenChange, canShare, template }: Props) {
   const t = useT();
   const isEdit = !!template;
@@ -70,13 +86,21 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
   const [shared, setShared] = React.useState(false);
   const [audio, setAudio] = React.useState<File | null>(null);
   const [removeAudio, setRemoveAudio] = React.useState(false);
+  const [media, setMedia] = React.useState<File | null>(null);
+  const [removeMedia, setRemoveMedia] = React.useState(false);
   const audioPreview = React.useMemo(() => (audio ? URL.createObjectURL(audio) : null), [audio]);
+  const mediaPreview = React.useMemo(() => (media ? URL.createObjectURL(media) : null), [media]);
 
   React.useEffect(() => {
     return () => {
       if (audioPreview) URL.revokeObjectURL(audioPreview);
     };
   }, [audioPreview]);
+  React.useEffect(() => {
+    return () => {
+      if (mediaPreview) URL.revokeObjectURL(mediaPreview);
+    };
+  }, [mediaPreview]);
 
   const qc = useQueryClient();
   const create = useMutation({
@@ -101,6 +125,8 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
     setShared(template ? template.owner_user_id === null : false);
     setAudio(null);
     setRemoveAudio(false);
+    setMedia(null);
+    setRemoveMedia(false);
   }, [open, template]);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -122,7 +148,15 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
           });
           if (!response.ok) throw new Error(t("Erro ao remover o áudio."));
         }
+        if (removeMedia && template.media_storage_path) {
+          const response = await fetch(`/api/v1/message-templates/${template.id}/media`, {
+            method: "DELETE",
+            credentials: "same-origin",
+          });
+          if (!response.ok) throw new Error(t("Erro ao remover a mídia."));
+        }
         if (audio) await enviarAudio(saved.data.id, audio);
+        if (media) await enviarMidia(saved.data.id, media);
         toast.success(t("Template atualizado."));
       } else {
         const saved = await create.mutateAsync({
@@ -133,13 +167,14 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
         });
         conteudoFoiSalvo = true;
         if (audio) await enviarAudio(saved.data.id, audio);
+        if (media) await enviarMidia(saved.data.id, media);
         toast.success(t("Template criado."));
       }
       onOpenChange(false);
     } catch (error) {
       if (conteudoFoiSalvo) {
         toast.error(
-          error instanceof Error ? error.message : t("O texto foi salvo, mas o áudio não."),
+          error instanceof Error ? error.message : t("O texto foi salvo, mas o anexo não."),
         );
         await qc.invalidateQueries({ queryKey: TEMPLATES_KEY });
         onOpenChange(false);
@@ -201,7 +236,15 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
               <Switch
                 id="tpl-shared"
                 checked={shared}
-                onCheckedChange={setShared}
+                onCheckedChange={(checked) => {
+                  setShared(checked);
+                  if (!checked) {
+                    setAudio(null);
+                    setMedia(null);
+                    setRemoveAudio(false);
+                    setRemoveMedia(false);
+                  }
+                }}
                 disabled={isEdit}
               />
               <Label htmlFor="tpl-shared">{t("Compartilhar com a equipe")}</Label>
@@ -217,6 +260,8 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
                 onChange={(event) => {
                   setAudio(event.target.files?.[0] ?? null);
                   setRemoveAudio(false);
+                  setMedia(null);
+                  setRemoveMedia(Boolean(template?.media_storage_path));
                 }}
               />
               <p className="text-xs text-muted-foreground">
@@ -242,6 +287,58 @@ export function TemplateFormDialog({ open, onOpenChange, canShare, template }: P
                   {t("O áudio será removido ao salvar.")}
                 </p>
               ) : null}
+              <div className="space-y-2 border-t pt-3">
+                <Label htmlFor="tpl-media">{t("Imagem ou vídeo da equipe (opcional)")}</Label>
+                <Input
+                  id="tpl-media"
+                  type="file"
+                  accept="image/jpeg,image/png,video/mp4,video/3gpp"
+                  onChange={(event) => {
+                    setMedia(event.target.files?.[0] ?? null);
+                    setRemoveMedia(false);
+                    setAudio(null);
+                    setRemoveAudio(Boolean(template?.audio_storage_path));
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("JPEG ou PNG até 5 MB. MP4 ou 3GPP até 16 MB.")}
+                </p>
+                {mediaPreview && media?.type.startsWith("image/") ? (
+                  <img
+                    src={mediaPreview}
+                    alt={media.name}
+                    className="max-h-44 rounded-md object-contain"
+                  />
+                ) : null}
+                {mediaPreview && media?.type.startsWith("video/") ? (
+                  <video src={mediaPreview} controls className="max-h-44 rounded-md" />
+                ) : null}
+                {!mediaPreview && template?.media_storage_path && !removeMedia ? (
+                  <div className="space-y-2">
+                    {template.media_kind === "image" ? (
+                      <img
+                        src={`/api/v1/message-templates/${template.id}/media`}
+                        alt={template.media_file_name ?? t("Imagem do atalho")}
+                        className="max-h-44 rounded-md object-contain"
+                      />
+                    ) : (
+                      <video
+                        src={`/api/v1/message-templates/${template.id}/media`}
+                        controls
+                        className="max-h-44 rounded-md"
+                      />
+                    )}
+                    <Button type="button" variant="ghost" onClick={() => setRemoveMedia(true)}>
+                      {t("Remover mídia")}
+                    </Button>
+                  </div>
+                ) : null}
+                {removeMedia ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t("A mídia será removida ao salvar.")}
+                  </p>
+                ) : null}
+              </div>
             </div>
           ) : null}
           <DialogFooter>

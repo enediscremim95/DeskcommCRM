@@ -58,6 +58,7 @@ export const ApiErrorCodes = {
   channel_archived: "channel_archived", // ação sobre canal que o usuário excluiu (a linha só sobrevive como âncora das FKs)
   channel_connector_conflict: "channel_connector_conflict",
   knowledge_source_type_in_use: "knowledge_source_type_in_use", // já existe fonte ATIVA daquele tipo para o agente (índice ai_knowledge_sources_unique_per_agent)
+  gerenciado_pelo_painel: "gerenciado_pelo_painel",
 
   // 422 — semântica
   unprocessable_entity: "unprocessable_entity",
