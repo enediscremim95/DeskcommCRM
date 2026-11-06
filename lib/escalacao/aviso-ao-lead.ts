@@ -1,5 +1,6 @@
 /**
- * A FRASE QUE O CLIENTE LÊ QUANDO A IA SAI DE CAMPO.
+ * A FRASE QUE O CLIENTE LÊ QUANDO A IA SAI DE CAMPO E O AGENTE NÃO ESTÁ EM
+ * MODO SILENCIOSO.
  *
  * ## O defeito que este arquivo existe para consertar
  *
@@ -47,6 +48,9 @@
  * configurado é a pior primeira impressão possível num produto self-host, e é o
  * estado real de toda instalação recém-feita. A diferença é o destinatário —
  * lá a frase é INSTRUÇÃO ao modelo, aqui é FALA ao cliente.
+ *
+ * A exceção deliberada é `ai_agents.config.escalacao_silenciosa`: a passagem
+ * continua por dentro e este texto nem chega a ser montado.
  */
 
 import { createHash } from "node:crypto";

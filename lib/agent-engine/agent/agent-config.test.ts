@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type pg from 'pg';
 
-import { lerVitrines, loadPublishedAgentConfig, loadPublishedAgentConfigById } from './agent-config';
+import {
+  lerTermosProibidosAoCliente,
+  lerVitrines,
+  loadPublishedAgentConfig,
+  loadPublishedAgentConfigById,
+} from './agent-config';
 
 const baseRow = {
   agent_id: 'a1', version_id: 'v1', agent_name: 'Vendedor', system_prompt: 'p',
@@ -108,6 +113,27 @@ describe('loadPublishedAgentConfig — campos de RAG', () => {
     expect(semChave?.handoffAutomaticoNaPromessa).toBe(false);
     expect(desligado?.handoffAutomaticoNaPromessa).toBe(false);
     expect(ligado?.handoffAutomaticoNaPromessa).toBe(true);
+  });
+
+  it('escalação silenciosa e termos proibidos são opt-in por agente', async () => {
+    const semChaves = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const ligado = await loadPublishedAgentConfig(
+      poolWith({
+        ...baseRow,
+        config: {
+          ...baseRow.config,
+          escalacao_silenciosa: true,
+          termos_proibidos_ao_cliente: ['Atendente', 'alguém do time'],
+        },
+      }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChaves?.escalacaoSilenciosa).toBe(false);
+    expect(semChaves?.termosProibidosAoCliente).toEqual([]);
+    expect(ligado?.escalacaoSilenciosa).toBe(true);
+    expect(ligado?.termosProibidosAoCliente).toEqual(['Atendente', 'alguém do time']);
   });
 
   it('max_sends_per_turn é opt-in por agente e ausência não muda outra organização', async () => {
@@ -219,5 +245,23 @@ describe('config.vitrines', () => {
     ).toEqual({
       valido: { itens: [{ codigo: 'A', titulo: 'Título válido', fotos: 2 }] },
     });
+  });
+});
+
+describe('config.termos_proibidos_ao_cliente', () => {
+  it('descarta forma inválida, duplicata sem acento/caixa e excesso', () => {
+    const termos = lerTermosProibidosAoCliente([
+      ' Atendente ',
+      'aténdente',
+      '',
+      7,
+      'linha 1\nlinha 2',
+      'x'.repeat(81),
+      ...Array.from({ length: 50 }, (_, i) => `termo ${i}`),
+    ]);
+
+    expect(termos[0]).toBe('Atendente');
+    expect(termos).toHaveLength(40);
+    expect(termos).not.toContain('aténdente');
   });
 });
