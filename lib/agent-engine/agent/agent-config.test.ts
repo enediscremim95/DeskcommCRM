@@ -74,6 +74,42 @@ describe('loadPublishedAgentConfig — campos de RAG', () => {
     expect(ligado?.semSaudacaoRepetida).toBe(true);
   });
 
+  it('vitrine_por_gatilho é opt-in por agente e ausência mantém o padrão desligado', async () => {
+    const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const ligado = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, config: { ...baseRow.config, vitrine_por_gatilho: true } }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChave?.vitrinePorGatilho).toBe(false);
+    expect(ligado?.vitrinePorGatilho).toBe(true);
+  });
+
+  it('handoff_automatico_na_promessa é opt-in por agente e ausência mantém o padrão desligado', async () => {
+    const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
+    const desligado = await loadPublishedAgentConfig(
+      poolWith({
+        ...baseRow,
+        config: { ...baseRow.config, handoff_automatico_na_promessa: false },
+      }),
+      'org-desligada',
+      'cs1',
+    );
+    const ligado = await loadPublishedAgentConfig(
+      poolWith({
+        ...baseRow,
+        config: { ...baseRow.config, handoff_automatico_na_promessa: true },
+      }),
+      'org-sublimando',
+      'cs1',
+    );
+
+    expect(semChave?.handoffAutomaticoNaPromessa).toBe(false);
+    expect(desligado?.handoffAutomaticoNaPromessa).toBe(false);
+    expect(ligado?.handoffAutomaticoNaPromessa).toBe(true);
+  });
+
   it('max_sends_per_turn é opt-in por agente e ausência não muda outra organização', async () => {
     const semChave = await loadPublishedAgentConfig(poolWith(baseRow), 'org-sem-chave', 'cs1');
     const sublimando = await loadPublishedAgentConfig(

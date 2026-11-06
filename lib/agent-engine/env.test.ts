@@ -91,6 +91,13 @@ describe("loadEnv — a chave da OpenRouter existe no contrato do worker", () =>
     expect(env.OPENROUTER_API_KEY).toBeUndefined();
   });
 
+  it("preserva a lista de organizações autorizadas para mídia", () => {
+    const orgId = "7f99071c-43a9-4766-83cb-39d99bc4a80b";
+    const env = loadEnv({ ...REQUIRED, MEDIA_OPENROUTER_ORG_IDS: orgId });
+
+    expect(env.MEDIA_OPENROUTER_ORG_IDS).toBe(orgId);
+  });
+
   /**
    * O teste acima ainda passaria se `loadEnv` devolvesse o `source` cru em vez
    * do objeto parseado. Este prova que o strip do Zod está VIVO — ou seja, que

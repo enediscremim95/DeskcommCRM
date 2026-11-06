@@ -29,6 +29,11 @@ interface Resultado {
   sent: number;
   queued: number;
   failed: number;
+  results?: Array<{
+    product_id: string;
+    status: "sent" | "queued" | "failed";
+    photo: "missing" | "sent";
+  }>;
 }
 
 export function CatalogPickerDialog({ open, onOpenChange, conversationId }: Props) {
@@ -96,6 +101,8 @@ export function CatalogPickerDialog({ open, onOpenChange, conversationId }: Prop
       }
       if (body.data.failed > 0) {
         toast.warning(t("Alguns produtos não foram enviados. Confira a conversa."));
+      } else if (body.data.results?.some((resultado) => resultado.photo === "missing")) {
+        toast.warning(t("Alguns produtos foram enviados sem foto. O texto foi mantido."));
       } else if (body.data.queued > 0) {
         toast.warning(t("Os produtos aguardam a conexão do canal."));
       } else {

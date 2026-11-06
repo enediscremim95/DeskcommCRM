@@ -25,6 +25,7 @@ const VAZIO: ChannelKnobsRow = {
   jitter_max_ms: null,
   window_start_hour: null,
   window_end_hour: null,
+  window_saturday_end_hour: null,
   allow_sunday: null,
   timezone: null,
   warmup_daily_caps: null,
