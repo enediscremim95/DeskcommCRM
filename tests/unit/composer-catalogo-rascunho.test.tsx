@@ -92,6 +92,7 @@ vi.mock("@/components/inbox/composer/CatalogPickerDialog", () => ({
 }));
 
 import { Composer } from "@/components/inbox/Composer";
+import { aguardarDialogRadixFechado } from "@/tests/helpers/radix-dialog";
 
 function respostaComBlob(blob: Blob): Response {
   return {
@@ -140,6 +141,7 @@ describe("fila de rascunhos do catálogo no compositor", () => {
     );
     expect(screen.getByText("Produto 3 de 3")).toBeInTheDocument();
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    await aguardarDialogRadixFechado();
   });
 });
 

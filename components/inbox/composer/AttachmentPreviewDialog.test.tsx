@@ -2,15 +2,16 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AttachmentPreviewDialog } from "./AttachmentPreviewDialog";
+import { desmontarDialogRadix } from "@/tests/helpers/radix-dialog";
 
 function arquivo(): File {
   return new File([new Uint8Array([1, 2, 3])], "produto.png", { type: "image/png" });
 }
 
 describe("prévia editável de anexo", () => {
-  it("mantém Enter para nova linha e envia somente com Ctrl/Cmd+Enter", () => {
+  it("mantém Enter para nova linha e envia somente com Ctrl/Cmd+Enter", async () => {
     const onSend = vi.fn();
-    render(
+    const view = render(
       <AttachmentPreviewDialog
         file={arquivo()}
         initialCaption={"Linha 1\nLinha 2"}
@@ -26,12 +27,13 @@ describe("prévia editável de anexo", () => {
 
     expect(fireEvent.keyDown(legenda, { key: "Enter", ctrlKey: true })).toBe(false);
     expect(onSend).toHaveBeenCalledWith("Linha 1\nLinha 2");
+    await desmontarDialogRadix(view.unmount);
   });
 
-  it("mostra contador e bloqueia envio acima de 1024 caracteres sem cortar", () => {
+  it("mostra contador e bloqueia envio acima de 1024 caracteres sem cortar", async () => {
     const legendaLonga = "x".repeat(1025);
     const onSend = vi.fn();
-    render(
+    const view = render(
       <AttachmentPreviewDialog
         file={arquivo()}
         initialCaption={legendaLonga}
@@ -49,5 +51,6 @@ describe("prévia editável de anexo", () => {
     expect(screen.getByRole("button", { name: "Enviar" })).toBeDisabled();
     fireEvent.keyDown(screen.getByLabelText("Legenda"), { key: "Enter", metaKey: true });
     expect(onSend).not.toHaveBeenCalled();
+    await desmontarDialogRadix(view.unmount);
   });
 });

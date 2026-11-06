@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ForwardDialog } from "./ForwardDialog";
+import { desmontarDialogRadix } from "@/tests/helpers/radix-dialog";
 
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn().mockResolvedValue(undefined) }),
@@ -41,7 +42,7 @@ describe("ForwardDialog", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(
+    const view = render(
       <ForwardDialog
         open
         onOpenChange={vi.fn()}
@@ -61,6 +62,7 @@ describe("ForwardDialog", () => {
       request_id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
     });
     expect(await screen.findAllByText("Enviado")).toHaveLength(2);
+    await desmontarDialogRadix(view.unmount);
   });
 
   it("gera um request_id novo a cada clique em Encaminhar", async () => {
@@ -93,7 +95,7 @@ describe("ForwardDialog", () => {
       fireEvent.click(screen.getByRole("button", { name: /Ana/ }));
       fireEvent.click(screen.getByRole("button", { name: "Encaminhar (1)" }));
       await screen.findByText("Enviado");
-      view.unmount();
+      await desmontarDialogRadix(view.unmount);
     }
 
     await encaminharUmaVez();

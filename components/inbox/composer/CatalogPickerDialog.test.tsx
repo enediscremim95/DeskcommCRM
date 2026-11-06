@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CatalogPickerDialog } from "./CatalogPickerDialog";
+import { desmontarDialogRadix } from "@/tests/helpers/radix-dialog";
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
@@ -67,7 +68,7 @@ describe("seletor de produtos da conversa", () => {
     const onDrafts = vi.fn();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-    render(
+    const view = render(
       <QueryClientProvider client={client}>
         <CatalogPickerDialog
           open
@@ -95,5 +96,6 @@ describe("seletor de produtos da conversa", () => {
     ).toBe(false);
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(toast.warning).not.toHaveBeenCalled();
+    await desmontarDialogRadix(view.unmount);
   });
 });
