@@ -203,3 +203,29 @@ describe("MessageBubble — encaminhamento", () => {
     expect(screen.getByText("Encaminhada")).toBeInTheDocument();
   });
 });
+
+describe("MessageBubble — copiar e saltar na citação", () => {
+  it("copia o corpo pelo helper de clipboard", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<MessageBubble message={msg({ body: "copiar exatamente isto" })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copiar mensagem" }));
+    expect(writeText).toHaveBeenCalledWith("copiar exatamente isto");
+    expect(await screen.findByText("Mensagem copiada.", { selector: "span" })).toBeInTheDocument();
+  });
+
+  it("citação clicável usa o mesmo salto por id mesmo fora da página", () => {
+    const onGoToMessage = vi.fn();
+    render(
+      <MessageBubble
+        message={msg({ reply_to_message_id: "message-outside-first-page" })}
+        onGoToMessage={onGoToMessage}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Ir para a mensagem citada" }));
+    expect(onGoToMessage).toHaveBeenCalledWith("message-outside-first-page");
+  });
+});

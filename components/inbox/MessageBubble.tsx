@@ -2,8 +2,9 @@
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
+import { useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, Check, Checks, PaperPlaneTilt, Robot, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, Check, Checks, Copy, PaperPlaneTilt, Robot, WarningOctagon } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
@@ -21,6 +22,9 @@ import {
   extractCitations,
   isAiGeneratedMessage,
 } from "@/lib/ai/citations/types";
+import { copyToClipboard } from "@/lib/clipboard";
+import { messageDomId } from "@/lib/inbox/message-dom";
+import { toast } from "sonner";
 
 interface Props {
   message: Message;
@@ -44,6 +48,8 @@ interface Props {
    * "Atendente", que é verdadeiro para todo mundo.
    */
   viewerUserId?: string | null;
+  highlighted?: boolean;
+  onGoToMessage?: (messageId: string) => Promise<void> | void;
 }
 
 export function isForwardableMessage(message: Message): boolean {
@@ -76,6 +82,8 @@ export function MessageBubble({
   onToggleSelection,
   citada,
   viewerUserId,
+  highlighted = false,
+  onGoToMessage,
 }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -100,6 +108,17 @@ export function MessageBubble({
   const citations = extractCitations(message.metadata);
   const showCitationButton =
     isOutbound && aiGenerated && (debugCitations ?? false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const copyableText = apagada ? "" : (message.body?.trim() ?? "");
+
+  async function copyMessage(): Promise<void> {
+    if (!copyableText) return;
+    const copied = await copyToClipboard(copyableText);
+    setCopyStatus(copied ? "copied" : "failed");
+    if (copied) toast.success(t("Mensagem copiada."));
+    else toast.error(t("Não foi possível copiar a mensagem."));
+    window.setTimeout(() => setCopyStatus("idle"), 1_800);
+  }
   // De quem saiu esta linha. `external_device` é a resposta pelo CELULAR — o
   // operador atendeu pelo WhatsApp do telefone, fora do CRM, e o ingest carimba
   // aqui. Antes isto voltava null para tudo que não fosse IA, e a bolha ficava
@@ -134,9 +153,11 @@ export function MessageBubble({
 
   return (
     <div
+      id={messageDomId(message.id)}
       className={cn(
-        "group flex w-full items-center gap-1 px-4 py-1",
+        "group flex w-full scroll-m-20 items-center gap-1 px-4 py-1 transition-colors",
         isOutbound ? "justify-end" : "justify-start",
+        highlighted && "bg-primary/10",
       )}
     >
       {selectionMode && encaminhavel && (
@@ -193,6 +214,16 @@ export function MessageBubble({
           <PaperPlaneTilt size={14} />
         </button>
       )}
+      {copyableText && isOutbound && !selectionMode && (
+        <button
+          type="button"
+          onClick={() => void copyMessage()}
+          aria-label={t("Copiar mensagem")}
+          className="rounded-md p-1 text-muted-foreground opacity-100 transition-opacity hover:bg-muted [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <Copy size={14} aria-hidden />
+        </button>
+      )}
       <div
         className={cn(
           "max-w-[75%] text-sm",
@@ -213,17 +244,23 @@ export function MessageBubble({
           Mostra de quem era e um trecho. `line-clamp-2` porque serve para
           reconhecer, não para reler: a original está logo acima no histórico.
         */}
-        {citada && (
-          <div
+        {(message.reply_to_message_id || citada) && (
+          <button
+            type="button"
+            onClick={() => {
+              const alvo = message.reply_to_message_id ?? citada?.id;
+              if (alvo) void onGoToMessage?.(alvo);
+            }}
+            aria-label={t("Ir para a mensagem citada")}
             className={cn(
-              "mb-1 rounded-md border-l-2 px-2 py-1 text-xs",
+              "mb-1 block w-full rounded-md border-l-2 px-2 py-1 text-left text-xs",
               isOutbound
                 ? "border-primary-foreground/50 bg-primary-foreground/10"
                 : "border-primary bg-background/60",
             )}
           >
             <div className="font-medium opacity-80">
-              {citada.direction === "outbound" ? t("Você") : t("Cliente")}
+              {citada ? (citada.direction === "outbound" ? t("Você") : t("Cliente")) : t("Mensagem citada")}
             </div>
             {/*
               A CITADA PODE TER SIDO APAGADA — e aí o texto dela não volta aqui.
@@ -235,12 +272,12 @@ export function MessageBubble({
               continuava legível dentro de cada resposta que a citou. O fio
               permanece (a citação some, não a resposta); o conteúdo, não.
             */}
-            <div className={cn("line-clamp-2 opacity-70", citada.revoked_at && "italic")}>
-              {citada.revoked_at
+            <div className={cn("line-clamp-2 opacity-70", citada?.revoked_at && "italic")}>
+              {citada?.revoked_at
                 ? t("Esta mensagem foi apagada")
-                : citada.body?.trim() || t("(sem texto)")}
+                : citada?.body?.trim() || t("Carregar mensagem original")}
             </div>
-          </div>
+          </button>
         )}
         {senderLabel && (
           <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">
@@ -362,6 +399,23 @@ export function MessageBubble({
           <PaperPlaneTilt size={14} />
         </button>
       )}
+      {copyableText && !isOutbound && !selectionMode && (
+        <button
+          type="button"
+          onClick={() => void copyMessage()}
+          aria-label={t("Copiar mensagem")}
+          className="rounded-md p-1 text-muted-foreground opacity-100 transition-opacity hover:bg-muted [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <Copy size={14} aria-hidden />
+        </button>
+      )}
+      <span className="sr-only" role="status" aria-live="polite">
+        {copyStatus === "copied"
+          ? t("Mensagem copiada.")
+          : copyStatus === "failed"
+            ? t("Não foi possível copiar a mensagem.")
+            : ""}
+      </span>
     </div>
   );
 }
