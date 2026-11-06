@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   claimConversationSchema,
   conversationTagsSchema,
+  forwardMessagesSchema,
   listConversationsQuerySchema,
   openConversationWithContactSchema,
   patchConversationSchema,
@@ -75,6 +76,25 @@ describe("sendMessageSchema", () => {
       body: "a".repeat(4097),
     });
     expect(r.success).toBe(false);
+  });
+});
+
+describe("forwardMessagesSchema", () => {
+  const payload = {
+    message_ids: ["11111111-1111-4111-8111-111111111111"],
+    destination_conversation_ids: ["22222222-2222-4222-8222-222222222222"],
+  };
+
+  it("aceita request_id UUID opcional", () => {
+    expect(forwardMessagesSchema.safeParse(payload).success).toBe(true);
+    expect(forwardMessagesSchema.safeParse({
+      ...payload,
+      request_id: "33333333-3333-4333-8333-333333333333",
+    }).success).toBe(true);
+  });
+
+  it("rejeita request_id que não é UUID", () => {
+    expect(forwardMessagesSchema.safeParse({ ...payload, request_id: "retry-1" }).success).toBe(false);
   });
 });
 

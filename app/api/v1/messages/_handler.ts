@@ -571,6 +571,7 @@ export async function sendMessageHandler(
     created = existing.data;
     insErr = null;
     if (
+      ctx.deduplicateInternalMessage ||
       ["sent", "delivered", "read", "failed"].includes(
         String((created as unknown as Message).status),
       )

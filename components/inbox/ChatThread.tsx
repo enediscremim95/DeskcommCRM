@@ -6,11 +6,13 @@ import type { Locale } from "date-fns";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
 import { format, isToday, isYesterday } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageBubble } from "./MessageBubble";
+import { ForwardDialog } from "./ForwardDialog";
 import { NoteCard } from "./NoteCard";
 import { useMessagesRealtime } from "@/hooks/inbox/useMessagesRealtime";
 import { useConversationNotes } from "@/hooks/inbox/useConversationNotes";
@@ -18,6 +20,7 @@ import { useDeleteNote } from "@/hooks/inbox/useDeleteNote";
 import { useDebugToggle } from "@/hooks/ai/useDebugToggle";
 import { useActiveOrg, usePermission, useUser } from "@/hooks/auth/AuthProvider";
 import type { Message, Note } from "@/lib/types/messaging";
+import { PaperPlaneTilt, X } from "@/lib/ui/icons";
 
 type EstadoHistorico = "parado" | "carregando" | "store_desligado";
 
@@ -100,6 +103,9 @@ export function ChatThread({
     conversationId: null,
     status: "parado",
   });
+  const [selecionando, setSelecionando] = useState(false);
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
+  const [encaminharIds, setEncaminharIds] = useState<string[]>([]);
   // Suporte somente leitura não escreve nada, nem o histórico: o servidor
   // recusaria, e a tentativa já contaria como escrita.
   const suporteSomenteLeitura = currentUser?.support?.access_mode === "support_readonly";
@@ -152,6 +158,32 @@ export function ChatThread({
     () => mergeThreadItems(messages, notes, contextItems),
     [messages, notes, contextItems],
   );
+
+  const mensagensEmOrdem = useMemo(
+    () => items.filter((item): item is Extract<ThreadItem, { kind: "message" }> => item.kind === "message").map((item) => item.data),
+    [items],
+  );
+
+  function cancelarSelecao() {
+    setSelecionando(false);
+    setSelecionadas(new Set());
+  }
+
+  function alternarSelecao(message: Message) {
+    setSelecionadas((current) => {
+      const next = new Set(current);
+      if (next.has(message.id)) next.delete(message.id);
+      else if (next.size >= 10) {
+        toast.error(t("Você pode selecionar até 10 mensagens."));
+      } else next.add(message.id);
+      return next;
+    });
+  }
+
+  function abrirEncaminhamento(ids: string[]) {
+    const escolhidas = new Set(ids);
+    setEncaminharIds(mensagensEmOrdem.filter((message) => escolhidas.has(message.id)).map((message) => message.id));
+  }
 
   const paginas = q.data?.pages.length ?? 0;
 
@@ -346,6 +378,35 @@ export function ChatThread({
   return (
     <div {...sinalDoCanal} className="flex h-full flex-col">
       {avisoHistorico}
+      {!suporteSomenteLeitura && (
+        <div className="flex min-h-10 items-center gap-2 border-b border-border px-3 py-1 text-sm">
+          {selecionando ? (
+            <>
+              <span className="flex-1 font-medium">
+                {selecionadas.size} {t("selecionadas")}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="gap-1"
+                disabled={selecionadas.size === 0}
+                onClick={() => abrirEncaminhamento([...selecionadas])}
+              >
+                <PaperPlaneTilt size={14} aria-hidden />
+                {t("Encaminhar")}
+              </Button>
+              <Button size="sm" variant="ghost" className="gap-1" onClick={cancelarSelecao}>
+                <X size={14} aria-hidden />
+                {t("Cancelar")}
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => setSelecionando(true)}>
+              {t("Selecionar")}
+            </Button>
+          )}
+        </div>
+      )}
       <div ref={scrollerRef} className="flex-1 overflow-y-auto py-2">
         {q.hasNextPage && (
           <div className="flex justify-center py-2">
@@ -391,6 +452,10 @@ export function ChatThread({
                   message={item.data}
                   debugCitations={debugCitations}
                   onResponder={onResponder}
+                  onEncaminhar={(message) => abrirEncaminhamento([message.id])}
+                  selectionMode={selecionando}
+                  selected={selecionadas.has(item.data.id)}
+                  onToggleSelection={alternarSelecao}
                   // A citada sai da MESMA lista já carregada: buscar no servidor
                   // por cada citação faria uma consulta por bolha. Quando a
                   // citada é antiga demais e ficou fora da página, o fio some —
@@ -408,6 +473,16 @@ export function ChatThread({
 
         <div ref={bottomRef} />
       </div>
+      {encaminharIds.length > 0 && (
+        <ForwardDialog
+          open
+          onOpenChange={(open) => !open && setEncaminharIds([])}
+          messageIds={encaminharIds}
+          channelSessionId={mensagensEmOrdem.find((message) => encaminharIds.includes(message.id))?.channel_session_id ?? ""}
+          excludeContactId={mensagensEmOrdem.find((message) => encaminharIds.includes(message.id))?.contact_id}
+          onComplete={cancelarSelecao}
+        />
+      )}
     </div>
   );
 }
