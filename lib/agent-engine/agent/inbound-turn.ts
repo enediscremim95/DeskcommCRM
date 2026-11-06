@@ -1371,6 +1371,22 @@ export function inboundsNaoRespondidos(messages: readonly LeadContextMessage[]):
 }
 
 /**
+ * Reconstrói a visão da rajada que o turno usa depois da coalescência do drain.
+ * O job real e o sandbox passam por este mesmo ponto: a mensagem pinada define
+ * a fonte prioritária, enquanto o histórico completo preserva cada inbound não
+ * respondida, em ordem e sem concatenar o conteúdo.
+ */
+export function agruparMensagensDoTurno(
+  messages: readonly LeadContextMessage[],
+  currentInboundText: string | null | undefined,
+): { mensagemDoJob: string; inboundsPendentes: string[] } {
+  return {
+    mensagemDoJob: currentInboundText ?? latestInboundSignal(messages),
+    inboundsPendentes: inboundsNaoRespondidos(messages),
+  };
+}
+
+/**
  * Parâmetros do run que DIFEREM entre inbound (F2-09) e follow-up (F3-03): os ids
  * de envio (de fonte confiável — payload do drain no inbound, row do lead no
  * follow-up, nunca do payload do modelo) e a montagem da mensagem de abertura,
@@ -1828,6 +1844,19 @@ async function executarTurnoDoAgente(
       );
     }
   }
+  if (preview?.kind === 'sandbox' && agentConfig?.janelaDeAtendimento != null) {
+    const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, clock());
+    if (esperaMs !== null) {
+      preview.result.impediments.push({
+        code: 'outside_agent_business_hours',
+        message:
+          'O relógio simulado está fora do horário de funcionamento do agente. ' +
+          `No turno real, o job aguardaria ${esperaMs} ms até a próxima abertura.`,
+      });
+      preview.result.restrictions.push('agent_business_hours_closed');
+      return;
+    }
+  }
 
   // Fase 3: grava a decisão de roteamento e a aderência da conversa ao agente.
   // Fire-and-forget — falha de telemetria nunca derruba a resposta ao lead.
@@ -1956,13 +1985,14 @@ async function executarTurnoDoAgente(
     throw new Error(`abertura do turno falhou em get_lead_context (${openingContext.error.code})`);
   }
   const currentInboundText =
-    input.inboundMessageId === undefined
+    preview?.currentInboundText ??
+    (input.inboundMessageId === undefined
       ? null
       : await loadInboundBodyForJob(pool, {
           tenantId,
           conversationId: input.conversationId,
           inboundMessageId: input.inboundMessageId,
-        });
+        }));
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
   // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
@@ -2035,9 +2065,10 @@ async function executarTurnoDoAgente(
   //    Handoff, opt-out e urgência leem daqui: são coisas que não podem passar
   //    despercebidas só porque chegaram na segunda mensagem de uma rajada, que o
   //    drain coalesce no job da primeira.
-  const mensagemDoJob =
-    currentInboundText ?? latestInboundSignal(openingContext.context.messages);
-  const inboundsPendentes = inboundsNaoRespondidos(openingContext.context.messages);
+  const { mensagemDoJob, inboundsPendentes } = agruparMensagensDoTurno(
+    openingContext.context.messages,
+    currentInboundText,
+  );
   if (
     !preview &&
     inboundsPendentes.some(
@@ -4614,6 +4645,7 @@ export async function runAgentPreview(
         projeta,
         entregues,
         compromissosBlock,
+        currentInboundText,
       }) =>
         buildOpeningMessage(
           previous,
@@ -4623,6 +4655,7 @@ export async function runAgentPreview(
           projeta,
           entregues,
           compromissosBlock,
+          currentInboundText,
         ),
     },
     preview,
