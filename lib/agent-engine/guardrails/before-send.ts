@@ -69,6 +69,10 @@ import { escalateLgpdVeto, isLegalBasisValid } from './lgpd/legal-basis';
 import type { LgpdInput } from './lgpd/legal-basis';
 import { detectHumanPromise } from './human-promise';
 import { detectarVazamentoInterno, renderVetoDeVazamento } from './vazamento-interno';
+import {
+  encontrarTermoProibido,
+  ENSINO_TERMO_PROIBIDO,
+} from './termos-proibidos-ao-cliente';
 // Módulo PURO de propósito (`capabilities`, não `index`): o seam não arrasta o
 // adapter — e com ele o cliente HTTP do canal — para dentro do worker.
 import { capabilitiesOf, DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
@@ -209,6 +213,8 @@ export interface GateContext {
    * fiação nos dois sentidos: presente no `send_message`, ausente no follow-up.
    */
   internalVocabularyEnforced?: boolean;
+  /** Lista opt-in do agente; vazia = nenhum veto adicional. */
+  termosProibidosAoCliente?: readonly string[];
   /**
    * Arma o `spinningGate`. **Ausente = ARMADO** — a direção segura aqui é a
    * oposta do `internalVocabularyEnforced` logo acima, e a assimetria é
@@ -417,6 +423,19 @@ export const casePromiseGate: Gate = {
 export const internalVocabularyGate: Gate = {
   name: 'internal_vocabulary',
   evaluate: (ctx) => {
+    const termoProibido = encontrarTermoProibido(
+      ctx.body,
+      ctx.termosProibidosAoCliente ?? [],
+    );
+    if (termoProibido !== null) {
+      return {
+        pass: false,
+        code: 'termo_proibido_ao_cliente',
+        reason: ENSINO_TERMO_PROIBIDO,
+        // Nunca persiste o termo: ele é configurável e pode conter dado sensível.
+        detail: { leaked_count: 1, leaked_kinds: 'configurado' },
+      };
+    }
     if (ctx.internalVocabularyEnforced !== true) return { pass: true };
     const achado = detectarVazamentoInterno(ctx.body);
     if (!achado.achou) return { pass: true };
@@ -810,6 +829,8 @@ export interface RunBeforeSendArgs {
    * depois de N vetos no mesmo turno o envio sai, com registro.
    */
   enforceInternalVocabulary?: boolean;
+  /** Termos/expressões vetados por este agente. Ausente = lista vazia. */
+  termosProibidosAoCliente?: readonly string[];
   /**
    * Desarma o `spinningGate` para ESTA tentativa. Ausente = armado (ver
    * `GateContext.spinningEnforced` para a razão da assimetria e para a conta que
@@ -1014,6 +1035,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
         ? { humanPromiseExtraTargets: args.humanPromiseExtraTargets }
         : {}),
       internalVocabularyEnforced: args.enforceInternalVocabulary ?? false,
+      termosProibidosAoCliente: args.termosProibidosAoCliente ?? [],
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
     };
 
