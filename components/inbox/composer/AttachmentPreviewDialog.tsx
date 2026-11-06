@@ -10,14 +10,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { FileText } from "@/lib/ui/icons";
 import { formatBytes } from "@/components/inbox/media/media-utils";
+import { LIMITE_LEGENDA_DE_MIDIA } from "@/lib/channels/limites-de-legenda";
 
 interface Props {
   file: File | null;
   initialCaption?: string;
   sending: boolean;
+  sequenceLabel?: string;
   onCancel: () => void;
   onSend: (caption: string) => void;
 }
@@ -27,6 +29,7 @@ export function AttachmentPreviewDialog({
   file,
   initialCaption = "",
   sending,
+  sequenceLabel,
   onCancel,
   onSend,
 }: Props) {
@@ -49,12 +52,23 @@ export function AttachmentPreviewDialog({
   const isImage = file.type.startsWith("image/");
   const isVideo = file.type.startsWith("video/");
   const isAudio = file.type.startsWith("audio/");
+  const excedeLimite = caption.length > LIMITE_LEGENDA_DE_MIDIA;
+
+  function enviar(): void {
+    if (sending || excedeLimite) return;
+    onSend(caption.trim());
+  }
 
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{t("Enviar anexo")}</DialogTitle>
+          {sequenceLabel ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              {sequenceLabel}
+            </p>
+          ) : null}
         </DialogHeader>
         <div className="flex items-center justify-center rounded-lg bg-muted/40 p-3">
           {isImage && objectUrl && (
@@ -74,18 +88,34 @@ export function AttachmentPreviewDialog({
             </div>
           )}
         </div>
-        <Input
+        <Textarea
           value={caption}
           onChange={(e) => setCaption(e.target.value)}
           placeholder={t("Legenda (opcional)")}
           aria-label={t("Legenda")}
-          onKeyDown={(e) => e.key === "Enter" && !sending && onSend(caption.trim())}
+          aria-invalid={excedeLimite}
+          className="min-h-32 resize-y"
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || (!e.ctrlKey && !e.metaKey)) return;
+            e.preventDefault();
+            enviar();
+          }}
         />
+        <div className="flex items-start justify-between gap-3 text-xs">
+          <span className={excedeLimite ? "text-destructive" : "text-muted-foreground"}>
+            {caption.length}/{LIMITE_LEGENDA_DE_MIDIA}
+          </span>
+          {excedeLimite ? (
+            <span className="text-right text-destructive" role="alert">
+              {t("A legenda passou de 1024 caracteres. Reduza o texto para enviar.")}
+            </span>
+          ) : null}
+        </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onCancel} disabled={sending}>
             {t("Cancelar")}
           </Button>
-          <Button onClick={() => onSend(caption.trim())} disabled={sending}>
+          <Button onClick={enviar} disabled={sending || excedeLimite}>
             {t("Enviar")}
           </Button>
         </DialogFooter>

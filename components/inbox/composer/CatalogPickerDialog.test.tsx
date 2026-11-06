@@ -27,7 +27,14 @@ beforeEach(() => {
 });
 
 describe("seletor de produtos da conversa", () => {
-  it("avisa quando o texto saiu sem a foto esperada", async () => {
+  it("chama somente a rota de rascunho e entrega os itens ao compositor", async () => {
+    const rascunho = {
+      product_id: PRODUTO,
+      nome: "Caneca",
+      legenda: "Caneca\nR$ 49,90\nDescrição inteira",
+      excede_limite: false,
+      foto: null,
+    };
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
@@ -55,18 +62,9 @@ describe("seletor de produtos da conversa", () => {
           ],
         }),
       )
-      .mockResolvedValueOnce(
-        resposta({
-          data: {
-            total: 1,
-            sent: 1,
-            queued: 0,
-            failed: 0,
-            results: [{ product_id: PRODUTO, status: "sent", photo: "missing" }],
-          },
-        }),
-      );
+      .mockResolvedValueOnce(resposta({ data: [rascunho] }));
     const onOpenChange = vi.fn();
+    const onDrafts = vi.fn();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
     render(
@@ -75,19 +73,27 @@ describe("seletor de produtos da conversa", () => {
           open
           onOpenChange={onOpenChange}
           conversationId="22222222-2222-4222-8222-222222222222"
+          onDrafts={onDrafts}
         />
       </QueryClientProvider>,
     );
 
     fireEvent.click(await screen.findByText("Caneca"));
-    fireEvent.click(screen.getByRole("button", { name: "Enviar 1 produto(s)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar ao rascunho" }));
 
-    await waitFor(() =>
-      expect(toast.warning).toHaveBeenCalledWith(
-        "Alguns produtos foram enviados sem foto. O texto foi mantido.",
-      ),
-    );
+    await waitFor(() => expect(onDrafts).toHaveBeenCalledWith([rascunho]));
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/v1/conversations/22222222-2222-4222-8222-222222222222/catalog-items/draft",
+    );
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).endsWith(
+          "/api/v1/conversations/22222222-2222-4222-8222-222222222222/catalog-items",
+        ),
+      ),
+    ).toBe(false);
     expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(toast.warning).not.toHaveBeenCalled();
   });
 });

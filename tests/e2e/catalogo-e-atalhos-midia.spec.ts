@@ -30,7 +30,7 @@ async function login(page: Page): Promise<void> {
   await page.waitForURL(/\/app\//);
 }
 
-test("cadastra produto com imagem e o encontra no seletor da conversa", async ({ page }) => {
+test("produto do catálogo vira rascunho editável e não mensagem imediata", async ({ page }) => {
   const codigo = `MIDIA-${Date.now()}`;
   const nome = `Caneca visual ${codigo}`;
   const organizationId = creds.org_id;
@@ -44,7 +44,9 @@ test("cadastra produto com imagem e o encontra no seletor da conversa", async ({
     await page.getByTestId("novo-produto").click();
     await page.getByTestId("produto-codigo").fill(codigo);
     await page.getByTestId("produto-nome").fill(nome);
-    await page.getByTestId("produto-descricao").fill("Produto sintético para prova visual.");
+    await page
+      .getByTestId("produto-descricao")
+      .fill("Primeiro parágrafo completo.\n\nSegundo parágrafo completo para edição humana.");
     await page.getByTestId("produto-preco").fill("39,90");
     await page.getByTestId("produto-imagem").setInputFiles({
       name: "produto.png",
@@ -58,9 +60,11 @@ test("cadastra produto com imagem e o encontra no seletor da conversa", async ({
     await expect(page.getByText(nome)).toBeVisible();
     await expect(page.getByTestId(`produto-${codigo}`).locator("img")).toBeVisible();
     await page.getByTestId(`editar-${codigo}`).click();
-    await page.getByTestId("produto-descricao").fill("Descrição sintética atualizada.");
+    await page
+      .getByTestId("produto-descricao")
+      .fill("Primeiro parágrafo atualizado.\n\nSegundo parágrafo atualizado sem corte.");
     await page.getByTestId("salvar-produto").click();
-    await expect(page.getByText("Descrição sintética atualizada.")).toBeVisible();
+    await expect(page.getByText(/Primeiro parágrafo atualizado/)).toBeVisible();
 
     const { data: produto } = await admin
       .from("catalog_products")
@@ -76,17 +80,36 @@ test("cadastra produto com imagem e o encontra no seletor da conversa", async ({
       indice >= 0
         ? decodeURIComponent(produtoCriado!.imagem_url!.slice(indice + marcador.length))
         : null;
+    const { count: mensagensAntes } = await admin
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .eq("conversation_id", conversa.conversationId);
 
     await page.goto(`/app/inbox?conversation=${conversa.conversationId}`);
     await expect(page.getByLabel("Mensagem")).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "Anexar" }).click();
     await page.getByRole("button", { name: "Catálogo" }).click();
-    await expect(page.getByRole("heading", { name: "Enviar produtos do catálogo" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Adicionar produtos ao rascunho" }),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: new RegExp(nome) })).toBeVisible();
     await page.getByRole("button", { name: new RegExp(nome) }).click();
-    await expect(page.getByRole("button", { name: /Enviar 1 produto/ })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Adicionar ao rascunho" })).toBeEnabled();
+    await page.getByRole("button", { name: "Adicionar ao rascunho" }).click();
+    const legenda = page.getByLabel("Legenda");
+    await expect(legenda).toHaveValue(
+      `${nome}\nR$\u00a039,90\nPrimeiro parágrafo atualizado.\n\nSegundo parágrafo atualizado sem corte.`,
+    );
+    await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
+    const { count: mensagensDepois } = await admin
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .eq("conversation_id", conversa.conversationId);
+    expect(mensagensDepois).toBe(mensagensAntes);
     await page.screenshot({
-      path: path.join(evidence, "catalogo-na-conversa.png"),
+      path: path.join(evidence, "catalogo-rascunho-editavel.png"),
       fullPage: false,
     });
   } finally {
