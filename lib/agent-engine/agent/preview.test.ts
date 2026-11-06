@@ -13,6 +13,7 @@ import { evaluateBeforeSend, type GateContext } from '../guardrails/before-send'
 import { PACING_DEFAULTS } from '../pacing/defaults';
 import { SPINNING_DEFAULTS } from '../spinning/defaults';
 import { criarGuardaAnuncioSemVitrine } from './anuncio-sem-vitrine';
+import { ORIGEM_INTERNA_DA_MENSAGEM } from '../edge/crm/get-lead-context';
 const gate = (): GateContext => ({
   now: new Date('2026-09-07T15:00:00Z'),
   body: 'Olá, posso ajudar?',
@@ -112,6 +113,67 @@ describe('preview policy shares gates and contains side effects', () => {
       ok: false,
       error: { code: 'anuncio_sem_vitrine' },
     });
+  });
+
+  it('envia só a parte útil do anúncio parcial e consome uma única vaga da fila', async () => {
+    const p = preview();
+    const contador = { valor: 0 };
+    const tools = applyPreviewPolicy(
+      { send_message: definition(vi.fn()) },
+      p,
+      gate(),
+      () => [],
+      undefined,
+      undefined,
+      { enviadas: new Set(), log: { warn: vi.fn() }, limite: 1, contador },
+      criarGuardaAnuncioSemVitrine(true),
+    );
+
+    expect(
+      await execute(tools, 'send_message', {
+        body: 'O prazo é de cinco dias.\n\nEssas são as canecas personalizadas que temos com nome.',
+      }),
+    ).toEqual({
+      ok: true,
+      status: 'enviado_sem_anuncio',
+      paragrafos_de_anuncio_removidos: 1,
+      instrucao: 'chame crm_send_vitrine se for mostrar produtos',
+    });
+    expect(p.result.candidates.map((c) => c.body)).toEqual(['O prazo é de cinco dias.']);
+    expect(contador.valor).toBe(1);
+    expect(await execute(tools, 'send_message', { body: 'Outra resposta útil.' })).toMatchObject({
+      ok: false,
+      error: { code: 'max_sends_per_turn' },
+    });
+  });
+
+  it('aplica no sandbox a saudação opt-in usando apenas histórico recente da IA', async () => {
+    const p = preview();
+    p.agent.semSaudacaoRepetida = true;
+    p.context.context.messages = [
+      {
+        direction: 'outbound',
+        body: 'Resposta anterior',
+        sent_at: '2026-09-07T14:30:00.000Z',
+        [ORIGEM_INTERNA_DA_MENSAGEM]: 'ai',
+      },
+    ];
+    const tools = applyPreviewPolicy(
+      { send_message: definition(vi.fn()) },
+      p,
+      gate(),
+      () => [],
+      undefined,
+      undefined,
+      { enviadas: new Set(), log: { warn: vi.fn() }, contador: { valor: 0 } },
+    );
+
+    expect(
+      await execute(tools, 'send_message', {
+        body: 'Ótima tarde, Bruna! Pode mandar o comprovante por aqui 🌷\n\nEu confiro assim que chegar.',
+      }),
+    ).toMatchObject({ ok: true, status: 'simulated' });
+    expect(p.result.candidates.map((c) => c.body)).toEqual(['Eu confiro assim que chegar.']);
   });
 
   it('registers text and mutation proposals without calling either operational executor', async () => {
