@@ -8127,6 +8127,23 @@ export const DICIONARIO: Traducoes = {
   "Produto ativo": { es: "Producto activo" },
   "Produto atualizado": { es: "Producto actualizado" },
   "Enviar produtos do catálogo": { es: "Enviar productos del catálogo" },
+  "Adicionar produtos ao rascunho": { es: "Agregar productos al borrador" },
+  "Adicionar ao rascunho": { es: "Agregar al borrador" },
+  "Escolha até 10 produtos. Você poderá revisar e editar cada legenda antes de enviar.": {
+    es: "Elige hasta 10 productos. Podrás revisar y editar cada texto antes de enviarlo.",
+  },
+  "Não consegui preparar os rascunhos.": { es: "No pude preparar los borradores." },
+  "Não consegui carregar a foto. A legenda ficou no rascunho.": {
+    es: "No pude cargar la foto. El texto quedó en el borrador.",
+  },
+  "A legenda passou de 1024 caracteres. Reduza o texto para enviar.": {
+    es: "El texto superó los 1024 caracteres. Redúcelo para poder enviarlo.",
+  },
+  "Produto {atual} de {total}": { es: "Producto {atual} de {total}" },
+  "Escolha de 1 a 10 produtos.": { es: "Elige entre 1 y 10 productos." },
+  "Erro ao ler as fotos do catálogo.": { es: "No se pudieron leer las fotos del catálogo." },
+  "Produto inválido.": { es: "Producto no válido." },
+  "Foto do produto não encontrada.": { es: "No se encontró la foto del producto." },
   "Escolha até 10 produtos. Cada item será enviado com foto, nome, preço e descrição.": {
     es: "Elija hasta 10 productos. Cada artículo se enviará con foto, nombre, precio y descripción.",
   },

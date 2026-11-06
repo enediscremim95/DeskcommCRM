@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -22,23 +21,19 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   conversationId: string;
+  onDrafts: (drafts: RascunhoDoCatalogo[]) => void;
 }
 
-interface Resultado {
-  total: number;
-  sent: number;
-  queued: number;
-  failed: number;
-  results?: Array<{
-    product_id: string;
-    status: "sent" | "queued" | "failed";
-    photo: "missing" | "sent";
-  }>;
+export interface RascunhoDoCatalogo {
+  product_id: string;
+  nome: string;
+  legenda: string;
+  excede_limite: boolean;
+  foto: { url: string; mime: string; nome_do_arquivo: string } | null;
 }
 
-export function CatalogPickerDialog({ open, onOpenChange, conversationId }: Props) {
+export function CatalogPickerDialog({ open, onOpenChange, conversationId, onDrafts }: Props) {
   const t = useT();
-  const queryClient = useQueryClient();
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [selecionados, setSelecionados] = useState<string[]>([]);
   const [busca, setBusca] = useState("");
@@ -82,37 +77,32 @@ export function CatalogPickerDialog({ open, onOpenChange, conversationId }: Prop
     });
   }
 
-  async function enviar() {
+  async function adicionarAoRascunho() {
     if (selecionados.length === 0) return;
     setEnviando(true);
     try {
-      const response = await fetch(`/api/v1/conversations/${conversationId}/catalog-items`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product_ids: selecionados }),
-      });
+      const response = await fetch(
+        `/api/v1/conversations/${conversationId}/catalog-items/draft`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ product_ids: selecionados }),
+        },
+      );
       const body = (await response.json().catch(() => null)) as {
-        data?: Resultado;
+        data?: RascunhoDoCatalogo[];
         error?: { message?: string };
       } | null;
       if (!response.ok || !body?.data) {
-        throw new Error(body?.error?.message ?? t("Não consegui enviar os produtos."));
+        throw new Error(body?.error?.message ?? t("Não consegui preparar os rascunhos."));
       }
-      if (body.data.failed > 0) {
-        toast.warning(t("Alguns produtos não foram enviados. Confira a conversa."));
-      } else if (body.data.results?.some((resultado) => resultado.photo === "missing")) {
-        toast.warning(t("Alguns produtos foram enviados sem foto. O texto foi mantido."));
-      } else if (body.data.queued > 0) {
-        toast.warning(t("Os produtos aguardam a conexão do canal."));
-      } else {
-        toast.success(t("Produtos enviados."));
-      }
-      await queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
-      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      onDrafts(body.data);
       onOpenChange(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("Não consegui enviar os produtos."));
+      toast.error(
+        error instanceof Error ? error.message : t("Não consegui preparar os rascunhos."),
+      );
     } finally {
       setEnviando(false);
     }
@@ -122,10 +112,10 @@ export function CatalogPickerDialog({ open, onOpenChange, conversationId }: Prop
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{t("Enviar produtos do catálogo")}</DialogTitle>
+          <DialogTitle>{t("Adicionar produtos ao rascunho")}</DialogTitle>
           <DialogDescription>
             {t(
-              "Escolha até 10 produtos. Cada item será enviado com foto, nome, preço e descrição.",
+              "Escolha até 10 produtos. Você poderá revisar e editar cada legenda antes de enviar.",
             )}
           </DialogDescription>
         </DialogHeader>
@@ -178,8 +168,11 @@ export function CatalogPickerDialog({ open, onOpenChange, conversationId }: Prop
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={enviando}>
             {t("Cancelar")}
           </Button>
-          <Button onClick={() => void enviar()} disabled={enviando || selecionados.length === 0}>
-            {enviando ? t("Enviando…") : t(`Enviar ${selecionados.length} produto(s)`)}
+          <Button
+            onClick={() => void adicionarAoRascunho()}
+            disabled={enviando || selecionados.length === 0}
+          >
+            {enviando ? t("Preparando…") : t("Adicionar ao rascunho")}
           </Button>
         </DialogFooter>
       </DialogContent>

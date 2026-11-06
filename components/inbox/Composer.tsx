@@ -2,6 +2,7 @@
 import { useT } from "@/hooks/i18n/useT";
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -14,7 +15,10 @@ import { Button } from "@/components/ui/button";
 import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
-import { CatalogPickerDialog } from "@/components/inbox/composer/CatalogPickerDialog";
+import {
+  CatalogPickerDialog,
+  type RascunhoDoCatalogo,
+} from "@/components/inbox/composer/CatalogPickerDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
 import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
@@ -96,6 +100,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const [text, setText] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingCaption, setPendingCaption] = useState("");
+  const [catalogDraftQueue, setCatalogDraftQueue] = useState<RascunhoDoCatalogo[]>([]);
+  const [catalogDraftTotal, setCatalogDraftTotal] = useState(0);
+  const [catalogDraftPosition, setCatalogDraftPosition] = useState(0);
+  const [catalogDraftLoading, setCatalogDraftLoading] = useState(false);
+  const [catalogPreviewActive, setCatalogPreviewActive] = useState(false);
+  const [catalogTextDraftActive, setCatalogTextDraftActive] = useState(false);
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
@@ -156,11 +166,74 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
   }
 
+  useEffect(() => {
+    if (
+      catalogDraftQueue.length === 0 ||
+      pendingFile ||
+      catalogTextDraftActive ||
+      catalogDraftLoading
+    ) {
+      return;
+    }
+    const [proximo, ...restantes] = catalogDraftQueue;
+    if (!proximo) return;
+    setCatalogDraftQueue(restantes);
+    setCatalogDraftPosition((atual) => atual + 1);
+    setMode("reply");
+
+    const colocarLegendaNaCaixa = () => {
+      setText((atual) => (atual.trim() ? `${atual.trimEnd()}\n\n${proximo.legenda}` : proximo.legenda));
+      setCatalogTextDraftActive(true);
+      requestAnimationFrame(() => {
+        taRef.current?.focus();
+        autoresize();
+      });
+    };
+
+    if (!proximo.foto) {
+      colocarLegendaNaCaixa();
+      return;
+    }
+
+    setCatalogDraftLoading(true);
+    void fetch(proximo.foto.url, { credentials: "same-origin" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("catalog_photo_load_failed");
+        const blob = await response.blob();
+        setPendingCaption(proximo.legenda);
+        setCatalogPreviewActive(true);
+        setPendingFile(
+          new File([blob], proximo.foto!.nome_do_arquivo, {
+            type: blob.type || proximo.foto!.mime,
+          }),
+        );
+      })
+      .catch(() => {
+        toast.warning(t("Não consegui carregar a foto. A legenda ficou no rascunho."));
+        colocarLegendaNaCaixa();
+      })
+      .finally(() => setCatalogDraftLoading(false));
+  }, [
+    catalogDraftLoading,
+    catalogDraftQueue,
+    catalogTextDraftActive,
+    pendingFile,
+    t,
+  ]);
+
+  const catalogSequenceLabel =
+    catalogDraftTotal > 1 && catalogDraftPosition > 0
+      ? t("Produto {atual} de {total}")
+          .replace("{atual}", String(catalogDraftPosition))
+          .replace("{total}", String(catalogDraftTotal))
+      : undefined;
+
   function handleSubmit() {
     // Se o atendente aceitou e não tocou no texto, preserve byte a byte para o
     // banco registrar "approved". Qualquer edição segue o comportamento antigo
     // do composer e remove apenas o espaço acidental das pontas.
     const body = ghost.acceptedDraft?.original_body === text ? text : text.trim();
+    const rascunhoDeTextoDoCatalogo = catalogTextDraftActive;
     if (!body || (mode === "note" ? isDisabled : respostaBarrada)) return;
 
     setText("");
@@ -195,6 +268,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       {
         onSuccess: () => {
           setText("");
+          if (rascunhoDeTextoDoCatalogo) setCatalogTextDraftActive(false);
           // A citação vale para UMA mensagem. Mantê-la depois do envio faria a
           // próxima frase sair citando algo que o atendente já respondeu.
           onCancelarResposta?.();
@@ -379,6 +453,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             <button
               type="button"
               onClick={() => setMode("note")}
+              disabled={catalogTextDraftActive}
               className={cn(
                 "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
                 mode === "note"
@@ -440,12 +515,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               {t("Usar sugestão")}
             </button>
           )}
+          {catalogTextDraftActive && catalogSequenceLabel ? (
+            <p className="mb-1.5 text-xs text-muted-foreground" role="status">
+              {catalogSequenceLabel}
+            </p>
+          ) : null}
           <div className="flex items-end gap-2">
             {mode === "reply" && (
               <AttachMenu
                 disabled={respostaBarrada}
                 onPick={(file) => {
                   setPendingCaption("");
+                  setCatalogPreviewActive(false);
                   setPendingFile(file);
                 }}
                 onPickContact={() => setContactPickerOpen(true)}
@@ -560,10 +641,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       <AttachmentPreviewDialog
         file={pendingFile}
         initialCaption={pendingCaption}
+        sequenceLabel={catalogPreviewActive ? catalogSequenceLabel : undefined}
         sending={upload.isPending || send.isPending}
         onCancel={() => {
           setPendingFile(null);
           setPendingCaption("");
+          setCatalogPreviewActive(false);
         }}
         onSend={async (caption) => {
           if (!pendingFile) return;
@@ -582,6 +665,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 onSuccess: () => {
                   setPendingFile(null);
                   setPendingCaption("");
+                  setCatalogPreviewActive(false);
                 },
               },
             );
@@ -618,6 +702,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         open={catalogPickerOpen}
         onOpenChange={setCatalogPickerOpen}
         conversationId={conversationId}
+        onDrafts={(drafts) => {
+          setCatalogDraftQueue(drafts);
+          setCatalogDraftTotal(drafts.length);
+          setCatalogDraftPosition(0);
+          setCatalogTextDraftActive(false);
+        }}
       />
     </>
   );
