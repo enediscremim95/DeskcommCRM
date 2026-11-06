@@ -128,7 +128,11 @@ import {
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
 import { matchesHandoffKeyword } from './agent-config';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
-import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
+import {
+  descricaoDaJanela,
+  janelaDeEnvioAberta,
+  proximaAberturaDaJanela,
+} from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
@@ -1707,13 +1711,14 @@ async function executarTurnoDoAgente(
     const agora = clock();
     if (!janelaDeEnvioAberta(agora, knobs)) {
       const abertura = proximaAberturaDaJanela(agora, knobs);
+      const janela = descricaoDaJanela(knobs);
       await rescheduleJob(pool, liveJob().id, ctx.workerId, {
         acquiredAt: claimOfJob(liveJob())?.acquired_at,
         delayMs: Math.max(abertura.getTime() - agora.getTime(), 1_000),
         reason: 'fora da janela anti-ban de envio — turno adiado para a abertura',
       });
       runLog.info('turno adiado — fora da janela anti-ban de envio', {
-        janela: `${knobs.windowStartHour}h-${knobs.windowEndHour}h`,
+        janela,
         timezone: knobs.timezone,
         abertura: abertura.toISOString(),
       });
@@ -1730,7 +1735,7 @@ async function executarTurnoDoAgente(
           tenantId,
           channelSessionId: input.channelSessionId,
           abertura,
-          janela: `${knobs.windowStartHour}h-${knobs.windowEndHour}h`,
+          janela,
           timezone: knobs.timezone,
           domingoDesligado: !knobs.allowSunday,
         });

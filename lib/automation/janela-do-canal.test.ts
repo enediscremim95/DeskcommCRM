@@ -115,6 +115,20 @@ describe("o que o operador configurou em Conexões é o que vale", () => {
     expect(await adiarAteAJanelaAbrir(knobs, ORG, CANAL, new Date("2026-07-19T15:00:00Z")))
       .not.toBeNull();
   });
+
+  it("fim próprio do sábado usa a mesma régua do agente", async () => {
+    const knobs = admin({
+      data: { throttle_ms: null, jitter_max_ms: 0, window_start_hour: 9,
+              window_end_hour: 19, window_saturday_end_hour: 14, allow_sunday: false,
+              timezone: "America/Sao_Paulo", warmup_daily_caps: null },
+      error: null,
+    });
+
+    expect(await adiarAteAJanelaAbrir(knobs, ORG, CANAL, new Date("2026-11-07T16:59:00Z")))
+      .toBeNull();
+    expect(await adiarAteAJanelaAbrir(knobs, ORG, CANAL, new Date("2026-11-07T17:00:00Z")))
+      .toBe("2026-11-09T12:00:00.000Z");
+  });
 });
 
 describe("quem nunca abriu a tela de Conexões", () => {

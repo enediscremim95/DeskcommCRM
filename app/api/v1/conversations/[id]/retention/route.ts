@@ -22,6 +22,14 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
+interface RetentionKnobsRow {
+  window_start_hour: number | null;
+  window_end_hour: number | null;
+  window_saturday_end_hour: number | null;
+  allow_sunday: boolean | null;
+  timezone: string | null;
+}
+
 export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
@@ -71,12 +79,15 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   // Knobs do número (coluna NULL = default conservador do engine) — a UI usa o
   // contexto pra dizer QUAL janela segurou o envio, não a genérica.
-  const { data: knobs } = await supabase
+  const { data: knobsData } = await supabase
     .from("channel_knobs")
-    .select("window_start_hour, window_end_hour, allow_sunday, timezone")
+    .select("window_start_hour, window_end_hour, window_saturday_end_hour, allow_sunday, timezone")
     .eq("organization_id", activeOrg.orgId)
     .eq("channel_session_id", conv.channel_session_id)
     .maybeSingle();
+  // O tipo gerado acompanha o schema aplicado. Até a próxima regeneração, esta
+  // linha mantém a rota tipada sem editar `lib/database.types.ts` à mão.
+  const knobs = knobsData as unknown as RetentionKnobsRow | null;
 
   return ok(
     {
@@ -84,6 +95,8 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       context: {
         window_start_hour: knobs?.window_start_hour ?? PACING_DEFAULTS.windowStartHour,
         window_end_hour: knobs?.window_end_hour ?? PACING_DEFAULTS.windowEndHour,
+        window_saturday_end_hour:
+          knobs?.window_saturday_end_hour ?? PACING_DEFAULTS.windowSaturdayEndHour,
         allow_sunday: knobs?.allow_sunday ?? PACING_DEFAULTS.allowSunday,
         timezone: knobs?.timezone ?? PACING_DEFAULTS.timezone,
       },

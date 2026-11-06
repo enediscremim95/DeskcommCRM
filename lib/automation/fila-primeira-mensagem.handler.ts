@@ -6,6 +6,7 @@ import { buildContext } from "@/lib/automation/engine";
 import {
   CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
   EVENTO_FILA_PRIMEIRA_MENSAGEM,
+  FILA_PRIMEIRA_MENSAGEM_DEFAULTS,
   idDaBolhaFilaPrimeiraMensagem,
   pausaEntreBolhasSegundos,
   semMarcadorDaFila,
@@ -15,21 +16,27 @@ import { adiarAteAJanelaAbrir, knobsDoCanal } from "@/lib/automation/janela-do-c
 import { renderTemplate } from "@/lib/automation/template";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { proximaAberturaDaJanela } from "@/lib/agent-engine/pacing/engine";
+import { capabilitiesOf, type ChannelProvider } from "@/lib/channels";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { comandoDaConversa, silencioVigente } from "@/lib/inbox/comando-da-conversa";
-import { houveRespostaHumanaDepoisDoEvento } from "@/lib/messaging/resposta-humana";
+import {
+  ORIGENS_DE_RESPOSTA_HUMANA,
+  houveRespostaHumanaDepoisDoEvento,
+} from "@/lib/messaging/resposta-humana";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 
-const LIMITE_JANELA_LIVRE_MS = 23 * 60 * 60 * 1_000;
+const LIMITE_JANELA_OFICIAL_MS = 23 * 60 * 60 * 1_000;
 const RETENTATIVA_CURTA_MS = 60_000;
+const RETENTATIVA_CONVERSA_OCUPADA_MS = 25_000;
 
 export type MotivoDescarteFila =
   | "tag_nao_contatar"
   | "tag_sem_followup"
   | "pedido_opt_out"
   | "janela_24h_expirada"
+  | "espera_maxima_excedida"
   | "janela_24h_desconhecida"
   | "humano_respondeu"
   | "conversa_atribuida"
@@ -53,9 +60,39 @@ export interface SnapshotGuardaFila {
   };
 }
 
+export interface PoliticaEsperaFila {
+  limiteMs: number;
+  motivoExcedido: "janela_24h_expirada" | "espera_maxima_excedida";
+}
+
+const POLITICA_JANELA_OFICIAL: PoliticaEsperaFila = {
+  limiteMs: LIMITE_JANELA_OFICIAL_MS,
+  motivoExcedido: "janela_24h_expirada",
+};
+
+export function politicaEsperaFilaPorCanal(
+  provider: ChannelProvider,
+  maxWaitHours: number | null | undefined,
+): PoliticaEsperaFila {
+  if (!capabilitiesOf(provider).freeformOutsideWindow) {
+    return POLITICA_JANELA_OFICIAL;
+  }
+  const configuradoValido =
+    typeof maxWaitHours === "number" &&
+    Number.isInteger(maxWaitHours) &&
+    maxWaitHours >= 1 &&
+    maxWaitHours <= 168;
+  const horas = configuradoValido ? maxWaitHours : FILA_PRIMEIRA_MENSAGEM_DEFAULTS.maxWaitHours;
+  return {
+    limiteMs: horas * 60 * 60 * 1_000,
+    motivoExcedido: "espera_maxima_excedida",
+  };
+}
+
 export function motivoParaDescartarFila(
   snapshot: SnapshotGuardaFila,
   now: Date = new Date(),
+  politica: PoliticaEsperaFila = POLITICA_JANELA_OFICIAL,
 ): MotivoDescarteFila | null {
   if (!snapshot.ruleActive) return "regra_indisponivel";
   if (snapshot.tags.includes("nao_contatar")) return "tag_nao_contatar";
@@ -64,11 +101,8 @@ export function motivoParaDescartarFila(
     return "pedido_opt_out";
   }
 
-  const latestInboundMs = Date.parse(snapshot.latestInboundAt ?? "");
-  if (!Number.isFinite(latestInboundMs)) return "janela_24h_desconhecida";
-  if (now.getTime() - latestInboundMs > LIMITE_JANELA_LIVRE_MS) {
-    return "janela_24h_expirada";
-  }
+  const motivoTemporal = motivoTemporalParaDescartarFila(snapshot.latestInboundAt, now, politica);
+  if (motivoTemporal) return motivoTemporal;
   if (snapshot.humanRepliedAfterQueue) return "humano_respondeu";
   if (
     snapshot.conversation.assignedToUserId !== null ||
@@ -96,6 +130,19 @@ export function motivoParaDescartarFila(
   return null;
 }
 
+function motivoTemporalParaDescartarFila(
+  latestInboundAt: string | null,
+  now: Date,
+  politica: PoliticaEsperaFila,
+): "janela_24h_desconhecida" | PoliticaEsperaFila["motivoExcedido"] | null {
+  const latestInboundMs = Date.parse(latestInboundAt ?? "");
+  if (!Number.isFinite(latestInboundMs)) return "janela_24h_desconhecida";
+  if (now.getTime() - latestInboundMs > politica.limiteMs) {
+    return politica.motivoExcedido;
+  }
+  return null;
+}
+
 export interface TurnoFila {
   decision:
     | "ready"
@@ -115,6 +162,9 @@ export interface RuntimeFilaPrimeiraMensagem {
   now(): Date;
   foraDaJanela(item: ItemFilaPrimeiraMensagem): Promise<string | null>;
   turno(item: ItemFilaPrimeiraMensagem, claim: boolean): Promise<TurnoFila>;
+  politicaEspera(item: ItemFilaPrimeiraMensagem): Promise<PoliticaEsperaFila>;
+  ultimaEntradaEm(item: ItemFilaPrimeiraMensagem): Promise<string | null>;
+  conversaEmAndamento(item: ItemFilaPrimeiraMensagem): Promise<boolean>;
   snapshot(item: ItemFilaPrimeiraMensagem): Promise<SnapshotGuardaFila>;
   descartar(item: ItemFilaPrimeiraMensagem, reason: MotivoDescarteFila): Promise<void>;
   prepararPartes(item: ItemFilaPrimeiraMensagem): Promise<ItemFilaPrimeiraMensagem>;
@@ -135,6 +185,31 @@ export interface RuntimeFilaPrimeiraMensagem {
   reagendar(item: ItemFilaPrimeiraMensagem, retryAt: string): Promise<void>;
   proximaAberturaDoDiaSeguinte(item: ItemFilaPrimeiraMensagem, anchor: string): Promise<string>;
   acordarOrigem(item: ItemFilaPrimeiraMensagem): Promise<void>;
+}
+
+async function motivoAtualParaDescartarFila(
+  runtime: RuntimeFilaPrimeiraMensagem,
+  item: ItemFilaPrimeiraMensagem,
+): Promise<MotivoDescarteFila | null> {
+  const [snapshot, politica] = await Promise.all([
+    runtime.snapshot(item),
+    runtime.politicaEspera(item),
+  ]);
+  return motivoParaDescartarFila(snapshot, runtime.now(), politica);
+}
+
+async function esperaMaximaExcedidaAntesDosAdiamentos(
+  runtime: RuntimeFilaPrimeiraMensagem,
+  item: ItemFilaPrimeiraMensagem,
+): Promise<"espera_maxima_excedida" | null> {
+  const politica = await runtime.politicaEspera(item);
+  if (politica.motivoExcedido !== "espera_maxima_excedida") return null;
+  const motivo = motivoTemporalParaDescartarFila(
+    await runtime.ultimaEntradaEm(item),
+    runtime.now(),
+    politica,
+  );
+  return motivo === "espera_maxima_excedida" ? motivo : null;
 }
 
 function partesDoItem(item: ItemFilaPrimeiraMensagem): string[] {
@@ -201,10 +276,7 @@ async function processarBolhas(
   if (item.sent_part_count > 0) await runtime.depoisDaPrimeiraBolha(item);
 
   for (let index = item.sent_part_count; index < parts.length; index += 1) {
-    const descarte = motivoParaDescartarFila(
-      await runtime.snapshot(item),
-      runtime.now(),
-    );
+    const descarte = await motivoAtualParaDescartarFila(runtime, item);
     if (descarte) {
       const result = resultadoInterrompido(item, parts.length, descarte);
       await runtime.finalizar(item, result);
@@ -259,7 +331,7 @@ async function processarBolhas(
     return {
       consumer_key: CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
       status: "ok",
-      detail: partial ? terminal.error ?? "parcial_interrompido" : terminal.status,
+      detail: partial ? (terminal.error ?? "parcial_interrompido") : terminal.status,
     };
   }
 
@@ -281,10 +353,7 @@ async function processarBolhas(
   };
 }
 
-function retry(
-  retryAt: string,
-  detail: string,
-): HandlerResult {
+function retry(retryAt: string, detail: string): HandlerResult {
   return {
     consumer_key: CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
     status: "retry",
@@ -329,6 +398,17 @@ export async function processarItemFilaPrimeiraMensagem(
   }
   if (item.status === "processing") return processarBolhas(runtime, item);
 
+  const esperaExcedida = await esperaMaximaExcedidaAntesDosAdiamentos(runtime, item);
+  if (esperaExcedida) {
+    await runtime.descartar(item, esperaExcedida);
+    await runtime.acordarOrigem(item);
+    return {
+      consumer_key: CONSUMIDOR_FILA_PRIMEIRA_MENSAGEM,
+      status: "ok",
+      detail: esperaExcedida,
+    };
+  }
+
   const janela = await runtime.foraDaJanela(item);
   if (janela) {
     await runtime.reagendar(item, janela);
@@ -354,10 +434,7 @@ export async function processarItemFilaPrimeiraMensagem(
     return retry(at, vista.decision);
   }
 
-  const descarte = motivoParaDescartarFila(
-    await runtime.snapshot(item),
-    runtime.now(),
-  );
+  const descarte = await motivoAtualParaDescartarFila(runtime, item);
   if (descarte) {
     await runtime.descartar(item, descarte);
     await runtime.acordarOrigem(item);
@@ -366,6 +443,12 @@ export async function processarItemFilaPrimeiraMensagem(
       status: "ok",
       detail: descarte,
     };
+  }
+
+  if (await runtime.conversaEmAndamento(item)) {
+    const at = new Date(runtime.now().getTime() + RETENTATIVA_CONVERSA_OCUPADA_MS).toISOString();
+    await runtime.reagendar(item, at);
+    return retry(at, "aguardando_conversa_em_andamento");
   }
 
   const claim = await runtime.turno(item, true);
@@ -380,6 +463,111 @@ export async function processarItemFilaPrimeiraMensagem(
   }
 
   return processarBolhas(runtime, { ...item, status: "processing" });
+}
+
+interface LinhaKnobConversaEmAndamento {
+  first_message_queue_busy_minutes: number | null;
+}
+
+/**
+ * A fila só espera por uma saída humana recente em OUTRA conversa do mesmo
+ * número. A autoria vem da fonte canônica de `resposta-humana`; automação, IA,
+ * modelo e a própria fila ficam fora sem manter uma segunda lista divergente.
+ */
+export async function haConversaHumanaEmAndamentoNoCanal(
+  admin: SupabaseClient,
+  item: ItemFilaPrimeiraMensagem,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const { data: rawKnob, error: knobError } = await admin
+    .from("channel_knobs")
+    .select("first_message_queue_busy_minutes")
+    .eq("organization_id", item.organization_id)
+    .eq("channel_session_id", item.channel_session_id)
+    .maybeSingle();
+  if (knobError) {
+    throw new Error(`first_message_queue_busy_knob_read_failed: ${knobError.message}`);
+  }
+
+  const knob = rawKnob as LinhaKnobConversaEmAndamento | null;
+  const busyMinutes = knob?.first_message_queue_busy_minutes ?? 0;
+  if (!Number.isInteger(busyMinutes) || busyMinutes <= 0) return false;
+
+  const since = new Date(now.getTime() - busyMinutes * 60_000).toISOString();
+  const { data, error } = await admin
+    .from("messages")
+    .select("id")
+    .eq("organization_id", item.organization_id)
+    .eq("channel_session_id", item.channel_session_id)
+    .eq("direction", "outbound")
+    .in("sent_via", [...ORIGENS_DE_RESPOSTA_HUMANA])
+    .in("status", ["sent", "delivered", "read"])
+    .neq("type", "template")
+    .neq("conversation_id", item.conversation_id)
+    .gte("sent_at", since)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`first_message_queue_busy_check_failed: ${error.message}`);
+  }
+  return Boolean(data);
+}
+
+interface LinhaSessaoDaPoliticaDeEspera {
+  provider: ChannelProvider;
+}
+
+interface LinhaKnobDaPoliticaDeEspera {
+  first_message_queue_max_wait_hours: number | null;
+}
+
+export async function carregarPoliticaEsperaFila(
+  admin: SupabaseClient,
+  item: ItemFilaPrimeiraMensagem,
+): Promise<PoliticaEsperaFila> {
+  const [sessionResult, knobResult] = await Promise.all([
+    admin
+      .from("channel_sessions")
+      .select("provider")
+      .eq("organization_id", item.organization_id)
+      .eq("id", item.channel_session_id)
+      .maybeSingle(),
+    admin
+      .from("channel_knobs")
+      .select("first_message_queue_max_wait_hours")
+      .eq("organization_id", item.organization_id)
+      .eq("channel_session_id", item.channel_session_id)
+      .maybeSingle(),
+  ]);
+  const readError = sessionResult.error ?? knobResult.error;
+  if (readError) {
+    throw new Error(`first_message_queue_wait_policy_read_failed: ${readError.message}`);
+  }
+  if (!sessionResult.data) {
+    throw new Error("first_message_queue_wait_policy_channel_missing");
+  }
+  const session = sessionResult.data as LinhaSessaoDaPoliticaDeEspera;
+  const knob = knobResult.data as LinhaKnobDaPoliticaDeEspera | null;
+  return politicaEsperaFilaPorCanal(session.provider, knob?.first_message_queue_max_wait_hours);
+}
+
+async function carregarUltimaEntradaEm(
+  admin: SupabaseClient,
+  item: ItemFilaPrimeiraMensagem,
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from("messages")
+    .select("sent_at")
+    .eq("organization_id", item.organization_id)
+    .eq("conversation_id", item.conversation_id)
+    .eq("direction", "inbound")
+    .order("sent_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`first_message_queue_latest_inbound_read_failed: ${error.message}`);
+  }
+  return (data as { sent_at: string | null } | null)?.sent_at ?? null;
 }
 
 function primeiraLinha<T>(data: unknown): T | null {
@@ -553,9 +741,7 @@ async function finalizarNoBanco(
           ? "processing"
           : "failed";
   const reason =
-    typeof result.detail?.reason === "string"
-      ? result.detail.reason
-      : (result.error ?? null);
+    typeof result.detail?.reason === "string" ? result.detail.reason : (result.error ?? null);
   const terminal = status !== "processing";
   const { error } = await admin
     .from("automation_first_message_queue")
@@ -575,30 +761,33 @@ function runtimeReal(
   admin: SupabaseClient,
   now: () => Date = () => new Date(),
 ): RuntimeFilaPrimeiraMensagem {
+  const politicasDeEspera = new Map<string, Promise<PoliticaEsperaFila>>();
   return {
     now,
     foraDaJanela: (item) =>
-      adiarAteAJanelaAbrir(
-        admin,
-        item.organization_id,
-        item.channel_session_id,
-        now(),
-      ),
+      adiarAteAJanelaAbrir(admin, item.organization_id, item.channel_session_id, now()),
     async turno(item, claim) {
-      const { data, error } = await admin.rpc(
-        "fn_try_claim_automation_first_message",
-        {
-          p_organization_id: item.organization_id,
-          p_queue_id: item.id,
-          p_now: now().toISOString(),
-          p_claim: claim,
-        },
-      );
+      const { data, error } = await admin.rpc("fn_try_claim_automation_first_message", {
+        p_organization_id: item.organization_id,
+        p_queue_id: item.id,
+        p_now: now().toISOString(),
+        p_claim: claim,
+      });
       if (error) throw new Error(`first_message_queue_claim_failed: ${error.message}`);
       const row = primeiraLinha<TurnoFila>(data);
       if (!row) throw new Error("first_message_queue_claim_empty");
       return row;
     },
+    politicaEspera(item) {
+      const key = `${item.organization_id}:${item.channel_session_id}`;
+      const existente = politicasDeEspera.get(key);
+      if (existente) return existente;
+      const carregando = carregarPoliticaEsperaFila(admin, item);
+      politicasDeEspera.set(key, carregando);
+      return carregando;
+    },
+    ultimaEntradaEm: (item) => carregarUltimaEntradaEm(admin, item),
+    conversaEmAndamento: (item) => haConversaHumanaEmAndamentoNoCanal(admin, item, now()),
     snapshot: (item) => carregarSnapshot(admin, item, now()),
     async descartar(item, reason) {
       const { error } = await admin
@@ -619,11 +808,7 @@ function runtimeReal(
       if (!Array.isArray(templates)) return item;
       const origem = await carregarOrigemDaFila(admin, item);
       if (!origem) return item;
-      const knobs = await knobsDoCanal(
-        admin,
-        item.organization_id,
-        item.channel_session_id,
-      );
+      const knobs = await knobsDoCanal(admin, item.organization_id, item.channel_session_id);
       const renderedAt = now();
       const messageParts = templates.map((template) =>
         renderTemplate(String(template), origem.context, {
@@ -680,9 +865,7 @@ function runtimeReal(
     },
     async registrarBolha(item, index, result) {
       const messageId =
-        typeof result.detail?.message_id === "string"
-          ? result.detail.message_id
-          : null;
+        typeof result.detail?.message_id === "string" ? result.detail.message_id : null;
       const ids = [...(item.outbound_message_ids ?? [])];
       if (messageId) ids[index] = messageId;
       const sentPartCount =
@@ -785,11 +968,7 @@ function runtimeReal(
       if (error) throw new Error(`first_message_queue_reschedule_failed: ${error.message}`);
     },
     async proximaAberturaDoDiaSeguinte(item, anchor) {
-      const knobs = await knobsDoCanal(
-        admin,
-        item.organization_id,
-        item.channel_session_id,
-      );
+      const knobs = await knobsDoCanal(admin, item.organization_id, item.channel_session_id);
       return proximaAberturaDaJanela(new Date(anchor), knobs).toISOString();
     },
     async acordarOrigem(item) {
