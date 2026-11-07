@@ -5,7 +5,13 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
-import { Phone, ArrowRight, IdentificationCard } from "@/lib/ui/icons";
+import { Phone, ArrowRight, IdentificationCard, DotsThree, PushPin, Star } from "@/lib/ui/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -20,6 +26,7 @@ import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { useUpdateConversationPersonalState } from "@/hooks/inbox/useInboxPersonalState";
 
 interface Props {
   conversation: ConversationWithContact;
@@ -66,6 +73,7 @@ export function ConversationHeader({ conversation, crmPanelCollapsed, onToggleCr
   // atendendo em instalação que nunca configurou agente nenhum.
   const automaticoDaOrg = useAutomaticoAtivo();
   const [reassignOpen, setReassignOpen] = useState(false);
+  const personalState = useUpdateConversationPersonalState();
 
   const c = conversation.contacts ?? null;
   const displayName = rotuloDoContato(c, t);
@@ -202,6 +210,41 @@ export function ConversationHeader({ conversation, crmPanelCollapsed, onToggleCr
           barra pode encolher e quebrar internamente, e os botões continuam
           todos visíveis e clicáveis — só que em duas linhas quando preciso. */}
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              aria-label={t("Mais ações da conversa")}
+            >
+              <DotsThree size={18} aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              disabled={personalState.isPending}
+              onSelect={() => personalState.mutate({
+                conversation_id: conversation.id,
+                favorited: !conversation.favorited_at,
+              })}
+            >
+              <Star weight={conversation.favorited_at ? "fill" : "regular"} aria-hidden />
+              {t(conversation.favorited_at ? "Remover conversa das favoritas" : "Favoritar conversa")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={personalState.isPending}
+              onSelect={() => personalState.mutate({
+                conversation_id: conversation.id,
+                pinned: !conversation.pinned_at,
+              })}
+            >
+              <PushPin weight={conversation.pinned_at ? "fill" : "regular"} aria-hidden />
+              {t(conversation.pinned_at ? "Desafixar conversa" : "Fixar conversa")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {onToggleCrmPanel ? (
           <Button
             type="button"

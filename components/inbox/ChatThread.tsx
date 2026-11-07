@@ -31,6 +31,7 @@ import type { Message, Note } from "@/lib/types/messaging";
 import { PaperPlaneTilt, X } from "@/lib/ui/icons";
 import { ConversationSearch } from "./ConversationSearch";
 import { messageDomId } from "@/lib/inbox/message-dom";
+import { useUpdateMessagePersonalState } from "@/hooks/inbox/useInboxPersonalState";
 
 type EstadoHistorico = "parado" | "carregando" | "store_desligado";
 
@@ -106,6 +107,7 @@ export const ChatThread = forwardRef<ChatThreadHandle, Props>(function ChatThrea
   const activeOrg = useActiveOrg();
   const currentUser = useUser();
   const deleteNote = useDeleteNote(conversationId ?? "");
+  const messagePersonalState = useUpdateMessagePersonalState();
   const podeExcluir = usePermission("resource.delete");
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
   const queryClient = useQueryClient();
@@ -513,6 +515,12 @@ export const ChatThread = forwardRef<ChatThreadHandle, Props>(function ChatThrea
                   debugCitations={debugCitations}
                   onResponder={onResponder}
                   onEncaminhar={(message) => abrirEncaminhamento([message.id])}
+                  onToggleStar={suporteSomenteLeitura ? undefined : (message) =>
+                    messagePersonalState.mutate({
+                      message_id: message.id,
+                      starred: !message.starred_at,
+                    })
+                  }
                   selectionMode={selecionando}
                   selected={selecionadas.has(item.data.id)}
                   onToggleSelection={alternarSelecao}

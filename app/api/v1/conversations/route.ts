@@ -11,6 +11,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { listConversationsQuerySchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
+import { enriquecerConversasComEstadoPessoal } from "@/lib/inbox/preferencias-pessoais";
 
 import { listConversationsHandler } from "./_handler";
 
@@ -39,6 +40,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   const qsParsed = listConversationsQuerySchema.safeParse({
     status: url.searchParams.get("status") ?? undefined,
     exclude_finished: url.searchParams.get("exclude_finished") === "true" ? true : undefined,
+    favorited: url.searchParams.get("favorited") === "true" ? true : undefined,
+    pinned: url.searchParams.get("pinned") === "true" ? true : undefined,
     assigned_to: url.searchParams.get("assigned_to") ?? undefined,
     // QUEM MANDA na conversa (migration 0203) — o filtro das abas Fila e
     // Automático. Faltar aqui é a MESMA rotura que o `tag` teve logo abaixo: o
@@ -83,7 +86,13 @@ export async function GET(req: NextRequest): Promise<Response> {
     // handler é compartilhado com as tools MCP, que já resolvem o nome por conta
     // própria (`lib/mcp/tools/conversations.ts`) — enriquecer lá faria a mesma
     // leitura duas vezes por chamada do agente.
-    return ok(await comNomeDoAtendente(conversations), {
+    const comEstado = await enriquecerConversasComEstadoPessoal(
+      supabase,
+      activeOrg.orgId,
+      user.id,
+      conversations,
+    );
+    return ok(await comNomeDoAtendente(comEstado), {
       requestId,
       meta: { cursor, has_more },
     });

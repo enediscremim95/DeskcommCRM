@@ -17,6 +17,9 @@ vi.mock("./ForwardDialog", () => ({
 }));
 vi.mock("@/hooks/inbox/useConversationNotes", () => ({ useConversationNotes: () => [] }));
 vi.mock("@/hooks/inbox/useDeleteNote", () => ({ useDeleteNote: () => ({ mutate: vi.fn() }) }));
+vi.mock("@/hooks/inbox/useInboxPersonalState", () => ({
+  useUpdateMessagePersonalState: () => ({ mutate: vi.fn() }),
+}));
 vi.mock("@/hooks/ai/useDebugToggle", () => ({ useDebugToggle: () => ({ enabled: false }) }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useActiveOrg: () => ({ role: "agent" }),

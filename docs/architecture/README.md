@@ -49,6 +49,8 @@ ser fonte sem ninguém decidir isso.
 | `catalogo-e-atalhos-midia.architecture.json` | painel como fonte do catálogo, importação segura de fotos, campos comerciais somente para leitura, lote de produtos e janela de 24 horas revalidada na porta central de envio |
 | `inbox-whatsapp-fase-1a.architecture.json` | rascunho por conversa, fila sequencial de anexos, busca e salto no histórico, cópia e ficha responsiva sem migration |
 
+| `inbox-preferencias-pessoais.architecture.json` | favoritos, fixações e estrelas pessoais com RLS por organização e usuário, limite de cinco fixadas e atualização otimista |
+
 > **Esta tabela já apodreceu uma vez:** ela listava 8 mapas quando o disco tinha 9 — faltava
 > `indice-de-atrito`. Nenhum teste lê este README (o gate lê os `.json`), então mapa novo que
 > não ganhe linha aqui nasce invisível para quem lê antes de codar. Confira com

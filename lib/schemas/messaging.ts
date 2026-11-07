@@ -175,6 +175,17 @@ export const patchConversationSchema = z
 
 export type PatchConversationInput = z.infer<typeof patchConversationSchema>;
 
+export const updateInboxConversationStateSchema = z
+  .object({
+    favorited: z.boolean().optional(),
+    pinned: z.boolean().optional(),
+  })
+  .refine((value) => value.favorited !== undefined || value.pinned !== undefined, {
+    message: "Informe favorito ou fixação.",
+  });
+
+export const updateInboxMessageStateSchema = z.object({ starred: z.boolean() });
+
 /** POST /conversations/open-with-contact — abrir inbox a partir de cartão de contato. */
 export const openConversationWithContactSchema = z
   .object({
@@ -320,6 +331,8 @@ export const listConversationsQuerySchema = z.object({
    * significar "meu trabalho" para virar "tudo que já toquei".
    */
   exclude_finished: z.boolean().optional(),
+  favorited: z.boolean().optional(),
+  pinned: z.boolean().optional(),
   assigned_to: z.union([z.string().uuid(), z.literal("me"), z.literal("unassigned")]).optional(),
   channel_session_id: z.string().uuid().optional(),
   tag: conversationTagSchema.optional(),

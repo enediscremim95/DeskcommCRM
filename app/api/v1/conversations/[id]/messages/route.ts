@@ -11,6 +11,7 @@ import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { listMessagesQuerySchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { enriquecerMensagensComEstadoPessoal } from "@/lib/inbox/preferencias-pessoais";
 
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
 
@@ -65,7 +66,15 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       conversationId,
       qsParsed.data,
     );
-    return ok(messages, { requestId, meta: { cursor, has_more } });
+    return ok(
+      await enriquecerMensagensComEstadoPessoal(
+        supabase,
+        activeOrg.orgId,
+        user.id,
+        messages,
+      ),
+      { requestId, meta: { cursor, has_more } },
+    );
   } catch (err) {
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });
