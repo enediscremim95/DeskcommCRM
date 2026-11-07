@@ -94,7 +94,7 @@ describe("createAutomationRuleSchema", () => {
     ).toBe(false);
   });
 
-  it("aceita de duas a quatro bolhas na fila e permite template legado junto", () => {
+  it("aceita texto e imagem em até treze bolhas e permite template legado junto", () => {
     const result = createAutomationRuleSchema.safeParse({
       name: "Primeira mensagem em bolhas",
       trigger_event: "message.received",
@@ -104,8 +104,13 @@ describe("createAutomationRuleSchema", () => {
         config: {
           channel_session_id: UUID,
           template: "Fallback legado",
-          templates: ["Olá {{nome}}", "Estas são as opções", "Qual você prefere?"],
+          templates: [
+            "Olá {{nome}}",
+            { tipo: "imagem", arquivo: "natal/01.jpg", legenda: "Para {{primeiro_nome}}" },
+            "Qual você prefere?",
+          ],
           pausa_entre_bolhas_segundos: 4,
+          pausa_entre_imagens_segundos: 2,
           fila: "primeira_mensagem",
         },
       }],
@@ -117,7 +122,7 @@ describe("createAutomationRuleSchema", () => {
   it.each([
     { templates: ["", "Segunda"] },
     { templates: ["Única"] },
-    { templates: ["1", "2", "3", "4", "5"] },
+    { templates: Array.from({ length: 14 }, (_, index) => String(index + 1)) },
     { templates: ["x".repeat(1001), "Segunda"] },
   ])("rejeita lista de bolhas inválida: $templates", ({ templates }) => {
     const result = createAutomationRuleSchema.safeParse({
@@ -136,6 +141,27 @@ describe("createAutomationRuleSchema", () => {
 
     expect(result.success).toBe(false);
   });
+
+  it.each(["../x.jpg", "a//b.jpg", "/etc/x.png", "x.exe"])(
+    "rejeita caminho malicioso ou sem extensão permitida: %s",
+    (arquivo) => {
+      const result = createAutomationRuleSchema.safeParse({
+        name: "Primeira mensagem inválida",
+        trigger_event: "message.received",
+        conditions: [],
+        actions: [{
+          type: "send_whatsapp_message",
+          config: {
+            channel_session_id: UUID,
+            templates: ["Olá", { tipo: "imagem", arquivo }],
+            fila: "primeira_mensagem",
+          },
+        }],
+      });
+
+      expect(result.success).toBe(false);
+    },
+  );
 
   it("rejeita várias bolhas fora da fila e pausa fora dos limites", () => {
     const base = {

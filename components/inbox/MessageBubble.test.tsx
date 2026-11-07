@@ -20,7 +20,8 @@
  * esperado é o português — o espanhol é coberto por i18n-espanhol-cobre-a-tela.
  */
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { vi } from "vitest";
 
 import { MessageBubble } from "./MessageBubble";
 import type { Message } from "@/lib/types/messaging";
@@ -170,5 +171,61 @@ describe("MessageBubble — mídia recebida guardada", () => {
     expect(screen.getByText("Arquivo removido após o prazo de retenção: visita.mp4")).toBeInTheDocument();
     expect(screen.getByText("Legenda que continua na conversa")).toBeInTheDocument();
     expect(container.querySelector("video")).toBeNull();
+  });
+});
+
+describe("MessageBubble — encaminhamento", () => {
+  it.each(["text", "image", "video", "document", "audio"])(
+    "mostra o botão para mensagem %s elegível",
+    (type) => {
+      const onEncaminhar = vi.fn();
+      render(<MessageBubble message={msg({ type })} onEncaminhar={onEncaminhar} />);
+      fireEvent.click(screen.getByRole("button", { name: "Encaminhar esta mensagem" }));
+      expect(onEncaminhar).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    ["apagada", { revoked_at: "2026-11-06T10:00:00.000Z" }],
+    ["falha", { status: "failed" }],
+    ["nota interna pelo tipo", { type: "internal_note" }],
+    ["nota interna pelos metadados", { metadata: { internal_note: true } }],
+    ["evento de sistema pelo tipo", { type: "system" }],
+    ["evento de sistema pelos metadados", { metadata: { system_event: true } }],
+    ["tipo não suportado", { type: "location" }],
+  ])("não mostra o botão para mensagem %s", (_label, overrides) => {
+    render(<MessageBubble message={msg(overrides as Partial<Message>)} onEncaminhar={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Encaminhar esta mensagem" })).not.toBeInTheDocument();
+  });
+
+  it("mostra o selo quando a mensagem foi encaminhada", () => {
+    render(<MessageBubble message={msg({ metadata: { forwarded: true } })} />);
+    expect(screen.getByText("Encaminhada")).toBeInTheDocument();
+  });
+});
+
+describe("MessageBubble — copiar e saltar na citação", () => {
+  it("copia o corpo pelo helper de clipboard", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<MessageBubble message={msg({ body: "copiar exatamente isto" })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copiar mensagem" }));
+    expect(writeText).toHaveBeenCalledWith("copiar exatamente isto");
+    expect(await screen.findByText("Mensagem copiada.", { selector: "span" })).toBeInTheDocument();
+  });
+
+  it("citação clicável usa o mesmo salto por id mesmo fora da página", () => {
+    const onGoToMessage = vi.fn();
+    render(
+      <MessageBubble
+        message={msg({ reply_to_message_id: "message-outside-first-page" })}
+        onGoToMessage={onGoToMessage}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Ir para a mensagem citada" }));
+    expect(onGoToMessage).toHaveBeenCalledWith("message-outside-first-page");
   });
 });

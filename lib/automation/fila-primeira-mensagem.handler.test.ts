@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CHANNEL_CAPABILITIES, type ProviderDeMensagem } from "@/lib/channels";
 import {
+  carregarPoliticaEsperaFila,
+  copiarAtivoDaFilaParaConversa,
+  haConversaHumanaEmAndamentoNoCanal,
   motivoParaDescartarFila,
+  politicaEsperaFilaPorCanal,
   processarItemFilaPrimeiraMensagem,
+  renderizarBolhaDaFila,
+  type PoliticaEsperaFila,
   type RuntimeFilaPrimeiraMensagem,
   type SnapshotGuardaFila,
   type TurnoFila,
@@ -11,11 +18,18 @@ import {
   acaoUsaFilaPrimeiraMensagem,
   idDaBolhaFilaPrimeiraMensagem,
   pausaEntreBolhasSegundos,
+  pausaEntreImagensSegundos,
   resultadoDaFila,
   type ItemFilaPrimeiraMensagem,
 } from "./fila-primeira-mensagem";
 
 const NOW = new Date("2026-10-28T15:00:00.000Z");
+const PROVIDER_COM_JANELA = Object.entries(CHANNEL_CAPABILITIES).find(
+  ([, capabilities]) => !capabilities.freeformOutsideWindow,
+)?.[0] as ProviderDeMensagem;
+const PROVIDER_SEM_JANELA = Object.entries(CHANNEL_CAPABILITIES).find(
+  ([, capabilities]) => capabilities.freeformOutsideWindow,
+)?.[0] as ProviderDeMensagem;
 
 function item(id = "fila-1"): ItemFilaPrimeiraMensagem {
   return {
@@ -65,23 +79,34 @@ function turno(decision: TurnoFila["decision"], retryAt: string | null = null): 
   return { decision, retry_at: retryAt, next_day_start: null };
 }
 
-function runtime(decisions: TurnoFila[]): RuntimeFilaPrimeiraMensagem & {
+function runtime(
+  decisions: TurnoFila[],
+  options: { now?: Date; politica?: PoliticaEsperaFila } = {},
+): RuntimeFilaPrimeiraMensagem & {
   calls: string[];
 } {
   const calls: string[] = [];
+  const politica = options.politica ?? politicaEsperaFilaPorCanal(PROVIDER_COM_JANELA, null);
   return {
     calls,
-    now: () => new Date(NOW),
+    now: () => new Date(options.now ?? NOW),
     foraDaJanela: vi.fn(async () => null),
     turno: vi.fn(async (_item, claim) => {
       calls.push(claim ? "claim" : "peek");
       return decisions.shift() ?? turno("ready");
     }),
+    politicaEspera: vi.fn(async () => politica),
+    ultimaEntradaEm: vi.fn(async () => snapshot().latestInboundAt),
+    conversaEmAndamento: vi.fn(async () => false),
     snapshot: vi.fn(async () => snapshot()),
     descartar: vi.fn(async (_item, reason) => void calls.push(`discard:${reason}`)),
     prepararPartes: vi.fn(async (queueItem) => queueItem),
-    enviarBolha: vi.fn(async (_queueItem, body, index) => {
-      calls.push(`send:${index}:${body}`);
+    enviarBolha: vi.fn(async (_queueItem, bolha, index) => {
+      calls.push(
+        typeof bolha === "string"
+          ? `send:${index}:${bolha}`
+          : `send:${index}:image:${bolha.arquivo}`,
+      );
       return {
         type: "send_whatsapp_message",
         status: "success" as const,
@@ -121,11 +146,32 @@ describe("fila da primeira mensagem", () => {
     const primeira = idDaBolhaFilaPrimeiraMensagem("fila-1", 0);
     expect(idDaBolhaFilaPrimeiraMensagem("fila-1", 0)).toBe(primeira);
     expect(idDaBolhaFilaPrimeiraMensagem("fila-1", 1)).not.toBe(primeira);
-    expect(primeira).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(primeira).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
   });
 
   it("usa pausa padrão de três segundos entre bolhas", () => {
     expect(pausaEntreBolhasSegundos(item())).toBe(3);
+    expect(pausaEntreImagensSegundos(item())).toBe(2);
+  });
+
+  it("renderiza variáveis na legenda sem alterar o arquivo da imagem", () => {
+    expect(
+      renderizarBolhaDaFila(
+        {
+          tipo: "imagem",
+          arquivo: "natal/01.jpg",
+          legenda: "Modelo para {{primeiro_nome}}",
+        },
+        { contact: { name: "BIANCA BUENO" } },
+        { now: NOW, timezone: "America/Sao_Paulo" },
+      ),
+    ).toEqual({
+      tipo: "imagem",
+      arquivo: "natal/01.jpg",
+      legenda: "Modelo para Bianca",
+    });
   });
 
   it("expõe o desfecho parcial sem esconder as bolhas já enviadas", () => {
@@ -160,6 +206,51 @@ describe("fila da primeira mensagem", () => {
     expect(r.calls).toEqual(["peek", "retry:2026-10-28T15:00:30.000Z"]);
   });
 
+  it("reagenda a cabeça ocupada sem descartar nem reivindicar o item", async () => {
+    const r = runtime([turno("ready")]);
+    vi.mocked(r.conversaEmAndamento).mockResolvedValue(true);
+
+    const result = await processarItemFilaPrimeiraMensagem(r, item("primeiro"));
+
+    expect(result).toMatchObject({
+      status: "retry",
+      retry_at: "2026-10-28T15:00:25.000Z",
+      detail: "aguardando_conversa_em_andamento",
+    });
+    expect(r.calls).toEqual(["peek", "retry:2026-10-28T15:00:25.000Z"]);
+    expect(r.descartar).not.toHaveBeenCalled();
+    expect(r.enviarBolha).not.toHaveBeenCalled();
+    expect(r.turno).toHaveBeenCalledTimes(1);
+  });
+
+  it("envia normalmente quando o canal está livre", async () => {
+    const r = runtime([turno("ready"), turno("claimed")]);
+
+    const result = await processarItemFilaPrimeiraMensagem(r, item());
+
+    expect(result).toMatchObject({ status: "ok", detail: "success" });
+    expect(r.conversaEmAndamento).toHaveBeenCalledOnce();
+    expect(r.enviarBolha).toHaveBeenCalledOnce();
+  });
+
+  it("mantém a ordem enquanto a cabeça espera a equipe terminar outra conversa", async () => {
+    const primeiro = runtime([turno("ready")]);
+    vi.mocked(primeiro.conversaEmAndamento).mockResolvedValue(true);
+    const segundo = runtime([turno("not_head", "2026-10-28T15:00:30.000Z")]);
+
+    const espera = await processarItemFilaPrimeiraMensagem(primeiro, item("primeiro"));
+    const atras = await processarItemFilaPrimeiraMensagem(segundo, item("segundo"));
+
+    expect(espera).toMatchObject({
+      status: "retry",
+      detail: "aguardando_conversa_em_andamento",
+    });
+    expect(atras).toMatchObject({ status: "retry", detail: "not_head" });
+    expect(primeiro.enviarBolha).not.toHaveBeenCalled();
+    expect(segundo.enviarBolha).not.toHaveBeenCalled();
+    expect(segundo.conversaEmAndamento).not.toHaveBeenCalled();
+  });
+
   it.each([120, 240])("respeita a borda de %i segundos entre inícios", async (seconds) => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
@@ -187,6 +278,81 @@ describe("fila da primeira mensagem", () => {
     );
     expect(result).toMatchObject({ status: "retry", retry_at: "2026-10-29T12:00:00.000Z" });
   });
+
+  it("envia no próximo expediente o item sem janela oficial que bateu o teto diário", async () => {
+    const sabado = new Date("2026-10-31T17:30:00.000Z");
+    const segunda = new Date("2026-11-02T12:00:00.000Z");
+    const politica = politicaEsperaFilaPorCanal(PROVIDER_SEM_JANELA, null);
+    const queued = item();
+    queued.enqueued_at = sabado.toISOString();
+
+    const lotado = runtime(
+      [{ decision: "daily_limit", retry_at: null, next_day_start: "2026-11-01T03:00:00.000Z" }],
+      { now: sabado, politica },
+    );
+    vi.mocked(lotado.proximaAberturaDoDiaSeguinte).mockResolvedValue(segunda.toISOString());
+    vi.mocked(lotado.ultimaEntradaEm).mockResolvedValue(sabado.toISOString());
+
+    await expect(processarItemFilaPrimeiraMensagem(lotado, queued)).resolves.toMatchObject({
+      status: "retry",
+      retry_at: segunda.toISOString(),
+      detail: "daily_limit",
+    });
+
+    const retomado = runtime([turno("ready"), turno("claimed")], {
+      now: segunda,
+      politica,
+    });
+    vi.mocked(retomado.snapshot).mockResolvedValue(
+      snapshot({ latestInboundAt: sabado.toISOString() }),
+    );
+    vi.mocked(retomado.ultimaEntradaEm).mockResolvedValue(sabado.toISOString());
+
+    await expect(processarItemFilaPrimeiraMensagem(retomado, queued)).resolves.toMatchObject({
+      status: "ok",
+      detail: "success",
+    });
+    expect(retomado.descartar).not.toHaveBeenCalled();
+    expect(retomado.enviarBolha).toHaveBeenCalledOnce();
+  });
+
+  it.each(["horário fechado", "teto diário"])(
+    "descarta a espera máxima antes de reagendar por %s",
+    async (bloqueio) => {
+      const now = new Date("2026-11-03T18:00:00.000Z");
+      const politica = politicaEsperaFilaPorCanal(PROVIDER_SEM_JANELA, null);
+      const r = runtime(
+        bloqueio === "teto diário"
+          ? [
+              {
+                decision: "daily_limit",
+                retry_at: null,
+                next_day_start: "2026-11-04T03:00:00.000Z",
+              },
+            ]
+          : [],
+        { now, politica },
+      );
+      vi.mocked(r.ultimaEntradaEm).mockResolvedValue(
+        new Date(now.getTime() - 73 * 60 * 60 * 1_000).toISOString(),
+      );
+      if (bloqueio === "horário fechado") {
+        vi.mocked(r.foraDaJanela).mockResolvedValue("2026-11-04T12:00:00.000Z");
+      }
+
+      await expect(processarItemFilaPrimeiraMensagem(r, item())).resolves.toMatchObject({
+        status: "ok",
+        detail: "espera_maxima_excedida",
+      });
+      expect(r.descartar).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "fila-1" }),
+        "espera_maxima_excedida",
+      );
+      expect(r.foraDaJanela).not.toHaveBeenCalled();
+      expect(r.turno).not.toHaveBeenCalled();
+      expect(r.enviarBolha).not.toHaveBeenCalled();
+    },
+  );
 
   it("pausa e retoma o mesmo item sem perdê-lo", async () => {
     vi.useFakeTimers();
@@ -240,6 +406,162 @@ describe("fila da primeira mensagem", () => {
       "wake",
     ]);
   });
+
+  it("envia o roteiro completo de textos e oito imagens na ordem, uma vez cada", async () => {
+    const queued = item();
+    queued.message_parts = [
+      "Ótimo dia! Sou a Lorenza da Sublimando! Como vai? 🌷",
+      "Vou te enviar os modelos e valores detalhados, Bianca",
+      ...Array.from({ length: 8 }, (_, index) => ({
+        tipo: "imagem" as const,
+        arquivo: `natal/${String(index + 1).padStart(2, "0")}.jpg`,
+        legenda: "",
+      })),
+      "Se for acima de 5 unidades, temos valores especiais 🎄",
+      "Seria para empresa? Ou presente pessoal?",
+    ];
+    queued.action_config = {
+      fila: "primeira_mensagem",
+      pausa_entre_bolhas_segundos: 4,
+      pausa_entre_imagens_segundos: 2,
+    };
+    const r = runtime([turno("ready"), turno("claimed")]);
+
+    await expect(processarItemFilaPrimeiraMensagem(r, queued)).resolves.toMatchObject({
+      status: "ok",
+      detail: "success",
+    });
+
+    expect(r.enviarBolha).toHaveBeenCalledTimes(12);
+    expect(vi.mocked(r.enviarBolha).mock.calls.map(([, parte]) => parte)).toEqual(
+      queued.message_parts,
+    );
+    expect(r.calls.filter((call) => call === "pause:2000")).toHaveLength(7);
+    expect(r.calls.filter((call) => call === "pause:4000")).toHaveLength(4);
+  });
+
+  it("falha na quinta imagem e o retry continua nela sem reenviar as anteriores", async () => {
+    const processing = item();
+    processing.status = "processing";
+    processing.message_parts = Array.from({ length: 8 }, (_, index) => ({
+      tipo: "imagem" as const,
+      arquivo: `natal/${String(index + 1).padStart(2, "0")}.jpg`,
+    }));
+    const r = runtime([]);
+    const original = vi.mocked(r.enviarBolha).getMockImplementation()!;
+    let falhou = false;
+    vi.mocked(r.enviarBolha).mockImplementation(async (queueItem, parte, index) => {
+      if (index === 4 && !falhou) {
+        falhou = true;
+        throw new Error("first_message_queue_image_copy_failed:timeout");
+      }
+      return original(queueItem, parte, index);
+    });
+
+    await expect(processarItemFilaPrimeiraMensagem(r, processing)).rejects.toThrow(
+      "first_message_queue_image_copy_failed:timeout",
+    );
+    expect(processing.sent_part_count).toBe(4);
+
+    await expect(processarItemFilaPrimeiraMensagem(r, processing)).resolves.toMatchObject({
+      status: "ok",
+      detail: "success",
+    });
+    const indices = vi.mocked(r.enviarBolha).mock.calls.map(([, , index]) => index);
+    expect(indices.filter((index) => index === 0)).toHaveLength(1);
+    expect(indices.filter((index) => index === 1)).toHaveLength(1);
+    expect(indices.filter((index) => index === 2)).toHaveLength(1);
+    expect(indices.filter((index) => index === 3)).toHaveLength(1);
+    expect(indices.filter((index) => index === 4)).toHaveLength(2);
+  });
+
+  it("copia o ativo para um caminho determinístico pertencente à conversa", async () => {
+    const copy = vi.fn(async () => ({ data: { path: "ok" }, error: null }));
+    const admin = {
+      storage: {
+        from: vi.fn((bucket: string) => {
+          expect(bucket).toBe("whatsapp-media");
+          return { copy };
+        }),
+      },
+    };
+    const queued = item();
+
+    const primeira = await copiarAtivoDaFilaParaConversa(
+      admin as never,
+      queued,
+      { tipo: "imagem", arquivo: "natal/05.webp" },
+      6,
+    );
+    const segunda = await copiarAtivoDaFilaParaConversa(
+      admin as never,
+      queued,
+      { tipo: "imagem", arquivo: "natal/05.webp" },
+      6,
+    );
+
+    expect(primeira).toEqual(segunda);
+    expect(primeira.mime).toBe("image/webp");
+    expect(copy).toHaveBeenNthCalledWith(
+      1,
+      "org-1/ativos/natal/05.webp",
+      `org-1/conversa-1/first-message-${idDaBolhaFilaPrimeiraMensagem("fila-1", 6)}.webp`,
+    );
+    expect(copy).toHaveBeenNthCalledWith(2, ...copy.mock.calls[0]!);
+  });
+
+  it("para entre a terceira e a quarta imagem quando um humano responde", async () => {
+    const queued = item();
+    queued.message_parts = [
+      "Primeiro texto",
+      "Segundo texto",
+      ...Array.from({ length: 8 }, (_, index) => ({
+        tipo: "imagem" as const,
+        arquivo: `natal/${String(index + 1).padStart(2, "0")}.jpg`,
+      })),
+      "Penúltimo texto",
+      "Último texto",
+    ];
+    const r = runtime([turno("ready"), turno("claimed")]);
+    vi.mocked(r.snapshot).mockImplementation(async () =>
+      snapshot({
+        humanRepliedAfterQueue: vi.mocked(r.enviarBolha).mock.calls.length >= 5,
+      }),
+    );
+
+    await expect(processarItemFilaPrimeiraMensagem(r, queued)).resolves.toMatchObject({
+      status: "ok",
+      detail: "parcial:humano_respondeu",
+    });
+    expect(r.enviarBolha).toHaveBeenCalledTimes(5);
+    expect(r.calls).toContain("send:4:image:natal/03.jpg");
+    expect(r.calls).not.toContain("send:5:image:natal/04.jpg");
+  });
+
+  it.each(["../x.jpg", "a//b.jpg", "/etc/x.png", "x.exe"])(
+    "recusa %s antes de enviar qualquer bolha",
+    async (arquivo) => {
+      const queued = item();
+      queued.message_parts = [
+        "Texto que não pode sair",
+        { tipo: "imagem", arquivo },
+      ] as never;
+      const r = runtime([turno("ready"), turno("claimed")]);
+
+      await expect(processarItemFilaPrimeiraMensagem(r, queued)).resolves.toMatchObject({
+        status: "ok",
+        detail: `first_message_queue_invalid_image_path:${arquivo}`,
+      });
+      expect(r.enviarBolha).not.toHaveBeenCalled();
+      expect(r.finalizar).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "fila-1" }),
+        expect.objectContaining({
+          status: "failed",
+          error: `first_message_queue_invalid_image_path:${arquivo}`,
+        }),
+      );
+    },
+  );
 
   it("para antes da segunda bolha quando um humano responde no meio", async () => {
     const queued = item();
@@ -329,24 +651,285 @@ describe("fila da primeira mensagem", () => {
 
   it("descarta quando a última entrada passou de 23 horas", () => {
     expect(
-      motivoParaDescartarFila(
-        snapshot({ latestInboundAt: "2026-10-27T15:59:59.999Z" }),
-        NOW,
-      ),
+      motivoParaDescartarFila(snapshot({ latestInboundAt: "2026-10-27T15:59:59.999Z" }), NOW),
     ).toBe("janela_24h_expirada");
+  });
+
+  it("mantém a data de entrada desconhecida como descarte seguro", () => {
+    expect(motivoParaDescartarFila(snapshot({ latestInboundAt: null }), NOW)).toBe(
+      "janela_24h_desconhecida",
+    );
   });
 
   it("descarta quando a mensagem recebida pede para não incomodar", () => {
     expect(
-      motivoParaDescartarFila(snapshot({ latestInboundBody: "Não quero mais receber mensagens" }), NOW),
+      motivoParaDescartarFila(
+        snapshot({ latestInboundBody: "Não quero mais receber mensagens" }),
+        NOW,
+      ),
     ).toBe("pedido_opt_out");
   });
 
   it.each([
     [{ humanRepliedAfterQueue: true }, "humano_respondeu"],
-    [{ conversation: { ...snapshot().conversation, assignedToUserId: "user-1" } }, "conversa_atribuida"],
-    [{ conversation: { ...snapshot().conversation, botSilencedUntil: "2026-10-29T15:00:00.000Z" } }, "ia_pausada"],
+    [
+      { conversation: { ...snapshot().conversation, assignedToUserId: "user-1" } },
+      "conversa_atribuida",
+    ],
+    [
+      {
+        conversation: { ...snapshot().conversation, botSilencedUntil: "2026-10-29T15:00:00.000Z" },
+      },
+      "ia_pausada",
+    ],
   ])("descarta quando um humano assumiu: %s", (override, expected) => {
-    expect(motivoParaDescartarFila(snapshot(override as Partial<SnapshotGuardaFila>), NOW)).toBe(expected);
+    expect(motivoParaDescartarFila(snapshot(override as Partial<SnapshotGuardaFila>), NOW)).toBe(
+      expected,
+    );
+  });
+});
+
+describe("limite da fila conforme a capacidade do canal", () => {
+  const entradaHa = (horas: number, minutos = 0) =>
+    new Date(NOW.getTime() - (horas * 60 + minutos) * 60_000).toISOString();
+
+  it("mantém o canal oficial em 23 h: 22h59 envia e 23h01 descarta", () => {
+    const politica = politicaEsperaFilaPorCanal(PROVIDER_COM_JANELA, 168);
+
+    expect(
+      motivoParaDescartarFila(snapshot({ latestInboundAt: entradaHa(22, 59) }), NOW, politica),
+    ).toBeNull();
+    expect(
+      motivoParaDescartarFila(snapshot({ latestInboundAt: entradaHa(23, 1) }), NOW, politica),
+    ).toBe("janela_24h_expirada");
+  });
+
+  it("envia depois de 40 h no canal sem janela oficial", () => {
+    const politica = politicaEsperaFilaPorCanal(PROVIDER_SEM_JANELA, null);
+    expect(
+      motivoParaDescartarFila(snapshot({ latestInboundAt: entradaHa(40) }), NOW, politica),
+    ).toBeNull();
+  });
+
+  it("descarta depois de 73 h no canal sem janela oficial com motivo próprio", () => {
+    const politica = politicaEsperaFilaPorCanal(PROVIDER_SEM_JANELA, null);
+    expect(
+      motivoParaDescartarFila(snapshot({ latestInboundAt: entradaHa(73) }), NOW, politica),
+    ).toBe("espera_maxima_excedida");
+  });
+
+  it("usa 72 h quando o knob é nulo", () => {
+    expect(politicaEsperaFilaPorCanal(PROVIDER_SEM_JANELA, null)).toEqual({
+      limiteMs: 72 * 60 * 60 * 1_000,
+      motivoExcedido: "espera_maxima_excedida",
+    });
+  });
+
+  it("respeita o limite configurado de 12 h", () => {
+    const politica = politicaEsperaFilaPorCanal(PROVIDER_SEM_JANELA, 12);
+    expect(
+      motivoParaDescartarFila(snapshot({ latestInboundAt: entradaHa(12) }), NOW, politica),
+    ).toBeNull();
+    expect(
+      motivoParaDescartarFila(snapshot({ latestInboundAt: entradaHa(12, 1) }), NOW, politica),
+    ).toBe("espera_maxima_excedida");
+  });
+});
+
+function adminDaPoliticaDeEspera(provider: string, maxWaitHours: number | null) {
+  const filtros: Array<{ tabela: string; iguais: Array<[string, unknown]> }> = [];
+  const admin = {
+    from(tabela: string) {
+      const iguais: Array<[string, unknown]> = [];
+      filtros.push({ tabela, iguais });
+      const query = {
+        select: () => query,
+        eq: (coluna: string, valor: unknown) => {
+          iguais.push([coluna, valor]);
+          return query;
+        },
+        maybeSingle: async () => ({
+          data:
+            tabela === "channel_sessions"
+              ? { provider }
+              : { first_message_queue_max_wait_hours: maxWaitHours },
+          error: null,
+        }),
+      };
+      return query;
+    },
+  };
+  return { admin, filtros };
+}
+
+describe("leitura da política de espera do canal", () => {
+  it("descobre o provider e o knob com filtro explícito de organização", async () => {
+    const db = adminDaPoliticaDeEspera(PROVIDER_SEM_JANELA, 12);
+
+    await expect(carregarPoliticaEsperaFila(db.admin as never, item())).resolves.toEqual({
+      limiteMs: 12 * 60 * 60 * 1_000,
+      motivoExcedido: "espera_maxima_excedida",
+    });
+    expect(db.filtros).toEqual([
+      {
+        tabela: "channel_sessions",
+        iguais: [
+          ["organization_id", "org-1"],
+          ["id", "canal-1"],
+        ],
+      },
+      {
+        tabela: "channel_knobs",
+        iguais: [
+          ["organization_id", "org-1"],
+          ["channel_session_id", "canal-1"],
+        ],
+      },
+    ]);
+  });
+});
+
+interface MensagemDoCanal {
+  organization_id: string;
+  channel_session_id: string;
+  conversation_id: string;
+  direction: "inbound" | "outbound";
+  sent_via: string;
+  status: string;
+  type: string;
+  sent_at: string;
+}
+
+function adminDaConversaEmAndamento(busyMinutes: number | null, messages: MensagemDoCanal[]) {
+  const tabelasLidas: string[] = [];
+  const admin = {
+    from(table: string) {
+      tabelasLidas.push(table);
+      const equals = new Map<string, unknown>();
+      const inclusions = new Map<string, unknown[]>();
+      const notEquals = new Map<string, unknown>();
+      const greaterThanOrEqual = new Map<string, unknown>();
+      const query = {
+        select: () => query,
+        eq: (column: string, value: unknown) => {
+          equals.set(column, value);
+          return query;
+        },
+        in: (column: string, values: unknown[]) => {
+          inclusions.set(column, values);
+          return query;
+        },
+        neq: (column: string, value: unknown) => {
+          notEquals.set(column, value);
+          return query;
+        },
+        gte: (column: string, value: unknown) => {
+          greaterThanOrEqual.set(column, value);
+          return query;
+        },
+        limit: () => query,
+        maybeSingle: async () => {
+          if (table === "channel_knobs") {
+            return {
+              data: { first_message_queue_busy_minutes: busyMinutes },
+              error: null,
+            };
+          }
+          const found = messages.find((message) => {
+            for (const [column, value] of equals) {
+              if (message[column as keyof MensagemDoCanal] !== value) return false;
+            }
+            for (const [column, values] of inclusions) {
+              if (!values.includes(message[column as keyof MensagemDoCanal])) return false;
+            }
+            for (const [column, value] of notEquals) {
+              if (message[column as keyof MensagemDoCanal] === value) return false;
+            }
+            for (const [column, value] of greaterThanOrEqual) {
+              if (String(message[column as keyof MensagemDoCanal]) < String(value)) return false;
+            }
+            return true;
+          });
+          return { data: found ? { id: "mensagem-humana" } : null, error: null };
+        },
+      };
+      return query;
+    },
+  };
+  return { admin, tabelasLidas };
+}
+
+function mensagemDoCanal(overrides: Partial<MensagemDoCanal> = {}): MensagemDoCanal {
+  return {
+    organization_id: "org-1",
+    channel_session_id: "canal-1",
+    conversation_id: "outra-conversa",
+    direction: "outbound",
+    sent_via: "user",
+    status: "sent",
+    type: "text",
+    sent_at: "2026-10-28T14:58:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("conversa humana em andamento no canal", () => {
+  it.each([null, 0])("mantém o comportamento desligado com parâmetro %s", async (minutes) => {
+    const db = adminDaConversaEmAndamento(minutes, [mensagemDoCanal()]);
+
+    await expect(haConversaHumanaEmAndamentoNoCanal(db.admin as never, item(), NOW)).resolves.toBe(
+      false,
+    );
+    expect(db.tabelasLidas).toEqual(["channel_knobs"]);
+  });
+
+  it.each(["user", "external_device"])(
+    "conta resposta recente da equipe em outra conversa via %s",
+    async (sentVia) => {
+      const db = adminDaConversaEmAndamento(3, [mensagemDoCanal({ sent_via: sentVia })]);
+
+      await expect(
+        haConversaHumanaEmAndamentoNoCanal(db.admin as never, item(), NOW),
+      ).resolves.toBe(true);
+    },
+  );
+
+  it.each(["automation", "ai", "crm", "system"])(
+    "não conta mensagem automática com origem %s",
+    async (sentVia) => {
+      const db = adminDaConversaEmAndamento(3, [mensagemDoCanal({ sent_via: sentVia })]);
+
+      await expect(
+        haConversaHumanaEmAndamentoNoCanal(db.admin as never, item(), NOW),
+      ).resolves.toBe(false);
+    },
+  );
+
+  it("não conta modelo aprovado mesmo quando uma pessoa iniciou o envio", async () => {
+    const db = adminDaConversaEmAndamento(3, [
+      mensagemDoCanal({ sent_via: "user", type: "template" }),
+    ]);
+
+    await expect(haConversaHumanaEmAndamentoNoCanal(db.admin as never, item(), NOW)).resolves.toBe(
+      false,
+    );
+  });
+
+  it("não conta mensagem humana da própria conversa do lead", async () => {
+    const db = adminDaConversaEmAndamento(3, [mensagemDoCanal({ conversation_id: "conversa-1" })]);
+
+    await expect(haConversaHumanaEmAndamentoNoCanal(db.admin as never, item(), NOW)).resolves.toBe(
+      false,
+    );
+  });
+
+  it("não conta mensagem humana anterior à janela configurada", async () => {
+    const db = adminDaConversaEmAndamento(3, [
+      mensagemDoCanal({ sent_at: "2026-10-28T14:56:59.999Z" }),
+    ]);
+
+    await expect(haConversaHumanaEmAndamentoNoCanal(db.admin as never, item(), NOW)).resolves.toBe(
+      false,
+    );
   });
 });

@@ -477,6 +477,7 @@ export function LeadPageClient({
               ) : null}
               <div className="min-h-0 flex-1 overflow-hidden bg-surface-elevated/40">
                 <ChatThread
+                  key={selectedConversation.id}
                   conversationId={selectedConversation.id}
                   onResponder={setRespondendo}
                   contextItems={contextItems}
@@ -500,8 +501,11 @@ export function LeadPageClient({
                   ) : null}
                 </div>
                 <Composer
+                  key={`${activeOrg?.orgId ?? ""}:${user.id}:${selectedConversation.id}`}
                   ref={composerRef}
                   conversationId={selectedConversation.id}
+                  organizationId={activeOrg?.orgId ?? ""}
+                  userId={user.id}
                   blockedReason={
                     supportReadonly ? t("Acompanhamento somente leitura") : blockedReason
                   }

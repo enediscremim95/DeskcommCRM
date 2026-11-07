@@ -115,6 +115,10 @@ export interface RunModelCallInput {
   system?: string;
   messages: ModelMessage[];
   tools?: ToolSet;
+  /** Retry do SDK. Para mídia, use 1: somente uma repetição transitória. */
+  maxRetries?: number;
+  /** Timeout total da chamada ao provedor. */
+  timeoutMs?: number;
   /**
    * Override do modelo default da org — é como classificador/compaction usam um
    * modelo pequeno pela MESMA camada. Sujeito a enabled_models quando a lista
@@ -430,6 +434,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       topP,
       topK,
       maxOutputTokens,
+      maxRetries: input.maxRetries,
+      timeout: input.timeoutMs,
     });
   } catch (err) {
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────

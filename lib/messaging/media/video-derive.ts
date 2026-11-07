@@ -24,6 +24,7 @@ export interface VideoDeriveDeps {
   describeImage(buffer: Buffer, mime: string): Promise<string>;
   /** Executa ffmpeg com os args dados no cwd; rejeita em exit != 0. Injetável p/ teste. */
   runFfmpeg?: (args: string[], cwd: string) => Promise<void>;
+  frameCount?: number;
 }
 
 function defaultRunFfmpeg(args: string[], cwd: string): Promise<void> {
@@ -48,16 +49,17 @@ function defaultRunFfmpeg(args: string[], cwd: string): Promise<void> {
  */
 export async function deriveVideoText(buffer: Buffer, deps: VideoDeriveDeps): Promise<string> {
   const run = deps.runFfmpeg ?? defaultRunFfmpeg;
+  const frameCount = Math.max(1, Math.min(8, deps.frameCount ?? FRAME_COUNT));
   const dir = await mkdtemp(join(tmpdir(), "vid-derive-"));
   try {
     await writeFile(join(dir, "in.mp4"), buffer);
 
-    // 1) faixa de áudio → ogg/opus mono 16k (ideal p/ Whisper). Pode falhar se sem áudio.
+    // 1) faixa de áudio em MP3 mono 16k, aceito pelo Whisper e por modelos multimodais.
     let transcript = "";
     try {
-      await run(["-i", "in.mp4", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "audio.ogg"], dir);
-      const audio = await readFile(join(dir, "audio.ogg"));
-      if (audio.byteLength > 0) transcript = await deps.transcriber.transcribe(audio, "audio/ogg");
+      await run(["-i", "in.mp4", "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", "audio.mp3"], dir);
+      const audio = await readFile(join(dir, "audio.mp3"));
+      if (audio.byteLength > 0) transcript = await deps.transcriber.transcribe(audio, "audio/mpeg");
     } catch {
       transcript = "";
     }
@@ -66,7 +68,7 @@ export async function deriveVideoText(buffer: Buffer, deps: VideoDeriveDeps): Pr
     let frameDescriptions: string[] = [];
     try {
       await run(
-        ["-i", "in.mp4", "-vf", `thumbnail,scale=${FRAME_SCALE}`, "-frames:v", String(FRAME_COUNT), "frame-%02d.jpg"],
+        ["-i", "in.mp4", "-vf", `thumbnail,scale=${FRAME_SCALE}`, "-frames:v", String(frameCount), "frame-%02d.jpg"],
         dir,
       );
       const files = (await readdir(dir)).filter((f) => f.startsWith("frame-")).sort();

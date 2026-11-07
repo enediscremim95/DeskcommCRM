@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import {
+  ehBolhaDeImagem,
+  type BolhaDeMensagem,
+} from "@/lib/automation/bolha-de-mensagem";
 import type {
   ActionCtx,
   ActionResultDetail,
@@ -18,7 +22,10 @@ export const FILA_PRIMEIRA_MENSAGEM_DEFAULTS = {
   maxIntervalSeconds: 240,
   dailyLimit: 200,
   paused: false,
+  busyMinutes: 0,
+  maxWaitHours: 72,
   pauseBetweenPartsSeconds: 3,
+  pauseBetweenImagesSeconds: 2,
 } as const;
 
 export type StatusFilaPrimeiraMensagem =
@@ -43,7 +50,7 @@ export interface ItemFilaPrimeiraMensagem {
   discard_reason: string | null;
   outbound_message_id: string | null;
   outbound_message_ids: string[];
-  message_parts: string[] | null;
+  message_parts: BolhaDeMensagem[] | null;
   sent_part_count: number;
   next_attempt_at: string | null;
   enqueued_at: string;
@@ -68,6 +75,23 @@ export function pausaEntreBolhasSegundos(item: ItemFilaPrimeiraMensagem): number
   return typeof configured === "number" && Number.isInteger(configured) && configured >= 1 && configured <= 10
     ? configured
     : FILA_PRIMEIRA_MENSAGEM_DEFAULTS.pauseBetweenPartsSeconds;
+}
+
+export function pausaEntreImagensSegundos(item: ItemFilaPrimeiraMensagem): number {
+  const configured = item.action_config.pausa_entre_imagens_segundos;
+  return typeof configured === "number" && Number.isInteger(configured) && configured >= 1 && configured <= 10
+    ? configured
+    : FILA_PRIMEIRA_MENSAGEM_DEFAULTS.pauseBetweenImagesSeconds;
+}
+
+export function pausaEntrePartesSegundos(
+  item: ItemFilaPrimeiraMensagem,
+  atual: BolhaDeMensagem,
+  proxima: BolhaDeMensagem,
+): number {
+  return ehBolhaDeImagem(atual) && ehBolhaDeImagem(proxima)
+    ? pausaEntreImagensSegundos(item)
+    : pausaEntreBolhasSegundos(item);
 }
 
 interface EnqueueResult {

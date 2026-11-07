@@ -119,6 +119,15 @@ export const sendMessageSchema = z
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 
+/** POST /messages/forward, limites da operacao visivel no inbox. */
+export const forwardMessagesSchema = z.object({
+  message_ids: z.array(z.string().uuid()).min(1).max(10),
+  destination_conversation_ids: z.array(z.string().uuid()).min(1).max(5),
+  request_id: z.string().uuid().optional(),
+});
+
+export type ForwardMessagesInput = z.infer<typeof forwardMessagesSchema>;
+
 export const claimConversationSchema = z.object({
   expected_assignee: z.string().uuid().nullable().optional(),
 });
@@ -325,6 +334,8 @@ export type ListConversationsQuery = z.infer<typeof listConversationsQuerySchema
 
 export const listMessagesQuerySchema = z.object({
   cursor: z.string().optional(),
+  /** Carrega uma janela centrada nesta mensagem para busca/citação. */
+  around_message_id: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 

@@ -28,7 +28,7 @@ interface Mapa {
   schema_version?: number;
   lanes?: Array<{ id: string; label: string }>;
   mainPath?: string[];
-  nodes?: Array<{ id: string; lane: string; label: string }>;
+  nodes?: Array<{ id: string; lane: string; label: string; sublabel?: string }>;
   edges?: Array<{ id: string; from: string; to: string; label?: string }>;
 }
 
@@ -153,6 +153,46 @@ describe("mapas de arquitetura — coerência interna", () => {
     for (const peca of ["demandas", "fnatrito", "libradar", "toolradar", "inbox", "rotalead", "crmleads"]) {
       expect(grau(peca), `${peca} com menos de 2 arestas — é ilha pelo invariante 1`).toBeGreaterThanOrEqual(2);
     }
+  });
+
+  it("a vitrine determinística e o dedupe do turno estão ligados ao fluxo real", () => {
+    const m = JSON.parse(
+      fs.readFileSync(path.join(DIR, "agente-envia-produto.architecture.json"), "utf8"),
+    ) as Mapa;
+    const grau = (id: string) =>
+      (m.edges ?? []).filter((e) => e.from === id || e.to === id).length;
+    for (const peca of [
+      "vitrine",
+      "configgatilho",
+      "inbound",
+      "gatilho",
+      "dedupe",
+      "anuncio",
+      "saudacao",
+    ]) {
+      expect(grau(peca), `${peca} com menos de 2 arestas`).toBeGreaterThanOrEqual(2);
+    }
+    expect((m.nodes ?? []).find((node) => node.id === "gatilho")?.label).toContain("fim do turno");
+    expect((m.nodes ?? []).find((node) => node.id === "dedupe")?.label).toContain("parecido");
+    expect((m.nodes ?? []).find((node) => node.id === "anuncio")?.label).toContain("remove só");
+    expect((m.nodes ?? []).find((node) => node.id === "saudacao")?.label).toContain("12 horas");
+    const sandbox = (m.nodes ?? []).find((node) => node.id === "sandbox");
+    expect(sandbox?.sublabel).toContain("rajada");
+    expect(sandbox?.sublabel).toContain("relógio");
+  });
+
+  it("a promessa explícita sem passagem está ligada ao turno e ao handoff humano", () => {
+    const m = JSON.parse(
+      fs.readFileSync(path.join(DIR, "agent-turn.workflow.json"), "utf8"),
+    ) as Mapa;
+    const grau = (id: string) =>
+      (m.edges ?? []).filter((e) => e.from === id || e.to === id).length;
+    expect(grau("promessa-handoff")).toBeGreaterThanOrEqual(2);
+    expect(
+      (m.edges ?? []).some(
+        (e) => e.from === "promessa-handoff" && e.to === "handoff",
+      ),
+    ).toBe(true);
   });
 });
 

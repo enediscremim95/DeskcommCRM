@@ -56,4 +56,29 @@ describe("leitura simples das automações", () => {
     );
     expect(frase).toContain("ENTÃO remova a tag configurada");
   });
+
+  it("lista regra com bolha de imagem sem transformar o objeto em texto genérico", () => {
+    const frase = resumoDaRegra(
+      {
+        ...REGRA,
+        actions: [{
+          type: "send_whatsapp_message",
+          config: {
+            channel_session_id: "canal-1",
+            fila: "primeira_mensagem",
+            templates: [
+              "Ótimo dia! Sou a Lorenza da Sublimando! Como vai?",
+              "Vou te enviar os modelos e valores detalhados, Bianca",
+              { tipo: "imagem", arquivo: "natal/01.jpg", legenda: "" },
+            ],
+          },
+        }],
+      },
+      [],
+      t,
+    );
+
+    expect(frase).toContain("[Imagem: natal/01.jpg]");
+    expect(frase).not.toContain("[object Object]");
+  });
 });

@@ -4,6 +4,7 @@
  * (`lib/automation/engine.ts` → EXPECTED_ENTITY_KIND) reconhece.
  */
 import { z } from "zod";
+import { listaDeBolhasSchema } from "@/lib/automation/bolha-de-mensagem";
 
 export const TRIGGER_EVENTS = [
   "lead.created",
@@ -48,17 +49,13 @@ export const conditionSchema = z.object({
   value: z.string().max(500),
 });
 
-const templateDeBolhaSchema = z
-  .string()
-  .max(1000)
-  .refine((value) => value.trim().length > 0, "A bolha não pode ficar vazia.");
-
 const sendWhatsappConfigSchema = z
   .object({
     channel_session_id: z.string().uuid(),
     template: z.string().min(1).max(2000).optional(),
-    templates: z.array(templateDeBolhaSchema).min(2).max(4).optional(),
+    templates: listaDeBolhasSchema.optional(),
     pausa_entre_bolhas_segundos: z.number().int().min(1).max(10).optional(),
+    pausa_entre_imagens_segundos: z.number().int().min(1).max(10).optional(),
     /** Opt-in explícito. Ausente preserva integralmente o envio legado. */
     fila: z.literal("primeira_mensagem").optional(),
   })
@@ -82,6 +79,13 @@ const sendWhatsappConfigSchema = z
         code: "custom",
         path: ["pausa_entre_bolhas_segundos"],
         message: "A pausa só existe quando templates foi informado.",
+      });
+    }
+    if (config.pausa_entre_imagens_segundos !== undefined && !config.templates) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["pausa_entre_imagens_segundos"],
+        message: "A pausa entre imagens só existe quando templates foi informado.",
       });
     }
   });
