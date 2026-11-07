@@ -5,7 +5,7 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import type { Locale } from "date-fns";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { Phone, Robot } from "@/lib/ui/icons";
+import { Phone, PushPin, Robot, Star } from "@/lib/ui/icons";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
@@ -233,7 +233,15 @@ export function ConversationListItem({
           >
             {displayName}
           </span>
-          <span className="shrink-0 text-[11px] tabular-nums text-text-subtle">{time}</span>
+          <span className="flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-text-subtle">
+            {conversation.pinned_at && (
+              <PushPin size={11} weight="fill" aria-label={t("Conversa fixada")} />
+            )}
+            {conversation.favorited_at && (
+              <Star size={11} weight="fill" aria-label={t("Conversa favorita")} />
+            )}
+            {time}
+          </span>
         </div>
 
         <div className="mt-0.5 flex items-center justify-between gap-2">

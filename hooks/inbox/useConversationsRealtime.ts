@@ -84,11 +84,38 @@ export interface ConversationsFilters {
   search?: string;
   channel_session_id?: string;
   tag?: string;
+  /** Preferências pessoais do usuário atual. */
+  favorited?: boolean;
+  pinned?: boolean;
 }
 
-interface ListResponse {
+export interface ListResponse {
   data: ConversationWithContact[];
   meta?: { cursor?: string | null; has_more?: boolean };
+}
+
+export function conversationsSearchParams(
+  filters: ConversationsFilters,
+  pageParam?: string,
+): URLSearchParams {
+  const qs = new URLSearchParams();
+  if (filters.status) {
+    const lista: readonly StatusDeConversa[] =
+      typeof filters.status === "string" ? [filters.status] : filters.status;
+    qs.set("status", lista.join(","));
+  }
+  if (filters.comando?.length) qs.set("comando", filters.comando.join(","));
+  if (filters.sort === "recent") qs.set("sort", "recent");
+  if (filters.exclude_finished) qs.set("exclude_finished", "true");
+  if (filters.assigned_to) qs.set("assigned_to", filters.assigned_to);
+  if (filters.search) qs.set("search", filters.search);
+  if (filters.channel_session_id) qs.set("channel_session_id", filters.channel_session_id);
+  if (filters.tag) qs.set("tag", filters.tag);
+  if (filters.favorited) qs.set("favorited", "true");
+  if (filters.pinned) qs.set("pinned", "true");
+  if (pageParam) qs.set("cursor", pageParam);
+  qs.set("limit", "50");
+  return qs;
 }
 
 export function useConversationsRealtime(filters: ConversationsFilters, orgId: string | null) {
@@ -99,7 +126,7 @@ export function useConversationsRealtime(filters: ConversationsFilters, orgId: s
     queryKey,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
-      const qs = new URLSearchParams();
+      const qs = conversationsSearchParams(filters, pageParam);
       // Lista vira `open,pending`; valor único continua saindo como antes.
       if (filters.status) {
         const lista: readonly StatusDeConversa[] =
@@ -118,6 +145,8 @@ export function useConversationsRealtime(filters: ConversationsFilters, orgId: s
       if (filters.search) qs.set("search", filters.search);
       if (filters.channel_session_id) qs.set("channel_session_id", filters.channel_session_id);
       if (filters.tag) qs.set("tag", filters.tag);
+      if (filters.favorited) qs.set("favorited", "true");
+      if (filters.pinned) qs.set("pinned", "true");
       if (pageParam) qs.set("cursor", pageParam);
       qs.set("limit", "50");
       try {

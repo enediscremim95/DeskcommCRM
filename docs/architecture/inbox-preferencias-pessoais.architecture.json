@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Preferências pessoais do Inbox",
+    "subtitle": "Favoritos, fixações e estrelas isolados por organização e usuário",
+    "output": "inbox-preferencias-pessoais.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "operador", "label": "Operador" },
+    { "id": "interface", "label": "Interface" },
+    { "id": "api", "label": "API" },
+    { "id": "dados", "label": "Dados" }
+  ],
+  "mainPath": ["gesto", "otimista", "rota", "rls", "estado", "leitura"],
+  "nodes": [
+    { "id": "gesto", "lane": "operador", "col": 0, "type": "external", "label": "Gesto pessoal", "sublabel": "favoritar, fixar ou estrelar" },
+    { "id": "otimista", "lane": "interface", "col": 1, "type": "frontend", "label": "React Query", "sublabel": "atualiza agora e reverte na falha" },
+    { "id": "rota", "lane": "api", "col": 2, "type": "backend", "label": "Personal state", "sublabel": "org e user saem da sessão" },
+    { "id": "rls", "lane": "dados", "col": 3, "type": "security", "label": "RLS pessoal", "sublabel": "membership da org e auth.uid" },
+    { "id": "estado", "lane": "dados", "col": 4, "type": "database", "label": "Tabelas pessoais", "sublabel": "conversa e mensagem, sem metadata compartilhado" },
+    { "id": "limite", "lane": "dados", "col": 4, "type": "security", "label": "Limite de fixadas", "sublabel": "cinco por org e usuário sob lock" },
+    { "id": "leitura", "lane": "interface", "col": 5, "type": "frontend", "label": "Inbox", "sublabel": "fixadas no topo, Favoritas e estrela no balão" },
+    { "id": "navegacao", "lane": "interface", "col": 5, "type": "frontend", "label": "Entrada do Inbox", "sublabel": "lista vazia no desktop e lista primeiro no celular" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "gesto", "to": "otimista", "label": "toque visível" },
+    { "id": "e2", "from": "otimista", "to": "rota", "label": "PATCH idempotente" },
+    { "id": "e3", "from": "rota", "to": "rls", "label": "escopo confiável" },
+    { "id": "e4", "from": "rls", "to": "estado", "label": "próprias linhas" },
+    { "id": "e5", "from": "estado", "to": "limite", "label": "trigger transacional" },
+    { "id": "e6", "from": "limite", "to": "rota", "label": "conflito claro" },
+    { "id": "e7", "from": "estado", "to": "leitura", "label": "enriquecimento pessoal" },
+    { "id": "e8", "from": "leitura", "to": "otimista", "label": "novo gesto" },
+    { "id": "e9", "from": "navegacao", "to": "leitura", "label": "abre sem conversa" },
+    { "id": "e10", "from": "leitura", "to": "navegacao", "label": "volta à lista no celular" }
+  ],
+  "cards": [
+    { "dot": "green", "title": "Isolamento", "items": ["organization_id vem da sessão", "user_id vem da sessão", "RLS impede leitura e escrita de outra pessoa"] },
+    { "dot": "amber", "title": "Reservado", "items": ["muted_until e marked_unread_at existem sem interface", "não há painel de favoritas de mensagens", "sendMessageHandler permanece intocado"] }
+  ]
+}

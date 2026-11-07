@@ -57,6 +57,7 @@ export const ApiErrorCodes = {
   next_action_changed: "next_action_changed", // o agente reescreveu a proposta entre o render e o clique
   channel_archived: "channel_archived", // ação sobre canal que o usuário excluiu (a linha só sobrevive como âncora das FKs)
   channel_connector_conflict: "channel_connector_conflict",
+  inbox_pin_limit_reached: "inbox_pin_limit_reached",
   knowledge_source_type_in_use: "knowledge_source_type_in_use", // já existe fonte ATIVA daquele tipo para o agente (índice ai_knowledge_sources_unique_per_agent)
   gerenciado_pelo_painel: "gerenciado_pelo_painel",
 

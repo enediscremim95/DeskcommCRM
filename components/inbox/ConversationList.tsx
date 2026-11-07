@@ -23,6 +23,8 @@ interface ListResponse {
 interface Props {
   /** Query já montada no pai — evita duplicar subscription Realtime + refetch. */
   listQuery: UseInfiniteQueryResult<InfiniteData<ListResponse>, Error>;
+  /** Consulta separada para fixadas, inclusive fora da primeira página. */
+  pinnedQuery: UseInfiniteQueryResult<InfiniteData<ListResponse>, Error>;
   filters: ConversationsFilters;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -32,8 +34,24 @@ interface Props {
   onVisibleChange?: (ids: string[]) => void;
 }
 
+export function orderConversationsWithPinnedFirst(
+  conversas: ConversationWithContact[],
+  fixadas: ConversationWithContact[],
+): ConversationWithContact[] {
+  const porId = new Map<string, ConversationWithContact>();
+  for (const item of [...fixadas, ...conversas]) {
+    if (item.pinned_at) porId.set(item.id, item);
+  }
+  const fixadasOrdenadas = [...porId.values()].sort(
+    (a, b) => Date.parse(b.pinned_at ?? "") - Date.parse(a.pinned_at ?? ""),
+  );
+  const idsFixados = new Set(fixadasOrdenadas.map((item) => item.id));
+  return [...fixadasOrdenadas, ...conversas.filter((item) => !idsFixados.has(item.id))];
+}
+
 export function ConversationList({
   listQuery: q,
+  pinnedQuery,
   filters,
   selectedId,
   onSelect,
@@ -63,8 +81,14 @@ export function ConversationList({
 
   const items = useMemo(() => {
     const all: ConversationWithContact[] = q.data?.pages.flatMap((p) => p.data) ?? [];
-    return clientFilter ? all.filter(clientFilter) : all;
-  }, [q.data, clientFilter]);
+    const pinned: ConversationWithContact[] =
+      pinnedQuery.data?.pages.flatMap((p) => p.data) ?? [];
+    const ordered = orderConversationsWithPinnedFirst(all, pinned);
+    const pessoais = filters.favorited
+      ? ordered.filter((item) => item.favorited_at != null)
+      : ordered;
+    return clientFilter ? pessoais.filter(clientFilter) : pessoais;
+  }, [q.data, pinnedQuery.data, filters.favorited, clientFilter]);
 
   // Notify parent of currently-visible IDs (for j/k nav). Must use effect
   // (not render-time call) — invoking onVisibleChange during render triggers
@@ -107,7 +131,7 @@ export function ConversationList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
-  if (q.isLoading) {
+  if (q.isLoading || pinnedQuery.isLoading) {
     return (
       <div className="space-y-3 p-3">
         {[1, 2, 3, 4, 5].map((i) => (
@@ -117,11 +141,19 @@ export function ConversationList({
     );
   }
 
-  if (q.isError) {
+  if (q.isError || pinnedQuery.isError) {
     return (
       <div className="p-4 text-center text-sm text-muted-foreground">
         <p>{t("Erro ao carregar conversas.")}</p>
-        <Button size="sm" variant="outline" className="mt-2" onClick={() => q.refetch()}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-2"
+          onClick={() => {
+            void q.refetch();
+            void pinnedQuery.refetch();
+          }}
+        >
           Tentar novamente
         </Button>
       </div>
