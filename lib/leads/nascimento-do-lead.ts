@@ -76,7 +76,7 @@ const ROTULO_DE_ANUNCIO: Record<string, string> = {
  * "não devia nascer" de "falhou ao nascer", e a segunda é a que custa caro.
  */
 export type MotivoSemLead =
-  | "janela_reenvio" // a entrada curta alimentou o card recém-criado
+  | "janela_reenvio" // a entrada alimentou o card aberto já existente
   | "contato_bloqueado" // pediu para sair; criar oportunidade seria desrespeito registrado
   | "sem_funil_de_entrada" // a organização não tem funil padrão — falha de configuração, visível
   | "sem_etapa" // o funil existe e não tem etapa utilizável
@@ -147,11 +147,12 @@ export async function funilDeEntrada(
 }
 
 /**
- * Garante que a conversa tenha um lead. Uma nova entrada dentro da janela curta
- * alimenta o card recém-criado; depois dela um novo card aberto é permitido.
+ * Garante que a conversa tenha um lead. Enquanto houver card inbound aberto,
+ * a mensagem alimenta esse mesmo card e preserva sua etapa, sem limite de tempo.
  *
- * **Um lead por DEMANDA, não por mensagem.** O tempo separa o reenvio técnico da
- * nova demanda. Fechar o card também libera imediatamente uma nova demanda.
+ * **Um lead por DEMANDA, não por mensagem.** Fechar o card libera imediatamente
+ * uma nova demanda. A janela de tempo continua pertencendo às fontes de
+ * formulário que optaram por juntar submissões repetidas.
  */
 export async function garantirLeadDaConversa(
   db: SupabaseClient,
@@ -179,13 +180,13 @@ export async function garantirLeadDaConversa(
       sourceModule: "canal.ingest",
       sourceId: conversationId,
       actor: { type: "webhook_source", id: "canal-inbound" },
-      reason: "Nova mensagem recebida dentro da janela de reenvio.",
+      reason: "Nova mensagem recebida no card aberto do contato.",
       payload: { conversation_id: conversationId, collision_recovered: colisao },
     });
     return { criado: false, motivo: "janela_reenvio", leadId, colisao };
   };
 
-  // 2 · existe card aberto criado dentro da janela curta?
+  // 2 · existe card inbound aberto para este contato, em qualquer idade?
   let entrada;
   try {
     entrada = await prepararEntradaNaJanela(db, {
