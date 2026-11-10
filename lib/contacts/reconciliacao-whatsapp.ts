@@ -11,7 +11,12 @@ export type ResultadoReconciliacaoWhatsapp = {
   form_contact_id?: string;
   merge_queue_id?: string;
   telefone_original_formulario?: string | null;
-  motivo?: "multiplos_candidatos" | "nome_incompativel";
+  motivo?:
+    | "multiplos_candidatos"
+    | "nome_incompativel"
+    | "nome_incompleto"
+    | "nome_parecido";
+  regra?: string;
 };
 
 /**
