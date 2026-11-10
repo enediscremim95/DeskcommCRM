@@ -30,10 +30,11 @@ export type ActiveLeadResolution =
  *
  * O harness trata "lead" como o CONTATO (inbound-turn.ts: `leadId = contact_id`)
  * e `lead_state` é único por contato; o CRM trata lead como NEGÓCIO, e a mesma
- * pessoa pode ter N negócios abertos. Entradas automáticas dentro da janela
- * curta configurada pela organização alimentam somente o card recém-criado;
- * passada a janela, outro negócio aberto continua sendo comportamento válido.
- * Este é o ponteiro entre os dois mundos.
+ * pessoa pode ter N negócios abertos. A entrada automática (WhatsApp e
+ * formulário) reaproveita o aberto no mesmo funil, sem prazo. Vários abertos
+ * ainda podem existir: criação de propósito na tela, na API ou na ferramenta
+ * do agente, ou o histórico anterior a essa regra. Este é o ponteiro entre
+ * os dois mundos.
  *
  * Regra (§3.2): negócio ABERTO mais recentemente ativo, preferindo o pipeline
  * default. Quando o alvo é ambíguo ou inexistente, **não adivinha**: devolve

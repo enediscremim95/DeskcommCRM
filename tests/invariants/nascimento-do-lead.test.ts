@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 
+import { buscarNegocioAbertoNoFunil } from "@/lib/leads/janela-de-reenvio";
 import { funilDeEntrada, garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
 
 import { pgComoSupabase } from "../pg-como-supabase";
@@ -19,9 +20,10 @@ import { pgComoSupabase } from "../pg-como-supabase";
  * organização nascer com funil, o que é um TRIGGER
  * (`fn_seed_default_pipeline_for_org`). Nada disso existe fora do Postgres.
  *
- * Congela: (1) o lead nasce na etapa de entrada e emite atividade; (2) um por
- * demanda, não um por mensagem; (3) demanda nova depois de fechada; (4) quem
- * pediu para sair não vira oportunidade; (5) cada recusa tem motivo próprio;
+ * Congela: (1) o lead nasce na etapa de entrada e emite atividade; (2) mensagem
+ * nova reaproveita o negócio aberto no mesmo funil, sem prazo; (3) demanda nova
+ * depois de fechada, ou quando o aberto está em outro funil; (4) quem pediu
+ * para sair não vira oportunidade; (5) cada recusa tem motivo próprio;
  * (6) etapa de ganho/perda nunca é a de entrada, mesmo sendo a primeira.
  */
 const container = process.env.TEST_DB_CONTAINER;
@@ -53,6 +55,56 @@ async function criarOrg(id: string, slug: string): Promise<void> {
      values ($1, $2, 'Nascimento LTDA', 'Nascimento') on conflict (id) do nothing`,
     [id, slug],
   );
+}
+
+async function funilPadrao(org: string): Promise<{ pipelineId: string; stageId: string }> {
+  const { rows } = await pool.query<{ pipeline_id: string; stage_id: string }>(
+    `select p.id as pipeline_id, s.id as stage_id
+       from crm_pipelines p
+       join crm_stages s on s.pipeline_id = p.id and s.organization_id = p.organization_id
+      where p.organization_id = $1 and p.is_default = true
+        and s.is_archived = false and s.is_won = false and s.is_lost = false
+      order by s.position asc
+      limit 1`,
+    [org],
+  );
+  return { pipelineId: rows[0]!.pipeline_id, stageId: rows[0]!.stage_id };
+}
+
+async function inserirNegocio(args: {
+  org: string;
+  contato: string;
+  pipelineId: string;
+  stageId: string;
+  source: string;
+  sourceMetadata?: Record<string, unknown>;
+  customFields?: Record<string, unknown>;
+  createdAtSql?: string;
+  lastActivitySql?: string | null;
+  status?: string;
+}): Promise<string> {
+  const { rows } = await pool.query<{ id: string }>(
+    `insert into crm_leads (
+       organization_id, pipeline_id, stage_id, contact_id, title, status,
+       source, source_metadata, custom_fields, tags, created_at, last_activity_at
+     ) values (
+       $1, $2, $3, $4, 'Card do formulário', $5,
+       $6, $7::jsonb, $8::jsonb, '{}'::text[],
+       ${args.createdAtSql ?? "now()"},
+       ${args.lastActivitySql === undefined ? "now()" : (args.lastActivitySql ?? "null")}
+     ) returning id`,
+    [
+      args.org,
+      args.pipelineId,
+      args.stageId,
+      args.contato,
+      args.status ?? "open",
+      args.source,
+      JSON.stringify(args.sourceMetadata ?? { webhook_source_id: "formulario-do-site" }),
+      JSON.stringify(args.customFields ?? { origem: "formulario" }),
+    ],
+  );
+  return rows[0]!.id;
 }
 
 async function criarContato(org: string, nome: string | null): Promise<string> {
@@ -273,7 +325,7 @@ describe("janela curta separa reenvio de demanda nova", () => {
     expect(primeira.criado).toBe(true);
     expect(segunda.criado).toBe(false);
     if (segunda.criado) return;
-    expect(segunda.motivo).toBe("janela_reenvio");
+    expect(segunda.motivo).toBe("negocio_aberto");
     expect(segunda.leadId).toBe(primeira.criado ? primeira.leadId : undefined);
 
     const { rows } = await pool.query<{ n: string }>(
@@ -337,7 +389,7 @@ describe("janela curta separa reenvio de demanda nova", () => {
     expect(atividades.rows[0]!.n).toBe("5");
   });
 
-  it("passada a janela, cria outro negócio mesmo com o primeiro ainda aberto", async () => {
+  it("passada a janela, o negócio ainda aberto é reaproveitado", async () => {
     const contato = await criarContato(ORG_VIVA, "Nova Demanda Oliveira");
     const dados = {
       organizationId: ORG_VIVA,
@@ -354,13 +406,16 @@ describe("janela curta separa reenvio de demanda nova", () => {
       [primeira.leadId],
     );
     const segunda = await garantirLeadDaConversa(db, dados);
-    expect(segunda.criado, "card aberto antigo não bloqueia uma demanda nova").toBe(true);
+    expect(segunda.criado).toBe(false);
+    if (segunda.criado) return;
+    expect(segunda.motivo).toBe("negocio_aberto");
+    expect(segunda.leadId).toBe(primeira.leadId);
 
     const cards = await pool.query<{ n: string }>(
       "select count(*) as n from crm_leads where contact_id = $1 and status = 'open'",
       [contato],
     );
-    expect(cards.rows[0]!.n).toBe("2");
+    expect(cards.rows[0]!.n).toBe("1");
   });
 
   it("depois de FECHADO, quem volta a escrever abre demanda nova", async () => {
@@ -391,6 +446,208 @@ describe("janela curta separa reenvio de demanda nova", () => {
       [contato],
     );
     expect(rows[0]!.n).toBe("2");
+  });
+
+  it("WhatsApp horas depois reaproveita o lead aberto do formulário, sem a trava do canal", async () => {
+    const contato = await criarContato(ORG_VIVA, "Formulario Tardio");
+    const funil = await funilPadrao(ORG_VIVA);
+    const formulario = await inserirNegocio({
+      org: ORG_VIVA,
+      contato,
+      pipelineId: funil.pipelineId,
+      stageId: funil.stageId,
+      source: "webhook",
+      createdAtSql: "now() - interval '6 hours'",
+      lastActivitySql: "now() - interval '6 hours'",
+    });
+    await pool.query(
+      "update crm_leads set reentry_guard_until = null, reentry_guard_key = null where id = $1",
+      [formulario],
+    );
+
+    const mensagem = await garantirLeadDaConversa(db, {
+      organizationId: ORG_VIVA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Formulario Tardio",
+    });
+    expect(mensagem.criado).toBe(false);
+    if (mensagem.criado) return;
+    expect(mensagem.motivo).toBe("negocio_aberto");
+    expect(mensagem.leadId).toBe(formulario);
+
+    const depoisDaJuncao = await garantirLeadDaConversa(db, {
+      organizationId: ORG_VIVA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Formulario Tardio",
+    });
+    expect(depoisDaJuncao.criado).toBe(false);
+    if (depoisDaJuncao.criado) return;
+    expect(depoisDaJuncao.leadId).toBe(formulario);
+
+    const cards = await pool.query<{ n: string }>(
+      "select count(*) as n from crm_leads where organization_id = $1 and contact_id = $2",
+      [ORG_VIVA, contato],
+    );
+    expect(cards.rows[0]!.n, "formulário mais dois WhatsApps continuam um card só").toBe("1");
+  });
+
+  it("dois formulários com contexto e um WhatsApp em seguida não abrem um terceiro card", async () => {
+    const contato = await criarContato(ORG_VIVA, "Dois Formularios");
+    const funil = await funilPadrao(ORG_VIVA);
+    const primeiro = await inserirNegocio({
+      org: ORG_VIVA,
+      contato,
+      pipelineId: funil.pipelineId,
+      stageId: funil.stageId,
+      source: "webhook",
+      createdAtSql: "now() - interval '3 hours'",
+      lastActivitySql: "now() - interval '3 hours'",
+    });
+    const segundo = await inserirNegocio({
+      org: ORG_VIVA,
+      contato,
+      pipelineId: funil.pipelineId,
+      stageId: funil.stageId,
+      source: "webhook",
+      sourceMetadata: { webhook_source_id: "formulario-do-site", envio: 2 },
+      createdAtSql: "now() - interval '7 seconds'",
+      lastActivitySql: "now() - interval '7 seconds'",
+    });
+
+    const whatsapp = await garantirLeadDaConversa(db, {
+      organizationId: ORG_VIVA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Dois Formularios",
+    });
+    expect(whatsapp.criado).toBe(false);
+    if (whatsapp.criado) return;
+    expect(whatsapp.leadId).toBe(segundo);
+    expect(whatsapp.leadId).not.toBe(primeiro);
+
+    const cards = await pool.query<{ n: string }>(
+      "select count(*) as n from crm_leads where organization_id = $1 and contact_id = $2 and status = 'open'",
+      [ORG_VIVA, contato],
+    );
+    expect(cards.rows[0]!.n).toBe("2");
+  });
+
+  it("negócio aberto em outro funil não impede o card do funil de entrada", async () => {
+    const contato = await criarContato(ORG_VIVA, "Outro Funil");
+    const { rows: outro } = await pool.query<{ pipeline_id: string }>(
+      `insert into crm_pipelines (organization_id, name, slug, is_default, position)
+       values ($1, 'Outro funil', $2, false, 9000)
+       returning id as pipeline_id`,
+      [ORG_VIVA, `outro-funil-${contato.slice(0, 8)}`],
+    );
+    const pipelineId = outro[0]!.pipeline_id;
+    const { rows: etapa } = await pool.query<{ id: string }>(
+      `insert into crm_stages (organization_id, pipeline_id, name, slug, position, is_won, is_lost)
+       values ($1, $2, 'Entrada paralela', $3, 1000, false, false)
+       returning id`,
+      [ORG_VIVA, pipelineId, `entrada-paralela-${contato.slice(0, 8)}`],
+    );
+    await inserirNegocio({
+      org: ORG_VIVA,
+      contato,
+      pipelineId,
+      stageId: etapa[0]!.id,
+      source: "webhook",
+    });
+
+    const mensagem = await garantirLeadDaConversa(db, {
+      organizationId: ORG_VIVA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Outro Funil",
+    });
+    expect(mensagem.criado).toBe(true);
+    if (!mensagem.criado) return;
+    expect(mensagem.pipelineId).not.toBe(pipelineId);
+
+    const cards = await pool.query<{ n: string }>(
+      "select count(*) as n from crm_leads where organization_id = $1 and contact_id = $2 and status = 'open'",
+      [ORG_VIVA, contato],
+    );
+    expect(cards.rows[0]!.n).toBe("2");
+  });
+
+  it("a busca do negócio aberto não atravessa organização, contato nem funil", async () => {
+    const contato = await criarContato(ORG_VIVA, "Filtro Org");
+    const vizinho = await criarContato(ORG_VIVA, "Vizinho");
+    const funil = await funilPadrao(ORG_VIVA);
+    const lead = await inserirNegocio({
+      org: ORG_VIVA,
+      contato,
+      pipelineId: funil.pipelineId,
+      stageId: funil.stageId,
+      source: "webhook",
+    });
+
+    expect(
+      await buscarNegocioAbertoNoFunil(db, {
+        organizationId: ORG_VIVA,
+        contactId: contato,
+        pipelineId: funil.pipelineId,
+      }),
+    ).toBe(lead);
+    expect(
+      await buscarNegocioAbertoNoFunil(db, {
+        organizationId: ORG_GANHO_PRIMEIRO,
+        contactId: contato,
+        pipelineId: funil.pipelineId,
+      }),
+    ).toBeNull();
+    expect(
+      await buscarNegocioAbertoNoFunil(db, {
+        organizationId: ORG_VIVA,
+        contactId: vizinho,
+        pipelineId: funil.pipelineId,
+      }),
+    ).toBeNull();
+
+    const { rows: outro } = await pool.query<{ id: string }>(
+      `insert into crm_pipelines (organization_id, name, slug, is_default, position)
+       values ($1, 'Funil do filtro', $2, false, 9100) returning id`,
+      [ORG_VIVA, `funil-filtro-${contato.slice(0, 8)}`],
+    );
+    expect(
+      await buscarNegocioAbertoNoFunil(db, {
+        organizationId: ORG_VIVA,
+        contactId: contato,
+        pipelineId: outro[0]!.id,
+      }),
+    ).toBeNull();
+  });
+
+  it("negócio aberto de outra organização não é reaproveitado", async () => {
+    const contato = await criarContato(ORG_VIVA, "Isolamento");
+    const daOutra = await garantirLeadDaConversa(db, {
+      organizationId: ORG_GANHO_PRIMEIRO,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Isolamento",
+    });
+    const daViva = await garantirLeadDaConversa(db, {
+      organizationId: ORG_VIVA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Isolamento",
+    });
+    expect(daViva.criado).toBe(true);
+    expect(daOutra.criado).toBe(true);
+    if (!daViva.criado || !daOutra.criado) return;
+    expect(daOutra.leadId).not.toBe(daViva.leadId);
+
+    const orgs = await pool.query<{ organization_id: string }>(
+      "select organization_id from crm_leads where id = any($1::uuid[])",
+      [[daViva.leadId, daOutra.leadId]],
+    );
+    expect(orgs.rows.map((r) => r.organization_id).sort()).toEqual(
+      [ORG_GANHO_PRIMEIRO, ORG_VIVA].sort(),
+    );
   });
 });
 

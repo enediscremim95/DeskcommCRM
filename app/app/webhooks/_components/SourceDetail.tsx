@@ -463,16 +463,16 @@ export function SourceDetail({ source, open, onOpenChange, onUpdated }: Props) {
           <section className="flex items-start justify-between gap-4 rounded-sm border border-border p-3">
             <div className="space-y-1">
               <p className="text-sm font-medium text-text">
-                {t("Esta origem pode repetir o mesmo envio")}
+                {t("Segurar envios que chegam juntos")}
               </p>
               <p className="text-xs text-muted-foreground">
                 {t(
-                  "Ative se a ferramenta às vezes manda a mesma pessoa mais de uma vez. Os envios próximos ficam no mesmo card.",
+                  "Dois envios da mesma pessoa no mesmo instante ficam num card só. Um negócio já aberto neste funil recebe o novo envio mesmo com esta opção desligada.",
                 )}
               </p>
             </div>
             <Switch
-              aria-label={t("Esta origem pode repetir o mesmo envio")}
+              aria-label={t("Segurar envios que chegam juntos")}
               checked={source.merge_repeated_submissions}
               disabled={update.isPending}
               onCheckedChange={(checked) =>
@@ -483,8 +483,8 @@ export function SourceDetail({ source, open, onOpenChange, onUpdated }: Props) {
                       onUpdated(res.data);
                       toast.success(
                         checked
-                          ? t("Envios repetidos serão mantidos no mesmo card.")
-                          : t("Cada novo envio voltará a criar um card."),
+                          ? t("Envios no mesmo instante ficam no mesmo card.")
+                          : t("Dois envios no mesmo instante podem abrir dois cards. Um negócio já aberto continua recebendo o novo envio."),
                       );
                     },
                   },
