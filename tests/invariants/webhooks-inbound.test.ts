@@ -1361,4 +1361,87 @@ describe("POST /api/v1/webhooks/in/[token] — RD Station (envelope leads[])", (
     expect(lead.title).toBe("Flat No RD Source");
     expect(lead.external_id).toBeNull(); // genérico sem external_id de topo
   });
+
+  it("reenvio do formulário horas depois entra no negócio aberto, mesmo com a opção de repetir desligada", async () => {
+    const telefone = "55 15988880121";
+    const res1 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-aberto-a", telefone, "reuso.aberto.a@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    expect(res1.status).toBe(200);
+    const lead1 = ((await res1.json()) as { data: { lead_id: string } }).data.lead_id;
+    sql(`update public.crm_leads set created_at = now() - interval '3 hours' where id = '${lead1}'`);
+
+    const res2 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-aberto-b", telefone, "reuso.aberto.b@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    expect(res2.status).toBe(200);
+    const lead2 = ((await res2.json()) as { data: { lead_id: string } }).data.lead_id;
+    expect(lead2).toBe(lead1);
+
+    const n = rows(
+      `select count(*)::int as n from public.crm_leads where contact_id = (select contact_id from public.crm_leads where id = '${lead1}')`,
+    )[0]!;
+    expect(n.n).toBe(1);
+    const capturas = rows(
+      `select outcome from public.webhook_lead_captures where lead_id = '${lead1}' order by received_at`,
+    );
+    expect(capturas.map((c) => c.outcome)).toEqual(["criado", "duplicado"]);
+  });
+
+  it("formulário depois de o negócio ser ganho abre outro card", async () => {
+    const telefone = "55 15988880122";
+    const res1 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-ganho-a", telefone, "reuso.ganho.a@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    const lead1 = ((await res1.json()) as { data: { lead_id: string } }).data.lead_id;
+    sql(`update public.crm_leads set status = 'won', closed_at = now() where id = '${lead1}'`);
+
+    const res2 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-ganho-b", telefone, "reuso.ganho.b@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    expect(res2.status).toBe(200);
+    const lead2 = ((await res2.json()) as { data: { lead_id: string } }).data.lead_id;
+    expect(lead2).not.toBe(lead1);
+    const abertos = rows(
+      `select count(*)::int as n from public.crm_leads
+        where contact_id = (select contact_id from public.crm_leads where id = '${lead2}')
+          and status = 'open'`,
+    )[0]!;
+    expect(abertos.n).toBe(1);
+  });
+
+  it("negócio aberto em outro funil não absorve o formulário deste funil", async () => {
+    const telefone = "55 15988880123";
+    const res1 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-funil-a", telefone, "reuso.funil.a@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    const lead1 = ((await res1.json()) as { data: { lead_id: string } }).data.lead_id;
+    const outroFunil = "dddddddd-5555-4000-8000-000000000191";
+    const outraEtapa = "dddddddd-5555-4000-8000-000000000192";
+    sql(`
+      insert into public.crm_pipelines (id, organization_id, name, slug, is_default)
+      values ('${outroFunil}', '${GOV_ORG}', 'Funil paralelo da captação', 'funil-paralelo-whin', false)
+      on conflict do nothing;
+      insert into public.crm_stages (id, organization_id, pipeline_id, name, slug, position)
+      values ('${outraEtapa}', '${GOV_ORG}', '${outroFunil}', 'Entrada paralela', 'entrada-paralela-whin', 1000)
+      on conflict do nothing;
+      update public.crm_leads set pipeline_id = '${outroFunil}', stage_id = '${outraEtapa}' where id = '${lead1}';
+    `);
+
+    const res2 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-funil-b", telefone, "reuso.funil.b@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    expect(res2.status).toBe(200);
+    const lead2 = ((await res2.json()) as { data: { lead_id: string } }).data.lead_id;
+    expect(lead2).not.toBe(lead1);
+    const novo = rows(`select pipeline_id, status from public.crm_leads where id = '${lead2}'`)[0]!;
+    expect(novo.pipeline_id).toBe(GOV_PIPELINE);
+    expect(novo.status).toBe("open");
+  });
 });
