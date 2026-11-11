@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 /**
  * GET /api/v1/mcp/tools
  *
@@ -25,7 +27,7 @@ import { juntarCatalogoComHandlers } from "@/lib/mcp/tools/catalogo-servido";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: NextRequest): Promise<Response> {
+async function GETComAuth(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authUser = await loadAuthUser();
   if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
@@ -36,6 +38,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   try {
     servidas = juntarCatalogoComHandlers(allTools, TOOL_CATALOG);
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     // Erro de programação, não estado do usuário: servir a capacidade sem
     // rótulo empurraria o defeito para a tela do dono da clínica.
     return fail(
@@ -56,3 +59,5 @@ export async function GET(_req: NextRequest): Promise<Response> {
 
   return ok({ tools }, { requestId });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

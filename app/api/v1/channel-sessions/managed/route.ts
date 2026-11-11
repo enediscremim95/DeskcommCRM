@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { randomUUID } from "node:crypto";
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
@@ -7,7 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { clientCanReconnectWhatsapp, clientCanViewIntegration } from "@/lib/integrations/access";
 
 export const dynamic = "force-dynamic";
-export async function GET() {
+async function GETComAuth() {
   const requestId = randomUUID();
   const user = await loadAuthUser();
   if (!user) return fail("unauthenticated", "Sessão expirada.", 401, { requestId });
@@ -31,7 +33,8 @@ export async function GET() {
       : await clientCanReconnectWhatsapp(admin, org.orgId);
     return ok(connector ? { ...connector, client_can_reconnect: canReconnect } : null, { requestId });
   }
-  catch {
+  catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     auditChannelConnectionFailure({
       organizationId: org.orgId,
       userId: user.id,
@@ -42,3 +45,5 @@ export async function GET() {
     return fail("internal_error", "Não foi possível carregar o conector.", 500, { requestId });
   }
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

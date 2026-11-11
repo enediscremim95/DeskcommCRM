@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { supportCallbackWriteAllowed } from "@/lib/impersonate/support";
 /**
  * GET /api/v1/agenda/google/callback — a volta do consentimento do Google.
@@ -134,7 +136,7 @@ function voltar(parametro: string): NextResponse {
   return resposta;
 }
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+async function GETComAuth(req: NextRequest): Promise<NextResponse> {
   const url = new URL(req.url);
   const recusa = url.searchParams.get("error");
   const code = url.searchParams.get("code");
@@ -152,7 +154,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let estado: ReturnType<typeof verificarEstado> = null;
   try {
     estado = verificarEstado(stateBruto, { segredo: env.INTERNAL_SECRET, agora: new Date() });
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return voltar("erro=retorno_nao_verificavel");
   }
   if (!estado) {
@@ -441,3 +444,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   return voltar("ok=agenda_conectada");
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

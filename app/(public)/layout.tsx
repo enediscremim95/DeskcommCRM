@@ -1,3 +1,4 @@
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 import { LogotipoDoProduto } from "@/components/branding/MarcaDoProduto";
 import { marcaEhADoProduto } from "@/lib/branding";
 import { marcaDaSaida } from "@/lib/branding/saida";
@@ -46,7 +47,7 @@ export default async function PublicLayout({ children }: { children: React.React
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   const locale = (user?.user_metadata?.locale as string | undefined) ?? null;
 
   return (

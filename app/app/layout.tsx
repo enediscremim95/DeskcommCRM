@@ -1,3 +1,4 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
 import { InterfaceRefresh } from "@/hooks/auth/InterfaceRefresh";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
@@ -25,7 +26,13 @@ import { integrationAccessForOrganization } from "@/lib/integrations/access";
 import { BrowserExtensionHeartbeat } from "./_components/BrowserExtensionHeartbeat";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await loadAuthUser();
+  let user;
+  try {
+    user = await loadAuthUser();
+  } catch (error) {
+    if (!(error instanceof AuthTemporariamenteIndisponivel)) throw error;
+    return <main role="alert" className="p-8"><p>{error.message}</p><a href="">Tentar novamente</a></main>;
+  }
   if (!user) redirect("/login");
 
   let activeOrg = await resolveActiveOrg(user);

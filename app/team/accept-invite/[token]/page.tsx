@@ -1,3 +1,4 @@
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * /team/accept-invite/[token] — public route (added to PUBLIC_PATHS).
  *
@@ -34,7 +35,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   const idioma = normalizarIdioma(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );

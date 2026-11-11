@@ -1,3 +1,4 @@
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 import Link from "next/link";
 
 import { SignupForm } from "@/components/auth/SignupForm";
@@ -31,7 +32,7 @@ export default async function SignupPage({
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   const idioma = normalizarIdioma(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );

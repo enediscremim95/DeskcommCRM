@@ -1,3 +1,6 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * GET /api/v1/conversations — list inbox (handler em ./_handler.ts).
  */
@@ -16,14 +19,14 @@ import { listConversationsHandler } from "./_handler";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest): Promise<Response> {
+async function GETComAuth(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const supabase = await createClient();
 
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
@@ -88,9 +91,12 @@ export async function GET(req: NextRequest): Promise<Response> {
       meta: { cursor, has_more },
     });
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });
     }
     throw err;
   }
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

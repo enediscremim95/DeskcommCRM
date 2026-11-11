@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/admin/incidents/[id]/resolve (S-11.11)
@@ -23,7 +25,7 @@ const bodySchema = z.object({
     .max(1000, "Nota de resolução deve ter no máximo 1000 caracteres"),
 });
 
-export async function POST(
+async function POSTComAuth(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -36,7 +38,8 @@ export async function POST(
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
@@ -44,7 +47,8 @@ export async function POST(
   try {
     const raw = await req.json();
     body = bodySchema.parse(raw);
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("validation_failed", "Invalid request body", 400, { requestId });
   }
 
@@ -117,3 +121,5 @@ export async function POST(
 
   return ok({ id, status: "resolved" }, { requestId });
 }
+
+export const POST = comAuthDisponivel(POSTComAuth);

@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
@@ -21,19 +23,21 @@ const inputSchema = z.object({
 });
 
 async function platformAdmin() {
-  try { return await requirePlatformAdmin(); } catch { return null; }
+  try { return await requirePlatformAdmin(); } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth; return null; }
 }
 
-export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function GETComAuth(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const requestId = randomUUID();
   if (!(await platformAdmin())) return fail("forbidden", "Platform admin required", 403, { requestId });
   const { id } = await context.params;
   if (!idSchema.safeParse(id).success) return fail("validation_failed", "Organização inválida.", 422, { requestId });
   try { return ok(await findManagedConnector(createAdminClient(), id), { requestId }); }
-  catch { return fail("internal_error", "Não foi possível carregar o conector.", 500, { requestId }); }
+  catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth; return fail("internal_error", "Não foi possível carregar o conector.", 500, { requestId }); }
 }
 
-export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function PUTComAuth(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
@@ -59,9 +63,13 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     });
     return ok(connector, { requestId });
   } catch (error) {
+    if (error instanceof AuthTemporariamenteIndisponivel) throw error;
     if (error instanceof ManagedConnectorError) {
       return fail(error.code, managedConnectorAdminErrorMessage(error.code), error.status, { requestId });
     }
     return fail("internal_error", "Não foi possível salvar o conector.", 500, { requestId });
   }
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const PUT = comAuthDisponivel(PUTComAuth);

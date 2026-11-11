@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 /**
  * GET /api/v1/ai/providers/:provider/models
  *
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
 const MODEL_COLUMNS =
   "id, provider, model_id, display_name, description, context_window, input_price_per_million_cents, output_price_per_million_cents, supports_tools, is_default_for_provider, deprecated_at, released_at";
 
-export async function GET(
+async function GETComAuth(
   _req: NextRequest,
   ctx: { params: Promise<{ provider: string }> },
 ): Promise<Response> {
@@ -55,3 +56,5 @@ export async function GET(
 
   return ok({ models: data ?? [] }, { requestId });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
