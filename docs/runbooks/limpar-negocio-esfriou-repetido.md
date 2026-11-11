@@ -39,25 +39,62 @@ execução tem de imprimir `duplicatas_a_apagar` igual a zero.
 
 Fica a primeira linha de cada sequência contínua de esfriamento do negócio.
 Uma anotação, uma mensagem, uma ligação atendida ou um "voltou a andar" entre
-dois esfriamentos abre outra sequência. Um intervalo de pelo menos 6 horas
+dois esfriamentos abre outra sequência. Um intervalo de pelo menos 1 hora
 entre dois "Negócio esfriou" do mesmo lead também abre outra sequência, mesmo
 sem atividade no meio: é o caso de o negócio ter saído da parada por um
-compromisso e esfriado de novo. Seis horas é de propósito largo. As repetições
-do defeito saem a cada passada, cerca de 15 minutos, sem buracos. Na dúvida a
-linha fica. Para outro intervalo:
+compromisso e esfriado de novo. As repetições do defeito saem a cada passada,
+cerca de 15 minutos, sem buracos. Intervalo menor mantém mais frases. Se
+`mantidas_pelo_intervalo` parecer pequeno demais, diminua o intervalo e meça
+de novo. As duplicatas que sobrarem saem numa segunda limpeza.
 
 ```bash
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
-  -v intervalo_esfriamento='12 hours' \
+  -v intervalo_esfriamento='30 minutes' \
   -f scripts/ops/limpar-negocio-esfriou-repetido.sql
 ```
 
 ## Pré-medição
 
-Rode isto antes do script. Não apaga nada. `seriam_apagadas` é a fila.
-`mantidas_pelo_intervalo` são frases que a regra antiga apagaria e que o
-intervalo de 6 horas mantém. Se `mantidas_pelo_intervalo` parecer pequeno
-demais para a operação, aumente o intervalo e meça de novo.
+Rode o histograma antes de escolher o intervalo. Não apaga nada. A faixa
+`15–30 min` é a cadência do defeito. Um vale entre essa faixa e os intervalos
+de horas é um bom corte. O padrão do script é 1 hora.
+
+```sql
+WITH pares AS (
+  SELECT performed_at - lag(performed_at) OVER (
+           PARTITION BY lead_id ORDER BY performed_at, id
+         ) AS intervalo
+    FROM public.crm_lead_activities
+   WHERE type = 'lead_cooled'
+)
+SELECT
+  CASE
+    WHEN intervalo < interval '15 minutes' THEN 1
+    WHEN intervalo < interval '30 minutes' THEN 2
+    WHEN intervalo < interval '1 hour' THEN 3
+    WHEN intervalo < interval '6 hours' THEN 4
+    WHEN intervalo < interval '1 day' THEN 5
+    ELSE 6
+  END AS ordem,
+  CASE
+    WHEN intervalo < interval '15 minutes' THEN '< 15 min'
+    WHEN intervalo < interval '30 minutes' THEN '15–30 min'
+    WHEN intervalo < interval '1 hour' THEN '30–60 min'
+    WHEN intervalo < interval '6 hours' THEN '1–6 h'
+    WHEN intervalo < interval '1 day' THEN '6–24 h'
+    ELSE '>= 1 dia'
+  END AS faixa,
+  count(*) AS pares
+  FROM pares
+ WHERE intervalo IS NOT NULL
+ GROUP BY 1, 2
+ ORDER BY 1;
+```
+
+A pré-medição abaixo também não apaga nada. `seriam_apagadas` é a fila.
+`mantidas_pelo_intervalo` são frases que a regra só por tipo de atividade
+apagaria e que o intervalo de 1 hora mantém. Se esse número parecer pequeno
+demais, diminua o intervalo na consulta (`interval '1 hour'`) e meça de novo.
 
 ```sql
 WITH esfriamentos AS (
@@ -71,7 +108,7 @@ WITH esfriamentos AS (
 pausas AS (
   SELECT id FROM esfriamentos
    WHERE anterior IS NOT NULL
-     AND performed_at - anterior >= interval '6 hours'
+     AND performed_at - anterior >= interval '1 hour'
 ),
 marcadores AS (
   SELECT a.id, a.lead_id, a.performed_at, a.type,
@@ -103,12 +140,12 @@ com_pausa AS (
     FROM ordenados WHERE type = 'lead_cooled'
 ),
 so_tipo_base AS (
-  SELECT id, lead_id, performed_at,
+  SELECT id, lead_id, type, performed_at,
          sum(CASE WHEN type <> 'lead_cooled' THEN 1 ELSE 0 END) OVER (
            PARTITION BY lead_id ORDER BY performed_at, id
            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
          ) AS episodio
-    FROM marcadores WHERE type = 'lead_cooled'
+    FROM marcadores
 ),
 so_tipo AS (
   SELECT id,
@@ -116,6 +153,7 @@ so_tipo AS (
            PARTITION BY lead_id, episodio ORDER BY performed_at, id
          ) AS n
     FROM so_tipo_base
+   WHERE type = 'lead_cooled'
 ),
 a_apagar AS (
   SELECT id FROM com_pausa WHERE n > 1

@@ -73,9 +73,9 @@ export interface ResultadoDaObservacao {
  * positiva — inclusive `voice_call`) mais `lead_reactivated`, que é o próprio
  * worker dizendo que o negócio voltou a andar. O script de limpeza usa a mesma
  * lista. Ele também abre episódio novo quando dois esfriamentos do mesmo lead
- * ficam separados por pelo menos o intervalo configurado (padrão 6 horas): uma
- * volta por `em_voo` não deixa atividade no meio, e apagar essa frase seria
- * perda. Na dúvida, o script mantém.
+ * ficam separados por pelo menos o intervalo configurado (padrão 1 hora).
+ * Intervalo menor mantém mais frases. As repetições do defeito saem a cada
+ * passada, cerca de 15 minutos.
  */
 export const TIPOS_QUE_ENCERRAM_ESFRIAMENTO = [
   "ai_turn",
@@ -172,9 +172,38 @@ export async function episodioDeEsfriamentoAberto(
   return !mesmoInstante.data;
 }
 
+/**
+ * A frase desta versão do estado já está na timeline. `detected_at` é o
+ * instante em que o banco gravou o bucket que ainda está salvo. Uma atividade
+ * do mesmo tipo a partir dali significa que a frase entrou e o upsert do
+ * estado falhou: a passada seguinte só corrige o estado, não escreve de novo.
+ * `em_voo` tem `detected_at` posterior ao esfriamento anterior, então a volta
+ * à parada ainda grava.
+ */
+async function atividadeJaEscritaNestaDeteccao(
+  admin: SupabaseClient,
+  organizationId: string,
+  leadId: string,
+  tipo: ActivityType,
+  detectedAt: string,
+): Promise<boolean> {
+  const achado = await admin
+    .from("crm_lead_activities")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("lead_id", leadId)
+    .eq("type", tipo)
+    .gte("performed_at", detectedAt)
+    .limit(1)
+    .maybeSingle();
+  if (achado.error) throw new Error(achado.error.message);
+  return Boolean(achado.data);
+}
+
 interface EstadoGravado {
   lead_id: string;
   bucket: RiskBucket;
+  detected_at: string;
 }
 
 export async function observaTravessias(
@@ -190,7 +219,7 @@ export async function observaTravessias(
       (from, to) =>
         admin
           .from("crm_lead_risk_states")
-          .select("lead_id, bucket")
+          .select("lead_id, bucket, detected_at")
           .eq("organization_id", organizationId)
           .order("lead_id", { ascending: true })
           .range(from, to),
@@ -200,7 +229,7 @@ export async function observaTravessias(
     const message = causa instanceof Error ? causa.message : String(causa);
     throw new Error(`observador de risco: ${message}`);
   }
-  const anterior = new Map<string, RiskBucket>(gravados.map((g) => [g.lead_id, g.bucket]));
+  const anterior = new Map<string, EstadoGravado>(gravados.map((g) => [g.lead_id, g]));
 
   const r: ResultadoDaObservacao = {
     avaliados: atuais.length,
@@ -214,7 +243,8 @@ export async function observaTravessias(
   };
 
   for (const e of atuais) {
-    const de = anterior.get(e.leadId) ?? null;
+    const salvo = anterior.get(e.leadId);
+    const de = salvo?.bucket ?? null;
     if (de === e.bucket) {
       // A recusa precisa sobreviver a ticks idênticos, e o prazo longo precisa
       // vencer mesmo sem nova travessia. A proposta compara os fatos e segue
@@ -256,11 +286,32 @@ export async function observaTravessias(
         continue;
       }
     }
-    // A frase entra ANTES do estado. Se o upsert viesse primeiro e a atividade
-    // falhasse, o próximo tick veria o bucket já gravado e não tentaria a
-    // frase de novo. Sem linha para gravar (travessia silenciosa, ou episódio
-    // que já está na timeline), o estado segue sozinho.
-    if (linha && !esfriamentoJaNaTimeline) {
+    // Frase já gravada para o estado que ainda está salvo: o upsert da passada
+    // anterior falhou. Não insere de novo; só tenta o estado outra vez.
+    let fraseJaEntrada = false;
+    if (linha && !esfriamentoJaNaTimeline && salvo?.detected_at) {
+      try {
+        fraseJaEntrada = await atividadeJaEscritaNestaDeteccao(
+          admin,
+          organizationId,
+          e.leadId,
+          linha.tipo,
+          salvo.detected_at,
+        );
+      } catch (causa) {
+        r.falhasDeAtividade += 1;
+        logger.error("[risk-worker] não deu para saber se a frase já entrou", {
+          organizationId,
+          leadId: e.leadId,
+          error: causa instanceof Error ? causa.message : String(causa),
+        });
+        continue;
+      }
+    }
+    // A frase entra antes do estado. Se a atividade falha, o estado não muda e
+    // a próxima passada tenta os dois. Se a atividade entra e o estado falha,
+    // a checagem acima acha a frase e não repete.
+    if (linha && !esfriamentoJaNaTimeline && !fraseJaEntrada) {
       const atividade = await emitLeadActivity(admin, {
         organizationId,
         leadId: e.leadId,
@@ -290,8 +341,6 @@ export async function observaTravessias(
         });
         continue;
       }
-      if (linha.tipo === "lead_cooled") r.esfriaram += 1;
-      else r.reativaram += 1;
     }
 
     const { error: upErr } = await admin.from("crm_lead_risk_states").upsert(
@@ -322,6 +371,12 @@ export async function observaTravessias(
       continue;
     }
     r.travessias += 1;
+    // A métrica conta a travessia que ficou gravada. Upsert que falha não
+    // incrementa: a passada seguinte é que completa o estado.
+    if (linha && !esfriamentoJaNaTimeline) {
+      if (linha.tipo === "lead_cooled") r.esfriaram += 1;
+      else r.reativaram += 1;
+    }
 
     if (e.bucket === "em_risco" || e.bucket === "critico") {
       // A proposta nasce com o esfriamento, no mesmo tick, e também quando o

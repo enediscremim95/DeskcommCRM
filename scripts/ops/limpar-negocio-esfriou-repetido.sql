@@ -16,12 +16,12 @@
 --   1. é o primeiro esfriamento do lead;
 --   2. entre este e o anterior houve interação ou "voltou a andar";
 --   3. o esfriamento anterior do mesmo lead está a pelo menos o intervalo
---      (padrão 6 horas). As repetições do defeito saem a cada passada, cerca
---      de 15 minutos, sem buracos. Seis horas mantém uma volta por em_voo,
---      que não deixa atividade no meio.
+--      (padrão 1 hora). As repetições do defeito saem a cada passada, cerca
+--      de 15 minutos, sem buracos. Intervalo menor mantém mais frases; as
+--      duplicatas que sobrarem saem numa segunda limpeza.
 --
--- Para outro intervalo, na linha de comando (não edite o arquivo):
---   psql -v intervalo_esfriamento='12 hours' -f este_arquivo.sql
+-- Para manter mais, diminua o intervalo na linha de comando (não edite o arquivo):
+--   psql -v intervalo_esfriamento='30 minutes' -f este_arquivo.sql
 --
 -- Idempotente: a segunda execução recalcula e não acha duplicata.
 -- Cada DELETE leva no máximo 500 linhas e tem statement_timeout de 30s.
@@ -45,7 +45,7 @@
 
 \if :{?intervalo_esfriamento}
 \else
-\set intervalo_esfriamento '6 hours'
+\set intervalo_esfriamento '1 hour'
 \endif
 \if :{?somente_leads}
 \else
@@ -176,6 +176,7 @@ com_pausa AS (
 so_tipo_base AS (
   SELECT id,
          lead_id,
+         type,
          performed_at,
          sum(CASE WHEN type <> 'lead_cooled' THEN 1 ELSE 0 END) OVER (
            PARTITION BY lead_id
@@ -183,7 +184,6 @@ so_tipo_base AS (
            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
          ) AS episodio
     FROM marcadores
-   WHERE type = 'lead_cooled'
 ),
 so_tipo AS (
   SELECT id,
@@ -192,6 +192,7 @@ so_tipo AS (
            ORDER BY performed_at, id
          ) AS n
     FROM so_tipo_base
+   WHERE type = 'lead_cooled'
 ),
 a_apagar AS (
   SELECT id FROM com_pausa WHERE n > 1
@@ -331,22 +332,17 @@ DELETE FROM pg_temp.ops_esfriamento_duplicado AS d
       0
     )
   );
-\set ON_ERROR_STOP off
+-- ON_ERROR_STOP ligado: o primeiro lote que falha para o script. Rodar de
+-- novo é seguro — a abertura derruba o índice que ficou e recalcula a fila.
 \gexec
-\set limpeza_falhou :ERROR
-\set ON_ERROR_STOP on
 
 SET statement_timeout = '30s';
 SET lock_timeout = '30s';
 DROP INDEX CONCURRENTLY IF EXISTS public.ops_tmp_messages_activity_id;
 
-SELECT count(*) AS restantes
+SELECT (count(*) > 0)::text AS restantes
   FROM pg_temp.ops_esfriamento_duplicado
 \gset
-\if :limpeza_falhou
-  \echo 'a limpeza parou no meio; o índice temporário foi removido. Rode de novo.'
-  DO $$ BEGIN RAISE EXCEPTION 'limpeza interrompida'; END $$;
-\endif
 \if :restantes
   \echo 'ainda há duplicatas na fila; o índice temporário foi removido. Rode de novo.'
   DO $$ BEGIN RAISE EXCEPTION 'limpeza incompleta'; END $$;

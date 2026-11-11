@@ -369,18 +369,47 @@ describe("script de limpeza das repetições", () => {
       [[leadId, outro, pausa]],
     );
     const ids = rows.map((linha) => linha.id);
+    // 14:00 fica: são 2 horas depois das 12:00, acima do padrão de 1 hora.
     expect(ids).toEqual([
       primeiro,
       inicioDaPausa,
       depoisDeSeisHoras,
       unico,
       perdido,
+      aindaRepetido,
       nota,
       deNovo,
     ]);
     expect(ids).not.toContain(repetido);
     expect(ids).not.toContain(repetidoDeNovo);
-    expect(ids).not.toContain(aindaRepetido);
     expect(ids).not.toContain(quinzeDepois);
+
+    const segunda = execFileSync(
+      "docker",
+      [
+        "exec",
+        "-i",
+        process.env.TEST_DB_CONTAINER!,
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        "postgres",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-f",
+        "-",
+      ],
+      { input: somente + script, encoding: "utf8" },
+    );
+    expect(segunda).toMatch(/duplicatas_a_apagar[\s\S]*?\n\s+0 \|/);
+    const { rows: deNovoRows } = await pool.query<{ id: string }>(
+      `select id::text as id
+         from public.crm_lead_activities
+        where lead_id = any($1::uuid[])
+        order by performed_at, created_at, id`,
+      [[leadId, outro, pausa]],
+    );
+    expect(deNovoRows.map((linha) => linha.id)).toEqual(ids);
   });
 });

@@ -93,16 +93,21 @@ describe("observador de risco", () => {
   });
 
   function adminDoEpisodio(opts: {
-    estados: Array<{ lead_id: string; bucket: string }>;
+    estados: Array<{ lead_id: string; bucket: string; detected_at?: string }>;
     atividades: Array<{ id?: string; lead_id: string; type: string; performed_at: string }>;
     tetoSemRange?: number;
     leitura?: { falha: boolean };
+    falhasDeEstado?: { restantes: number };
   }) {
     const inseridos: Array<{ type: string; lead_id: string }> = [];
     const upsert = vi.fn(async (row: { lead_id: string; bucket: string }) => {
+      if ((opts.falhasDeEstado?.restantes ?? 0) > 0) {
+        opts.falhasDeEstado!.restantes -= 1;
+        return { error: { message: "estado indisponível" } };
+      }
       const indice = opts.estados.findIndex((linha) => linha.lead_id === row.lead_id);
       const gravado = { lead_id: row.lead_id, bucket: row.bucket };
-      if (indice >= 0) opts.estados[indice] = gravado;
+      if (indice >= 0) opts.estados[indice] = { ...opts.estados[indice], ...gravado };
       else opts.estados.push(gravado);
       return { error: null };
     });
@@ -132,6 +137,7 @@ describe("observador de risco", () => {
         const filtros: Record<string, string> = {};
         let tipos: string[] | null = null;
         let depoisDe: string | null = null;
+        let desde: string | null = null;
         let depoisDoId: string | null = null;
         const q = {
           select: () => q,
@@ -148,6 +154,10 @@ describe("observador de risco", () => {
             else depoisDe = valor;
             return q;
           },
+          gte: (coluna: string, valor: string) => {
+            if (coluna === "performed_at") desde = valor;
+            return q;
+          },
           order: () => q,
           limit: () => q,
           maybeSingle: async () => {
@@ -161,6 +171,7 @@ describe("observador de risco", () => {
                 if (filtros.performed_at && linha.performed_at !== filtros.performed_at) return false;
                 if (tipos && !tipos.includes(linha.type)) return false;
                 if (depoisDe && linha.performed_at <= depoisDe) return false;
+                if (desde && linha.performed_at < desde) return false;
                 if (depoisDoId && (linha.id ?? "") <= depoisDoId) return false;
                 return true;
               })
@@ -353,7 +364,13 @@ describe("observador de risco", () => {
 
   it("grava esfriamento novo ao sair de em voo mesmo sem atividade que encerre o episódio", async () => {
     const admin = adminDoEpisodio({
-      estados: [{ lead_id: "lead-frio", bucket: "em_voo" }],
+      estados: [
+        {
+          lead_id: "lead-frio",
+          bucket: "em_voo",
+          detected_at: "2026-10-01T00:00:00.000Z",
+        },
+      ],
       atividades: [
         {
           lead_id: "lead-frio",
@@ -401,5 +418,56 @@ describe("observador de risco", () => {
     expect(admin.upsert).not.toHaveBeenCalled();
     expect(dependencias.propoeReativacao).not.toHaveBeenCalled();
     expect(dependencias.registraFalhaDeAtividade).toHaveBeenCalled();
+  });
+
+  it("não repete o esfriamento quando a atividade entrou e o estado falhou", async () => {
+    const atividades = [
+      {
+        lead_id: "lead-frio",
+        type: "lead_cooled",
+        performed_at: "2026-09-01T12:00:00.000Z",
+      },
+    ];
+    const admin = adminDoEpisodio({
+      estados: [
+        {
+          lead_id: "lead-frio",
+          bucket: "em_dia",
+          detected_at: "2026-10-01T00:00:00.000Z",
+        },
+      ],
+      atividades,
+      falhasDeEstado: { restantes: 1 },
+    });
+    dependencias.calculaBucketsAtuais.mockResolvedValue([bucket("lead-frio", "em_risco")]);
+    dependencias.emitLeadActivity.mockImplementation(
+      async (_cliente: unknown, input: { type: string; leadId: string }) => {
+        admin.inseridos.push({ type: input.type, lead_id: input.leadId });
+        atividades.push({
+          lead_id: input.leadId,
+          type: input.type,
+          performed_at: "2026-10-14T12:00:00.000Z",
+        });
+        return { ok: true };
+      },
+    );
+
+    const primeira = await observaTravessias(
+      admin as never,
+      "org",
+      new Date("2026-10-14T12:00:00.000Z"),
+    );
+    const segunda = await observaTravessias(
+      admin as never,
+      "org",
+      new Date("2026-10-14T12:15:00.000Z"),
+    );
+
+    expect(primeira.esfriaram).toBe(0);
+    expect(primeira.travessias).toBe(0);
+    expect(segunda.esfriaram).toBe(1);
+    expect(segunda.travessias).toBe(1);
+    expect(admin.inseridos).toEqual([{ type: "lead_cooled", lead_id: "lead-frio" }]);
+    expect(admin.upsert).toHaveBeenCalledTimes(2);
   });
 });
