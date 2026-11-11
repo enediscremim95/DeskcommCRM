@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { updateTenant } from "@/app/actions/settings/updateTenant";
 import { useT } from "@/hooks/i18n/useT";
 import { MOEDAS_SERVIDAS, simboloDaMoeda, type MoedaServida } from "@/lib/money";
@@ -200,6 +201,22 @@ export function TenantForm({ initial }: Props) {
             ))}
           </div>
         </fieldset>
+
+        <div className="flex items-center justify-between gap-4 rounded-md border p-4">
+          <div className="space-y-1">
+            <Label htmlFor="lead_reentry_reuse_open">
+              {t("Manter respostas no negócio aberto")}
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              {t("Quando o contato responde no WhatsApp, alimenta o negócio aberto no funil de entrada sem voltar para Lead Novo.")}
+            </p>
+          </div>
+          <Switch
+            id="lead_reentry_reuse_open"
+            checked={form.lead_reentry_reuse_open}
+            onCheckedChange={(checked) => set("lead_reentry_reuse_open", checked)}
+          />
+        </div>
 
         <div className="space-y-2">
           <Label htmlFor="lead_reentry_window_minutes">{t("Tempo para juntar envios repetidos (minutos)")}</Label>

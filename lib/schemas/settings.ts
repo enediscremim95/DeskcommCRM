@@ -90,6 +90,7 @@ const MOEDAS = MOEDAS_SERVIDAS;
 
 export const tenantSchema = z.object({
   business_profile: businessProfileSchema.optional(),
+  lead_reentry_reuse_open: z.boolean().default(true),
   lead_reentry_window_minutes: z.coerce
     .number()
     .int()

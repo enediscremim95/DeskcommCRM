@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger";
 import { emitLeadActivity } from "./activity-emitter";
 import {
   minutosDaJanelaDeReenvio,
+  reutilizaLeadAbertoNaReentrada,
 } from "./janela-de-reenvio-config";
 
 /**
@@ -28,22 +29,32 @@ interface PrepararEntradaArgs {
   contactId: string;
   guardKey: string;
   agora?: Date;
-  /** Ponto de sincronização usado pelo invariante de concorrência real. */
-  depoisDaLeitura?: () => Promise<void>;
 }
 
 export type EntradaNaJanela =
-  | { existente: true; leadId: string; minutos: number }
-  | { existente: false; guardUntil: string; guardKey: string; minutos: number };
+  | { existente: true; leadId: string; minutos: number; reutilizarLeadAberto: boolean }
+  | {
+      existente: false;
+      guardUntil: string;
+      guardKey: string;
+      minutos: number;
+      reutilizarLeadAberto: boolean;
+    };
 
-async function configuracaoDaJanela(db: SupabaseClient, organizationId: string): Promise<number> {
+async function configuracaoDaJanela(
+  db: SupabaseClient,
+  organizationId: string,
+): Promise<{ minutos: number; reutilizarLeadAberto: boolean }> {
   const { data, error } = await db
     .from("organizations")
     .select("settings")
     .eq("id", organizationId)
     .maybeSingle();
   if (error) throw new Error(`janela_reenvio_config: ${error.message}`);
-  return minutosDaJanelaDeReenvio(data?.settings);
+  return {
+    minutos: minutosDaJanelaDeReenvio(data?.settings),
+    reutilizarLeadAberto: reutilizaLeadAbertoNaReentrada(data?.settings),
+  };
 }
 
 /**
@@ -58,7 +69,7 @@ export async function prepararEntradaNaJanela(
   args: PrepararEntradaArgs,
 ): Promise<EntradaNaJanela> {
   const agora = args.agora ?? new Date();
-  const minutos = await configuracaoDaJanela(db, args.organizationId);
+  const { minutos, reutilizarLeadAberto } = await configuracaoDaJanela(db, args.organizationId);
   const corte = new Date(agora.getTime() - minutos * 60_000).toISOString();
 
   const { error: liberarErro } = await db
@@ -83,14 +94,16 @@ export async function prepararEntradaNaJanela(
     .limit(1)
     .maybeSingle();
   if (recenteErro) throw new Error(`janela_reenvio_buscar: ${recenteErro.message}`);
-  if (recente) return { existente: true, leadId: recente.id as string, minutos };
+  if (recente) {
+    return { existente: true, leadId: recente.id as string, minutos, reutilizarLeadAberto };
+  }
 
-  await args.depoisDaLeitura?.();
   return {
     existente: false,
     guardUntil: new Date(agora.getTime() + minutos * 60_000).toISOString(),
     guardKey: args.guardKey,
     minutos,
+    reutilizarLeadAberto,
   };
 }
 
@@ -98,7 +111,7 @@ export async function buscarVencedorDaJanela(
   db: SupabaseClient,
   args: Pick<PrepararEntradaArgs, "organizationId" | "contactId" | "guardKey">,
 ): Promise<string | null> {
-  const minutos = await configuracaoDaJanela(db, args.organizationId);
+  const { minutos } = await configuracaoDaJanela(db, args.organizationId);
   const corte = new Date(Date.now() - minutos * 60_000).toISOString();
   const { data, error } = await db
     .from("crm_leads")
@@ -119,7 +132,9 @@ export function ehColisaoDaJanela(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const e = error as { code?: string; message?: string; details?: string };
   const texto = `${e.message ?? ""} ${e.details ?? ""}`;
-  return (e.code === "23505" || texto.includes("duplicate key")) && texto.includes(INDICE_JANELA_REENVIO);
+  return (
+    (e.code === "23505" || texto.includes("duplicate key")) && texto.includes(INDICE_JANELA_REENVIO)
+  );
 }
 
 interface AlimentarLeadArgs {
@@ -150,7 +165,9 @@ export async function alimentarLeadExistente(
     .eq("status", "open")
     .maybeSingle();
   if (leituraErro || !atual) {
-    throw new Error(`janela_reenvio_alimentar_leitura: ${leituraErro?.message ?? "lead não encontrado"}`);
+    throw new Error(
+      `janela_reenvio_alimentar_leitura: ${leituraErro?.message ?? "lead não encontrado"}`,
+    );
   }
 
   const tags = Array.from(
@@ -174,7 +191,9 @@ export async function alimentarLeadExistente(
     .select("*")
     .maybeSingle();
   if (atualizarErro || !atualizado) {
-    throw new Error(`janela_reenvio_alimentar_escrita: ${atualizarErro?.message ?? "lead não atualizado"}`);
+    throw new Error(
+      `janela_reenvio_alimentar_escrita: ${atualizarErro?.message ?? "lead não atualizado"}`,
+    );
   }
 
   const atividade = await emitLeadActivity(db, {
