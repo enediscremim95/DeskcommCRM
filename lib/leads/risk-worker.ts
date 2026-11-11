@@ -75,7 +75,8 @@ export interface ResultadoDaObservacao {
  * lista. Ele também abre episódio novo quando dois esfriamentos do mesmo lead
  * ficam separados por pelo menos o intervalo configurado (padrão 1 hora).
  * Intervalo menor mantém mais frases. As repetições do defeito saem a cada
- * passada, cerca de 15 minutos.
+ * passada, cerca de 15 minutos. Frase cujo payload diz que o estado anterior
+ * foi lido (`em_voo` ou `em_dia`) também fica.
  */
 export const TIPOS_QUE_ENCERRAM_ESFRIAMENTO = [
   "ai_turn",

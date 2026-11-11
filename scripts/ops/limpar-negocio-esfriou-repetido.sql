@@ -12,13 +12,16 @@
 --     --file=crm_lead_activities-antes.dump "$SUPABASE_DB_URL"
 --
 -- O que fica: a primeira linha de cada sequência contínua de esfriamento.
--- Uma sequência nova começa em três casos, e na dúvida a linha FICA:
+-- Uma sequência nova começa em quatro casos, e na dúvida a linha FICA:
 --   1. é o primeiro esfriamento do lead;
 --   2. entre este e o anterior houve interação ou "voltou a andar";
 --   3. o esfriamento anterior do mesmo lead está a pelo menos o intervalo
 --      (padrão 1 hora). As repetições do defeito saem a cada passada, cerca
 --      de 15 minutos, sem buracos. Intervalo menor mantém mais frases; as
 --      duplicatas que sobrarem saem numa segunda limpeza.
+--   4. a própria linha registra payload.de em em_voo ou em_dia: o estado
+--      anterior foi lido. A repetição do defeito vinha com de nulo. A troca
+--      em_risco → critico dentro da mesma parada sai de propósito.
 --
 -- Para manter mais, diminua o intervalo na linha de comando (não edite o arquivo):
 --   psql -v intervalo_esfriamento='30 minutes' -f este_arquivo.sql
@@ -126,9 +129,15 @@ marcadores AS (
          a.type,
          CASE
            WHEN a.type <> 'lead_cooled' THEN 1
+           WHEN a.payload->>'de' IN ('em_voo', 'em_dia') THEN 1
            WHEN a.id IN (SELECT pausas.id FROM pausas) THEN 1
            ELSE 0
-         END AS quebra
+         END AS quebra,
+         CASE
+           WHEN a.type <> 'lead_cooled' THEN 1
+           WHEN a.id IN (SELECT pausas.id FROM pausas) THEN 1
+           ELSE 0
+         END AS quebra_sem_estado
     FROM public.crm_lead_activities AS a
    WHERE (
           :'somente_leads' = ''
@@ -161,13 +170,27 @@ ordenados AS (
            PARTITION BY lead_id
            ORDER BY performed_at, id
            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-         ) AS episodio
+         ) AS episodio,
+         sum(quebra_sem_estado) OVER (
+           PARTITION BY lead_id
+           ORDER BY performed_at, id
+           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+         ) AS episodio_sem_estado
     FROM marcadores
 ),
 com_pausa AS (
   SELECT id,
          row_number() OVER (
            PARTITION BY lead_id, episodio
+           ORDER BY performed_at, id
+         ) AS n
+    FROM ordenados
+   WHERE type = 'lead_cooled'
+),
+com_intervalo AS (
+  SELECT id,
+         row_number() OVER (
+           PARTITION BY lead_id, episodio_sem_estado
            ORDER BY performed_at, id
          ) AS n
     FROM ordenados
@@ -201,11 +224,20 @@ mantidas AS (
   SELECT s.id
     FROM so_tipo AS s
    WHERE s.n > 1
-     AND NOT EXISTS (SELECT 1 FROM a_apagar AS a WHERE a.id = s.id)
+     AND NOT EXISTS (
+       SELECT 1 FROM com_intervalo AS c WHERE c.id = s.id AND c.n > 1
+     )
+),
+mantidas_estado AS (
+  SELECT c.id
+    FROM com_intervalo AS c
+   WHERE c.n > 1
+     AND NOT EXISTS (SELECT 1 FROM a_apagar AS a WHERE a.id = c.id)
 )
 -- END IDENTIFICACAO
 SELECT (SELECT count(*) FROM a_apagar) AS duplicatas_a_apagar,
-       (SELECT count(*) FROM mantidas) AS mantidas_pelo_intervalo;
+       (SELECT count(*) FROM mantidas) AS mantidas_pelo_intervalo,
+       (SELECT count(*) FROM mantidas_estado) AS mantidas_pelo_estado;
 
 \echo '== fila de duplicatas =='
 CREATE TEMP TABLE IF NOT EXISTS ops_esfriamento_duplicado (
@@ -248,6 +280,7 @@ marcadores AS (
          a.type,
          CASE
            WHEN a.type <> 'lead_cooled' THEN 1
+           WHEN a.payload->>'de' IN ('em_voo', 'em_dia') THEN 1
            WHEN a.id IN (SELECT pausas.id FROM pausas) THEN 1
            ELSE 0
          END AS quebra

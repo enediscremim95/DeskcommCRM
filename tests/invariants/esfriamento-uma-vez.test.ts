@@ -79,14 +79,15 @@ async function atividade(
   leadId: string,
   type: string,
   performedAt: string,
+  payload: Record<string, string> = {},
 ): Promise<string> {
   const id = randomUUID();
   await pool.query(
     `insert into public.crm_lead_activities
        (id, organization_id, lead_id, type, source_module, source_id, actor_kind,
-        performed_at, created_at, reason)
-     values ($1, $2, $3, $4, 'crm', $3, 'system', $5, $5, $4)`,
-    [id, ORG, leadId, type, performedAt],
+        performed_at, created_at, reason, payload)
+     values ($1, $2, $3, $4, 'crm', $3, 'system', $5, $5, $4, $6::jsonb)`,
+    [id, ORG, leadId, type, performedAt, JSON.stringify(payload)],
   );
   return id;
 }
@@ -104,7 +105,11 @@ async function contar(leadId: string, type: string): Promise<number> {
 function adminReal(): { from: (table: string) => unknown } {
   return {
     from(table: string) {
-      const filtros: Array<{ op: "eq" | "gt" | "in"; col: string; val: unknown }> = [];
+      const filtros: Array<{
+        op: "eq" | "gt" | "gte" | "lt" | "lte" | "in";
+        col: string;
+        val: unknown;
+      }> = [];
       const ordens: Array<{ col: string; asc: boolean }> = [];
       let faixa: { de: number; ate: number } | null = null;
       let limite: number | null = null;
@@ -122,6 +127,9 @@ function adminReal(): { from: (table: string) => unknown } {
           const n = params.length;
           if (filtro.op === "eq") partes.push(`${filtro.col} = $${n}`);
           else if (filtro.op === "gt") partes.push(`${filtro.col} > $${n}`);
+          else if (filtro.op === "gte") partes.push(`${filtro.col} >= $${n}`);
+          else if (filtro.op === "lt") partes.push(`${filtro.col} < $${n}`);
+          else if (filtro.op === "lte") partes.push(`${filtro.col} <= $${n}`);
           else partes.push(`${filtro.col} = ANY($${n})`);
         }
         const ordem = ordens
@@ -161,6 +169,18 @@ function adminReal(): { from: (table: string) => unknown } {
         },
         gt: (col: string, val: unknown) => {
           filtros.push({ op: "gt", col, val });
+          return q;
+        },
+        gte: (col: string, val: unknown) => {
+          filtros.push({ op: "gte", col, val });
+          return q;
+        },
+        lt: (col: string, val: unknown) => {
+          filtros.push({ op: "lt", col, val });
+          return q;
+        },
+        lte: (col: string, val: unknown) => {
+          filtros.push({ op: "lte", col, val });
           return q;
         },
         in: (col: string, val: unknown) => {
@@ -333,6 +353,18 @@ describe("script de limpeza das repetições", () => {
     const inicioDaPausa = await atividade(pausa, "lead_cooled", "2026-09-03T12:00:00.000Z");
     const depoisDeSeisHoras = await atividade(pausa, "lead_cooled", "2026-09-03T18:00:00.000Z");
     const quinzeDepois = await atividade(pausa, "lead_cooled", "2026-09-03T18:15:00.000Z");
+    const volta = await novoLead();
+    const voltaPrimeiro = await atividade(volta, "lead_cooled", "2026-09-04T12:00:00.000Z");
+    const voltaEmVoo = await atividade(volta, "lead_cooled", "2026-09-04T12:20:00.000Z", {
+      de: "em_voo",
+    });
+    const voltaCritico = await atividade(volta, "lead_cooled", "2026-09-04T12:35:00.000Z", {
+      de: "em_risco",
+    });
+    const voltaEmDia = await atividade(volta, "lead_cooled", "2026-09-04T12:50:00.000Z", {
+      de: "em_dia",
+    });
+    const voltaBug = await atividade(volta, "lead_cooled", "2026-09-04T13:05:00.000Z");
 
     const script = readFileSync(
       join(__dirname, "..", "..", "scripts/ops/limpar-negocio-esfriou-repetido.sql"),
@@ -341,7 +373,7 @@ describe("script de limpeza das repetições", () => {
     // Só estes leads. O teste de em_voo, no mesmo banco, tem dois esfriamentos
     // legítimos sem atividade no meio; uma limpeza global os apagaria se
     // rodasse no meio da suíte.
-    const somente = `\\set somente_leads '${leadId},${outro},${pausa}'\n`;
+    const somente = `\\set somente_leads '${leadId},${outro},${pausa},${volta}'\n`;
     execFileSync(
       "docker",
       [
@@ -366,14 +398,19 @@ describe("script de limpeza das repetições", () => {
          from public.crm_lead_activities
         where lead_id = any($1::uuid[])
         order by performed_at, created_at, id`,
-      [[leadId, outro, pausa]],
+      [[leadId, outro, pausa, volta]],
     );
     const ids = rows.map((linha) => linha.id);
     // 14:00 fica: são 2 horas depois das 12:00, acima do padrão de 1 hora.
+    // 12:20 e 12:50 ficam mesmo com menos de 1 hora: o payload diz em_voo e
+    // em_dia. 12:35 (em_risco → critico) e 13:05 (de nulo) saem.
     expect(ids).toEqual([
       primeiro,
       inicioDaPausa,
       depoisDeSeisHoras,
+      voltaPrimeiro,
+      voltaEmVoo,
+      voltaEmDia,
       unico,
       perdido,
       aindaRepetido,
@@ -383,6 +420,8 @@ describe("script de limpeza das repetições", () => {
     expect(ids).not.toContain(repetido);
     expect(ids).not.toContain(repetidoDeNovo);
     expect(ids).not.toContain(quinzeDepois);
+    expect(ids).not.toContain(voltaCritico);
+    expect(ids).not.toContain(voltaBug);
 
     const segunda = execFileSync(
       "docker",
@@ -408,7 +447,7 @@ describe("script de limpeza das repetições", () => {
          from public.crm_lead_activities
         where lead_id = any($1::uuid[])
         order by performed_at, created_at, id`,
-      [[leadId, outro, pausa]],
+      [[leadId, outro, pausa, volta]],
     );
     expect(deNovoRows.map((linha) => linha.id)).toEqual(ids);
   });

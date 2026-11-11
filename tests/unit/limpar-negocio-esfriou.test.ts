@@ -22,6 +22,8 @@ describe("script manual de Negócio esfriou repetido", () => {
     expect(texto).toContain("SET statement_timeout = '30s'");
     expect(texto).not.toMatch(/SET statement_timeout = 0\b/);
     expect(texto).toContain("mantidas_pelo_intervalo");
+    expect(texto).toContain("mantidas_pelo_estado");
+    expect(texto.match(/a\.payload->>'de' IN \('em_voo', 'em_dia'\)/g)).toHaveLength(2);
     expect(texto).toContain("intervalo_esfriamento '1 hour'");
     expect(texto).toContain("(count(*) > 0)::text AS restantes");
     expect(texto).toContain("SET lock_timeout = '30s'");

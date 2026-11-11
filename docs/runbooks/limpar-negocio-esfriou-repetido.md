@@ -42,10 +42,14 @@ Uma anotação, uma mensagem, uma ligação atendida ou um "voltou a andar" entr
 dois esfriamentos abre outra sequência. Um intervalo de pelo menos 1 hora
 entre dois "Negócio esfriou" do mesmo lead também abre outra sequência, mesmo
 sem atividade no meio: é o caso de o negócio ter saído da parada por um
-compromisso e esfriado de novo. As repetições do defeito saem a cada passada,
-cerca de 15 minutos, sem buracos. Intervalo menor mantém mais frases. Se
-`mantidas_pelo_intervalo` parecer pequeno demais, diminua o intervalo e meça
-de novo. As duplicatas que sobrarem saem numa segunda limpeza.
+compromisso e esfriado de novo. Uma frase com `payload.de` igual a `em_voo`
+ou `em_dia` também fica, mesmo com intervalo menor que 1 hora: o vigia leu o
+estado anterior. A repetição do defeito vinha com `de` nulo. A troca antiga
+`em_risco` → `critico` sai de propósito — era uma segunda frase da mesma
+parada, e o radar continua mostrando a faixa nova. As repetições do defeito
+saem a cada passada, cerca de 15 minutos, sem buracos. Intervalo menor mantém
+mais frases. Se `mantidas_pelo_intervalo` parecer pequeno demais, diminua o
+intervalo e meça de novo. As duplicatas que sobrarem saem numa segunda limpeza.
 
 ```bash
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
@@ -95,6 +99,8 @@ A pré-medição abaixo também não apaga nada. `seriam_apagadas` é a fila.
 `mantidas_pelo_intervalo` são frases que a regra só por tipo de atividade
 apagaria e que o intervalo de 1 hora mantém. Se esse número parecer pequeno
 demais, diminua o intervalo na consulta (`interval '1 hour'`) e meça de novo.
+`mantidas_pelo_estado` são frases que o intervalo apagaria e que ficam porque
+o `payload.de` é `em_voo` ou `em_dia`.
 
 ```sql
 WITH esfriamentos AS (
@@ -114,9 +120,15 @@ marcadores AS (
   SELECT a.id, a.lead_id, a.performed_at, a.type,
          CASE
            WHEN a.type <> 'lead_cooled' THEN 1
+           WHEN a.payload->>'de' IN ('em_voo', 'em_dia') THEN 1
            WHEN a.id IN (SELECT id FROM pausas) THEN 1
            ELSE 0
-         END AS quebra
+         END AS quebra,
+         CASE
+           WHEN a.type <> 'lead_cooled' THEN 1
+           WHEN a.id IN (SELECT id FROM pausas) THEN 1
+           ELSE 0
+         END AS quebra_sem_estado
     FROM public.crm_lead_activities AS a
    WHERE a.type = 'lead_cooled'
       OR a.type IN (
@@ -129,13 +141,24 @@ ordenados AS (
          sum(quebra) OVER (
            PARTITION BY lead_id ORDER BY performed_at, id
            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-         ) AS episodio
+         ) AS episodio,
+         sum(quebra_sem_estado) OVER (
+           PARTITION BY lead_id ORDER BY performed_at, id
+           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+         ) AS episodio_sem_estado
     FROM marcadores
 ),
 com_pausa AS (
   SELECT id,
          row_number() OVER (
            PARTITION BY lead_id, episodio ORDER BY performed_at, id
+         ) AS n
+    FROM ordenados WHERE type = 'lead_cooled'
+),
+com_intervalo AS (
+  SELECT id,
+         row_number() OVER (
+           PARTITION BY lead_id, episodio_sem_estado ORDER BY performed_at, id
          ) AS n
     FROM ordenados WHERE type = 'lead_cooled'
 ),
@@ -161,12 +184,19 @@ a_apagar AS (
 SELECT (SELECT count(*) FROM a_apagar) AS seriam_apagadas,
        (SELECT count(*) FROM so_tipo AS s
          WHERE s.n > 1
-           AND NOT EXISTS (SELECT 1 FROM a_apagar AS a WHERE a.id = s.id)
-       ) AS mantidas_pelo_intervalo;
+           AND NOT EXISTS (
+             SELECT 1 FROM com_intervalo AS c WHERE c.id = s.id AND c.n > 1
+           )
+       ) AS mantidas_pelo_intervalo,
+       (SELECT count(*) FROM com_intervalo AS c
+         WHERE c.n > 1
+           AND NOT EXISTS (SELECT 1 FROM a_apagar AS a WHERE a.id = c.id)
+       ) AS mantidas_pelo_estado;
 ```
 
-O script imprime as mesmas duas colunas (`duplicatas_a_apagar` e
-`mantidas_pelo_intervalo`) de novo, imediatamente antes de apagar.
+O script imprime as mesmas três colunas (`duplicatas_a_apagar`,
+`mantidas_pelo_intervalo` e `mantidas_pelo_estado`) de novo, imediatamente
+antes de apagar.
 
 ## Se parar no meio
 
