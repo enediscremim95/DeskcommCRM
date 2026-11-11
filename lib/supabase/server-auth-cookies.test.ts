@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ set: vi.fn(), getUser: vi.fn(), setAll: undefined as undefined | ((cookies: { name: string; value: string; options: object }[]) => void) }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ getAll: () => [], set: mocks.set }) }));
-vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_SUPABASE_URL: "https://auth.example.com", NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon" } }));
+vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "https://example.com", NEXT_PUBLIC_SUPABASE_URL: "https://auth.example.com", NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon" } }));
 vi.mock("@supabase/ssr", () => ({ createServerClient: (_url: unknown, _key: unknown, options: { cookies: { setAll: typeof mocks.setAll } }) => {
   mocks.setAll = options.cookies.setAll;
   return { auth: { getUser: mocks.getUser } };
