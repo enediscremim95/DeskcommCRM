@@ -1,4 +1,4 @@
-import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
+import { getUserPublico } from "@/lib/auth/get-user-com-backoff";
 import Link from "next/link";
 import { emailDeSuporte } from "@/lib/branding/saida";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ export default async function AccountSuspendedPage() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserComBackoff(() => supabase.auth.getUser());
+  } = await getUserPublico(() => supabase.auth.getUser());
   const idioma = normalizarIdioma(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );

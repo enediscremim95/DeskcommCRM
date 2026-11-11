@@ -1,4 +1,4 @@
-import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
+import { getUserPublico } from "@/lib/auth/get-user-com-backoff";
 import type { Metadata } from "next";
 
 import { nomeDoOperador, resolverOperador } from "@/lib/legal/operador";
@@ -20,7 +20,7 @@ export default async function TermsPage() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserComBackoff(() => supabase.auth.getUser());
+  } = await getUserPublico(() => supabase.auth.getUser());
   const idioma = normalizarIdioma(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );

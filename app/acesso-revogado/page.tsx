@@ -1,4 +1,4 @@
-import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
+import { getUserPublico } from "@/lib/auth/get-user-com-backoff";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
@@ -30,7 +30,7 @@ export default async function AcessoRevogadoPage() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserComBackoff(() => supabase.auth.getUser());
+  } = await getUserPublico(() => supabase.auth.getUser());
   const idioma = normalizarIdioma(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );

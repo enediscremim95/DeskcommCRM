@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AuthTemporariamenteIndisponivel, ehAuthRecusada, ehErroTransitorioDeAuth, getUserComBackoff } from "./get-user-com-backoff";
+import { AuthTemporariamenteIndisponivel, ehAuthRecusada, ehErroTransitorioDeAuth, getUserComBackoff, getUserPublico } from "./get-user-com-backoff";
 
 const resposta = (error: unknown) => ({ data: { user: null }, error });
 describe("getUser sem destruir sessão", () => {
@@ -26,7 +26,15 @@ describe("getUser sem destruir sessão", () => {
     await expect(getUserComBackoff(getUser, async () => {})).rejects.toBeInstanceOf(AuthTemporariamenteIndisponivel);
     expect(getUser).toHaveBeenCalledTimes(3);
   });
-  it.each([{ status: 401 }, { status: 403 }, { name: "AuthSessionMissingError", status: 400 }])("recusa real não repete: %o", async (error) => {
+  it.each([
+    { status: 401 }, { status: 403 }, { name: "AuthSessionMissingError", status: 400 },
+    { status: 400, code: "refresh_token_not_found" },
+    { status: 400, code: "refresh_token_already_used" },
+    { status: 400, code: "session_expired" },
+    { status: 400, code: "session_not_found" },
+    { status: 400, code: "bad_jwt" },
+    { status: 400, code: "invalid_grant" },
+  ])("recusa real não repete: %o", async (error) => {
     expect(ehAuthRecusada(error)).toBe(true);
     expect(ehErroTransitorioDeAuth(error)).toBe(false);
     const getUser = vi.fn().mockResolvedValue(resposta(error));
@@ -38,9 +46,17 @@ describe("getUser sem destruir sessão", () => {
   it("erro desconhecido não vira visitante", async () => {
     await expect(getUserComBackoff(async () => resposta({ status: 400 }))).rejects.toBeInstanceOf(AuthTemporariamenteIndisponivel);
   });
+  it("página pública renderiza na indisponibilidade", async () => {
+    const getUser = vi.fn().mockResolvedValue(resposta({ status: 504 }));
+    expect(await getUserPublico(getUser, async () => {})).toEqual({ data: { user: null }, error: null });
+    expect(getUser).toHaveBeenCalledTimes(3);
+  });
 });
 
-it.each([{ status: 401 }, { status: 403 }, { name: "AuthSessionMissingError" }])("normaliza recusa lançada: %o", async (error) => {
+it.each([
+  { status: 401 }, { status: 403 }, { name: "AuthSessionMissingError" },
+  { status: 400, code: "refresh_token_not_found" },
+])("normaliza recusa lançada: %o", async (error) => {
   const getUser = vi.fn().mockRejectedValue(error);
   expect(await getUserComBackoff(getUser)).toEqual({ data: { user: null }, error });
   expect(getUser).toHaveBeenCalledTimes(1);

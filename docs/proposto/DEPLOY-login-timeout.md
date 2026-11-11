@@ -2,7 +2,7 @@
 
 CONFIRMADO no código: GET /user usa até três tentativas, com pausas de 150 e 300 ms.
 504, timeout e rede não viram visitante: o proxy responde 503 sem emitir cookies;
-as APIs usam 503 com Retry-After. Sessão ausente e 401/403 continuam recusados.
+as APIs usam 503 com Retry-After. Sessão ausente, 401/403 e refresh token morto (refresh_token_not_found, refresh_token_already_used, session_expired, session_not_found, bad_jwt, invalid_grant) continuam recusados e permitem limpar o cookie. Páginas públicas tratam indisponibilidade como visitante e ainda renderizam.
 Não há alteração de schema. Nenhum deploy ou build de imagem foi executado nesta tarefa.
 
 Após revisão e publicação da imagem pelo fluxo de CI, executar na VPS, usando a tag

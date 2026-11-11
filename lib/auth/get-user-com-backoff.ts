@@ -8,8 +8,20 @@ function campo(error: unknown, key: string): unknown {
   return error && typeof error === "object" ? (error as Record<string, unknown>)[key] : undefined;
 }
 
+const RECUSA_SESSAO_MORTA = new Set([
+  "refresh_token_not_found",
+  "refresh_token_already_used",
+  "session_expired",
+  "session_not_found",
+  "bad_jwt",
+  "invalid_grant",
+]);
+
 export function ehAuthRecusada(error: unknown): boolean {
-  return ehSessaoAusente(error) || campo(error, "status") === 401 || campo(error, "status") === 403;
+  if (ehSessaoAusente(error) || campo(error, "status") === 401 || campo(error, "status") === 403) return true;
+  // Refresh token morto / JWT inválido: o SDK já considera sessão encerrada (auth-js 2.114).
+  // Sem isto, um 400 vira 503 eterno e o cookie podre nunca é limpo.
+  return RECUSA_SESSAO_MORTA.has(String(campo(error, "code") ?? ""));
 }
 
 export function ehErroTransitorioDeAuth(error: unknown): boolean {
@@ -53,4 +65,17 @@ export async function getUserComBackoff<T extends { error: unknown }>(
     await esperar(150 * 2 ** tentativa);
   }
   throw new AuthTemporariamenteIndisponivel();
+}
+
+/** Páginas públicas devem renderizar mesmo se o Auth estiver indisponível. */
+export async function getUserPublico<T extends { data: { user: unknown }; error: unknown }>(
+  getUser: () => Promise<T>,
+  esperar?: (ms: number) => Promise<void>,
+): Promise<T> {
+  try {
+    return await getUserComBackoff(getUser, esperar);
+  } catch (error) {
+    if (!(error instanceof AuthTemporariamenteIndisponivel)) throw error;
+    return { data: { user: null }, error: null } as T;
+  }
 }
