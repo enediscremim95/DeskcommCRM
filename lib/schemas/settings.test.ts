@@ -62,6 +62,21 @@ describe("tenantSchema", () => {
       lost_reasons_extra: ["Sem orçamento"],
     });
     expect(r.success).toBe(true);
+    if (r.success) expect(r.data.lead_reentry_reuse_open).toBe(true);
+  });
+
+  it("preserva o desligamento explícito da reutilização do lead aberto", () => {
+    const r = tenantSchema.safeParse({
+      display_name: "Acme",
+      legal_name: "Acme LTDA",
+      timezone: "America/Sao_Paulo",
+      locale: "pt-BR",
+      currency: "BRL",
+      media_retention_days: 90,
+      lead_reentry_reuse_open: false,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.lead_reentry_reuse_open).toBe(false);
   });
 
   it("rejects too-low retention", () => {

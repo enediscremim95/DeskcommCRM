@@ -970,6 +970,12 @@ export const DICIONARIO: Traducoes = {
   "DPO email": { es: "Email del DPO" },
   "Retenção de mídia (dias)": { es: "Retención de medios (días)" },
   "URL política de privacidade": { es: "URL de la política de privacidad" },
+  "Manter respostas no negócio aberto": {
+    es: "Mantener las respuestas en el negocio abierto",
+  },
+  "Quando o contato responde no WhatsApp, alimenta o negócio aberto no funil de entrada sem voltar para Lead Novo.": {
+    es: "Cuando el contacto responde por WhatsApp, alimenta el negocio abierto en el embudo de entrada sin volver a Lead Nuevo.",
+  },
   "Tempo para juntar envios repetidos (minutos)": {
     es: "Tiempo para unir envíos repetidos (minutos)",
   },

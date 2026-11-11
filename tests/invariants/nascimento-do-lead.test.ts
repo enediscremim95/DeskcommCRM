@@ -63,6 +63,53 @@ async function criarContato(org: string, nome: string | null): Promise<string> {
   return rows[0]!.id;
 }
 
+interface LeadExistenteArgs {
+  contato: string;
+  pipelineId: string;
+  stageId: string;
+  titulo: string;
+  criadoHa: string;
+  status?: "open" | "won" | "lost";
+  source?: string;
+  guardKey?: string | null;
+  position?: number;
+}
+
+async function criarLeadExistente(args: LeadExistenteArgs): Promise<string> {
+  const status = args.status ?? "open";
+  const { rows } = await pool.query<{ id: string }>(
+    `insert into crm_leads
+       (organization_id, pipeline_id, stage_id, contact_id, title, status,
+        closed_at, lost_reason, source, reentry_guard_key, position_in_stage, created_at)
+     values
+       ($1, $2, $3, $4, $5, $6,
+        case when $6 = 'open' then null else now() end,
+        case when $6 = 'lost' then 'Sem avanço' else null end,
+        $7, $8, $9, now() - $10::interval)
+     returning id`,
+    [
+      ORG_VIVA,
+      args.pipelineId,
+      args.stageId,
+      args.contato,
+      args.titulo,
+      status,
+      args.source ?? "manual",
+      args.guardKey ?? null,
+      args.position ?? 1000,
+      args.criadoHa,
+    ],
+  );
+  return rows[0]!.id;
+}
+
+let FUNIL_ENTRADA = "";
+let ETAPA_ENTRADA = "";
+let ETAPA_POSTERIOR = "";
+let NOME_ETAPA_POSTERIOR = "";
+let OUTRO_FUNIL = "";
+let ETAPA_OUTRO_FUNIL = "";
+
 beforeAll(async () => {
   await criarOrg(ORG_VIVA, "org-nascimento-viva");
   await criarOrg(ORG_SEM_FUNIL, "org-nascimento-sem-funil");
@@ -96,6 +143,48 @@ beforeAll(async () => {
        ($1, $2, 'Entrada', 'entrada-torta', 2, false, false)`,
     [ORG_GANHO_PRIMEIRO, funilTorto],
   );
+
+  const { rows: entrada } = await pool.query<{ pipeline_id: string; stage_id: string }>(
+    `select p.id as pipeline_id, s.id as stage_id
+       from crm_pipelines p
+       join crm_stages s on s.pipeline_id = p.id
+      where p.organization_id = $1 and p.is_default = true and p.is_archived = false
+        and s.is_archived = false and s.is_won = false and s.is_lost = false
+      order by s.position asc
+      limit 1`,
+    [ORG_VIVA],
+  );
+  FUNIL_ENTRADA = entrada[0]!.pipeline_id;
+  ETAPA_ENTRADA = entrada[0]!.stage_id;
+
+  NOME_ETAPA_POSTERIOR = "Contato Realizado";
+  const { rows: posterior } = await pool.query<{ id: string }>(
+    `insert into crm_stages
+       (organization_id, pipeline_id, name, slug, position, is_won, is_lost)
+     values
+       ($1, $2, $3, 'contato-realizado-reentrada',
+        (select coalesce(max(position), 0) + 1000 from crm_stages where pipeline_id = $2),
+        false, false)
+     returning id`,
+    [ORG_VIVA, FUNIL_ENTRADA, NOME_ETAPA_POSTERIOR],
+  );
+  ETAPA_POSTERIOR = posterior[0]!.id;
+
+  const { rows: outroFunil } = await pool.query<{ id: string }>(
+    `insert into crm_pipelines (organization_id, name, slug, is_default, position)
+     values ($1, 'Pós-venda', 'pos-venda-reentrada', false, 9000)
+     returning id`,
+    [ORG_VIVA],
+  );
+  OUTRO_FUNIL = outroFunil[0]!.id;
+  const { rows: outraEtapa } = await pool.query<{ id: string }>(
+    `insert into crm_stages
+       (organization_id, pipeline_id, name, slug, position, is_won, is_lost)
+     values ($1, $2, 'Em atendimento', 'em-atendimento-reentrada', 1000, false, false)
+     returning id`,
+    [ORG_VIVA, OUTRO_FUNIL],
+  );
+  ETAPA_OUTRO_FUNIL = outraEtapa[0]!.id;
 });
 
 afterAll(async () => {
@@ -211,9 +300,10 @@ describe("o lead NASCE", () => {
     });
     expect(r.criado).toBe(true);
     if (!r.criado) return;
-    const { rows } = await pool.query<{ title: string }>("select title from crm_leads where id = $1", [
-      r.leadId,
-    ]);
+    const { rows } = await pool.query<{ title: string }>(
+      "select title from crm_leads where id = $1",
+      [r.leadId],
+    );
     expect(rows[0]!.title).toBe("Conhecido Andrade");
   });
 
@@ -222,7 +312,9 @@ describe("o lead NASCE", () => {
     // `Contato 543134@lid` gravado. Sem a guarda, o kanban — que hoje está
     // limpo — receberia o resíduo no primeiro card.
     const contato = await criarContato(ORG_VIVA, "Contato 543134@lid");
-    await pool.query("update contacts set phone_number = '+5531955554444' where id = $1", [contato]);
+    await pool.query("update contacts set phone_number = '+5531955554444' where id = $1", [
+      contato,
+    ]);
     const r = await garantirLeadDaConversa(db, {
       organizationId: ORG_VIVA,
       contactId: contato,
@@ -231,9 +323,10 @@ describe("o lead NASCE", () => {
     });
     expect(r.criado).toBe(true);
     if (!r.criado) return;
-    const { rows } = await pool.query<{ title: string }>("select title from crm_leads where id = $1", [
-      r.leadId,
-    ]);
+    const { rows } = await pool.query<{ title: string }>(
+      "select title from crm_leads where id = $1",
+      [r.leadId],
+    );
     expect(rows[0]!.title).not.toMatch(/@lid|@c\.us/);
     // Cai no telefone, que é informação útil — melhor que "Sem nome".
     expect(rows[0]!.title).toBe("+5531955554444");
@@ -250,9 +343,10 @@ describe("o lead NASCE", () => {
     expect(r.criado).toBe(true);
     if (!r.criado) return;
 
-    const { rows } = await pool.query<{ title: string }>("select title from crm_leads where id = $1", [
-      r.leadId,
-    ]);
+    const { rows } = await pool.query<{ title: string }>(
+      "select title from crm_leads where id = $1",
+      [r.leadId],
+    );
     expect(rows[0]!.title).toBe("Novo contato pelo WhatsApp");
   });
 });
@@ -337,60 +431,236 @@ describe("janela curta separa reenvio de demanda nova", () => {
     expect(atividades.rows[0]!.n).toBe("5");
   });
 
-  it("passada a janela, cria outro negócio mesmo com o primeiro ainda aberto", async () => {
+  it("lead aberto em etapa posterior e fora da janela recebe a mensagem sem voltar ao início", async () => {
     const contato = await criarContato(ORG_VIVA, "Nova Demanda Oliveira");
-    const dados = {
+    const leadId = await criarLeadExistente({
+      contato,
+      pipelineId: FUNIL_ENTRADA,
+      stageId: ETAPA_POSTERIOR,
+      titulo: "Nova Demanda Oliveira",
+      criadoHa: "2 hours",
+      position: 4321,
+    });
+
+    const r = await garantirLeadDaConversa(db, {
       organizationId: ORG_VIVA,
       contactId: contato,
       conversationId: CONVERSA,
       nomeDoContato: "Nova Demanda Oliveira",
-    };
-    const primeira = await garantirLeadDaConversa(db, dados);
-    expect(primeira.criado).toBe(true);
-    if (!primeira.criado) return;
+    });
 
-    await pool.query(
-      "update crm_leads set created_at = now() - interval '61 minutes', reentry_guard_until = now() - interval '1 minute' where id = $1",
-      [primeira.leadId],
-    );
-    const segunda = await garantirLeadDaConversa(db, dados);
-    expect(segunda.criado, "card aberto antigo não bloqueia uma demanda nova").toBe(true);
-
-    const cards = await pool.query<{ n: string }>(
-      "select count(*) as n from crm_leads where contact_id = $1 and status = 'open'",
+    expect(r).toMatchObject({ criado: false, motivo: "lead_aberto_existente", leadId });
+    const { rows: leads } = await pool.query<{
+      id: string;
+      stage_id: string;
+      status: string;
+      position_in_stage: string;
+    }>(
+      `select id, stage_id, status, position_in_stage::text
+         from crm_leads where contact_id = $1`,
       [contato],
     );
-    expect(cards.rows[0]!.n).toBe("2");
+    expect(leads).toEqual([
+      { id: leadId, stage_id: ETAPA_POSTERIOR, status: "open", position_in_stage: "4321" },
+    ]);
+
+    const { rows: atividades } = await pool.query<{ reason: string; source_id: string }>(
+      `select reason, source_id from crm_lead_activities
+        where lead_id = $1 and type = 'lead_merged'`,
+      [leadId],
+    );
+    expect(atividades).toEqual([
+      {
+        reason: `A mensagem chegou e o lead já estava aberto na etapa ${NOME_ETAPA_POSTERIOR}.`,
+        source_id: CONVERSA,
+      },
+    ]);
   });
 
-  it("depois de FECHADO, quem volta a escrever abre demanda nova", async () => {
-    const contato = await criarContato(ORG_VIVA, "Voltou Pereira");
-    const dados = {
+  it("lead aberto vindo de formulário também recebe a mensagem no mesmo card", async () => {
+    const contato = await criarContato(ORG_VIVA, "Formulário Andrade");
+    const leadId = await criarLeadExistente({
+      contato,
+      pipelineId: FUNIL_ENTRADA,
+      stageId: ETAPA_POSTERIOR,
+      titulo: "Formulário Andrade",
+      criadoHa: "10 minutes",
+      source: "formulario",
+      guardKey: "fonte:formulario-site",
+    });
+
+    const r = await garantirLeadDaConversa(db, {
       organizationId: ORG_VIVA,
       contactId: contato,
       conversationId: CONVERSA,
-      nomeDoContato: "Voltou Pereira",
-    };
+      nomeDoContato: "Formulário Andrade",
+    });
 
-    const primeira = await garantirLeadDaConversa(db, dados);
-    expect(primeira.criado).toBe(true);
-    if (!primeira.criado) return;
-
-    await pool.query(
-      "update crm_leads set status = 'won', closed_at = now() where id = $1",
-      [primeira.leadId],
+    expect(r).toMatchObject({ criado: false, motivo: "lead_aberto_existente", leadId });
+    const { rows: cards } = await pool.query<{ n: string }>(
+      "select count(*) as n from crm_leads where contact_id = $1",
+      [contato],
     );
+    expect(cards[0]!.n).toBe("1");
+    const { rows: atividades } = await pool.query<{ n: string }>(
+      "select count(*) as n from crm_lead_activities where lead_id = $1 and type = 'lead_merged'",
+      [leadId],
+    );
+    expect(atividades[0]!.n).toBe("1");
+  });
 
-    const segunda = await garantirLeadDaConversa(db, dados);
-    // Sem o filtro `status='open'`, este caso devolveria `ja_existe` — é ele que
-    // prova que a regra é "demanda aberta", não "contato já visto".
-    expect(segunda.criado, "negócio fechado não bloqueia negócio novo").toBe(true);
+  it.each(["won", "lost"] as const)("lead %s libera uma demanda nova", async (status) => {
+    const contato = await criarContato(ORG_VIVA, `Fechado ${status}`);
+    await criarLeadExistente({
+      contato,
+      pipelineId: FUNIL_ENTRADA,
+      stageId: ETAPA_POSTERIOR,
+      titulo: `Fechado ${status}`,
+      criadoHa: "2 hours",
+      status,
+    });
 
+    const r = await garantirLeadDaConversa(db, {
+      organizationId: ORG_VIVA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: `Fechado ${status}`,
+    });
+
+    expect(r.criado, `negócio ${status} não bloqueia negócio novo`).toBe(true);
     const { rows } = await pool.query<{ n: string }>(
       "select count(*) as n from crm_leads where contact_id = $1",
       [contato],
     );
     expect(rows[0]!.n).toBe("2");
+  });
+
+  it("lead aberto em outro funil não bloqueia um card novo no funil de entrada", async () => {
+    const contato = await criarContato(ORG_VIVA, "Outro Funil Lima");
+    await criarLeadExistente({
+      contato,
+      pipelineId: OUTRO_FUNIL,
+      stageId: ETAPA_OUTRO_FUNIL,
+      titulo: "Outro Funil Lima",
+      criadoHa: "2 hours",
+    });
+
+    const r = await garantirLeadDaConversa(db, {
+      organizationId: ORG_VIVA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Outro Funil Lima",
+    });
+
+    expect(r.criado).toBe(true);
+    if (!r.criado) return;
+    expect(r.pipelineId).toBe(FUNIL_ENTRADA);
+    const { rows } = await pool.query<{ pipeline_id: string }>(
+      "select pipeline_id from crm_leads where contact_id = $1 order by created_at",
+      [contato],
+    );
+    expect(rows.map((row) => row.pipeline_id).sort()).toEqual([FUNIL_ENTRADA, OUTRO_FUNIL].sort());
+  });
+
+  it("lead perdido ou ganho libera uma demanda nova: só o card ABERTO segura a mensagem", async () => {
+    for (const status of ["lost", "won"] as const) {
+      const contato = await criarContato(ORG_VIVA, `Fechado ${status} Prado`);
+      const antigo = await criarLeadExistente({
+        contato,
+        pipelineId: FUNIL_ENTRADA,
+        stageId: ETAPA_POSTERIOR,
+        titulo: `Fechado ${status} Prado`,
+        criadoHa: "3 days",
+        status,
+      });
+
+      const r = await garantirLeadDaConversa(db, {
+        organizationId: ORG_VIVA,
+        contactId: contato,
+        conversationId: CONVERSA,
+        nomeDoContato: `Fechado ${status} Prado`,
+      });
+
+      expect(r.criado, `lead ${status} não pode segurar a mensagem`).toBe(true);
+      if (!r.criado) return;
+      expect(r.leadId).not.toBe(antigo);
+      expect(r.stageId).toBe(ETAPA_ENTRADA);
+      const { rows } = await pool.query<{ id: string; status: string }>(
+        "select id, status from crm_leads where contact_id = $1 order by created_at",
+        [contato],
+      );
+      expect(rows.map((row) => row.status)).toEqual([status, "open"]);
+    }
+  });
+
+  it("false explícito mantém o comportamento antigo e cria outro card", async () => {
+    const contato = await criarContato(ORG_VIVA, "Compatibilidade Souza");
+    await criarLeadExistente({
+      contato,
+      pipelineId: FUNIL_ENTRADA,
+      stageId: ETAPA_POSTERIOR,
+      titulo: "Compatibilidade Souza",
+      criadoHa: "2 hours",
+    });
+    await pool.query(
+      `update organizations
+          set settings = coalesce(settings, '{}'::jsonb) || '{"lead_reentry_reuse_open": false}'::jsonb
+        where id = $1`,
+      [ORG_VIVA],
+    );
+
+    try {
+      const r = await garantirLeadDaConversa(db, {
+        organizationId: ORG_VIVA,
+        contactId: contato,
+        conversationId: CONVERSA,
+        nomeDoContato: "Compatibilidade Souza",
+      });
+      expect(r.criado).toBe(true);
+      const { rows } = await pool.query<{ n: string }>(
+        "select count(*) as n from crm_leads where contact_id = $1",
+        [contato],
+      );
+      expect(rows[0]!.n).toBe("2");
+    } finally {
+      await pool.query(
+        "update organizations set settings = settings - 'lead_reentry_reuse_open' where id = $1",
+        [ORG_VIVA],
+      );
+    }
+  });
+
+  it("com dois leads abertos no funil de entrada, alimenta o mais recente por created_at", async () => {
+    const contato = await criarContato(ORG_VIVA, "Dois Abertos Costa");
+    const antigo = await criarLeadExistente({
+      contato,
+      pipelineId: FUNIL_ENTRADA,
+      stageId: ETAPA_ENTRADA,
+      titulo: "Antigo",
+      criadoHa: "4 hours",
+    });
+    const recente = await criarLeadExistente({
+      contato,
+      pipelineId: FUNIL_ENTRADA,
+      stageId: ETAPA_POSTERIOR,
+      titulo: "Recente",
+      criadoHa: "2 hours",
+    });
+
+    const r = await garantirLeadDaConversa(db, {
+      organizationId: ORG_VIVA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Dois Abertos Costa",
+    });
+
+    expect(r).toMatchObject({ criado: false, motivo: "lead_aberto_existente", leadId: recente });
+    const { rows } = await pool.query<{ lead_id: string }>(
+      "select lead_id from crm_lead_activities where contact_id = $1 and type = 'lead_merged'",
+      [contato],
+    );
+    expect(rows).toEqual([{ lead_id: recente }]);
+    expect(rows[0]!.lead_id).not.toBe(antigo);
   });
 });
 

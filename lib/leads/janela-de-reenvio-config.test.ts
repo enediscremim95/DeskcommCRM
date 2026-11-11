@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   JANELA_REENVIO_PADRAO_MINUTOS,
   minutosDaJanelaDeReenvio,
+  reutilizaLeadAbertoNaReentrada,
 } from "./janela-de-reenvio-config";
 
 describe("configuração da janela de reenvio", () => {
@@ -18,5 +19,18 @@ describe("configuração da janela de reenvio", () => {
 
   it("degrada configuração inválida para o padrão", () => {
     expect(minutosDaJanelaDeReenvio({ lead_reentry_window_minutes: "qualquer" })).toBe(60);
+  });
+});
+
+describe("reutilização do lead aberto na reentrada", () => {
+  it("vem ligada quando a configuração está ausente", () => {
+    expect(reutilizaLeadAbertoNaReentrada(undefined)).toBe(true);
+    expect(reutilizaLeadAbertoNaReentrada({})).toBe(true);
+  });
+
+  it("só desliga com false booleano explícito", () => {
+    expect(reutilizaLeadAbertoNaReentrada({ lead_reentry_reuse_open: false })).toBe(false);
+    expect(reutilizaLeadAbertoNaReentrada({ lead_reentry_reuse_open: true })).toBe(true);
+    expect(reutilizaLeadAbertoNaReentrada({ lead_reentry_reuse_open: "false" })).toBe(true);
   });
 });

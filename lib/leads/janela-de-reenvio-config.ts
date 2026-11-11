@@ -6,6 +6,19 @@ export const JANELA_REENVIO_PADRAO_MINUTOS = 60;
 export const JANELA_REENVIO_MIN_MINUTOS = 1;
 export const JANELA_REENVIO_MAX_MINUTOS = 10_080;
 
+/**
+ * Enquanto a demanda continua aberta no funil de entrada, uma nova mensagem
+ * alimenta o mesmo negócio. Só `false` booleano desliga: valor ausente ou
+ * legado inválido preserva o comportamento seguro do produto.
+ */
+export function reutilizaLeadAbertoNaReentrada(settings: unknown): boolean {
+  const valor =
+    settings && typeof settings === "object"
+      ? (settings as Record<string, unknown>).lead_reentry_reuse_open
+      : undefined;
+  return valor !== false;
+}
+
 export function minutosDaJanelaDeReenvio(settings: unknown): number {
   const bruto =
     settings && typeof settings === "object"
