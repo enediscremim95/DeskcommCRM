@@ -7,8 +7,10 @@
  * com testemunha opcional. Esta rota é o que faz o estado acontecer sozinho.
  *
  * Para cada organização com negócio aberto, compara o bucket ATUAL com o
- * GRAVADO. Só escreve quando muda, e a travessia que conta para um humano vira
- * linha na timeline (`lead_cooled` / `lead_reactivated`).
+ * GRAVADO. O estado só é reescrito quando o bucket muda. "Negócio esfriou"
+ * entra uma vez por episódio de parada; enquanto o negócio segue parado, a
+ * passada seguinte não grava outra linha. `lead_reactivated` continua marcando
+ * a volta.
  *
  * ⚠️ NÃO TOCA `crm_leads` — nem direto, nem pelo trigger: os tipos que ele emite
  * estão fora da lista positiva da 0079. É isso que impede o produtor de apagar o
@@ -77,6 +79,7 @@ async function handle(req: NextRequest): Promise<Response> {
   let reativaram = 0;
   let falhas = 0;
   let propostas = 0;
+  let jaRegistrados = 0;
   let vencidas = 0;
   let tarefasUrgentesEnfileiradas = 0;
   const comErro: string[] = [];
@@ -89,6 +92,7 @@ async function handle(req: NextRequest): Promise<Response> {
       reativaram += r.reativaram;
       falhas += r.falhasDeAtividade;
       propostas += r.propostas;
+      jaRegistrados += r.esfriamentosJaRegistrados;
 
       // O VENCIMENTO RODA NO MESMO TICK, depois da travessia. Se morasse num
       // cron separado, a proposta poderia vencer em silêncio até o outro rodar
@@ -123,6 +127,7 @@ async function handle(req: NextRequest): Promise<Response> {
       esfriaram,
       reativaram,
       propostas_criadas: propostas,
+      esfriamentos_ja_registrados: jaRegistrados,
       propostas_vencidas: vencidas,
       tarefas_urgentes_enfileiradas: tarefasUrgentesEnfileiradas,
       atividades_falhas: falhas,
