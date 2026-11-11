@@ -21,6 +21,11 @@ Confira que o arquivo existe e não está vazio antes de seguir. O código novo
 do vigia já precisa estar no ar; senão a próxima passada grava de novo o que
 o script acabou de apagar.
 
+`crm_lead_activities` está na publicação `supabase_realtime`. Apagar cerca de
+um milhão de linhas (a tabela passou de 700 MB) gera muito WAL e uma rajada de
+eventos no realtime. Rode de madrugada. Antes, confira o espaço em disco: o
+WAL e a cópia do `pg_dump` precisam caber junto com o banco.
+
 ## Rodar
 
 ```bash

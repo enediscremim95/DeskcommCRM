@@ -18,11 +18,22 @@ describe("script manual de Negócio esfriou repetido", () => {
     expect(texto).toContain("CALL pg_temp.limpar_negocio_esfriou_repetido(500)");
     expect(texto).toContain("contagem ANTES");
     expect(texto).toContain("contagem DEPOIS");
+    expect(texto).toContain("SET statement_timeout = 0");
+    expect(texto).not.toContain("statement_timeout = '30s'");
+    expect(texto).toContain("ORDER BY id");
+    const derrubar = texto.indexOf(
+      "DROP INDEX CONCURRENTLY IF EXISTS public.ops_tmp_messages_activity_id",
+    );
+    const criar = texto.indexOf("CREATE INDEX CONCURRENTLY ops_tmp_messages_activity_id");
+    expect(derrubar).toBeGreaterThan(-1);
+    expect(criar).toBeGreaterThan(derrubar);
   });
 
   it("encerra o episódio com os mesmos tipos que o worker", () => {
     const bloco = texto.split("-- BEGIN IDENTIFICACAO")[1]?.split("-- END IDENTIFICACAO")[0] ?? "";
     expect(bloco).not.toBe("");
+    expect(bloco).toContain("ORDER BY performed_at, id");
+    expect(bloco).not.toContain("created_at");
     const citados = [...bloco.matchAll(/'([a-z_]+)'/g)].map((achado) => achado[1]!);
     const encerram = citados.filter((tipo) => tipo !== "lead_cooled");
     expect(encerram.sort()).toEqual([...TIPOS_QUE_ENCERRAM_ESFRIAMENTO].sort());

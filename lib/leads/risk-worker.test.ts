@@ -94,8 +94,9 @@ describe("observador de risco", () => {
 
   function adminDoEpisodio(opts: {
     estados: Array<{ lead_id: string; bucket: string }>;
-    atividades: Array<{ lead_id: string; type: string; performed_at: string }>;
+    atividades: Array<{ id?: string; lead_id: string; type: string; performed_at: string }>;
     tetoSemRange?: number;
+    leitura?: { falha: boolean };
   }) {
     const inseridos: Array<{ type: string; lead_id: string }> = [];
     const upsert = vi.fn(async (row: { lead_id: string; bucket: string }) => {
@@ -131,6 +132,7 @@ describe("observador de risco", () => {
         const filtros: Record<string, string> = {};
         let tipos: string[] | null = null;
         let depoisDe: string | null = null;
+        let depoisDoId: string | null = null;
         const q = {
           select: () => q,
           eq: (coluna: string, valor: string) => {
@@ -141,22 +143,32 @@ describe("observador de risco", () => {
             tipos = valores;
             return q;
           },
-          gt: (_coluna: string, valor: string) => {
-            depoisDe = valor;
+          gt: (coluna: string, valor: string) => {
+            if (coluna === "id") depoisDoId = valor;
+            else depoisDe = valor;
             return q;
           },
           order: () => q,
           limit: () => q,
           maybeSingle: async () => {
+            if (opts.leitura?.falha) {
+              return { data: null, error: { message: "leitura do episódio falhou" } };
+            }
             const linhas = opts.atividades
               .filter((linha) => {
                 if (filtros.lead_id && linha.lead_id !== filtros.lead_id) return false;
                 if (filtros.type && linha.type !== filtros.type) return false;
+                if (filtros.performed_at && linha.performed_at !== filtros.performed_at) return false;
                 if (tipos && !tipos.includes(linha.type)) return false;
                 if (depoisDe && linha.performed_at <= depoisDe) return false;
+                if (depoisDoId && (linha.id ?? "") <= depoisDoId) return false;
                 return true;
               })
-              .sort((a, b) => b.performed_at.localeCompare(a.performed_at));
+              .sort((a, b) => {
+                const porTempo = b.performed_at.localeCompare(a.performed_at);
+                if (porTempo !== 0) return porTempo;
+                return (b.id ?? "").localeCompare(a.id ?? "");
+              });
             return { data: linhas[0] ?? null, error: null };
           },
           insert: (row: { type: string; lead_id: string }) => {
@@ -295,5 +307,77 @@ describe("observador de risco", () => {
     expect(admin.inseridos).toEqual([]);
     expect(resultado.esfriamentosJaRegistrados).toBe(1);
     expect(resultado.esfriaram).toBe(0);
+    expect(admin.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("não grava o estado quando a leitura do episódio falha, e tenta de novo", async () => {
+    const leitura = { falha: true };
+    const admin = adminDoEpisodio({
+      estados: [],
+      atividades: [],
+      leitura,
+    });
+    dependencias.calculaBucketsAtuais.mockResolvedValue([bucket("lead-frio", "critico")]);
+    dependencias.emitLeadActivity.mockImplementation(
+      async (_cliente: unknown, input: { type: string; leadId: string }) => {
+        admin.inseridos.push({ type: input.type, lead_id: input.leadId });
+        return { ok: true };
+      },
+    );
+
+    const primeira = await observaTravessias(
+      admin as never,
+      "org",
+      new Date("2026-10-14T12:00:00.000Z"),
+    );
+
+    expect(primeira.falhasDeAtividade).toBe(1);
+    expect(primeira.esfriaram).toBe(0);
+    expect(primeira.travessias).toBe(0);
+    expect(admin.upsert).not.toHaveBeenCalled();
+    expect(dependencias.propoeReativacao).not.toHaveBeenCalled();
+    expect(admin.inseridos).toEqual([]);
+
+    leitura.falha = false;
+    const segunda = await observaTravessias(
+      admin as never,
+      "org",
+      new Date("2026-10-14T12:15:00.000Z"),
+    );
+
+    expect(segunda.esfriaram).toBe(1);
+    expect(admin.inseridos.map((linha) => linha.type)).toEqual(["lead_cooled"]);
+    expect(admin.upsert).toHaveBeenCalledTimes(1);
+    expect(dependencias.propoeReativacao).toHaveBeenCalledTimes(1);
+  });
+
+  it("grava esfriamento novo ao sair de em voo mesmo sem atividade que encerre o episódio", async () => {
+    const admin = adminDoEpisodio({
+      estados: [{ lead_id: "lead-frio", bucket: "em_voo" }],
+      atividades: [
+        {
+          lead_id: "lead-frio",
+          type: "lead_cooled",
+          performed_at: "2026-09-01T12:00:00.000Z",
+        },
+      ],
+    });
+    dependencias.calculaBucketsAtuais.mockResolvedValue([bucket("lead-frio", "em_risco")]);
+    dependencias.emitLeadActivity.mockImplementation(
+      async (_cliente: unknown, input: { type: string; leadId: string }) => {
+        admin.inseridos.push({ type: input.type, lead_id: input.leadId });
+        return { ok: true };
+      },
+    );
+
+    const resultado = await observaTravessias(
+      admin as never,
+      "org",
+      new Date("2026-10-14T12:00:00.000Z"),
+    );
+
+    expect(resultado.esfriaram).toBe(1);
+    expect(admin.inseridos.map((linha) => linha.type)).toEqual(["lead_cooled"]);
+    expect(resultado.esfriamentosJaRegistrados).toBe(0);
   });
 });

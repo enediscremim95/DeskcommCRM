@@ -21,6 +21,11 @@
 -- Lotes de 500, cada um na própria transação, para não segurar lock na tabela
 -- inteira de uma instalação carregada.
 --
+-- A tabela está na publicação supabase_realtime. Apagar cerca de um milhão de
+-- linhas gera muito WAL e muitos eventos. Rode de madrugada, com espaço em
+-- disco conferido antes. O statement_timeout fica em 0 de propósito: o CALL é
+-- um comando só, e um teto curto cancela a limpeza no meio dos lotes.
+--
 -- Rode com psql em autocommit. NÃO envolva o arquivo num BEGIN: o índice
 -- concorrente e o COMMIT de cada lote recusam transação externa. O editor SQL
 -- do painel costuma embrulhar o script; use o psql.
@@ -46,9 +51,21 @@ SELECT count(*) AS atividades_total,
 \echo '== índice temporário para a FK de messages.activity_id =='
 SET statement_timeout = 0;
 SET lock_timeout = '5s';
-CREATE INDEX CONCURRENTLY IF NOT EXISTS ops_tmp_messages_activity_id
+-- Execução anterior pode ter deixado o índice INVALID. CREATE INDEX
+-- CONCURRENTLY IF NOT EXISTS não substitui índice inválido.
+DROP INDEX CONCURRENTLY IF EXISTS public.ops_tmp_messages_activity_id;
+\set ON_ERROR_STOP off
+CREATE INDEX CONCURRENTLY ops_tmp_messages_activity_id
   ON public.messages (activity_id)
   WHERE activity_id IS NOT NULL;
+\set indice_falhou :ERROR
+\if :indice_falhou
+  DROP INDEX CONCURRENTLY IF EXISTS public.ops_tmp_messages_activity_id;
+  \echo 'não consegui criar o índice temporário; nada foi apagado'
+  \set ON_ERROR_STOP on
+  DO $$ BEGIN RAISE EXCEPTION 'indice temporario nao criado'; END $$;
+\endif
+\set ON_ERROR_STOP on
 
 \echo '== duplicatas desta passada =='
 CREATE TEMP TABLE IF NOT EXISTS ops_esfriamento_duplicado (
@@ -62,7 +79,6 @@ WITH marcadores AS (
   SELECT id,
          lead_id,
          performed_at,
-         created_at,
          type,
          CASE WHEN type = 'lead_cooled' THEN 0 ELSE 1 END AS quebra
     FROM public.crm_lead_activities
@@ -82,10 +98,9 @@ ordenados AS (
          lead_id,
          type,
          performed_at,
-         created_at,
          sum(quebra) OVER (
            PARTITION BY lead_id
-           ORDER BY performed_at, created_at, id
+           ORDER BY performed_at, id
            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
          ) AS episodio
     FROM marcadores
@@ -94,7 +109,7 @@ posicao AS (
   SELECT id,
          row_number() OVER (
            PARTITION BY lead_id, episodio
-           ORDER BY performed_at, created_at, id
+           ORDER BY performed_at, id
          ) AS n
     FROM ordenados
    WHERE type = 'lead_cooled'
@@ -122,6 +137,7 @@ BEGIN
     WITH lote AS (
       SELECT id
         FROM pg_temp.ops_esfriamento_duplicado
+       ORDER BY id
        LIMIT p_lote
     ),
     apagados AS (
@@ -145,14 +161,23 @@ BEGIN
 END;
 $$;
 
-SET statement_timeout = '30s';
+-- 0, não 30s: para o psql o CALL inteiro é um comando. Um teto de 30s
+-- cancelaria os ~2.000 lotes no meio. lock_timeout segue valendo em cada lote.
+\set ON_ERROR_STOP off
+SET statement_timeout = 0;
 SET lock_timeout = '2s';
 CALL pg_temp.limpar_negocio_esfriou_repetido(500);
+\set limpeza_falhou :ERROR
+\set ON_ERROR_STOP on
+DROP INDEX CONCURRENTLY IF EXISTS public.ops_tmp_messages_activity_id;
+\if :limpeza_falhou
+  \echo 'a limpeza parou no meio; o índice temporário foi removido. Rode de novo.'
+  \set ON_ERROR_STOP on
+  DO $$ BEGIN RAISE EXCEPTION 'limpeza interrompida'; END $$;
+\endif
 
 \echo '== contagem DEPOIS =='
 SELECT count(*) AS atividades_total,
        count(*) FILTER (WHERE type = 'lead_cooled') AS negocio_esfriou,
        count(DISTINCT lead_id) FILTER (WHERE type = 'lead_cooled') AS negocios_com_esfriamento
   FROM public.crm_lead_activities;
-
-DROP INDEX CONCURRENTLY IF EXISTS public.ops_tmp_messages_activity_id;

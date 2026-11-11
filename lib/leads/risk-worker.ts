@@ -26,8 +26,10 @@ import { fetchAllPages } from "@/lib/supabase/fetch-all-pages";
  * ⚠️ A TIMELINE É MAIS ESTREITA QUE O BUCKET. "Negócio esfriou" entra uma vez
  * por episódio de parada (`em_risco` ou `critico`). Passar de um para o outro,
  * ou o worker rodar de novo enquanto o negócio segue parado, não gera outra
- * linha. Um episódio novo só começa depois de interação real ou de
- * `lead_reactivated` — o negócio voltou a andar e esfriou outra vez.
+ * linha. Voltar por `em_voo` (agenda, follow-up) e cair de novo em parada abre
+ * episódio novo: o estado anterior existe e a transição é real. A timeline só
+ * é consultada quando o estado anterior não foi lido (`de = null`) — senão uma
+ * página cortada regravaria o mesmo esfriamento.
  *
  * A leitura do estado gravado pagina. O PostgREST deste repo corta em 1000
  * linhas (`supabase/config.toml`, `max_rows`). Sem `range`, toda passada via
@@ -113,8 +115,11 @@ function narrar(
 
 /**
  * O episódio atual já tem linha na timeline quando o `lead_cooled` mais recente
- * não foi seguido de interação nem de reativação. Estado ausente (página que o
- * PostgREST cortou, linha apagada) não autoriza escrever de novo.
+ * não foi seguido de interação nem de reativação. Só vale quando o estado
+ * anterior não foi lido: com estado gravado, a transição decide.
+ *
+ * O desempate é `(performed_at, id)`, o mesmo do script de limpeza. Dois fatos
+ * no mesmo instante ficam na ordem do id.
  */
 export async function episodioDeEsfriamentoAberto(
   admin: SupabaseClient,
@@ -123,28 +128,46 @@ export async function episodioDeEsfriamentoAberto(
 ): Promise<boolean> {
   const ultimo = await admin
     .from("crm_lead_activities")
-    .select("performed_at")
+    .select("id, performed_at")
     .eq("organization_id", organizationId)
     .eq("lead_id", leadId)
     .eq("type", "lead_cooled")
     .order("performed_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (ultimo.error) throw new Error(ultimo.error.message);
-  const linha = ultimo.data as { performed_at: string } | null;
+  const linha = ultimo.data as { id: string; performed_at: string } | null;
   if (!linha?.performed_at) return false;
 
-  const quebra = await admin
+  const posterior = await admin
     .from("crm_lead_activities")
     .select("id")
     .eq("organization_id", organizationId)
     .eq("lead_id", leadId)
     .in("type", [...TIPOS_QUE_ENCERRAM_ESFRIAMENTO])
     .gt("performed_at", linha.performed_at)
+    .order("performed_at", { ascending: true })
+    .order("id", { ascending: true })
     .limit(1)
     .maybeSingle();
-  if (quebra.error) throw new Error(quebra.error.message);
-  return !quebra.data;
+  if (posterior.error) throw new Error(posterior.error.message);
+  if (posterior.data) return false;
+
+  if (!linha.id) return true;
+  const mesmoInstante = await admin
+    .from("crm_lead_activities")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("lead_id", leadId)
+    .in("type", [...TIPOS_QUE_ENCERRAM_ESFRIAMENTO])
+    .eq("performed_at", linha.performed_at)
+    .gt("id", linha.id)
+    .order("id", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (mesmoInstante.error) throw new Error(mesmoInstante.error.message);
+  return !mesmoInstante.data;
 }
 
 interface EstadoGravado {
@@ -207,6 +230,30 @@ export async function observaTravessias(
       continue;
     }
     const linha = narrar(de, e.bucket);
+    // A timeline só desempata quando o estado anterior não veio na leitura.
+    // Com estado gravado, a transição manda: em_voo → em_risco é episódio novo
+    // mesmo sem atividade da lista positiva (a agenda tira o negócio do crítico
+    // e devolve sem "voltar a andar"). A checagem fica ANTES do upsert. Se ela
+    // falha, gravar o bucket agora faria o próximo tick achar que nada mudou e
+    // a frase — e a proposta que nasce com ela — não seriam tentadas de novo.
+    let esfriamentoJaNaTimeline = false;
+    if (linha?.tipo === "lead_cooled" && de === null) {
+      try {
+        esfriamentoJaNaTimeline = await episodioDeEsfriamentoAberto(
+          admin,
+          organizationId,
+          e.leadId,
+        );
+      } catch (causa) {
+        r.falhasDeAtividade += 1;
+        logger.error("[risk-worker] não deu para ler o episódio de esfriamento", {
+          organizationId,
+          leadId: e.leadId,
+          error: causa instanceof Error ? causa.message : String(causa),
+        });
+        continue;
+      }
+    }
     const { error: upErr } = await admin.from("crm_lead_risk_states").upsert(
       {
         lead_id: e.leadId,
@@ -252,24 +299,7 @@ export async function observaTravessias(
       continue;
     }
     if (linha.tipo === "lead_cooled") {
-      // Estado que esta passada não viu (página cortada, linha ausente) ainda
-      // pede linha. Se o episódio já está na timeline, gravar de novo mente:
-      // o negócio não voltou a andar. Falha de leitura também não grava. O
-      // estado desta passada já foi salvo, então o tick seguinte não repete a
-      // pergunta — uma frase a menos é melhor do que outra linha igual.
-      let aberto = false;
-      try {
-        aberto = await episodioDeEsfriamentoAberto(admin, organizationId, e.leadId);
-      } catch (causa) {
-        r.falhasDeAtividade += 1;
-        logger.error("[risk-worker] não deu para ler o episódio de esfriamento", {
-          organizationId,
-          leadId: e.leadId,
-          error: causa instanceof Error ? causa.message : String(causa),
-        });
-        continue;
-      }
-      if (aberto) {
+      if (esfriamentoJaNaTimeline) {
         r.esfriamentosJaRegistrados += 1;
         continue;
       }

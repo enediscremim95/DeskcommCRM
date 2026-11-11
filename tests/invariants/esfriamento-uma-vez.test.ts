@@ -298,6 +298,23 @@ describe("esfriamento uma vez por episódio", () => {
     expect(await contar(leadId, "lead_cooled")).toBe(2);
     expect(await contar(leadId, "note")).toBe(1);
   });
+
+  it("sair de em voo grava esfriamento novo mesmo sem atividade que encerre o episódio", async () => {
+    const leadId = await novoLead();
+    await atividade(leadId, "lead_cooled", "2026-08-01T12:00:00.000Z");
+    await pool.query(
+      `insert into public.crm_lead_risk_states
+         (lead_id, organization_id, bucket, since, cold_hours)
+       values ($1, $2, 'em_voo', now() - interval '10 days', 24)`,
+      [leadId, ORG],
+    );
+    calcular(leadId, "em_risco");
+
+    const resultado = await observaTravessias(adminReal() as never, ORG);
+
+    expect(resultado.esfriaram).toBe(1);
+    expect(await contar(leadId, "lead_cooled")).toBe(2);
+  });
 });
 
 describe("script de limpeza das repetições", () => {
