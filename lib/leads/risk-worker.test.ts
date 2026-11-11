@@ -380,4 +380,26 @@ describe("observador de risco", () => {
     expect(admin.inseridos.map((linha) => linha.type)).toEqual(["lead_cooled"]);
     expect(resultado.esfriamentosJaRegistrados).toBe(0);
   });
+
+  it("não grava o estado se a atividade de esfriamento não entra", async () => {
+    const admin = adminDoEpisodio({
+      estados: [{ lead_id: "lead-frio", bucket: "em_dia" }],
+      atividades: [],
+    });
+    dependencias.calculaBucketsAtuais.mockResolvedValue([bucket("lead-frio", "em_risco")]);
+    dependencias.emitLeadActivity.mockResolvedValue({ ok: false, error: "insert falhou" });
+
+    const resultado = await observaTravessias(
+      admin as never,
+      "org",
+      new Date("2026-10-14T12:00:00.000Z"),
+    );
+
+    expect(resultado.esfriaram).toBe(0);
+    expect(resultado.falhasDeAtividade).toBe(1);
+    expect(resultado.travessias).toBe(0);
+    expect(admin.upsert).not.toHaveBeenCalled();
+    expect(dependencias.propoeReativacao).not.toHaveBeenCalled();
+    expect(dependencias.registraFalhaDeAtividade).toHaveBeenCalled();
+  });
 });

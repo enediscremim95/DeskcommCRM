@@ -71,9 +71,11 @@ export interface ResultadoDaObservacao {
 /**
  * Interação que zera o relógio do silêncio (`fn_update_last_activity_at`, lista
  * positiva — inclusive `voice_call`) mais `lead_reactivated`, que é o próprio
- * worker dizendo que o negócio voltou a andar. Qualquer um deles encerra o
- * episódio de esfriamento. O script manual de limpeza repete esta lista; os
- * dois têm de continuar iguais.
+ * worker dizendo que o negócio voltou a andar. O script de limpeza usa a mesma
+ * lista. Ele também abre episódio novo quando dois esfriamentos do mesmo lead
+ * ficam separados por pelo menos o intervalo configurado (padrão 6 horas): uma
+ * volta por `em_voo` não deixa atividade no meio, e apagar essa frase seria
+ * perda. Na dúvida, o script mantém.
  */
 export const TIPOS_QUE_ENCERRAM_ESFRIAMENTO = [
   "ai_turn",
@@ -254,6 +256,44 @@ export async function observaTravessias(
         continue;
       }
     }
+    // A frase entra ANTES do estado. Se o upsert viesse primeiro e a atividade
+    // falhasse, o próximo tick veria o bucket já gravado e não tentaria a
+    // frase de novo. Sem linha para gravar (travessia silenciosa, ou episódio
+    // que já está na timeline), o estado segue sozinho.
+    if (linha && !esfriamentoJaNaTimeline) {
+      const atividade = await emitLeadActivity(admin, {
+        organizationId,
+        leadId: e.leadId,
+        contactId: e.contactId,
+        type: linha.tipo,
+        sourceModule: "crm",
+        sourceId: e.leadId,
+        // `webhook_source` é como o produto se declara ator: não foi pessoa nem
+        // agente, foi o sistema observando o relógio. `actorParaAtividade` o
+        // traduz para `actor_kind = 'system'`, que é a FORMA tracejada na
+        // timeline — a mesma de qualquer coisa que aconteceu sem alguém decidir.
+        actor: { type: "webhook_source", id: "risk-worker" },
+        // O reason NOMEIA o estado, nunca dado do negócio — mesma regra do
+        // `lead_edited`: reason é renderizado na tela e vai junto em captura,
+        // exportação e ticket de suporte.
+        reason: linha.reason,
+        payload: { de, para: e.bucket, cold_hours: e.coldHours },
+      });
+      if (!atividade.ok) {
+        r.falhasDeAtividade += 1;
+        await registraFalhaDeAtividade(admin, {
+          organizationId,
+          leadId: e.leadId,
+          tipo: linha.tipo,
+          origem: "lib/leads/risk-worker.observaTravessias",
+          erro: atividade.error,
+        });
+        continue;
+      }
+      if (linha.tipo === "lead_cooled") r.esfriaram += 1;
+      else r.reativaram += 1;
+    }
+
     const { error: upErr } = await admin.from("crm_lead_risk_states").upsert(
       {
         lead_id: e.leadId,
@@ -284,6 +324,10 @@ export async function observaTravessias(
     r.travessias += 1;
 
     if (e.bucket === "em_risco" || e.bucket === "critico") {
+      // A proposta nasce com o esfriamento, no mesmo tick, e também quando o
+      // negócio já estava frio: ela compara os fatos e segue idempotente.
+      // Nasce sem rascunho de propósito. Se só existisse com texto de LLM, uma
+      // indisponibilidade do provedor viraria silêncio.
       const proposta = await propoeReativacao(admin, {
         organizationId,
         leadId: e.leadId,
@@ -294,57 +338,8 @@ export async function observaTravessias(
       if (proposta) r.propostas += 1;
     }
 
-    if (!linha) {
-      r.silenciosas += 1;
-      continue;
-    }
-    if (linha.tipo === "lead_cooled") {
-      if (esfriamentoJaNaTimeline) {
-        r.esfriamentosJaRegistrados += 1;
-        continue;
-      }
-      r.esfriaram += 1;
-      // A PROPOSTA NASCE COM O ESFRIAMENTO, no mesmo tick. Deixar para um
-      // segundo worker criaria uma janela em que o negócio está frio e não tem
-      // o que fazer a respeito — e é justamente a janela em que alguém olharia.
-      //
-      // Nasce SEM RASCUNHO de propósito: se ela só existisse com texto de LLM,
-      // uma indisponibilidade do provedor viraria silêncio, que é a doença que
-      // esta wave cura. "Sem rascunho ainda" é estado honesto; "proposta que não
-      // nasceu" não é estado, é ausência.
-    } else r.reativaram += 1;
-
-    const atividade = await emitLeadActivity(admin, {
-      organizationId,
-      leadId: e.leadId,
-      contactId: e.contactId,
-      type: linha.tipo,
-      sourceModule: "crm",
-      sourceId: e.leadId,
-      // `webhook_source` é como o produto se declara ator: não foi pessoa nem
-      // agente, foi o sistema observando o relógio. `actorParaAtividade` o
-      // traduz para `actor_kind = 'system'`, que é a FORMA tracejada na
-      // timeline — a mesma de qualquer coisa que aconteceu sem alguém decidir.
-      actor: { type: "webhook_source", id: "risk-worker" },
-      // O reason NOMEIA o estado, nunca dado do negócio — mesma regra do
-      // `lead_edited`: reason é renderizado na tela e vai junto em captura,
-      // exportação e ticket de suporte.
-      reason: linha.reason,
-      payload: { de, para: e.bucket, cold_hours: e.coldHours },
-    });
-    if (!atividade.ok) {
-      // Rastro de mudança já ocorrida: falha BAIXO, mas CONTADA e alertada. O
-      // estado já foi gravado; engolir aqui faria a timeline divergir da tabela
-      // em silêncio — o card mudaria de cor sem nada explicando por quê.
-      r.falhasDeAtividade += 1;
-      await registraFalhaDeAtividade(admin, {
-        organizationId,
-        leadId: e.leadId,
-        tipo: linha.tipo,
-        origem: "lib/leads/risk-worker.observaTravessias",
-        erro: atividade.error,
-      });
-    }
+    if (!linha) r.silenciosas += 1;
+    else if (esfriamentoJaNaTimeline) r.esfriamentosJaRegistrados += 1;
   }
 
   return r;

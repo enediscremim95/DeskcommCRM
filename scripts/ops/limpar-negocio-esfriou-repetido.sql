@@ -5,52 +5,75 @@
 -- do código novo já estar no ar — senão o worker continua gravando enquanto
 -- este script apaga.
 --
--- ANTES DE RODAR, faça uma cópia só desta tabela. Sem o dump, não há volta:
--- o DELETE abaixo é definitivo.
+-- ANTES DE RODAR, faça uma cópia só desta tabela e a pré-medição do runbook.
+-- Sem o dump, não há volta: o DELETE abaixo é definitivo.
 --
 --   pg_dump --format=custom --table=public.crm_lead_activities \
 --     --file=crm_lead_activities-antes.dump "$SUPABASE_DB_URL"
 --
--- O que fica: a primeira linha de cada sequência contínua de esfriamento de
--- cada negócio. Uma sequência nova começa quando, entre dois lead_cooled,
--- existe atividade que encerra o episódio — a lista positiva de
--- fn_update_last_activity_at (interação real, inclusive voice_call) ou
--- lead_reactivated. O resto da timeline não é tocado.
+-- O que fica: a primeira linha de cada sequência contínua de esfriamento.
+-- Uma sequência nova começa em três casos, e na dúvida a linha FICA:
+--   1. é o primeiro esfriamento do lead;
+--   2. entre este e o anterior houve interação ou "voltou a andar";
+--   3. o esfriamento anterior do mesmo lead está a pelo menos o intervalo
+--      (padrão 6 horas). As repetições do defeito saem a cada passada, cerca
+--      de 15 minutos, sem buracos. Seis horas mantém uma volta por em_voo,
+--      que não deixa atividade no meio.
+--
+-- Para outro intervalo, na linha de comando (não edite o arquivo):
+--   psql -v intervalo_esfriamento='12 hours' -f este_arquivo.sql
 --
 -- Idempotente: a segunda execução recalcula e não acha duplicata.
--- Lotes de 500, cada um na própria transação, para não segurar lock na tabela
--- inteira de uma instalação carregada.
+-- Cada DELETE leva no máximo 500 linhas e tem statement_timeout de 30s.
+-- Não há teto para o total: a fila inteira sai, um comando de cada vez.
 --
 -- A tabela está na publicação supabase_realtime. Apagar cerca de um milhão de
 -- linhas gera muito WAL e muitos eventos. Rode de madrugada, com espaço em
--- disco conferido antes. O statement_timeout fica em 0 de propósito: o CALL é
--- um comando só, e um teto curto cancela a limpeza no meio dos lotes.
+-- disco conferido antes.
 --
 -- Rode com psql em autocommit. NÃO envolva o arquivo num BEGIN: o índice
--- concorrente e o COMMIT de cada lote recusam transação externa. O editor SQL
--- do painel costuma embrulhar o script; use o psql.
+-- concorrente recusa transação externa.
 --
 --   psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
 --     -f scripts/ops/limpar-negocio-esfriou-repetido.sql
 --
--- Se o script morrer no meio, rode de novo: o que já saiu não volta, e o que
--- ficou é recalculado. Se sobrar o índice ops_tmp_messages_activity_id, apague
--- com: DROP INDEX CONCURRENTLY IF EXISTS public.ops_tmp_messages_activity_id;
+-- Se o script morrer no meio, rode de novo. Se sobrar o índice
+-- ops_tmp_messages_activity_id:
+--   DROP INDEX CONCURRENTLY IF EXISTS public.ops_tmp_messages_activity_id;
 
 \set ON_ERROR_STOP on
 
+\if :{?intervalo_esfriamento}
+\else
+\set intervalo_esfriamento '6 hours'
+\endif
+\if :{?somente_leads}
+\else
+\set somente_leads ''
+\endif
+
 \echo '== contagem ANTES =='
+\echo 'intervalo:' :intervalo_esfriamento
 SELECT count(*) AS atividades_total,
        count(*) FILTER (WHERE type = 'lead_cooled') AS negocio_esfriou,
        count(DISTINCT lead_id) FILTER (WHERE type = 'lead_cooled') AS negocios_com_esfriamento
-  FROM public.crm_lead_activities;
+  FROM public.crm_lead_activities
+ WHERE (
+        :'somente_leads' = ''
+        OR lead_id = ANY (
+          CASE
+            WHEN :'somente_leads' = '' THEN ARRAY[]::uuid[]
+            ELSE string_to_array(:'somente_leads', ',')::uuid[]
+          END
+        )
+      );
 
 -- Sem este índice, cada DELETE confere messages.activity_id varrendo a tabela
--- (a FK é ON DELETE SET NULL e a coluna não tem índice). O índice é parcial e
--- sai no fim: isto não é mudança de schema do produto.
+-- (a FK é ON DELETE SET NULL e a coluna não tem índice). É a única FK que
+-- aponta para crm_lead_activities. O índice sai no fim.
 \echo '== índice temporário para a FK de messages.activity_id =='
-SET statement_timeout = 0;
-SET lock_timeout = '5s';
+SET statement_timeout = '10min';
+SET lock_timeout = '30s';
 -- Execução anterior pode ter deixado o índice INVALID. CREATE INDEX
 -- CONCURRENTLY IF NOT EXISTS não substitui índice inválido.
 DROP INDEX CONCURRENTLY IF EXISTS public.ops_tmp_messages_activity_id;
@@ -60,6 +83,7 @@ CREATE INDEX CONCURRENTLY ops_tmp_messages_activity_id
   WHERE activity_id IS NOT NULL;
 \set indice_falhou :ERROR
 \if :indice_falhou
+  SET lock_timeout = '30s';
   DROP INDEX CONCURRENTLY IF EXISTS public.ops_tmp_messages_activity_id;
   \echo 'não consegui criar o índice temporário; nada foi apagado'
   \set ON_ERROR_STOP on
@@ -67,31 +91,66 @@ CREATE INDEX CONCURRENTLY ops_tmp_messages_activity_id
 \endif
 \set ON_ERROR_STOP on
 
-\echo '== duplicatas desta passada =='
-CREATE TEMP TABLE IF NOT EXISTS ops_esfriamento_duplicado (
-  id uuid PRIMARY KEY
-) ON COMMIT PRESERVE ROWS;
-TRUNCATE ops_esfriamento_duplicado;
-
-INSERT INTO pg_temp.ops_esfriamento_duplicado (id)
+\echo '== pré-medição (nada é apagado neste SELECT) =='
 -- BEGIN IDENTIFICACAO
-WITH marcadores AS (
+WITH esfriamentos AS (
   SELECT id,
          lead_id,
          performed_at,
-         type,
-         CASE WHEN type = 'lead_cooled' THEN 0 ELSE 1 END AS quebra
+         lag(performed_at) OVER (
+           PARTITION BY lead_id
+           ORDER BY performed_at, id
+         ) AS anterior
     FROM public.crm_lead_activities
    WHERE type = 'lead_cooled'
-      OR type IN (
-        'ai_turn',
-        'note',
-        'lead_edited',
-        'stage_changed',
-        'next_action_approved',
-        'voice_call',
-        'lead_reactivated'
-      )
+     AND (
+          :'somente_leads' = ''
+          OR lead_id = ANY (
+            CASE
+              WHEN :'somente_leads' = '' THEN ARRAY[]::uuid[]
+              ELSE string_to_array(:'somente_leads', ',')::uuid[]
+            END
+          )
+        )
+),
+pausas AS (
+  SELECT id
+    FROM esfriamentos
+   WHERE anterior IS NOT NULL
+     AND performed_at - anterior >= :'intervalo_esfriamento'::interval
+),
+marcadores AS (
+  SELECT a.id,
+         a.lead_id,
+         a.performed_at,
+         a.type,
+         CASE
+           WHEN a.type <> 'lead_cooled' THEN 1
+           WHEN a.id IN (SELECT pausas.id FROM pausas) THEN 1
+           ELSE 0
+         END AS quebra
+    FROM public.crm_lead_activities AS a
+   WHERE (
+          :'somente_leads' = ''
+          OR a.lead_id = ANY (
+            CASE
+              WHEN :'somente_leads' = '' THEN ARRAY[]::uuid[]
+              ELSE string_to_array(:'somente_leads', ',')::uuid[]
+            END
+          )
+        )
+     AND (
+          a.type = 'lead_cooled'
+          OR a.type IN (
+            'ai_turn',
+            'note',
+            'lead_edited',
+            'stage_changed',
+            'next_action_approved',
+            'voice_call',
+            'lead_reactivated'
+          )
+        )
 ),
 ordenados AS (
   SELECT id,
@@ -105,7 +164,128 @@ ordenados AS (
          ) AS episodio
     FROM marcadores
 ),
-posicao AS (
+com_pausa AS (
+  SELECT id,
+         row_number() OVER (
+           PARTITION BY lead_id, episodio
+           ORDER BY performed_at, id
+         ) AS n
+    FROM ordenados
+   WHERE type = 'lead_cooled'
+),
+so_tipo_base AS (
+  SELECT id,
+         lead_id,
+         performed_at,
+         sum(CASE WHEN type <> 'lead_cooled' THEN 1 ELSE 0 END) OVER (
+           PARTITION BY lead_id
+           ORDER BY performed_at, id
+           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+         ) AS episodio
+    FROM marcadores
+   WHERE type = 'lead_cooled'
+),
+so_tipo AS (
+  SELECT id,
+         row_number() OVER (
+           PARTITION BY lead_id, episodio
+           ORDER BY performed_at, id
+         ) AS n
+    FROM so_tipo_base
+),
+a_apagar AS (
+  SELECT id FROM com_pausa WHERE n > 1
+),
+mantidas AS (
+  SELECT s.id
+    FROM so_tipo AS s
+   WHERE s.n > 1
+     AND NOT EXISTS (SELECT 1 FROM a_apagar AS a WHERE a.id = s.id)
+)
+-- END IDENTIFICACAO
+SELECT (SELECT count(*) FROM a_apagar) AS duplicatas_a_apagar,
+       (SELECT count(*) FROM mantidas) AS mantidas_pelo_intervalo;
+
+\echo '== fila de duplicatas =='
+CREATE TEMP TABLE IF NOT EXISTS ops_esfriamento_duplicado (
+  id uuid PRIMARY KEY
+) ON COMMIT PRESERVE ROWS;
+TRUNCATE ops_esfriamento_duplicado;
+
+INSERT INTO pg_temp.ops_esfriamento_duplicado (id)
+-- BEGIN FILA
+WITH esfriamentos AS (
+  SELECT id,
+         lead_id,
+         performed_at,
+         lag(performed_at) OVER (
+           PARTITION BY lead_id
+           ORDER BY performed_at, id
+         ) AS anterior
+    FROM public.crm_lead_activities
+   WHERE type = 'lead_cooled'
+     AND (
+          :'somente_leads' = ''
+          OR lead_id = ANY (
+            CASE
+              WHEN :'somente_leads' = '' THEN ARRAY[]::uuid[]
+              ELSE string_to_array(:'somente_leads', ',')::uuid[]
+            END
+          )
+        )
+),
+pausas AS (
+  SELECT id
+    FROM esfriamentos
+   WHERE anterior IS NOT NULL
+     AND performed_at - anterior >= :'intervalo_esfriamento'::interval
+),
+marcadores AS (
+  SELECT a.id,
+         a.lead_id,
+         a.performed_at,
+         a.type,
+         CASE
+           WHEN a.type <> 'lead_cooled' THEN 1
+           WHEN a.id IN (SELECT pausas.id FROM pausas) THEN 1
+           ELSE 0
+         END AS quebra
+    FROM public.crm_lead_activities AS a
+   WHERE (
+          :'somente_leads' = ''
+          OR a.lead_id = ANY (
+            CASE
+              WHEN :'somente_leads' = '' THEN ARRAY[]::uuid[]
+              ELSE string_to_array(:'somente_leads', ',')::uuid[]
+            END
+          )
+        )
+     AND (
+          a.type = 'lead_cooled'
+          OR a.type IN (
+            'ai_turn',
+            'note',
+            'lead_edited',
+            'stage_changed',
+            'next_action_approved',
+            'voice_call',
+            'lead_reactivated'
+          )
+        )
+),
+ordenados AS (
+  SELECT id,
+         lead_id,
+         type,
+         performed_at,
+         sum(quebra) OVER (
+           PARTITION BY lead_id
+           ORDER BY performed_at, id
+           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+         ) AS episodio
+    FROM marcadores
+),
+com_pausa AS (
   SELECT id,
          row_number() OVER (
            PARTITION BY lead_id, episodio
@@ -115,69 +295,74 @@ posicao AS (
    WHERE type = 'lead_cooled'
 )
 SELECT id
-  FROM posicao
+  FROM com_pausa
  WHERE n > 1
--- END IDENTIFICACAO
+-- END FILA
 ;
 
-SELECT count(*) AS duplicatas_a_apagar FROM pg_temp.ops_esfriamento_duplicado;
-
--- O procedimento vive só nesta sessão (pg_temp) e só apaga id que o cálculo
--- acima marcou, e só se a linha ainda for lead_cooled.
-CREATE OR REPLACE PROCEDURE pg_temp.limpar_negocio_esfriou_repetido(p_lote integer)
-LANGUAGE plpgsql
-AS $$
-DECLARE
-  n integer;
-BEGIN
-  IF p_lote IS NULL OR p_lote < 1 OR p_lote > 5000 THEN
-    RAISE EXCEPTION 'lote invalido: use entre 1 e 5000';
-  END IF;
-  LOOP
-    WITH lote AS (
-      SELECT id
-        FROM pg_temp.ops_esfriamento_duplicado
-       ORDER BY id
-       LIMIT p_lote
-    ),
-    apagados AS (
-      DELETE FROM public.crm_lead_activities AS a
-       USING lote
-       WHERE a.id = lote.id
-         AND a.type = 'lead_cooled'
-      RETURNING a.id
+-- Cada comando apaga no máximo 500 linhas. statement_timeout e lock_timeout
+-- valem para ESSE comando. O \gexec repete até esvaziar a fila; não há teto
+-- para o total. Nunca statement_timeout = 0: um CALL único não reinicia o
+-- relógio a cada COMMIT interno.
+\echo '== apagando em lotes de 500 =='
+SET statement_timeout = '30s';
+SET lock_timeout = '5s';
+SELECT $q$WITH lote AS (
+  SELECT id
+    FROM pg_temp.ops_esfriamento_duplicado
+   ORDER BY id
+   LIMIT 500
+),
+apagados AS (
+  DELETE FROM public.crm_lead_activities AS a
+   USING lote
+   WHERE a.id = lote.id
+     AND a.type = 'lead_cooled'
+  RETURNING a.id
+)
+DELETE FROM pg_temp.ops_esfriamento_duplicado AS d
+ USING lote
+ WHERE d.id = lote.id
+   AND (SELECT count(*) FROM apagados) >= 0$q$
+  FROM generate_series(
+    1,
+    GREATEST(
+      (SELECT ceil(count(*)::numeric / 500)::int FROM pg_temp.ops_esfriamento_duplicado),
+      0
     )
-    DELETE FROM pg_temp.ops_esfriamento_duplicado AS d
-     USING lote
-     WHERE d.id = lote.id
-       AND (SELECT count(*) FROM apagados) >= 0;
-
-    GET DIAGNOSTICS n = ROW_COUNT;
-    COMMIT;
-    EXIT WHEN n = 0;
-    RAISE NOTICE 'lote apagado da fila: %', n;
-    PERFORM pg_sleep(0.05);
-  END LOOP;
-END;
-$$;
-
--- 0, não 30s: para o psql o CALL inteiro é um comando. Um teto de 30s
--- cancelaria os ~2.000 lotes no meio. lock_timeout segue valendo em cada lote.
+  );
 \set ON_ERROR_STOP off
-SET statement_timeout = 0;
-SET lock_timeout = '2s';
-CALL pg_temp.limpar_negocio_esfriou_repetido(500);
+\gexec
 \set limpeza_falhou :ERROR
 \set ON_ERROR_STOP on
+
+SET statement_timeout = '30s';
+SET lock_timeout = '30s';
 DROP INDEX CONCURRENTLY IF EXISTS public.ops_tmp_messages_activity_id;
+
+SELECT count(*) AS restantes
+  FROM pg_temp.ops_esfriamento_duplicado
+\gset
 \if :limpeza_falhou
   \echo 'a limpeza parou no meio; o índice temporário foi removido. Rode de novo.'
-  \set ON_ERROR_STOP on
   DO $$ BEGIN RAISE EXCEPTION 'limpeza interrompida'; END $$;
+\endif
+\if :restantes
+  \echo 'ainda há duplicatas na fila; o índice temporário foi removido. Rode de novo.'
+  DO $$ BEGIN RAISE EXCEPTION 'limpeza incompleta'; END $$;
 \endif
 
 \echo '== contagem DEPOIS =='
 SELECT count(*) AS atividades_total,
        count(*) FILTER (WHERE type = 'lead_cooled') AS negocio_esfriou,
        count(DISTINCT lead_id) FILTER (WHERE type = 'lead_cooled') AS negocios_com_esfriamento
-  FROM public.crm_lead_activities;
+  FROM public.crm_lead_activities
+ WHERE (
+        :'somente_leads' = ''
+        OR lead_id = ANY (
+          CASE
+            WHEN :'somente_leads' = '' THEN ARRAY[]::uuid[]
+            ELSE string_to_array(:'somente_leads', ',')::uuid[]
+          END
+        )
+      );

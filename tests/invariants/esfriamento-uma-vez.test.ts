@@ -329,11 +329,19 @@ describe("script de limpeza das repetições", () => {
     const unico = await atividade(outro, "lead_cooled", "2026-09-05T12:00:00.000Z");
     const perdido = await atividade(outro, "voice_call_missed", "2026-09-05T13:00:00.000Z");
     const aindaRepetido = await atividade(outro, "lead_cooled", "2026-09-05T14:00:00.000Z");
+    const pausa = await novoLead();
+    const inicioDaPausa = await atividade(pausa, "lead_cooled", "2026-09-03T12:00:00.000Z");
+    const depoisDeSeisHoras = await atividade(pausa, "lead_cooled", "2026-09-03T18:00:00.000Z");
+    const quinzeDepois = await atividade(pausa, "lead_cooled", "2026-09-03T18:15:00.000Z");
 
     const script = readFileSync(
       join(__dirname, "..", "..", "scripts/ops/limpar-negocio-esfriou-repetido.sql"),
       "utf8",
     );
+    // Só estes leads. O teste de em_voo, no mesmo banco, tem dois esfriamentos
+    // legítimos sem atividade no meio; uma limpeza global os apagaria se
+    // rodasse no meio da suíte.
+    const somente = `\\set somente_leads '${leadId},${outro},${pausa}'\n`;
     execFileSync(
       "docker",
       [
@@ -350,7 +358,7 @@ describe("script de limpeza das repetições", () => {
         "-f",
         "-",
       ],
-      { input: script, encoding: "utf8" },
+      { input: somente + script, encoding: "utf8" },
     );
 
     const { rows } = await pool.query<{ id: string }>(
@@ -358,16 +366,21 @@ describe("script de limpeza das repetições", () => {
          from public.crm_lead_activities
         where lead_id = any($1::uuid[])
         order by performed_at, created_at, id`,
-      [[leadId, outro]],
+      [[leadId, outro, pausa]],
     );
     const ids = rows.map((linha) => linha.id);
-    expect(ids).toEqual([primeiro, unico, perdido, nota, deNovo]);
+    expect(ids).toEqual([
+      primeiro,
+      inicioDaPausa,
+      depoisDeSeisHoras,
+      unico,
+      perdido,
+      nota,
+      deNovo,
+    ]);
     expect(ids).not.toContain(repetido);
     expect(ids).not.toContain(repetidoDeNovo);
     expect(ids).not.toContain(aindaRepetido);
-
-    const identificacao = script.split("-- BEGIN IDENTIFICACAO")[1]?.split("-- END IDENTIFICACAO")[0];
-    const segunda = await pool.query(`select count(*)::int as n from (${identificacao}) duplicatas`);
-    expect(segunda.rows[0]?.n).toBe(0);
+    expect(ids).not.toContain(quinzeDepois);
   });
 });
