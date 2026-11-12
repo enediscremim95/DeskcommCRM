@@ -3,6 +3,8 @@ import { join, relative } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
+import { corpoDoHandlerExportado } from "./helpers/corpo-de-handler-http";
+
 import {
   replacementRemovesValues,
   roleHasPermission,
@@ -24,23 +26,7 @@ function caminho(file: string): string {
 }
 
 function corpoDoDelete(source: ts.SourceFile): ts.Node | null {
-  for (const statement of source.statements) {
-    if (ts.isFunctionDeclaration(statement) && statement.name?.text === "DELETE") {
-      return statement.body ?? null;
-    }
-    if (!ts.isVariableStatement(statement)) continue;
-    for (const declaration of statement.declarationList.declarations) {
-      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "DELETE") continue;
-      if (
-        declaration.initializer &&
-        (ts.isArrowFunction(declaration.initializer) ||
-          ts.isFunctionExpression(declaration.initializer))
-      ) {
-        return declaration.initializer.body;
-      }
-    }
-  }
-  return null;
+  return corpoDoHandlerExportado(source, "DELETE");
 }
 
 function pisoHumanoBaixo(body: ts.Node): "viewer" | "agent" | null {
@@ -162,8 +148,17 @@ describe("Atendente não exclui recursos", () => {
   });
 
   it("a rota DELETE de contato exige lead.delete, não a permissão geral do admin", () => {
-    const source = readFileSync(join(ROOT, "app/api/v1/contacts/[id]/route.ts"), "utf8");
-    const deleteHandler = source.slice(source.indexOf("export async function DELETE"));
+    const file = join(ROOT, "app/api/v1/contacts/[id]/route.ts");
+    const source = ts.createSourceFile(
+      file,
+      readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const corpo = corpoDoHandlerExportado(source, "DELETE");
+    expect(corpo, "handler DELETE de contato não encontrado").not.toBeNull();
+    const deleteHandler = corpo!.getText(source);
     expect(deleteHandler).toContain('requirePermission("lead.delete"');
     expect(deleteHandler).not.toContain('requirePermission("resource.delete"');
   });
