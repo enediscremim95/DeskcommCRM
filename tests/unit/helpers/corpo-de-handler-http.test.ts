@@ -20,13 +20,39 @@ describe("corpo do handler HTTP exportado", () => {
 
   it("mede o corpo do handler local dentro de comAuthDisponivel", () => {
     expect(medir(`
+      import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
       function handler() { requireSupportWrite(); }
       export const POST = comAuthDisponivel(handler);
     `)).toBe("{ requireSupportWrite(); }");
   });
 
+  it("recusa redefinição local de comAuthDisponivel", () => {
+    expect(() => medir(`
+      function comAuthDisponivel(handler: unknown) { return handler; }
+      function handler() { requireSupportWrite(); }
+      export const POST = comAuthDisponivel(handler);
+    `)).toThrow(/redefinido neste arquivo/);
+  });
+
+  it("recusa comAuthDisponivel importado de outra origem", () => {
+    expect(() => medir(`
+      import { comAuthDisponivel } from "./outro";
+      function handler() { requireSupportWrite(); }
+      export const POST = comAuthDisponivel(handler);
+    `)).toThrow(/não veio de @\/lib\/auth\/api-disponivel/);
+  });
+
+  it("mede o handler quando o alias aponta para comAuthDisponivel da origem certa", () => {
+    expect(medir(`
+      import { comAuthDisponivel as comAuth } from "@/lib/auth/api-disponivel";
+      function handler() { requireSupportWrite(); }
+      export const POST = comAuth(handler);
+    `)).toBe("{ requireSupportWrite(); }");
+  });
+
   it("recusa wrapper conhecido com dois candidatos a handler", () => {
     expect(() => medir(`
+      import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
       function handler() { efeito(); }
       function auxiliarComGuarda() { requireSupportWrite(); }
       export const POST = comAuthDisponivel(handler, auxiliarComGuarda);
@@ -35,6 +61,7 @@ describe("corpo do handler HTTP exportado", () => {
 
   it("recusa argumento opaco junto de auxiliar resolvível mesmo no wrapper conhecido", () => {
     expect(() => medir(`
+      import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
       import { handlerImportado } from "./handler";
       const auxiliarComGuarda = () => { requireSupportWrite(); };
       export const POST = comAuthDisponivel(handlerImportado, auxiliarComGuarda);
@@ -52,14 +79,14 @@ describe("corpo do handler HTTP exportado", () => {
     "export function POST() { efeito(); }",
     "export const POST = function () { efeito(); };",
     "export const POST = () => { efeito(); };",
-    "export const POST = comAuthDisponivel(() => { efeito(); });",
+    'import { comAuthDisponivel } from "@/lib/auth/api-disponivel"; export const POST = comAuthDisponivel(() => { efeito(); });',
   ])("mede funções diretas: %s", (codigo) => {
     expect(medir(codigo)).toBe("{ efeito(); }");
   });
 
   it.each([
     'import { handler } from "./handler"; export const POST = handler;',
-    'import { handler } from "./handler"; export const POST = comAuthDisponivel(handler);',
+    'import { comAuthDisponivel } from "@/lib/auth/api-disponivel"; import { handler } from "./handler"; export const POST = comAuthDisponivel(handler);',
     "const a = b; const b = a; export const POST = a;",
     "export const POST = condicao ? primeiro : segundo;",
   ])("falha fechado para import ou indireção opaca: %s", (codigo) => {
@@ -67,8 +94,8 @@ describe("corpo do handler HTTP exportado", () => {
   });
 
   it.each([
-    "export const POST = comAuthDisponivel();",
-    "export const POST = comAuthDisponivel(...handlers);",
+    'import { comAuthDisponivel } from "@/lib/auth/api-disponivel"; export const POST = comAuthDisponivel();',
+    'import { comAuthDisponivel } from "@/lib/auth/api-disponivel"; export const POST = comAuthDisponivel(...handlers);',
   ])("recusa ausência ou quantidade opaca de handlers: %s", (codigo) => {
     expect(() => medir(codigo)).toThrow(/sem ambiguidade/);
   });

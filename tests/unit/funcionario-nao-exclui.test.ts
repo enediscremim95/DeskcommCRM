@@ -25,8 +25,27 @@ function caminho(file: string): string {
   return relative(ROOT, file).replaceAll("\\", "/");
 }
 
-function corpoDoDelete(source: ts.SourceFile): ts.Node | null {
-  return corpoDoHandlerExportado(source, "DELETE");
+function exportaDelete(source: ts.SourceFile): boolean {
+  return source.statements.some((node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === "DELETE") return true;
+    if (!ts.isVariableStatement(node)) return false;
+    return node.declarationList.declarations.some(
+      (declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === "DELETE",
+    );
+  });
+}
+
+// Sem export de DELETE, devolve null (a rota não entra nesta varredura).
+// Com DELETE exportado e corpo invisível, lança: pular seria falhar aberto.
+function corpoDoDelete(source: ts.SourceFile, path: string): ts.Node | null {
+  if (!exportaDelete(source)) return null;
+  const corpo = corpoDoHandlerExportado(source, "DELETE");
+  if (!corpo) {
+    throw new Error(
+      `Não foi possível ler o corpo do DELETE em ${path}; a varredura não pode pulá-lo.`,
+    );
+  }
+  return corpo;
 }
 
 function pisoHumanoBaixo(body: ts.Node): "viewer" | "agent" | null {
@@ -109,7 +128,7 @@ describe("Atendente não exclui recursos", () => {
         true,
         ts.ScriptKind.TS,
       );
-      const body = corpoDoDelete(source);
+      const body = corpoDoDelete(source, caminho(file));
       if (!body) continue;
       const role = pisoHumanoBaixo(body);
       if (role) encontrados.set(caminho(file), role);
@@ -117,6 +136,20 @@ describe("Atendente não exclui recursos", () => {
 
     expect([...encontrados.keys()].sort()).toEqual([...isencoes.keys()].sort());
     expect([...isencoes.values()].every((motivo) => motivo.length > 20)).toBe(true);
+  });
+
+  it("falha quando o DELETE é exportado mas o corpo não é visível à varredura", () => {
+    const path = "app/api/v1/exemplo-opaco/route.ts";
+    const source = ts.createSourceFile(
+      path,
+      'import { handle } from "./handle";\nexport const DELETE = handle;\n',
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    expect(() => corpoDoDelete(source, path)).toThrow(
+      /Não foi possível ler o corpo do DELETE em app\/api\/v1\/exemplo-opaco\/route\.ts/,
+    );
   });
 
   it("a exclusão de lead por POST também passa pelo gate antes do efeito", () => {
