@@ -3,17 +3,22 @@
  *
  * A varredura precisa enxergar as duas formas do App Router:
  * `export async function POST(…)` e `export const POST = …`. Nesta segunda,
- * o inicializador pode ser a função em si ou um wrapper
- * (`comAuthDisponivel(POSTComAuth)`, `comAuthDisponivel(async () => …)` e
- * equivalentes). O gate mede o CORPO do handler, não a linha do wrapper —
+ * o inicializador pode ser uma função, um identificador local ou o wrapper
+ * conhecido (`comAuthDisponivel(POSTComAuth)` ou
+ * `comAuthDisponivel(async () => …)`). O gate mede o CORPO do handler —
  * estar envolvido por `comAuthDisponivel` não substitui
  * `requirePermission` / `requireSupportWrite` / `requireRole`.
  *
  * Identificador no mesmo arquivo é seguido. Import ou indireção opaca
- * devolve `null` (falhar fechado): o teste acusa a rota em vez de assumir
+ * devolve `null`; chamada desconhecida ou ambígua lança erro explícito.
+ * Assim o teste acusa a rota (falhar fechado) em vez de assumir
  * que a guarda existe onde a varredura não vê.
  */
 import ts from "typescript";
+
+// Lista conferida nos exports HTTP de app/api/**/route.ts. Este é o único
+// wrapper encontrado e seu contrato recebe exatamente um handler.
+const WRAPPERS_DE_HANDLER = new Set(["comAuthDisponivel"]);
 
 export function corpoDoHandlerExportado(
   source: ts.SourceFile,
@@ -49,11 +54,22 @@ function desembulhar(
   }
 
   if (ts.isCallExpression(expr)) {
-    for (const arg of expr.arguments) {
-      const corpo = desembulhar(source, arg, vistos);
-      if (corpo) return corpo;
+    if (
+      !ts.isIdentifier(expr.expression) ||
+      !WRAPPERS_DE_HANDLER.has(expr.expression.text)
+    ) {
+      throw new Error(
+        `Não é possível medir o handler: chamada de wrapper desconhecido (${expr.expression.getText(source)}).`,
+      );
     }
-    return null;
+    // Não procuramos o primeiro argumento resolvível: outro argumento pode
+    // ser o handler verdadeiro, inclusive importado e invisível à varredura.
+    if (expr.arguments.length !== 1 || ts.isSpreadElement(expr.arguments[0])) {
+      throw new Error(
+        `Não é possível medir o handler: wrapper ${expr.expression.text} exige um único argumento handler, sem ambiguidade.`,
+      );
+    }
+    return desembulhar(source, expr.arguments[0], vistos);
   }
 
   if (ts.isIdentifier(expr)) {
