@@ -213,17 +213,21 @@ O script imprime as mesmas quatro colunas (`duplicatas_a_apagar`,
 
 ## Dois vigias ao mesmo tempo
 
-O agendamento é um `curl` a cada 15 minutos. Duas passadas que se cruzam — a
-anterior ainda gravando quando outra começa — podem as duas ler o estado
-antigo e as duas inserir a frase, antes do upsert. Não há trava: cada
-consulta do vigia abre a própria conexão, e um advisory lock solto numa delas
-não cobre o insert da outra. Fechar isso pediria uma função no banco, na
-mesma transação, que travasse o negócio, conferisse a frase e gravasse. Não
-entrou aqui.
+O agendamento é um `curl` a cada 15 minutos, com `-m 60`. O curl desiste no
+agendador, mas a passada continua no servidor. Uma chamada manual faz o
+mesmo. A rota `/api/v1/cron/risk-watcher` segura uma trava no processo: se já
+houver passada rodando, a chamada nova responde 202 com
+`skipped: em_andamento`, não processa, e deixa um aviso no log. A trava sai
+no `finally`. Se a passada não voltar, o teto de 30 minutos solta a trava
+para a seguinte poder entrar.
 
-O estrago é uma frase a mais naquela travessia, não a repetição a cada 15
-minutos. Se o `payload.de` for `em_voo` ou `em_dia`, a limpeza deixa as duas.
-Se `de` for nulo e nenhuma mensagem apontar para a segunda, ela sai.
+A trava vale por processo. Hoje o app roda num container só
+(`deskcommcrm-app-1`). Se um dia houver mais de uma réplica, as duas não se
+enxergam e a trava precisa ir para o banco. Nesse caso as duas ainda podem
+ler o estado antigo e gravar a frase antes do upsert. O estrago é uma frase
+a mais naquela travessia, não a repetição a cada 15 minutos. Se o
+`payload.de` for `em_voo` ou `em_dia`, a limpeza deixa as duas. Se `de` for
+nulo e nenhuma mensagem apontar para a segunda, ela sai.
 
 ## Se parar no meio
 

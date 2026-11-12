@@ -49,6 +49,34 @@ export const dynamic = "force-dynamic";
 /** Teto de orgs por invocação — a próxima passada pega o resto. */
 const ORG_LIMIT = 50;
 
+/**
+ * Trava do processo. O `curl -m 60` do agendador desiste, mas esta função
+ * continua no servidor; uma chamada manual faz o mesmo. Sem a trava as duas
+ * leem o estado antigo e as duas gravam a frase. Vale só neste processo: o
+ * app roda num container só. Mais de uma réplica precisaria da trava no banco.
+ * O teto solta uma trava que ficou presa (a passada não voltou ao `finally`).
+ */
+const TETO_DA_TRAVA_MS = 30 * 60 * 1000;
+let trava: { id: number; desde: number } | null = null;
+let proximoId = 0;
+
+function adquirirTrava(agora = Date.now()): number | null {
+  if (trava && agora - trava.desde < TETO_DA_TRAVA_MS) return null;
+  if (trava) {
+    logger.warn("[risk-watcher] trava passou do teto e foi solta", {
+      desde: new Date(trava.desde).toISOString(),
+      teto_ms: TETO_DA_TRAVA_MS,
+    });
+  }
+  proximoId += 1;
+  trava = { id: proximoId, desde: agora };
+  return proximoId;
+}
+
+function soltarTrava(id: number): void {
+  if (trava?.id === id) trava = null;
+}
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
@@ -59,6 +87,22 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
+  const travaId = adquirirTrava();
+  if (travaId === null) {
+    logger.warn("[risk-watcher] passada já em andamento; esta chamada não processa", {
+      requestId,
+    });
+    return ok({ skipped: "em_andamento" }, { status: 202, requestId });
+  }
+
+  try {
+    return await executar(requestId);
+  } finally {
+    soltarTrava(travaId);
+  }
+}
+
+async function executar(requestId: string): Promise<Response> {
   const admin = createAdminClient();
 
   const { data: rows, error } = await admin
