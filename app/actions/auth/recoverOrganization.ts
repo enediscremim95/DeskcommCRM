@@ -1,5 +1,7 @@
 "use server";
 
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -69,7 +71,7 @@ export async function recoverOrganization(name: string): Promise<RecoverOrganiza
   const supabase = await createClient();
   const {
     data: { user: authUser },
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (!authUser) return { ok: false, error: "provision_failed" };
 
   // QUEM PERDEU O ACESSO NÃO É UM VISITANTE NOVO. Esta ação existe para a

@@ -1,3 +1,5 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * GET /api/v1/conversations/counts — contagens por visão do inbox (G4-02).
  *
@@ -18,14 +20,14 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+async function GETComAuth(): Promise<Response> {
   const requestId = randomUUID();
   const supabase = await createClient();
 
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
@@ -98,3 +100,5 @@ export async function GET(): Promise<Response> {
     { requestId },
   );
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

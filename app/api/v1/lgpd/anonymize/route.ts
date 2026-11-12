@@ -1,3 +1,6 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/lgpd/anonymize
@@ -36,7 +39,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest): Promise<Response> {
+async function POSTComAuth(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -46,7 +49,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
@@ -54,6 +57,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     input = await validateRequest(lgpdAnonymizeSchema, req);
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, {
         details: err.details as Record<string, unknown> | undefined,
@@ -200,3 +204,5 @@ export async function POST(req: NextRequest): Promise<Response> {
     { requestId },
   );
 }
+
+export const POST = comAuthDisponivel(POSTComAuth);

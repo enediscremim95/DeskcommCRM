@@ -1,3 +1,4 @@
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
   let usuario = data?.user ?? null;
   let sessaoPreservada = false;
   if (error || !usuario) {
-    const { data: jaAutenticado } = await supabase.auth.getUser();
+    const { data: jaAutenticado } = await getUserComBackoff(() => supabase.auth.getUser());
     if (jaAutenticado.user) {
       usuario = jaAutenticado.user;
       sessaoPreservada = true;

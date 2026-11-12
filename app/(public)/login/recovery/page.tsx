@@ -1,3 +1,4 @@
+import { getUserPublico } from "@/lib/auth/get-user-com-backoff";
 import Link from "next/link";
 
 import { RecoveryForm } from "@/components/auth/RecoveryForm";
@@ -16,7 +17,7 @@ export default async function RecoveryPage({
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserPublico(() => supabase.auth.getUser());
   const idioma = normalizarIdioma(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );

@@ -1,5 +1,7 @@
 "use server";
 
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
+
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -35,7 +37,7 @@ export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaR
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (!user) redirect("/login");
 
   // Sanity-check: must have a verified TOTP factor.

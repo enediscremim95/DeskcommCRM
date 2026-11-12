@@ -1,3 +1,4 @@
+import { ehAuthRecusada } from "@/lib/auth/get-user-com-backoff";
 /**
  * Supabase client para Server Components, Route Handlers e Server Actions.
  *
@@ -13,12 +14,18 @@ import { env } from "@/lib/env";
 export async function createClient() {
   const cookieStore = await cookies();
 
-  return createServerClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+  let validando = false;
+  let pendentes: { name: string; value: string; options: CookieOptions }[] = [];
+  const client = createServerClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
       },
       setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+        if (validando) {
+          pendentes.push(...cookiesToSet);
+          return;
+        }
         try {
           cookiesToSet.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, options);
@@ -38,4 +45,24 @@ export async function createClient() {
       path: "/",
     },
   });
+  const getUser = client.auth.getUser.bind(client.auth);
+  client.auth.getUser = async (...args) => {
+    validando = true;
+    pendentes = [];
+    try {
+      const resultado = await getUser(...args);
+      if (!resultado.error || ehAuthRecusada(resultado.error)) {
+        try {
+          for (const { name, value, options } of pendentes) cookieStore.set(name, value, options);
+        } catch {
+          // Server Component não pode escrever cookies.
+        }
+      }
+      return resultado;
+    } finally {
+      validando = false;
+      pendentes = [];
+    }
+  };
+  return client;
 }

@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/system/relogio/tick — uma batida do relógio.
@@ -58,7 +60,7 @@ async function sessaoAdmin(requestId: string): Promise<boolean> {
   return authz.ok;
 }
 
-export async function POST(req: NextRequest): Promise<Response> {
+async function POSTComAuth(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -83,12 +85,16 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
     return ok(resultado, { requestId });
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     const detail = err instanceof Error ? err.message : String(err);
     return fail("internal_error", detail, 500, { requestId });
   }
 }
 
 /** Alguns crons externos só sabem GET. Mesmo trabalho do POST. */
-export async function GET(req: NextRequest): Promise<Response> {
+async function GETComAuth(req: NextRequest): Promise<Response> {
   return POST(req);
 }
+
+export const POST = comAuthDisponivel(POSTComAuth);
+export const GET = comAuthDisponivel(GETComAuth);

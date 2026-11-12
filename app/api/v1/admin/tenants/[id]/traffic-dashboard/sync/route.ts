@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
@@ -7,12 +9,13 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { syncTrafficDashboards } from "@/lib/windsor/sync";
 
 export const dynamic = "force-dynamic";
-export async function POST(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function POSTComAuth(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
   let adminContext: Awaited<ReturnType<typeof requirePlatformAdmin>>;
-  try { adminContext = await requirePlatformAdmin(); } catch {
+  try { adminContext = await requirePlatformAdmin(); } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
   const { id } = await context.params;
@@ -26,7 +29,10 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
     return result.failed > 0
       ? fail("upstream_unavailable", "A sincronização falhou; o último dado bom foi preservado.", 502, { requestId, details: result })
       : ok(result, { requestId });
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("upstream_unavailable", "A sincronização não pôde ser iniciada.", 502, { requestId });
   }
 }
+
+export const POST = comAuthDisponivel(POSTComAuth);

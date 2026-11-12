@@ -1,3 +1,4 @@
+import { getUserPublico } from "@/lib/auth/get-user-com-backoff";
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
 import { createClient } from "@/lib/supabase/server";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
@@ -9,7 +10,7 @@ export default async function ResetPasswordPage() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserPublico(() => supabase.auth.getUser());
   const idioma = normalizarIdioma(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );

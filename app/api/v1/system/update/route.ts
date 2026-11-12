@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/system/update — o clique do dono.
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 const RUN_IN_PROGRESS_MESSAGE = "Já existe uma atualização em andamento.";
 
-export async function POST(_req: NextRequest): Promise<Response> {
+async function POSTComAuth(_req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -135,3 +136,5 @@ export async function POST(_req: NextRequest): Promise<Response> {
 
   return ok({ run_id: run.id, to_version: latest });
 }
+
+export const POST = comAuthDisponivel(POSTComAuth);

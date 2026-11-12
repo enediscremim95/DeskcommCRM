@@ -1,3 +1,4 @@
+import { getUserPublico } from "@/lib/auth/get-user-com-backoff";
 import Link from "next/link";
 
 import { ForgotPasswordForm } from "@/components/auth/ForgotPasswordForm";
@@ -11,7 +12,7 @@ export default async function ForgotPasswordPage() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserPublico(() => supabase.auth.getUser());
   const idioma = normalizarIdioma(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );

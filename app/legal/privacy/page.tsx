@@ -1,3 +1,4 @@
+import { getUserPublico } from "@/lib/auth/get-user-com-backoff";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
@@ -27,7 +28,7 @@ export default async function PrivacyPage() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserPublico(() => supabase.auth.getUser());
   const idioma = normalizarIdioma(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );
