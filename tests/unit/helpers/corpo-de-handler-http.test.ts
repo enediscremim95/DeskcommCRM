@@ -68,6 +68,16 @@ describe("corpo do handler HTTP exportado", () => {
     `)).toThrow(/sem ambiguidade/);
   });
 
+  it("recusa handler exportado com let, mesmo que o valor inicial esteja envolto em comAuthDisponivel", () => {
+    expect(() => medir(`
+      import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+      function seguro() { requireSupportWrite(); }
+      function inseguro() { efeito(); }
+      export let POST = comAuthDisponivel(seguro);
+      POST = inseguro;
+    `)).toThrow(/let ou var; só o valor inicial seria medido/);
+  });
+
   it("resolve identificador local exportado como GET", () => {
     expect(medir(`
       const handle = () => { requireRole(); };

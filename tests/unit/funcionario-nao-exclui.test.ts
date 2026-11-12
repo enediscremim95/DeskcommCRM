@@ -35,9 +35,30 @@ function exportaDelete(source: ts.SourceFile): boolean {
   });
 }
 
+function acusarFormaNaoSuportadaDeDelete(source: ts.SourceFile, path: string): void {
+  for (const statement of source.statements) {
+    if (!ts.isExportDeclaration(statement)) continue;
+    if (statement.moduleSpecifier && statement.exportClause === undefined) {
+      throw new Error(
+        `Forma de export de DELETE não suportada em ${path}: export * from '...'.`,
+      );
+    }
+    if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue;
+    for (const element of statement.exportClause.elements) {
+      if (element.name.text !== "DELETE") continue;
+      const origem = statement.moduleSpecifier ? " from '...'" : "";
+      const alias = element.propertyName ? `${element.propertyName.text} as ` : "";
+      throw new Error(
+        `Forma de export de DELETE não suportada em ${path}: export { ${alias}DELETE }${origem}.`,
+      );
+    }
+  }
+}
+
 // Sem export de DELETE, devolve null (a rota não entra nesta varredura).
 // Com DELETE exportado e corpo invisível, lança: pular seria falhar aberto.
 function corpoDoDelete(source: ts.SourceFile, path: string): ts.Node | null {
+  acusarFormaNaoSuportadaDeDelete(source, path);
   if (!exportaDelete(source)) return null;
   const corpo = corpoDoHandlerExportado(source, "DELETE");
   if (!corpo) {
@@ -136,6 +157,24 @@ describe("Atendente não exclui recursos", () => {
 
     expect([...encontrados.keys()].sort()).toEqual([...isencoes.keys()].sort());
     expect([...isencoes.values()].every((motivo) => motivo.length > 20)).toBe(true);
+  });
+
+  it.each([
+    ['export { handle as DELETE };', /export \{ handle as DELETE \}/],
+    ['export { DELETE } from "./handle";', /export \{ DELETE \} from/],
+    ['export { handle as DELETE } from "./handle";', /export \{ handle as DELETE \} from/],
+    ['export * from "./handle";', /export \* from/],
+  ])("falha quando a forma de export de DELETE não é suportada: %s", (codigo, padrao) => {
+    const path = "app/api/v1/exemplo-reexport/route.ts";
+    const source = ts.createSourceFile(
+      path,
+      codigo,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    expect(() => corpoDoDelete(source, path)).toThrow(padrao);
+    expect(() => corpoDoDelete(source, path)).toThrow(/não suportada/);
   });
 
   it("falha quando o DELETE é exportado mas o corpo não é visível à varredura", () => {

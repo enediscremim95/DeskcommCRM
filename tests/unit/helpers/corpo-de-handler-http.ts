@@ -33,6 +33,11 @@ export function corpoDoHandlerExportado(
       if (!ts.isIdentifier(declaration.name) || declaration.name.text !== nome) {
         continue;
       }
+      if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) {
+        throw new Error(
+          `Não é possível medir o handler: ${nome} foi declarado com let ou var; só o valor inicial seria medido.`,
+        );
+      }
       if (!declaration.initializer) return null;
       return desembulhar(source, declaration.initializer, new Set());
     }
@@ -170,6 +175,11 @@ function resolverNoArquivo(
     for (const declaration of statement.declarationList.declarations) {
       if (!ts.isIdentifier(declaration.name) || declaration.name.text !== nome) {
         continue;
+      }
+      if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) {
+        throw new Error(
+          `Não é possível medir o handler: ${nome} foi declarado com let ou var; só o valor inicial seria medido.`,
+        );
       }
       if (!declaration.initializer) return null;
       return desembulhar(source, declaration.initializer, vistos);
