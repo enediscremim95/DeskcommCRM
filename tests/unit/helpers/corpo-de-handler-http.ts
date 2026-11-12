@@ -64,12 +64,17 @@ function desembulhar(
     }
     // Não procuramos o primeiro argumento resolvível: outro argumento pode
     // ser o handler verdadeiro, inclusive importado e invisível à varredura.
-    if (expr.arguments.length !== 1 || ts.isSpreadElement(expr.arguments[0])) {
+    const argumento = expr.arguments[0];
+    if (
+      argumento === undefined ||
+      expr.arguments.length !== 1 ||
+      ts.isSpreadElement(argumento)
+    ) {
       throw new Error(
         `Não é possível medir o handler: wrapper ${expr.expression.text} exige um único argumento handler, sem ambiguidade.`,
       );
     }
-    return desembulhar(source, expr.arguments[0], vistos);
+    return desembulhar(source, argumento, vistos);
   }
 
   if (ts.isIdentifier(expr)) {
