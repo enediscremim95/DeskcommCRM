@@ -312,6 +312,11 @@ export async function observaTravessias(
     // A frase entra antes do estado. Se a atividade falha, o estado não muda e
     // a próxima passada tenta os dois. Se a atividade entra e o estado falha,
     // a checagem acima acha a frase e não repete.
+    // Duas passadas ao mesmo tempo ainda podem as duas passar desta leitura
+    // antes de qualquer insert. Cada consulta é uma conexão nova: um advisory
+    // lock aqui não seguraria o insert. O estrago é uma frase a mais naquela
+    // travessia, não a repetição a cada 15 minutos. O runbook da limpeza
+    // registra o caso.
     if (linha && !esfriamentoJaNaTimeline && !fraseJaEntrada) {
       const atividade = await emitLeadActivity(admin, {
         organizationId,

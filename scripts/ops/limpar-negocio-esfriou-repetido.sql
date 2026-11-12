@@ -22,6 +22,10 @@
 --   4. a própria linha registra payload.de em em_voo ou em_dia: o estado
 --      anterior foi lido. A repetição do defeito vinha com de nulo. A troca
 --      em_risco → critico dentro da mesma parada sai de propósito.
+--   5. alguma mensagem aponta para a atividade (messages.activity_id). A FK
+--      é ON DELETE SET NULL: apagar desligaria a mensagem da frase. A linha
+--      fica, e o DELETE recusa de novo na hora, caso a mensagem tenha
+--      aparecido depois da fila.
 --
 -- Para manter mais, diminua o intervalo na linha de comando (não edite o arquivo):
 --   psql -v intervalo_esfriamento='30 minutes' -f este_arquivo.sql
@@ -71,9 +75,9 @@ SELECT count(*) AS atividades_total,
         )
       );
 
--- Sem este índice, cada DELETE confere messages.activity_id varrendo a tabela
--- (a FK é ON DELETE SET NULL e a coluna não tem índice). É a única FK que
--- aponta para crm_lead_activities. O índice sai no fim.
+-- Sem este índice, o NOT EXISTS em messages.activity_id varre a tabela.
+-- A coluna não tem índice, e a FK é ON DELETE SET NULL: apagar a atividade
+-- desligaria a mensagem. O filtro recusa essas linhas. O índice sai no fim.
 \echo '== índice temporário para a FK de messages.activity_id =='
 SET statement_timeout = '10min';
 SET lock_timeout = '30s';
@@ -218,7 +222,16 @@ so_tipo AS (
    WHERE type = 'lead_cooled'
 ),
 a_apagar AS (
-  SELECT id FROM com_pausa WHERE n > 1
+  SELECT a.id
+    FROM com_pausa AS a
+   WHERE a.n > 1
+     AND NOT EXISTS (SELECT 1 FROM public.messages m WHERE m.activity_id = a.id)
+),
+mantidas_mensagem AS (
+  SELECT a.id
+    FROM com_pausa AS a
+   WHERE a.n > 1
+     AND EXISTS (SELECT 1 FROM public.messages m WHERE m.activity_id = a.id)
 ),
 mantidas AS (
   SELECT s.id
@@ -233,11 +246,13 @@ mantidas_estado AS (
     FROM com_intervalo AS c
    WHERE c.n > 1
      AND NOT EXISTS (SELECT 1 FROM a_apagar AS a WHERE a.id = c.id)
+     AND NOT EXISTS (SELECT 1 FROM mantidas_mensagem AS g WHERE g.id = c.id)
 )
 -- END IDENTIFICACAO
 SELECT (SELECT count(*) FROM a_apagar) AS duplicatas_a_apagar,
        (SELECT count(*) FROM mantidas) AS mantidas_pelo_intervalo,
-       (SELECT count(*) FROM mantidas_estado) AS mantidas_pelo_estado;
+       (SELECT count(*) FROM mantidas_estado) AS mantidas_pelo_estado,
+       (SELECT count(*) FROM mantidas_mensagem) AS mantidas_por_mensagem;
 
 \echo '== fila de duplicatas =='
 CREATE TEMP TABLE IF NOT EXISTS ops_esfriamento_duplicado (
@@ -328,9 +343,10 @@ com_pausa AS (
     FROM ordenados
    WHERE type = 'lead_cooled'
 )
-SELECT id
-  FROM com_pausa
- WHERE n > 1
+SELECT a.id
+  FROM com_pausa AS a
+ WHERE a.n > 1
+   AND NOT EXISTS (SELECT 1 FROM public.messages m WHERE m.activity_id = a.id)
 -- END FILA
 ;
 
@@ -352,6 +368,7 @@ apagados AS (
    USING lote
    WHERE a.id = lote.id
      AND a.type = 'lead_cooled'
+     AND NOT EXISTS (SELECT 1 FROM public.messages m WHERE m.activity_id = a.id)
   RETURNING a.id
 )
 DELETE FROM pg_temp.ops_esfriamento_duplicado AS d

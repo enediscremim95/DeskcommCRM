@@ -46,9 +46,12 @@ compromisso e esfriado de novo. Uma frase com `payload.de` igual a `em_voo`
 ou `em_dia` também fica, mesmo com intervalo menor que 1 hora: o vigia leu o
 estado anterior. A repetição do defeito vinha com `de` nulo. A troca antiga
 `em_risco` → `critico` sai de propósito — era uma segunda frase da mesma
-parada, e o radar continua mostrando a faixa nova. As repetições do defeito
-saem a cada passada, cerca de 15 minutos, sem buracos. Intervalo menor mantém
-mais frases. Se `mantidas_pelo_intervalo` parecer pequeno demais, diminua o
+parada, e o radar continua mostrando a faixa nova. Uma frase que alguma
+mensagem aponta (`messages.activity_id`) também fica: a chave estrangeira é
+`ON DELETE SET NULL`, e apagar desligaria a mensagem da frase.
+`mantidas_por_mensagem` conta essas linhas. As repetições do defeito saem a
+cada passada, cerca de 15 minutos, sem buracos. Intervalo menor mantém mais
+frases. Se `mantidas_pelo_intervalo` parecer pequeno demais, diminua o
 intervalo e meça de novo. As duplicatas que sobrarem saem numa segunda limpeza.
 
 ```bash
@@ -100,7 +103,8 @@ A pré-medição abaixo também não apaga nada. `seriam_apagadas` é a fila.
 apagaria e que o intervalo de 1 hora mantém. Se esse número parecer pequeno
 demais, diminua o intervalo na consulta (`interval '1 hour'`) e meça de novo.
 `mantidas_pelo_estado` são frases que o intervalo apagaria e que ficam porque
-o `payload.de` é `em_voo` ou `em_dia`.
+o `payload.de` é `em_voo` ou `em_dia`. `mantidas_por_mensagem` são frases que
+sairiam e que ficam porque uma mensagem aponta para elas.
 
 ```sql
 WITH esfriamentos AS (
@@ -179,7 +183,14 @@ so_tipo AS (
    WHERE type = 'lead_cooled'
 ),
 a_apagar AS (
-  SELECT id FROM com_pausa WHERE n > 1
+  SELECT a.id FROM com_pausa AS a
+   WHERE a.n > 1
+     AND NOT EXISTS (SELECT 1 FROM public.messages m WHERE m.activity_id = a.id)
+),
+com_mensagem AS (
+  SELECT a.id FROM com_pausa AS a
+   WHERE a.n > 1
+     AND EXISTS (SELECT 1 FROM public.messages m WHERE m.activity_id = a.id)
 )
 SELECT (SELECT count(*) FROM a_apagar) AS seriam_apagadas,
        (SELECT count(*) FROM so_tipo AS s
@@ -191,12 +202,28 @@ SELECT (SELECT count(*) FROM a_apagar) AS seriam_apagadas,
        (SELECT count(*) FROM com_intervalo AS c
          WHERE c.n > 1
            AND NOT EXISTS (SELECT 1 FROM a_apagar AS a WHERE a.id = c.id)
-       ) AS mantidas_pelo_estado;
+           AND NOT EXISTS (SELECT 1 FROM com_mensagem AS g WHERE g.id = c.id)
+       ) AS mantidas_pelo_estado,
+       (SELECT count(*) FROM com_mensagem) AS mantidas_por_mensagem;
 ```
 
-O script imprime as mesmas três colunas (`duplicatas_a_apagar`,
-`mantidas_pelo_intervalo` e `mantidas_pelo_estado`) de novo, imediatamente
-antes de apagar.
+O script imprime as mesmas quatro colunas (`duplicatas_a_apagar`,
+`mantidas_pelo_intervalo`, `mantidas_pelo_estado` e
+`mantidas_por_mensagem`) de novo, imediatamente antes de apagar.
+
+## Dois vigias ao mesmo tempo
+
+O agendamento é um `curl` a cada 15 minutos. Duas passadas que se cruzam — a
+anterior ainda gravando quando outra começa — podem as duas ler o estado
+antigo e as duas inserir a frase, antes do upsert. Não há trava: cada
+consulta do vigia abre a própria conexão, e um advisory lock solto numa delas
+não cobre o insert da outra. Fechar isso pediria uma função no banco, na
+mesma transação, que travasse o negócio, conferisse a frase e gravasse. Não
+entrou aqui.
+
+O estrago é uma frase a mais naquela travessia, não a repetição a cada 15
+minutos. Se o `payload.de` for `em_voo` ou `em_dia`, a limpeza deixa as duas.
+Se `de` for nulo e nenhuma mensagem apontar para a segunda, ela sai.
 
 ## Se parar no meio
 

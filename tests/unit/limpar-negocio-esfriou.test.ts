@@ -24,6 +24,10 @@ describe("script manual de Negócio esfriou repetido", () => {
     expect(texto).toContain("mantidas_pelo_intervalo");
     expect(texto).toContain("mantidas_pelo_estado");
     expect(texto.match(/a\.payload->>'de' IN \('em_voo', 'em_dia'\)/g)).toHaveLength(2);
+    const protegeMensagem =
+      "AND NOT EXISTS (SELECT 1 FROM public.messages m WHERE m.activity_id = a.id)";
+    expect(texto.split(protegeMensagem)).toHaveLength(4);
+    expect(texto).toContain("mantidas_por_mensagem");
     expect(texto).toContain("intervalo_esfriamento '1 hour'");
     expect(texto).toContain("(count(*) > 0)::text AS restantes");
     expect(texto).toContain("SET lock_timeout = '30s'");
