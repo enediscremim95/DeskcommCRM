@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/ai/knowledge/sources — os materiais da organização
@@ -73,7 +75,7 @@ const SELECT_COLUNAS =
 // GET
 // ---------------------------------------------------------------------------
 
-export async function GET(_req: NextRequest): Promise<Response> {
+async function GETComAuth(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
   const authUser = await loadAuthUser();
@@ -106,7 +108,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
 // POST
 // ---------------------------------------------------------------------------
 
-export async function POST(req: NextRequest): Promise<Response> {
+async function POSTComAuth(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -120,7 +122,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   let rawBody: unknown;
   try {
     rawBody = await req.json();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
@@ -153,7 +156,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
     try {
       markdownBlob = await extrairTextoDeSite(input.source_url);
-    } catch {
+    } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
       return fail('unprocessable_entity', t('Não foi possível ler esse site com segurança.'), 422, { requestId });
     }
   }
@@ -340,3 +344,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     { status: 201, requestId },
   );
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const POST = comAuthDisponivel(POSTComAuth);

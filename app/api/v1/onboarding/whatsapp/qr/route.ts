@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { loadOnboardingChannel } from "@/lib/channels/onboarding-session";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -9,7 +10,7 @@ import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
  *
  * WAHA exposes: GET /api/{session}/auth/qr?format=image → image/png bytes.
  */
-export async function GET() {
+async function GETComAuth() {
   const user = await loadAuthUser();
   if (!user) return new NextResponse(null, { status: 401 });
   const activeOrg = await resolveActiveOrg(user);
@@ -45,3 +46,5 @@ export async function GET() {
     },
   });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

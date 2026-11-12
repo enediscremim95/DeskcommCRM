@@ -1,5 +1,7 @@
 "use server";
 
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
+
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -32,7 +34,7 @@ export async function confirmMfaEnroll(
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (!user) redirect("/login");
 
   if (!/^\d{6}$/.test(code)) {

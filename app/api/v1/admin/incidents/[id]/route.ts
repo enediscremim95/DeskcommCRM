@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 /**
  * GET /api/v1/admin/incidents/[id] (S-11.11)
  *
@@ -12,7 +14,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 
-export async function GET(
+async function GETComAuth(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -22,7 +24,8 @@ export async function GET(
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
@@ -78,3 +81,5 @@ export async function GET(
   // Date(undefined))` derrubava a página no error boundary, sempre.
   return ok(shaped, { requestId });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

@@ -1,3 +1,5 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * GET /api/v1/conversations/[id]/retention — vetos recentes da cadeia before_send
  * para o contato desta conversa (Operação Visível F2-i). Read-only, RLS-scoped
@@ -30,7 +32,7 @@ interface RetentionKnobsRow {
   timezone: string | null;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+async function GETComAuth(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const supabase = await createClient();
@@ -38,7 +40,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
@@ -104,3 +106,5 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     { requestId },
   );
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

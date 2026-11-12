@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
@@ -12,7 +14,7 @@ import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { IMPERSONATE_COOKIE_NAME, IMPERSONATE_TTL_SECONDS, isImpersonateSecretReady, signImpersonateCookie } from "@/lib/impersonate/cookie";
 
 const inputSchema = z.object({ access_mode: z.enum(["full", "support_readonly"]).default("full") });
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function POSTComAuth(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const requestId = randomUUID();
   const { id: tenantId } = await params;
   if (!z.string().uuid().safeParse(tenantId).success) return fail("validation_failed", "Organização inválida.", 422, { requestId });
@@ -20,7 +22,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!input.success) return fail("validation_failed", "Modo de acompanhamento inválido.", 422, { requestId });
   let ctx;
   try { ctx = await requirePlatformAdmin(); }
-  catch { return fail("forbidden", "Administração da plataforma necessária.", 403, { requestId }); }
+  catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth; return fail("forbidden", "Administração da plataforma necessária.", 403, { requestId }); }
   if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
   if (!isImpersonateSecretReady()) return fail("upstream_unavailable", "Acompanhamento não configurado nesta instalação.", 503, { requestId });
   const user = await loadAuthUser();
@@ -50,3 +53,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     metadata: { auth_session_id: sessionId, support_session_id: id, access_mode: session.access_mode, expires_at: session.expires_at } });
   return ok({ redirect_url: "/app/kanban", expires_at: session.expires_at, support_session_id: id }, { requestId });
 }
+
+export const POST = comAuthDisponivel(POSTComAuth);

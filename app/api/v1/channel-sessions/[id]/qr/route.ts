@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET /api/v1/channel-sessions/[id]/qr — proxy do QR de UM canal específico.
@@ -29,7 +30,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
+async function GETComAuth(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -105,3 +106,5 @@ export async function GET(
     headers: { "content-type": ct, "cache-control": "no-store, max-age=0" },
   });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

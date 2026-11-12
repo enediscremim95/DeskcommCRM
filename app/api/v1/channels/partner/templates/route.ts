@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * As definições aprovadas do canal INTERMEDIADO — listar, sincronizar, criar.
@@ -103,7 +105,7 @@ async function contexto(
 }
 
 /** Lista o que está ESPELHADO. Rápido, e é o que a tela mostra. */
-export async function GET(): Promise<Response> {
+async function GETComAuth(): Promise<Response> {
   const requestId = randomUUID();
   const r = await contexto(requestId);
   if (!r.ok) return r.res;
@@ -144,7 +146,7 @@ export async function GET(): Promise<Response> {
  * Duas ações na mesma rota porque as duas terminam no mesmo lugar — o espelho —
  * e separá-las obrigaria a tela a saber que criar também sincroniza.
  */
-export async function POST(req: NextRequest): Promise<Response> {
+async function POSTComAuth(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -236,6 +238,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     return ok({ sincronizadas: gravadas, total: remotas.length }, { requestId });
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     const msg = err instanceof Error ? err.message : "erro";
     logger.error("[partner/templates] falhou", { detail: msg, requestId });
     // A mensagem do provider CHEGA ao operador: é ela que distingue "nome
@@ -243,3 +246,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("upstream_error", msg, 502, { requestId });
   }
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const POST = comAuthDisponivel(POSTComAuth);

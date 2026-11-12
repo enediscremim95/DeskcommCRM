@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 /**
  * GET /api/v1/system/version — estado da atualização para a tela.
  *
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 /** Sem notícia do agente por 24h, a tela ensina o caminho manual. */
 const AGENT_OFFLINE_AFTER_MS = 24 * 60 * 60 * 1000;
 
-export async function GET(_req: NextRequest): Promise<Response> {
+async function GETComAuth(_req: NextRequest): Promise<Response> {
   const user = await loadAuthUser();
   // `unauthenticated` (não `unauthorized`): esse último é reservado ao segredo
   // interno das rotas host↔app (lib/api/errors.ts) — aqui falta é sessão.
@@ -166,3 +167,5 @@ export async function GET(_req: NextRequest): Promise<Response> {
       : null,
   });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 /**
  * GET /api/v1/leads/proposals — as próximas ações da IA, em lista.
  *
@@ -57,7 +58,7 @@ export interface DecisaoPassada {
   decided_at: string;
 }
 
-export async function GET(req: NextRequest): Promise<Response> {
+async function GETComAuth(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   void req;
 
@@ -190,3 +191,5 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   return ok({ pending: pendentes, history: historico }, { requestId });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

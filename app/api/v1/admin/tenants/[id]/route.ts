@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { type NextRequest } from "next/server";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
@@ -28,7 +30,7 @@ export function mesclarConfiguracaoDeMidia(
 // GET /api/v1/admin/tenants/[id]
 // ---------------------------------------------------------------------------
 
-export async function GET(
+async function GETComAuth(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -38,7 +40,8 @@ export async function GET(
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
@@ -179,7 +182,7 @@ export async function GET(
   return ok({ organization: org, counts, integrations }, { requestId });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function PATCHComAuth(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   // Sessão de suporte é de LEITURA: quem entrou para diagnosticar não grava a
   // URL do relatório do cliente. Faltava desde que o PATCH nasceu, e quem
@@ -190,7 +193,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const requestId = randomUUID();
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
-  try { adminCtx = await requirePlatformAdmin(); } catch { return fail("forbidden", "Platform admin required", 403, { requestId }); }
+  try { adminCtx = await requirePlatformAdmin(); } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth; return fail("forbidden", "Platform admin required", 403, { requestId }); }
   const parsed = tenantPatchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail("validation_error", "Configuração inválida", 400, { requestId, details: parsed.error.flatten() });
   const admin = createAdminClient();
@@ -231,3 +235,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   void audit({ action, actorUserId: adminCtx.user.id, actingAsPlatformAdmin: true, bypassedRls: true, organizationId: id, resourceType: "organization", resourceId: id, requestId, metadata });
   return ok(data, { requestId });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const PATCH = comAuthDisponivel(PATCHComAuth);
