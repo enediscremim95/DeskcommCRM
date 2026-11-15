@@ -9272,6 +9272,9 @@ export const DICIONARIO: Traducoes = {
   "Link ainda não solicitado": { es: "Enlace aún no solicitado" },
   "Criando link do Google Meet": { es: "Creando enlace de Google Meet" },
   "Link do Google Meet pronto": { es: "Enlace de Google Meet listo" },
+  "Link da reunião pronto": { es: "Enlace de la reunión listo" },
+  "Reunião por vídeo": { es: "Reunión por vídeo" },
+  "A conexão com o Google expirou. Reconecte a agenda.": { es: "La conexión con Google caducó. Vuelve a conectar la agenda." },
   "Não foi possível confirmar o link": { es: "No se pudo confirmar el enlace" },
   "Solicitação de link cancelada": { es: "Solicitud de enlace cancelada" },
   "O envio do link ainda não foi autorizado.": { es: "El envío del enlace aún no ha sido autorizado." },
@@ -9305,6 +9308,7 @@ export const DICIONARIO: Traducoes = {
   "Uma regra de envio impediu a mensagem. Confira o aviso na Central antes de tentar novamente.": { es: "Una regla de envío bloqueó el mensaje. Revisa el aviso en la Central antes de intentarlo de nuevo." },
   "Sua reunião está marcada para": { es: "Tu reunión está programada para" },
   "Link do Google Meet:": { es: "Enlace de Google Meet:" },
+  "Link da reunião:": { es: "Enlace de la reunión:" },
 
   // Dashboard nativo de tráfego e configuração Windsor.
   "A atualização mais recente falhou.": { es: "La actualización más reciente falló." },

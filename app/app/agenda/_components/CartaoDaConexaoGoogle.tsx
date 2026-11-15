@@ -54,6 +54,7 @@ export function CartaoDaConexaoGoogle({
   configurado,
   falta,
   contaConectada,
+  conexaoExpirada,
   enderecoDeRetorno,
   linkDeConfiguracao,
 }: {
@@ -67,6 +68,7 @@ export function CartaoDaConexaoGoogle({
   /** O que falta, PELO NOME — para a tela dizer em vez de só esconder o botão. */
   falta: string[];
   contaConectada?: string | null;
+  conexaoExpirada?: boolean;
   /** O endereço EXATO que o Google exige registrado. Ver o bloco no JSX. */
   enderecoDeRetorno?: string;
 }) {
@@ -146,6 +148,19 @@ export function CartaoDaConexaoGoogle({
         <p className="mt-2 text-xs leading-4 text-text-muted">
           {t("Até lá a agenda funciona normalmente, só não troca compromissos com o Google.")}
         </p>
+      </div>
+    );
+  }
+
+  if (contaConectada && conexaoExpirada) {
+    return (
+      <div data-testid="google-token-expirado" role="alert" className="flex flex-col gap-3 rounded-lg border border-red-500 bg-red-50 p-3 text-red-900 sm:flex-row sm:items-center">
+        <p className="min-w-0 flex-1 text-sm">
+          {t("A conexão com o Google expirou. Reconecte a agenda.")}
+        </p>
+        <a href="/api/v1/agenda/google/connect" className="text-sm font-medium underline">
+          {t("Reconectar")}
+        </a>
       </div>
     );
   }

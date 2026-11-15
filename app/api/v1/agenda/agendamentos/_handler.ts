@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { gerarJitsiVideoUrl } from "@/lib/agenda/jitsi";
+import { googleDestinationUsable } from "@/lib/agenda/google/fallback";
 import type { Json } from "@/lib/database.types";
 /**
  * A REGRA de marcar, remarcar e cancelar — fora da rota, de propósito.
@@ -191,7 +193,15 @@ export async function marcarAgendamentoHandler(
     fim,
   });
 
-  const booking = tipo.location_kind === "google_meet" ? ctx.meetingBooking : undefined;
+  const precisaDeLink =
+    tipo.location_kind === "google_meet" ||
+    (tipo.location_kind === "video_link" && !tipo.location_details?.trim());
+  const googleUtilizavel =
+    tipo.location_kind === "google_meet" &&
+    (await googleDestinationUsable(supabase, ctx.organization_id, donoId));
+  const usarJitsi = precisaDeLink && !googleUtilizavel;
+  const jitsiUrl = usarJitsi ? gerarJitsiVideoUrl(input.title ?? tipo.name) : null;
+  const booking = precisaDeLink ? ctx.meetingBooking : undefined;
   if (booking && (booking.boundary.organization_id !== ctx.organization_id || booking.boundary.contact_id !== contatoId || ctx.actor.type !== "ai_agent")) {
     throw new ApiError(403,"forbidden",undefined,ctx.requestId,"A conversa deste atendimento mudou.");
   }
@@ -213,6 +223,14 @@ export async function marcarAgendamentoHandler(
       contact_id: contatoId,
       conversation_id: booking?.boundary.conversation_id ?? input.conversation_id ?? null,
       meeting_delivery: delivery as unknown as Json,
+      ...(jitsiUrl
+        ? {
+            meeting_state: "ready" as const,
+            meeting_url: jitsiUrl,
+            meeting_request_id: randomUUID(),
+            meeting_ready_at: new Date().toISOString(),
+          }
+        : {}),
       location_kind: tipo.location_kind,
       location_details: tipo.location_details,
       notes: input.notes ?? null,

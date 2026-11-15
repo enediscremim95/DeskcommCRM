@@ -22,6 +22,7 @@ import {
   type CalendarFence,
 } from "./sync-store";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { fallbackAppointmentToJitsi, recordGoogleConnectionFailure } from "./fallback";
 
 export async function tokenForConnection(db: SupabaseClient, org: string, connectionId: string) {
   const { data, error } = await db
@@ -400,12 +401,7 @@ export async function reconcileAppointment(
         (meetingDue || method === "POST")
       ) {
         if (!a.meeting_allowed_types?.includes("hangoutsMeet")) {
-          await saveMeeting({
-            state: "failed",
-            received: false,
-            url: null,
-            error: a.meeting_allowed_types === null ? "unknown" : "unsupported",
-          });
+          await fallbackAppointmentToJitsi(db, org, id, a.title);
         } else {
           conferenceRequestId = a.meeting_request_id;
           body = {
@@ -474,6 +470,17 @@ export async function reconcileAppointment(
       await call("error", { message });
     } catch {
       /* aquisição perdida não escreve erro tardio */
+    }
+    if (a.google_connection_id && e instanceof GoogleHttpError) {
+      await recordGoogleConnectionFailure(db, {
+        organizationId: org,
+        connectionId: a.google_connection_id,
+        error: e,
+        operation: "atualizar",
+      });
+      if (a.meeting_state === "pending" || a.meeting_state === "failed") {
+        await fallbackAppointmentToJitsi(db, org, id, a.title);
+      }
     }
     return "failed";
   } finally {

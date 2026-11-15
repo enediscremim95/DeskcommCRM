@@ -173,6 +173,20 @@
       "label": "beforeSend → ponte send de lib/channels/runtime → ledger/handler/adapter; settle cercado"
     },
     {
+      "id": "jitsi-fallback",
+      "lane": "execucao",
+      "col": 7,
+      "type": "service",
+      "label": "Jitsi: sala aleatória quando Google não está utilizável; URL validada antes de qualquer saída"
+    },
+    {
+      "id": "owner-ics",
+      "lane": "execucao",
+      "col": 8,
+      "type": "service",
+      "label": "event_log e e-mail: convite ICS idempotente somente ao responsável"
+    },
+    {
       "id": "meet-export",
       "lane": "execucao",
       "col": 7,
@@ -415,6 +429,24 @@
       "from": "meet",
       "to": "meet-export",
       "label": "compromissos e avisos associados, paginação do footprint"
+    },
+    {
+      "id": "e40",
+      "from": "executor",
+      "to": "jitsi-fallback",
+      "label": "Google indisponível ou falha de criação preserva o compromisso e materializa a sala alternativa"
+    },
+    {
+      "id": "e41",
+      "from": "jitsi-fallback",
+      "to": "meet",
+      "label": "ready não é substituído quando o Google se recupera"
+    },
+    {
+      "id": "e42",
+      "from": "jitsi-fallback",
+      "to": "owner-ics",
+      "label": "gatilho transacional enfileira um convite por compromisso"
     },
     {
       "id": "e39",

@@ -199,6 +199,7 @@ export default async function AgendaPage() {
       fusoDeApresentacao={fusoDeApresentacao}
       googleConfigurado={googleConfigurado}
       contaConectada={conexoes?.map(c => c.account_email).join(", ") || null}
+      conexaoGoogleExpirada={conexoes?.some(c => c.status === "token_expired") ?? false}
       enderecoDeRetorno={enderecoDeRetorno()}
       faltaNoGoogle={faltaNoGoogle}
       // SÓ para quem administra a INSTALAÇÃO. A tela do app OAuth vive em
