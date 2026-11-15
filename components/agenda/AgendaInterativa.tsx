@@ -10,7 +10,11 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { useHorariosLivres } from "@/hooks/agenda/useHorariosLivres";
 import { useRemarcarAgendamento } from "@/hooks/agenda/useRemarcarAgendamento";
-import type { MotivoDaGradeTravada } from "@/lib/agenda/grade-interativa";
+import {
+  horarioPublicadoNoFuso,
+  type MotivoDaGradeTravada,
+} from "@/lib/agenda/grade-interativa";
+import { dataNaParedeDoFuso } from "@/lib/agenda/fuso";
 import { cn } from "@/lib/utils";
 
 import { GradeDaAgenda } from "./GradeDaAgenda";
@@ -43,6 +47,7 @@ export function AgendaInterativa({
   visao,
   ancora,
   agora,
+  fuso,
   pessoas,
   agendamentos,
   recorte,
@@ -57,6 +62,8 @@ export function AgendaInterativa({
   ancora: Date;
   /** INJETADO, como na grade: relógio lido aqui dentro daria dois relógios ao teste. */
   agora: Date;
+  /** Fuso IANA da organização, compartilhado por vagas, cartões e confirmações. */
+  fuso: string;
   pessoas: Pessoa[];
   agendamentos: Agendamento[];
   /** A MESMA janela que a grade desenha — vem de quem já a calcula, sem recontá-la. */
@@ -102,12 +109,13 @@ export function AgendaInterativa({
 
   const horariosPorDia = React.useMemo(() => {
     const mapa: Record<string, Array<{ instante: string; rotulo: string }>> = {};
-    for (const s of horarios?.slots ?? []) {
-      const d = new Date(s.inicio);
-      (mapa[format(d, "yyyy-MM-dd")] ??= []).push({ instante: s.inicio, rotulo: format(d, "HH:mm") });
+    if (!horarios) return mapa;
+    for (const s of horarios.slots) {
+      const publicado = horarioPublicadoNoFuso(s.inicio, fuso);
+      (mapa[publicado.dia] ??= []).push(publicado.horario);
     }
     return mapa;
-  }, [horarios]);
+  }, [fuso, horarios]);
 
   /**
    * Por que a grade está travada — a MESMA ordem do painel de marcação, e de
@@ -194,13 +202,13 @@ export function AgendaInterativa({
       setOtimista(null);
       setRecusa(
         `A remarcação não foi aceita — o compromisso voltou para ${format(
-          new Date(antes.comeca),
+          dataNaParedeDoFuso(antes.comeca, fuso),
           "EEEE, d 'de' MMMM 'às' HH:mm",
           { locale: localeDaData },
         )}.`,
       );
     });
-  }, [agendamentos, pendente, remarcar]);
+  }, [agendamentos, fuso, localeDaData, pendente, remarcar]);
 
   const nomeDoPendente = pendente
     ? (agendamentos.find((a) => a.id === pendente.id)?.titulo ?? "o compromisso")
@@ -281,7 +289,11 @@ export function AgendaInterativa({
           <p className="text-xs leading-4 text-text">
             {t("Remarcar")} <span className="font-semibold">{nomeDoPendente}</span> {t("para")}{" "}
             <span className="font-semibold">
-              {format(new Date(pendente.instante), "EEEE, d 'de' MMMM 'às' HH:mm", { locale: localeDaData })}
+              {format(
+                dataNaParedeDoFuso(pendente.instante, fuso),
+                "EEEE, d 'de' MMMM 'às' HH:mm",
+                { locale: localeDaData },
+              )}
             </span>
             {t("? Quem foi atendido recebe o aviso da mudança.")}
           </p>
@@ -317,6 +329,7 @@ export function AgendaInterativa({
         visao={visao}
         ancora={ancora}
         agora={agora}
+        fuso={fuso}
         pessoas={pessoas}
         agendamentos={desenhados}
         onAbrirAgendamento={onAbrirAgendamento}

@@ -46,10 +46,10 @@ export interface RecorteDaGrade {
  * ENTRAM, e as três últimas do dia pedido FICAM DE FORA. Um compromisso das 22h
  * some da lista do próprio dia.
  *
- * Mandando INSTANTE, quem calcula o começo e o fim é a tela, no fuso de
- * APRESENTAÇÃO — o mesmo `AuthUser.timezone` que a página já resolve. A rota não
+ * Mandando INSTANTE, quem calcula o começo e o fim é a tela, no fuso da
+ * ORGANIZAÇÃO — a mesma régua dos slots, cartões e histórico. A rota não
  * precisa adivinhar em que fuso o dia foi pedido, e o instante vira a moeda
- * entre a regra (num fuso) e a apresentação (noutro).
+ * entre a regra e a apresentação.
  *
  * E a grade é semanal/mensal: o filtro por dia exigiria sete requisições para
  * desenhar uma semana, mesmo se o fuso não fosse problema.

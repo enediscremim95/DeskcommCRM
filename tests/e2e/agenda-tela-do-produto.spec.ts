@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { telaDaAgendaVisivel } from "./helpers/agenda-raiz-visivel";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
 /**
@@ -44,14 +45,15 @@ test.describe("a Agenda como o dono do produto a usa", () => {
     await item.click();
 
     await expect(page).toHaveURL(/\/app\/agenda/, { timeout: ESPERA });
-    await expect(page.getByTestId("tela-agenda")).toBeVisible();
+    const agenda = telaDaAgendaVisivel(page);
+    await expect(agenda).toBeVisible();
     // `exact` NÃO é adorno aqui, e a linha do link acima já sabia disso. Sem ele
     // o nome casa por substring e o estado VAZIO da agenda ("Sua agenda está
     // livre esta semana") vira um segundo heading — dois elementos, strict mode,
     // vermelho. E o estado vazio é justamente o da INSTALAÇÃO FRESCA: esta spec
     // passava só porque outra spec deixava agendamentos no banco antes dela.
     // Medido nas duas direções: com 3 linhas passa, com 0 linhas falha.
-    await expect(page.getByRole("heading", { name: "Agenda", exact: true })).toBeVisible();
+    await expect(agenda.getByRole("heading", { name: "Agenda", exact: true })).toBeVisible();
   });
 
   test("as pessoas da equipe são REAIS — o filtro deixou de ser invisível", async () => {
@@ -60,10 +62,11 @@ test.describe("a Agenda como o dono do produto a usa", () => {
     // vitrine, e NINGUÉM o via aqui. Componente provado e não montado é o mesmo
     // que componente ausente, do ponto de vista de quem usa.
     await page.goto("/app/agenda");
-    await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: ESPERA });
+    const agenda = telaDaAgendaVisivel(page);
+    await expect(agenda).toBeVisible({ timeout: ESPERA });
 
-    const filtro = page.getByTestId("filtro-de-pessoas");
-    const avatares = page.locator('[data-testid^="avatar-pessoa-"]');
+    const filtro = agenda.getByTestId("filtro-de-pessoas");
+    const avatares = agenda.locator('[data-testid^="avatar-pessoa-"]');
 
     // O seed do E2E tem admin, manager, agent, viewer e dono — mais de uma
     // pessoa, então o filtro TEM de aparecer.
@@ -120,10 +123,11 @@ test.describe("a Agenda como o dono do produto a usa", () => {
   test("o histórico está NA TELA DO PRODUTO, com as quatro abas", async () => {
     // Estava provado só na vitrine. Aqui ele aparece mesmo sem dado: as abas com
     // contador zero respondem "não há nada" sem gastar um clique.
-    const hist = page.getByTestId("historico-da-agenda");
+    const agenda = telaDaAgendaVisivel(page);
+    const hist = agenda.getByTestId("historico-da-agenda");
     await expect(hist).toBeVisible({ timeout: ESPERA });
     for (const aba of ["proximos", "aguardando", "passados", "cancelados"]) {
-      await expect(page.getByTestId(`aba-${aba}`)).toBeVisible();
+      await expect(agenda.getByTestId(`aba-${aba}`)).toBeVisible();
     }
   });
 
@@ -138,7 +142,8 @@ test.describe("a Agenda como o dono do produto a usa", () => {
     // e jamais dado de mentira (decisão 18 — o relato de quem vê não é "tem dado
     // de teste na tela", é "estou vendo paciente de outra clínica na minha
     // agenda", e o time queima horas caçando um furo de RLS que não existe).
-    const fonte = await page.getByTestId("tela-agenda").getAttribute("data-fonte");
+    const agenda = telaDaAgendaVisivel(page);
+    const fonte = await agenda.getAttribute("data-fonte");
     expect(fonte, "a tela precisa declarar sua fonte no DOM").not.toBeNull();
     expect(
       fonte,
@@ -149,8 +154,8 @@ test.describe("a Agenda como o dono do produto a usa", () => {
     // O par que o valor sozinho não prova: sem dado, a grade não pode exibir
     // NOME nenhum. É o formato do defeito da decisão 18, medido em vez de suposto.
     if (fonte === "api-sem-dado") {
-      await expect(page.getByText("Marina Alves")).toHaveCount(0);
-      await expect(page.getByText("Pedro Lima")).toHaveCount(0);
+      await expect(agenda.getByText("Marina Alves")).toHaveCount(0);
+      await expect(agenda.getByText("Pedro Lima")).toHaveCount(0);
     }
   });
 
@@ -158,13 +163,14 @@ test.describe("a Agenda como o dono do produto a usa", () => {
     // ⚠️ Isto estava provado só em `agenda-kit-visual`, que roda contra
     // `/vitrine-agenda` — página de demonstração com dado de mentira. A vitrine
     // prova o DESENHO; ela não prova que a tela que o cliente abre desenha.
-    await expect(page.getByTestId("grade-da-agenda")).toBeVisible({ timeout: ESPERA });
+    const agenda = telaDaAgendaVisivel(page);
+    await expect(agenda.getByTestId("grade-da-agenda")).toBeVisible({ timeout: ESPERA });
 
-    const alternador = page.getByTestId("alternador-de-visao");
+    const alternador = agenda.getByTestId("alternador-de-visao");
     for (const visao of ["Dia", "Mês", "Semana"]) {
       await alternador.getByRole("button", { name: visao, exact: true }).click();
       await expect(
-        page.getByTestId("grade-da-agenda"),
+        agenda.getByTestId("grade-da-agenda"),
         `a grade sumiu ao trocar para "${visao}"`,
       ).toBeVisible({ timeout: ESPERA });
       await expect(
@@ -178,7 +184,7 @@ test.describe("a Agenda como o dono do produto a usa", () => {
     // ficar vermelha de madrugada — que é o defeito que este repo já pagou nos
     // invariantes de turno.
     const hora = new Date().getHours();
-    const regua = page.getByTestId("regua-do-agora");
+    const regua = agenda.getByTestId("regua-do-agora");
     if (hora >= 7 && hora <= 21) {
       await expect(regua, "dentro da faixa 07h–21h e sem régua do agora").toBeVisible();
     } else {
@@ -189,10 +195,14 @@ test.describe("a Agenda como o dono do produto a usa", () => {
   test("o filtro por pessoa ISOLA de verdade — clicando, no produto", async () => {
     // O isolamento era assertado só na vitrine. Aqui o teste é sobre o efeito:
     // clicar numa pessoa muda o que a grade mostra, e "Todos" desfaz.
-    const filtro = page.getByTestId("filtro-de-pessoas");
+    const agenda = telaDaAgendaVisivel(page);
+    const filtro = agenda.getByTestId("filtro-de-pessoas");
     await expect(filtro).toBeVisible({ timeout: ESPERA });
 
-    const cartoes = () => page.getByTestId("grade-da-agenda").getByRole("button", { name: /\d{2}:\d{2} às \d{2}:\d{2}/ });
+    const cartoes = () =>
+      agenda
+        .getByTestId("grade-da-agenda")
+        .getByRole("button", { name: /\d{2}:\d{2} às \d{2}:\d{2}/ });
     const todos = await cartoes().count();
 
     const primeira = filtro.getByRole("button").first();
@@ -207,7 +217,7 @@ test.describe("a Agenda como o dono do produto a usa", () => {
       "true",
     );
 
-    await page.getByTestId("botao-todos").click();
+    await agenda.getByTestId("botao-todos").click();
     await expect
       .poll(() => cartoes().count(), { message: "\"Todos\" não desfez o isolamento" })
       .toBe(todos);
@@ -218,11 +228,11 @@ test.describe("a Agenda como o dono do produto a usa", () => {
     // tela que o cliente abre.
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/app/agenda");
-    await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: ESPERA });
+    await expect(telaDaAgendaVisivel(page)).toBeVisible({ timeout: ESPERA });
     await page.screenshot({ path: "evidence/calendario/tela-do-produto-claro.png", fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.getByTestId("tela-agenda")).toBeVisible();
+    await expect(telaDaAgendaVisivel(page)).toBeVisible();
     await page.screenshot({ path: "evidence/calendario/tela-do-produto-celular.png", fullPage: true });
 
     const estouro = await page.evaluate(

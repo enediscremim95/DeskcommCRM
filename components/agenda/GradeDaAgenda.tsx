@@ -9,7 +9,6 @@ import {
   addDays,
   differenceInMinutes,
   format,
-  isSameDay,
   isSameMonth,
   startOfMonth,
   startOfWeek,
@@ -26,6 +25,12 @@ import {
   type HorarioPublicado,
   type MotivoDaGradeTravada,
 } from "@/lib/agenda/grade-interativa";
+import {
+  dataNaParedeDoFuso,
+  diaLocalISO,
+  instanteDaDataDeParede,
+  minutoDoDiaNoFuso,
+} from "@/lib/agenda/fuso";
 import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -105,8 +110,8 @@ interface PropostaDeRemarcacao {
   razao: string;
 }
 
-function minutosDesdeOTopo(d: Date): number {
-  return (d.getHours() - PRIMEIRA_HORA) * 60 + d.getMinutes();
+function minutosDesdeOTopo(instante: Date | string, fuso: string): number {
+  return minutoDoDiaNoFuso(instante, fuso) - PRIMEIRA_HORA * 60;
 }
 
 function pixelsDe(minutos: number): number {
@@ -118,6 +123,11 @@ function chaveDoDia(d: Date): string {
   return format(d, "yyyy-MM-dd");
 }
 
+function minutoDoRotulo(rotulo: string): number {
+  const [hora, minuto] = rotulo.split(":").map(Number);
+  return hora! * 60 + minuto!;
+}
+
 /**
  * O instante de parede de um minuto do dia.
  *
@@ -126,10 +136,10 @@ function chaveDoDia(d: Date): string {
  * duas vezes por ano num único dia — que é o pior formato de defeito para
  * reproduzir.
  */
-function instanteDoMinuto(dia: Date, minuto: number): Date {
+function instanteDoMinuto(dia: Date, minuto: number, fuso: string): Date {
   const d = new Date(dia);
   d.setHours(Math.floor(minuto / 60), minuto % 60, 0, 0);
-  return d;
+  return instanteDaDataDeParede(d, fuso);
 }
 
 /** Os começos de célula que a camada de marcação desenha, em minutos do dia. */
@@ -218,11 +228,13 @@ function repartirSobrepostos(agendamentos: Agendamento[]): Posicionado[] {
 function CamadaDeMarcacao({
   dia,
   agora,
+  fuso,
   agendamentosDoDia,
   interacao,
 }: {
   dia: Date;
   agora: Date;
+  fuso: string;
   agendamentosDoDia: Agendamento[];
   interacao: InteracaoDaGrade;
 }) {
@@ -234,8 +246,8 @@ function CamadaDeMarcacao({
     <>
       {CELULAS.map((minuto) => {
         const livre = horarioNaCelula(publicados, minuto);
-        const inicio = instanteDoMinuto(dia, minuto);
-        const fim = instanteDoMinuto(dia, minuto + PASSO_DA_CELULA_MIN);
+        const inicio = instanteDoMinuto(dia, minuto, fuso);
+        const fim = instanteDoMinuto(dia, minuto + PASSO_DA_CELULA_MIN, fuso);
         const ocupado = agendamentosDoDia.some(
           (a) =>
             a.situacao !== "cancelled" &&
@@ -243,7 +255,9 @@ function CamadaDeMarcacao({
             new Date(a.termina) > inicio,
         );
         const passado = fim.getTime() <= agora.getTime();
-        const rotulo = format(inicio, "HH:mm");
+        const rotulo = `${String(Math.floor(minuto / 60)).padStart(2, "0")}:${String(
+          minuto % 60,
+        ).padStart(2, "0")}`;
         const razao = razaoDoBloco({ motivo: interacao.motivo, ocupado, passado });
 
         return (
@@ -289,6 +303,7 @@ function CamadaDeMarcacao({
  */
 function BlocoDeAgendamento({
   agendamento,
+  fuso,
   pessoa,
   onAbrir,
   coluna,
@@ -296,6 +311,7 @@ function BlocoDeAgendamento({
   arraste,
 }: {
   agendamento: Agendamento;
+  fuso: string;
   pessoa: Pessoa | undefined;
   onAbrir?: (id: string) => void;
   coluna: number;
@@ -321,6 +337,8 @@ function BlocoDeAgendamento({
   const t = useT();
   const comeca = new Date(agendamento.comeca);
   const termina = new Date(agendamento.termina);
+  const comecaNaParede = dataNaParedeDoFuso(comeca, fuso);
+  const terminaNaParede = dataNaParedeDoFuso(termina, fuso);
   const duracao = Math.max(differenceInMinutes(termina, comeca), 15);
   const trilha = pessoa?.trilha ?? 1;
   const doGoogle = agendamento.origem === "google_sync";
@@ -362,7 +380,7 @@ function BlocoDeAgendamento({
       // `titulo` é DADO DO OPERADOR — a rota grava `title ?? tipo.name`, e
       // `tipo.name` é o nome que ele cadastrou em Tipos de agendamento. Passá-lo
       // por `t()` fazia "Retorno" virar "Seguimiento" na leitura de tela.
-      aria-label={`${agendamento.titulo}, ${format(comeca, "HH:mm")} ${t("às")} ${format(termina, "HH:mm")}${
+      aria-label={`${agendamento.titulo}, ${format(comecaNaParede, "HH:mm")} ${t("às")} ${format(terminaNaParede, "HH:mm")}${
         agendamento.quemSeraAtendido ? `, ${t("com")} ${agendamento.quemSeraAtendido}` : ""
       }${pessoa ? `, ${t("atendido por")} ${pessoa.nome}` : ""}${
         doGoogle ? `, ${t("ocupado na agenda do Google")}` : ""
@@ -397,7 +415,7 @@ function BlocoDeAgendamento({
         arraste?.ativo && "opacity-40",
       )}
       style={{
-        top: pixelsDe(minutosDesdeOTopo(comeca)),
+        top: pixelsDe(minutosDesdeOTopo(comeca, fuso)),
         height: Math.max(pixelsDe(duracao) - 2, 18),
         // `calc` em vez de porcentagem crua para os 2px de respiro entre
         // colunas vizinhas não saírem da largura útil de cada bloco.
@@ -423,7 +441,7 @@ function BlocoDeAgendamento({
       </span>
       {duracao >= 45 && (
         <span className="ml-1 truncate text-[10px] leading-3 tabular-nums text-text-muted">
-          {format(comeca, "HH:mm")}
+          {format(comecaNaParede, "HH:mm")}
           {agendamento.quemSeraAtendido ? ` · ${agendamento.quemSeraAtendido}` : ""}
         </span>
       )}
@@ -432,8 +450,8 @@ function BlocoDeAgendamento({
 }
 
 /** A régua do agora — a linha que faz a tela parecer viva em vez de impressa. */
-function ReguaDoAgora({ agora }: { agora: Date }) {
-  const minutos = minutosDesdeOTopo(agora);
+function ReguaDoAgora({ agora, fuso }: { agora: Date; fuso: string }) {
+  const minutos = minutosDesdeOTopo(agora, fuso);
   if (minutos < 0 || minutos > (ULTIMA_HORA - PRIMEIRA_HORA + 1) * 60) return null;
   return (
     <div
@@ -487,9 +505,11 @@ function ColunaDeHoras() {
 function FantasmaDoArraste({
   proposta,
   duracaoMin,
+  fuso,
 }: {
   proposta: PropostaDeRemarcacao;
   duracaoMin: number;
+  fuso: string;
 }) {
   const localeDaData = useLocaleDeData();
   const valido = proposta.instante !== null;
@@ -510,7 +530,9 @@ function FantasmaDoArraste({
     >
       <span className="truncate text-[10px] font-semibold leading-4 text-text">
         {valido
-          ? format(new Date(proposta.instante!), "HH:mm", { locale: localeDaData })
+          ? format(dataNaParedeDoFuso(proposta.instante!, fuso), "HH:mm", {
+              locale: localeDaData,
+            })
           : proposta.razao}
       </span>
     </div>
@@ -520,6 +542,7 @@ function FantasmaDoArraste({
 function ColunaDeDia({
   dia,
   agora,
+  fuso,
   agendamentos,
   pessoas,
   onAbrir,
@@ -530,6 +553,7 @@ function ColunaDeDia({
 }: {
   dia: Date;
   agora: Date;
+  fuso: string;
   agendamentos: Agendamento[];
   pessoas: Pessoa[];
   onAbrir?: (id: string) => void;
@@ -543,8 +567,9 @@ function ColunaDeDia({
   };
 }) {
   const localeDaData = useLocaleDeData();
-  const doDia = agendamentos.filter((c) => isSameDay(new Date(c.comeca), dia));
-  const ehHoje = isSameDay(dia, agora);
+  const chave = chaveDoDia(dia);
+  const doDia = agendamentos.filter((c) => diaLocalISO(new Date(c.comeca), fuso) === chave);
+  const ehHoje = diaLocalISO(agora, fuso) === chave;
 
   return (
     <div
@@ -595,6 +620,7 @@ function ColunaDeDia({
           <CamadaDeMarcacao
             dia={dia}
             agora={agora}
+            fuso={fuso}
             agendamentosDoDia={doDia}
             interacao={interacao}
           />
@@ -603,6 +629,7 @@ function ColunaDeDia({
           <BlocoDeAgendamento
             key={agendamento.id}
             agendamento={agendamento}
+            fuso={fuso}
             pessoa={pessoas.find((p) => p.id === agendamento.responsavelId)}
             onAbrir={onAbrir}
             coluna={coluna}
@@ -615,9 +642,13 @@ function ColunaDeDia({
           />
         ))}
         {proposta && proposta.dia === chaveDoDia(dia) && (
-          <FantasmaDoArraste proposta={proposta} duracaoMin={interacao?.duracaoMin ?? 30} />
+          <FantasmaDoArraste
+            proposta={proposta}
+            duracaoMin={interacao?.duracaoMin ?? 30}
+            fuso={fuso}
+          />
         )}
-        {ehHoje && <ReguaDoAgora agora={agora} />}
+        {ehHoje && <ReguaDoAgora agora={agora} fuso={fuso} />}
       </div>
     </div>
   );
@@ -626,11 +657,13 @@ function ColunaDeDia({
 function VisaoDeMes({
   ancora,
   agora,
+  fuso,
   agendamentos,
   pessoas,
 }: {
   ancora: Date;
   agora: Date;
+  fuso: string;
   agendamentos: Agendamento[];
   pessoas: Pessoa[];
 }) {
@@ -661,7 +694,10 @@ function VisaoDeMes({
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-7 grid-rows-[repeat(auto-fit,minmax(0,1fr))]">
         {semanas.flat().map((d) => {
-          const doDia = agendamentos.filter((c) => isSameDay(new Date(c.comeca), d));
+          const chave = chaveDoDia(d);
+          const doDia = agendamentos.filter(
+            (c) => diaLocalISO(new Date(c.comeca), fuso) === chave,
+          );
           const doMes = isSameMonth(d, ancora);
           return (
             <div
@@ -676,7 +712,7 @@ function VisaoDeMes({
                 <span
                   className={cn(
                     "flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums",
-                    isSameDay(d, agora)
+                    diaLocalISO(agora, fuso) === chave
                       ? "bg-accent font-semibold text-accent-foreground"
                       : doMes
                         ? "text-text"
@@ -707,7 +743,7 @@ function VisaoDeMes({
                         style={{ backgroundColor: corDaTrilha(trilha) }}
                       />
                       <span className="truncate text-[10px] leading-4 text-text">
-                        {format(new Date(c.comeca), "HH:mm")} {c.titulo}
+                        {format(dataNaParedeDoFuso(c.comeca, fuso), "HH:mm")} {c.titulo}
                       </span>
                     </div>
                   );
@@ -725,6 +761,7 @@ export function GradeDaAgenda({
   visao,
   ancora,
   agora,
+  fuso,
   pessoas,
   agendamentos,
   onAbrirAgendamento,
@@ -742,6 +779,8 @@ export function GradeDaAgenda({
    * depender do minuto em que a suíte rodou.
    */
   agora: Date;
+  /** Fuso IANA da organização, a única régua temporal da grade. */
+  fuso: string;
   pessoas: Pessoa[];
   agendamentos: Agendamento[];
   onAbrirAgendamento?: (id: string) => void;
@@ -779,8 +818,8 @@ export function GradeDaAgenda({
       const alvo = alvoDoArraste(publicados, minutoBruto);
       const dia = new Date(`${chave}T12:00:00`);
       const minutoCelula = celulaQueContem(minutoBruto);
-      const inicio = instanteDoMinuto(dia, minutoCelula);
-      const fim = instanteDoMinuto(dia, minutoCelula + PASSO_DA_CELULA_MIN);
+      const inicio = instanteDoMinuto(dia, minutoCelula, fuso);
+      const fim = instanteDoMinuto(dia, minutoCelula + PASSO_DA_CELULA_MIN, fuso);
       const ocupado = agendamentos.some(
         (a) =>
           a.id !== id &&
@@ -793,9 +832,7 @@ export function GradeDaAgenda({
         dia: chave,
         // O fantasma gruda no horário PUBLICADO quando há um; sem ele, na
         // célula sob o ponteiro — que é onde a recusa precisa ser mostrada.
-        minuto: alvo
-          ? new Date(alvo.instante).getHours() * 60 + new Date(alvo.instante).getMinutes()
-          : minutoCelula,
+        minuto: alvo ? minutoDoRotulo(alvo.rotulo) : minutoCelula,
         minutoBruto,
         instante: alvo?.instante ?? null,
         razao: razaoDoBloco({
@@ -805,7 +842,7 @@ export function GradeDaAgenda({
         }),
       };
     },
-    [agendamentos, agora, interacao],
+    [agendamentos, agora, fuso, interacao],
   );
 
   /** Que coluna e que minuto estão sob um ponto da tela. */
@@ -901,8 +938,8 @@ export function GradeDaAgenda({
 
       if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
         e.preventDefault();
-        const dia = atual?.dia ?? chaveDoDia(comeca);
-        const base = atual ? atual.minutoBruto : comeca.getHours() * 60 + comeca.getMinutes();
+        const dia = atual?.dia ?? diaLocalISO(comeca, fuso);
+        const base = atual ? atual.minutoBruto : minutoDoDiaNoFuso(comeca, fuso);
         const direcao = e.key === "ArrowDown" ? 1 : -1;
         // A seta salta de VAGA em VAGA, não de meia em meia hora: é a
         // informação que o arraste dá pelos olhos e o teclado não tem como ver.
@@ -910,7 +947,7 @@ export function GradeDaAgenda({
         // que não há para onde ir, em vez de a tecla ficar muda.
         const vizinho = publicadoVizinho(interacao.horariosPorDia[dia] ?? [], base, direcao);
         const alvo = vizinho
-          ? new Date(vizinho.instante).getHours() * 60 + new Date(vizinho.instante).getMinutes()
+          ? minutoDoRotulo(vizinho.rotulo)
           : base + direcao * PASSO_DA_CELULA_MIN;
         setProposta(
           montarProposta(
@@ -923,8 +960,8 @@ export function GradeDaAgenda({
       }
       if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
         e.preventDefault();
-        const base = atual ? atual.minutoBruto : comeca.getHours() * 60 + comeca.getMinutes();
-        const diaAtual = new Date(`${atual?.dia ?? chaveDoDia(comeca)}T12:00:00`);
+        const base = atual ? atual.minutoBruto : minutoDoDiaNoFuso(comeca, fuso);
+        const diaAtual = new Date(`${atual?.dia ?? diaLocalISO(comeca, fuso)}T12:00:00`);
         setProposta(
           montarProposta(a.id, chaveDoDia(addDays(diaAtual, e.key === "ArrowRight" ? 1 : -1)), base),
         );
@@ -943,7 +980,7 @@ export function GradeDaAgenda({
         setProposta(null);
       }
     },
-    [interacao, proposta, montarProposta, limites.primeiro, limites.ultimo],
+    [fuso, interacao, proposta, montarProposta, limites.primeiro, limites.ultimo],
   );
 
   const arrasteDoCard = interacao?.onArrastarPara
@@ -960,7 +997,13 @@ export function GradeDaAgenda({
       )}
     >
       {visao === "mes" ? (
-        <VisaoDeMes ancora={ancora} agora={agora} agendamentos={agendamentos} pessoas={pessoas} />
+        <VisaoDeMes
+          ancora={ancora}
+          agora={agora}
+          fuso={fuso}
+          agendamentos={agendamentos}
+          pessoas={pessoas}
+        />
       ) : (
         // A rolagem mora AQUI dentro, e não na página: `html, body` têm
         // `overflow-x: hidden` no globals.css, então uma grade que estourasse a
@@ -973,10 +1016,11 @@ export function GradeDaAgenda({
                 key={d.toISOString()}
                 dia={d}
                 agora={agora}
+                fuso={fuso}
                 agendamentos={agendamentos}
                 pessoas={pessoas}
                 onAbrir={onAbrirAgendamento}
-                destacado={visao === "semana" && isSameDay(d, agora)}
+                destacado={visao === "semana" && chaveDoDia(d) === diaLocalISO(agora, fuso)}
                 interacao={interacao}
                 proposta={proposta}
                 arrasteDoCard={arrasteDoCard}

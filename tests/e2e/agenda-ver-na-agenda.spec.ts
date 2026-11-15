@@ -3,7 +3,10 @@ import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
 
-import { escolherUltimoDiaCheio } from "./helpers/agenda-semana-integra";
+import {
+  escolherUltimoDiaCheio,
+  telaDaAgendaVisivel,
+} from "./helpers/agenda-semana-integra";
 
 /**
  * "VER NA AGENDA" LEVA ATÉ O COMPROMISSO — o botão que não fazia nada.
@@ -67,12 +70,18 @@ test("marcar, clicar em 'Ver na agenda', e ENCONTRAR o compromisso na grade", as
   await entrar(page, creds);
 
   await page.goto("/app/agenda");
-  await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 20_000 });
+  const agenda = telaDaAgendaVisivel(page);
+  await expect(agenda).toBeVisible({ timeout: 20_000 });
 
-  await page.getByRole("button", { name: /Novo agendamento/i }).click();
+  await agenda.getByRole("button", { name: /Novo agendamento/i }).click();
   // O tipo do seed, e não o primeiro da lista: só ele tem jornada publicada.
-  await expect(page.getByTestId("tipos-de-agendamento")).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: new RegExp(`^${creds.agenda!.tipo_nome}`) }).click();
+  await expect(page.getByTestId("tipos-de-agendamento").filter({ visible: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  await page
+    .getByRole("button", { name: new RegExp(`^${creds.agenda!.tipo_nome}`) })
+    .filter({ visible: true })
+    .click();
 
   // O ÚLTIMO dia disponível, de propósito: quanto mais longe da semana corrente,
   // mais o defeito aparece. Com o primeiro dia (quase sempre nesta semana) a
@@ -85,14 +94,16 @@ test("marcar, clicar em 'Ver na agenda', e ENCONTRAR o compromisso na grade", as
   // intenção — o mais longe possível da semana corrente — e exclui hoje.
   await escolherUltimoDiaCheio(page);
 
-  const horario = page.locator('[data-testid^="horario-"]').first();
+  const horario = page.locator('[data-testid^="horario-"]').filter({ visible: true }).first();
   await expect(horario, "o dia foi escolhido e não veio horário nenhum").toBeVisible({ timeout: 15_000 });
   await horario.click();
 
-  await expect(page.getByTestId("confirmacao")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("confirmar-marcacao").click();
+  await expect(page.getByTestId("confirmacao").filter({ visible: true })).toBeVisible({
+    timeout: 10_000,
+  });
+  await page.getByTestId("confirmar-marcacao").filter({ visible: true }).click();
 
-  const verNaAgenda = page.getByTestId("ver-na-agenda");
+  const verNaAgenda = page.getByTestId("ver-na-agenda").filter({ visible: true });
   await expect(verNaAgenda, "marquei e a confirmação não apareceu").toBeVisible({ timeout: 20_000 });
 
   // ── O CLIQUE QUE NINGUÉM DAVA ────────────────────────────────────────────
@@ -100,7 +111,7 @@ test("marcar, clicar em 'Ver na agenda', e ENCONTRAR o compromisso na grade", as
 
   // 1. o painel sai da frente
   await expect(
-    page.getByTestId("painel-de-marcacao"),
+    page.getByTestId("painel-de-marcacao").filter({ visible: true }),
     "cliquei em 'Ver na agenda' e o painel continuou aberto por cima da grade",
   ).toBeHidden({ timeout: 15_000 });
 
@@ -108,7 +119,7 @@ test("marcar, clicar em 'Ver na agenda', e ENCONTRAR o compromisso na grade", as
   //    que só fechasse o Sheet seria reprovado: o compromisso é de outra semana,
   //    e sem mover a âncora a grade volta vazia.
   await expect(
-    page.getByText(creds.agenda!.tipo_nome, { exact: false }).first(),
+    telaDaAgendaVisivel(page).getByText(creds.agenda!.tipo_nome, { exact: false }).first(),
     "a grade não mostra o compromisso recém-marcado — o botão fechou o painel e " +
       "deixou a grade na semana corrente, que é o mesmo 'nada acontece' com um passo a mais",
   ).toBeVisible({ timeout: 20_000 });

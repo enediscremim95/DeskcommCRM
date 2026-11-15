@@ -48,6 +48,7 @@ afterEach(cleanup);
 
 /** Quarta-feira, 14h37 — o mesmo instante quebrado da vitrine, e igualmente fixo. */
 const AGORA = new Date("2026-08-26T14:37:00.000Z");
+const FUSO = "America/Sao_Paulo";
 
 function instante(minutosDeDiferenca: number): string {
   return new Date(AGORA.getTime() + minutosDeDiferenca * 60_000).toISOString();
@@ -78,7 +79,14 @@ function ag(
 }
 
 function montar(agendamentos: Agendamento[], agora: Date = AGORA) {
-  return render(<HistoricoDaAgenda agendamentos={agendamentos} pessoas={PESSOAS} agora={agora} />);
+  return render(
+    <HistoricoDaAgenda
+      agendamentos={agendamentos}
+      pessoas={PESSOAS}
+      agora={agora}
+      fuso={FUSO}
+    />,
+  );
 }
 
 function contador(aba: AbaDoHistorico): number {
@@ -98,6 +106,28 @@ function idsNaAba(aba: AbaDoHistorico): string[] {
 }
 
 describe("histórico da agenda — a repartição nas quatro abas", () => {
+  it("mostra a faixa no fuso da organização com o processo em UTC", () => {
+    const tzAnterior = process.env.TZ;
+    process.env.TZ = "UTC";
+    try {
+      const compromisso: Agendamento = {
+        id: "faixa-utc",
+        titulo: "Consulta",
+        responsavelId: "ana",
+        comeca: "2026-11-09T12:00:00.000Z",
+        termina: "2026-11-09T12:30:00.000Z",
+        origem: "ui",
+        situacao: "confirmed",
+      };
+      montar([compromisso], new Date("2026-11-09T11:00:00.000Z"));
+
+      expect(screen.getByTestId("linha-faixa-utc")).toHaveTextContent("09:00 – 09:30");
+    } finally {
+      if (tzAnterior === undefined) delete process.env.TZ;
+      else process.env.TZ = tzAnterior;
+    }
+  });
+
   it("controle de vacuidade: a vitrine inteira cai nas abas, e nada se perde no caminho", () => {
     // Esta sonda enxerga? A vitrine (`dados-de-mentira.ts`) tem os quatro
     // estados de propósito, e não fui eu que a montei. Se a repartição parasse
@@ -289,6 +319,7 @@ describe("histórico da agenda — a repartição nas quatro abas", () => {
         agendamentos={linhas}
         pessoas={PESSOAS}
         agora={new Date(AGORA.getTime() + 60 * 60_000)}
+        fuso={FUSO}
       />,
     );
 

@@ -7,7 +7,10 @@ import { test, expect, type Page } from "@playwright/test";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
-import { irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
+import {
+  irParaASemanaSeguinte,
+  telaDaAgendaVisivel,
+} from "./helpers/agenda-semana-integra";
 
 /**
  * A OCUPAÇÃO QUE VEM DO GOOGLE APARECE NA GRADE — e continua lá depois do
@@ -86,7 +89,7 @@ async function entrar(page: Page, creds: Creds) {
   await page.getByLabel(/senha/i).fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
   await page.waitForURL(/\/app\/agenda(?:\/|\?|$)/, { timeout: 20_000 });
-  await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 25_000 });
+  await expect(telaDaAgendaVisivel(page)).toBeVisible({ timeout: 25_000 });
 }
 
 /** A conexão do Google que o evento externo pendura. Idempotente. */
@@ -172,11 +175,11 @@ test.describe("a ocupação do Google na grade da agenda", () => {
     // 2ª passada: RECARREGA e navega de novo. Depois disto a semente do servidor
     // não cobre mais a semana em tela — o que estiver desenhado veio da rota.
     await page.reload();
-    await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 25_000 });
+    await expect(telaDaAgendaVisivel(page)).toBeVisible({ timeout: 25_000 });
     const diasDepois = await irParaASemanaSeguinte(page);
     expect(diasDepois, "a semana desenhada mudou entre as duas passadas").toContain(alvo);
 
-    const bloco = page.getByTestId(`agendamento-${eventoId}`);
+    const bloco = telaDaAgendaVisivel(page).getByTestId(`agendamento-${eventoId}`);
     await expect(
       bloco,
       "a ocupação vinda do Google não foi desenhada na grade depois do refetch",
@@ -251,28 +254,34 @@ test.describe("a ocupação do Google na grade da agenda", () => {
     const eventoId = (evento as { id: string }).id;
 
     await page.reload();
-    await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 25_000 });
+    await expect(telaDaAgendaVisivel(page)).toBeVisible({ timeout: 25_000 });
     await irParaASemanaSeguinte(page);
-    await expect(page.getByTestId(`agendamento-${eventoId}`)).toBeVisible({ timeout: 20_000 });
+    await expect(
+      telaDaAgendaVisivel(page).getByTestId(`agendamento-${eventoId}`),
+    ).toBeVisible({ timeout: 20_000 });
 
     // Vai para a semana +2 e VOLTA. O `useAgendamentos` refaz a busca a cada
     // troca de recorte — é exatamente aqui que a semente do servidor morria.
-    await page.getByTestId("periodo-seguinte").click();
-    await expect(page.getByTestId(`agendamento-${eventoId}`)).toHaveCount(0, { timeout: 15_000 });
-    await page.getByTestId("periodo-anterior").click();
+    await telaDaAgendaVisivel(page).getByTestId("periodo-seguinte").click();
     await expect(
-      page.getByTestId(`agendamento-${eventoId}`),
+      telaDaAgendaVisivel(page).getByTestId(`agendamento-${eventoId}`),
+    ).toHaveCount(0, { timeout: 15_000 });
+    await telaDaAgendaVisivel(page).getByTestId("periodo-anterior").click();
+    await expect(
+      telaDaAgendaVisivel(page).getByTestId(`agendamento-${eventoId}`),
       "o bloco do Google sumiu ao voltar para a semana dele — o refetch o apagou",
     ).toBeVisible({ timeout: 20_000 });
 
     // Visão MÊS: outro recorte, outra busca. Aqui nem a semente do servidor
     // chegava, porque `naJanelaDoServidor` vira falso.
-    await page.getByTestId("visao-mes").click();
+    await telaDaAgendaVisivel(page).getByTestId("visao-mes").click();
     await expect(
-      page.getByTestId(`chip-mes-${eventoId}`),
+      telaDaAgendaVisivel(page).getByTestId(`chip-mes-${eventoId}`),
       "a ocupação do Google não aparece na visão Mês",
     ).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId(`chip-mes-${eventoId}`)).toContainText(/ocupado/i);
+    await expect(
+      telaDaAgendaVisivel(page).getByTestId(`chip-mes-${eventoId}`),
+    ).toContainText(/ocupado/i);
     expect(
       await page.content(),
       "o título do evento do Google VAZOU na visão Mês",
@@ -340,11 +349,12 @@ test.describe("a ocupação do Google na grade da agenda", () => {
     const nossoId = (nosso as { id: string }).id;
 
     await page.reload();
-    await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 25_000 });
+    await expect(telaDaAgendaVisivel(page)).toBeVisible({ timeout: 25_000 });
     await irParaASemanaSeguinte(page);
 
-    const doGoogle = page.getByTestId(`agendamento-${eventoId}`);
-    const meu = page.getByTestId(`agendamento-${nossoId}`);
+    const agenda = telaDaAgendaVisivel(page);
+    const doGoogle = agenda.getByTestId(`agendamento-${eventoId}`);
+    const meu = agenda.getByTestId(`agendamento-${nossoId}`);
     await expect(doGoogle).toBeVisible({ timeout: 20_000 });
     await expect(meu, "o nosso agendamento sumiu da grade").toBeVisible({ timeout: 20_000 });
 

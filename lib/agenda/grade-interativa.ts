@@ -33,6 +33,8 @@
  * não é clicável.
  */
 
+import { diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
+
 /** A régua da camada de marcação, em minutos. Ver o cabeçalho. */
 export const PASSO_DA_CELULA_MIN = 30;
 
@@ -45,6 +47,28 @@ export interface HorarioPublicado {
 }
 
 /**
+ * Um instante da rota na régua de parede que a organização usa.
+ *
+ * A grade roda no navegador. Formatar o ISO com `new Date()` fazia 09:00 em
+ * São Paulo virar 12:00 no Chromium do CI, que roda em UTC. O painel de
+ * confirmação convertia o mesmo instante para o fuso da regra e voltava a
+ * mostrar 09:00. Resultado visível: a pessoa clicava no bloco das 12:00 e a
+ * confirmação dizia 09:00.
+ */
+export function horarioPublicadoNoFuso(
+  instante: string,
+  fuso: string,
+): { dia: string; horario: HorarioPublicado } {
+  const data = new Date(instante);
+  const p = partesNoFuso(data, fuso);
+  const dois = (n: number) => String(n).padStart(2, "0");
+  return {
+    dia: diaLocalISO(data, fuso),
+    horario: { instante, rotulo: `${dois(p.hora)}:${dois(p.minuto)}` },
+  };
+}
+
+/**
  * Por que a grade INTEIRA está travada, quando está — os mesmos três estados
  * que `PainelDeMarcacao` distingue, e pela mesma razão: "você não publicou
  * horários", "não consegui carregar" e "não há vaga" chegam à tela como a mesma
@@ -53,10 +77,10 @@ export interface HorarioPublicado {
  */
 export type MotivoDaGradeTravada = "sem-jornada" | "erro" | "sem-vaga";
 
-/** O minuto do dia (desde a meia-noite local) que um horário publicado ocupa. */
-function minutoDoDia(iso: string): number {
-  const d = new Date(iso);
-  return d.getHours() * 60 + d.getMinutes();
+/** O minuto na régua de APRESENTAÇÃO que um horário publicado ocupa. */
+function minutoDoDia(horario: HorarioPublicado): number {
+  const [hora, minuto] = horario.rotulo.split(":").map(Number);
+  return hora! * 60 + minuto!;
 }
 
 /**
@@ -75,7 +99,7 @@ export function horarioNaCelula(
   let escolhido: HorarioPublicado | null = null;
   let melhor = Number.POSITIVE_INFINITY;
   for (const h of publicados) {
-    const m = minutoDoDia(h.instante);
+    const m = minutoDoDia(h);
     if (m < celulaMinuto || m >= celulaMinuto + passoMin) continue;
     if (m < melhor) {
       melhor = m;
@@ -108,7 +132,7 @@ export function alvoDoArraste(
   let escolhido: HorarioPublicado | null = null;
   let melhor = Number.POSITIVE_INFINITY;
   for (const h of publicados) {
-    const distancia = Math.abs(minutoDoDia(h.instante) - minutoAlvo);
+    const distancia = Math.abs(minutoDoDia(h) - minutoAlvo);
     if (distancia > toleranciaMin) continue;
     if (distancia < melhor) {
       melhor = distancia;
@@ -144,7 +168,7 @@ export function publicadoVizinho(
   let escolhido: HorarioPublicado | null = null;
   let melhor = Number.POSITIVE_INFINITY;
   for (const h of publicados) {
-    const distancia = (minutoDoDia(h.instante) - minutoAtual) * direcao;
+    const distancia = (minutoDoDia(h) - minutoAtual) * direcao;
     // Estritamente adiante: `> 0` e não `>= 0`, senão o horário em que já
     // estamos seria sempre o vizinho e a seta nunca sairia do lugar.
     if (distancia <= 0) continue;

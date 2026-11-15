@@ -87,6 +87,10 @@ async function login(page: Page, email: string): Promise<void> {
   await aguardarSessaoCompleta(page, "aal1");
 }
 
+function porTestIdVisivel(page: Page, testid: string) {
+  return page.getByTestId(testid).filter({ visible: true });
+}
+
 interface ApiOk<T> {
   data: T;
 }
@@ -209,17 +213,19 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
       (r) => r.url().includes("/api/v1/ai/followups/queue") && r.url().includes("q=") && r.status() === 200,
       { timeout: 60_000 },
     );
-    const linha = page.locator('[data-testid="queue-row"]', { hasText: cenario.contactName });
+    const linha = page
+      .locator('[data-testid="queue-row"]', { hasText: cenario.contactName })
+      .filter({ visible: true });
     await expect(linha).toBeVisible({ timeout: 30_000 });
     await linha.getByTestId("queue-abrir-dossie").click();
     await page.waitForURL(new RegExp(`/app/ai/followups/enrollments/${cenario.enrollmentId}`));
 
     await expect(page.getByRole("heading", { name: cenario.contactName })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("dossie-status")).toHaveText("Ativo", { timeout: 30_000 });
-    await expect(page.getByTestId("dossie-onde-esta")).toContainText("Deixa esfriar");
+    await expect(porTestIdVisivel(page, "dossie-status")).toHaveText("Ativo", { timeout: 30_000 });
+    await expect(porTestIdVisivel(page, "dossie-onde-esta")).toContainText("Deixa esfriar");
 
     // --- 2. a história do motor, em português ---
-    const timeline = page.getByTestId("dossie-timeline");
+    const timeline = porTestIdVisivel(page, "dossie-timeline");
     await expect(timeline).toContainText("Seguiu em frente");
     await expect(timeline).toContainText("Começou a esperar");
     // O que a tradução existe para impedir: identificador de máquina na tela.
@@ -228,45 +234,54 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "01-dossie-timeline.png"), fullPage: true });
 
     // --- 3. pausar ---
-    await page.getByTestId("dossie-pausar").click();
-    await expect(page.getByText("Follow-up pausado.")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("dossie-status")).toHaveText("Pausado por uma pessoa");
-    await expect(page.getByTestId("dossie-proximo-passo")).toContainText("Parado até alguém retomar");
+    await porTestIdVisivel(page, "dossie-pausar").click();
+    await expect(page.getByText("Follow-up pausado.").filter({ visible: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(porTestIdVisivel(page, "dossie-status")).toHaveText("Pausado por uma pessoa");
+    await expect(porTestIdVisivel(page, "dossie-proximo-passo")).toContainText("Parado até alguém retomar");
     await expect(timeline).toContainText("Pausado por uma pessoa da equipe");
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "02-pausado.png"), fullPage: true });
 
     // Pausado NÃO oferece adiar nem pular: mexer no relógio de quem está fora
     // dele seria um botão que só sabe recusar.
-    await expect(page.getByTestId("dossie-adiar")).toHaveCount(0);
-    await expect(page.getByTestId("dossie-pular")).toHaveCount(0);
+    await expect(porTestIdVisivel(page, "dossie-adiar")).toHaveCount(0);
+    await expect(porTestIdVisivel(page, "dossie-pular")).toHaveCount(0);
 
     // --- 4. retomar ---
-    await page.getByTestId("dossie-retomar").click();
-    await expect(page.getByText("Follow-up retomado.")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("dossie-status")).toHaveText("Ativo", { timeout: 30_000 });
+    await porTestIdVisivel(page, "dossie-retomar").click();
+    await expect(page.getByText("Follow-up retomado.").filter({ visible: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(porTestIdVisivel(page, "dossie-status")).toHaveText("Ativo", { timeout: 30_000 });
     await expect(timeline).toContainText("Retomado por uma pessoa da equipe");
 
     // --- 5. adiar para uma data escolhida ---
-    await page.getByTestId("dossie-adiar").click();
+    await porTestIdVisivel(page, "dossie-adiar").click();
     const daquiUmMes = new Date(Date.now() + 30 * 24 * 3_600_000);
     const p = (n: number) => String(n).padStart(2, "0");
     await page
       .getByTestId("dossie-adiar-quando")
+      .filter({ visible: true })
       .fill(
         `${daquiUmMes.getFullYear()}-${p(daquiUmMes.getMonth() + 1)}-${p(daquiUmMes.getDate())}T${p(daquiUmMes.getHours())}:${p(daquiUmMes.getMinutes())}`,
       );
-    await page.getByTestId("dossie-adiar-confirmar").click();
-    await expect(page.getByText("Follow-up adiado.")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("dossie-proximo-passo")).toContainText(
+    await porTestIdVisivel(page, "dossie-adiar-confirmar").click();
+    await expect(page.getByText("Follow-up adiado.").filter({ visible: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(porTestIdVisivel(page, "dossie-proximo-passo")).toContainText(
       `${p(daquiUmMes.getDate())}/${p(daquiUmMes.getMonth() + 1)}/${daquiUmMes.getFullYear()}`,
     );
     await expect(timeline).toContainText("Adiado por uma pessoa da equipe");
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "03-adiado.png"), fullPage: true });
 
     // --- 6. pular o passo (a espera tem saída única: segue sem perguntar) ---
-    await page.getByTestId("dossie-pular").click();
-    await expect(page.getByText("Passo pulado.")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("dossie-onde-esta")).toContainText("Fim");
+    await porTestIdVisivel(page, "dossie-pular").click();
+    await expect(page.getByText("Passo pulado.").filter({ visible: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(porTestIdVisivel(page, "dossie-onde-esta")).toContainText("Fim");
     await expect(timeline).toContainText("Passo pulado por uma pessoa da equipe");
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "04-pulado.png"), fullPage: true });
 
@@ -276,9 +291,10 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     // Desde b8124bc3 o dossiê deixou de ser um Sheet do quadro e passou a ser
     // a página canônica do lead. Abrir direto elimina o redirecionamento legado.
     await page.goto(`/app/leads/${cenario.leadId}`);
-    await expect(page.getByTestId("lead-page-workspace")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("lead-context-event").filter({ hasText: "Follow-up pausado" })).toBeVisible();
-    await expect(page.getByTestId("lead-context-event").filter({ hasText: "Follow-up retomado" })).toBeVisible();
+    const workspace = porTestIdVisivel(page, "lead-page-workspace");
+    await expect(workspace).toBeVisible({ timeout: 30_000 });
+    await expect(workspace.getByTestId("lead-context-event").filter({ hasText: "Follow-up pausado" })).toBeVisible();
+    await expect(workspace.getByTestId("lead-context-event").filter({ hasText: "Follow-up retomado" })).toBeVisible();
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "05-timeline-do-negocio.png"), fullPage: true });
 
     await limpa(page, cenario);
@@ -305,8 +321,8 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
 
     await page.goto(`/app/ai/followups/enrollments/${cenario.enrollmentId}`);
     await expect(page.getByRole("heading", { name: cenario.contactName })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("dossie-timeline")).toBeVisible();
-    await expect(page.getByTestId("dossie-acoes")).toHaveCount(0);
+    await expect(porTestIdVisivel(page, "dossie-timeline")).toBeVisible();
+    await expect(porTestIdVisivel(page, "dossie-acoes")).toHaveCount(0);
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "06-viewer-so-leitura.png"), fullPage: true });
 
     await page.context().clearCookies();
@@ -368,7 +384,7 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     });
 
     await page.goto(`/app/ai/followups/enrollments/${enrollment.id}`);
-    const bloco = page.getByTestId("dossie-plano-de-tempo");
+    const bloco = porTestIdVisivel(page, "dossie-plano-de-tempo");
     await expect(bloco).toBeVisible({ timeout: 30_000 });
     // O que o nó permitiu, não o que a IA pediu.
     await expect(bloco).toContainText("esperar 12 horas");
@@ -382,7 +398,7 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     // evento do plano caía no fallback ("código: timing_plan_decidido") e o
     // turno de PLANEJAMENTO se anunciava como "escrever a mensagem". Os dois
     // ficam vigiados aqui, onde apareceram.
-    const historia = page.getByTestId("dossie-timeline");
+    const historia = porTestIdVisivel(page, "dossie-timeline");
     await expect(historia).toContainText("O agente decidiu quanto esperar em cada passo");
     await expect(historia).toContainText("Pediu ao agente para planejar os tempos de espera");
     await expect(historia).not.toContainText("timing_plan_decidido");

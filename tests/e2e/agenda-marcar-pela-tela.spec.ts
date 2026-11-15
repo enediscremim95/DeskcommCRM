@@ -11,6 +11,7 @@ import {
   escolherPrimeiroDiaCheio,
   irParaASemanaDoCompromisso,
   irParaASemanaSeguinte,
+  telaDaAgendaVisivel,
 } from "./helpers/agenda-semana-integra";
 
 /**
@@ -137,7 +138,8 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
   await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
 
   await page.goto("/app/agenda");
-  await expect(page.getByTestId("tela-agenda")).toBeVisible({ timeout: 20_000 });
+  const agenda = telaDaAgendaVisivel(page);
+  await expect(agenda).toBeVisible({ timeout: 20_000 });
 
   // ⚠️ A SEMANA SEGUINTE, e ela é a condição de o caso poder passar.
   //
@@ -154,8 +156,11 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
   const diasDaSemana = await irParaASemanaSeguinte(page);
 
   // ── marcar, pela tela, como um humano faria ────────────────────────────
-  await page.getByRole("button", { name: /novo agendamento/i }).click();
-  await expect(page.getByTestId("painel-de-marcacao")).toBeVisible({ timeout: 10_000 });
+  await agenda.getByRole("button", { name: /novo agendamento/i }).click();
+  const painel = page.getByTestId("painel-de-marcacao").filter({ visible: true });
+  await expect(painel).toBeVisible({
+    timeout: 10_000,
+  });
 
   // ESCOLHER O TIPO — e este bloco existe porque a spec o achou faltando.
   //
@@ -169,8 +174,13 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
   // Escolher o tipo do seed (e NÃO o primeiro) é o que dá valor a esta asserção:
   // se o seletor sumir, o painel volta a "Atendimento" e o horário marcado deixa
   // de casar com a jornada do tipo do seed.
-  await expect(page.getByTestId("tipos-de-agendamento")).toBeVisible({ timeout: 10_000 });
-  await page.getByRole("button", { name: new RegExp(`^${creds.agenda.tipo_nome}`) }).click();
+  await expect(page.getByTestId("tipos-de-agendamento").filter({ visible: true })).toBeVisible({
+    timeout: 10_000,
+  });
+  await page
+    .getByRole("button", { name: new RegExp(`^${creds.agenda.tipo_nome}`) })
+    .filter({ visible: true })
+    .click();
 
   try {
     await escolherDiaDesenhado(page, diasDaSemana);
@@ -185,7 +195,7 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
     );
   }
 
-  const horario = page.locator('[data-testid^="horario-"]').first();
+  const horario = painel.locator('[data-testid^="horario-"]').first();
   await expect(horario, "o dia foi escolhido e não veio horário nenhum").toBeVisible({ timeout: 15_000 });
   const rotulo = (await horario.getAttribute("data-testid"))!.replace("horario-", "");
   await horario.click();
@@ -193,9 +203,13 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
   // `confirmacao` é o bloco que aparece ao ESCOLHER o horário — ele contém o
   // próprio botão de confirmar. Depois do clique o painel troca para a vista de
   // sucesso, e é `ver-na-agenda` que prova que a marcação foi aceita.
-  await expect(page.getByTestId("confirmacao")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("confirmar-marcacao").click();
-  await expect(page.getByTestId("ver-na-agenda")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("confirmacao").filter({ visible: true })).toBeVisible({
+    timeout: 10_000,
+  });
+  await painel.getByTestId("confirmar-marcacao").click();
+  await expect(page.getByTestId("ver-na-agenda").filter({ visible: true })).toBeVisible({
+    timeout: 15_000,
+  });
 
   // ⚠️ `ver-na-agenda` aparece por estado LOCAL do React — `onClick` faz
   // `setMarcado(horario)` ANTES de a mutação responder. Então a tela dizer
@@ -240,7 +254,7 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
   expect(idCriado, `o POST não devolveu id. Respostas:\n${respostas.join("\n")}`).toBeTruthy();
 
   await expect(
-    page.getByTestId(`faixa-${idCriado}`),
+    agenda.getByTestId(`faixa-${idCriado}`),
     "o compromisso nasceu no banco e a grade não o desenhou sem F5 — " +
       "`useMarcarAgendamento` invalida `[\"agenda\"]` e `useAgendamentos` deveria refazer a busca",
   ).toBeAttached({ timeout: 20_000 });
@@ -251,7 +265,7 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
   // zero. Sem isto, um seletor quebrado casaria qualquer coisa (ou nada) e a
   // asserção acima passaria por vacuidade.
   await expect(
-    page.getByTestId("faixa-00000000-0000-4000-8000-000000000000"),
+    agenda.getByTestId("faixa-00000000-0000-4000-8000-000000000000"),
     "a sonda de identidade casa um id inexistente — ela não distingue nada",
   ).toHaveCount(0);
 
@@ -265,7 +279,9 @@ test("marcar um horário pela tela e vê-lo aparecer na grade — sem recarregar
   // produção o contêiner roda em UTC (`node:22-alpine` sem `tzdata`, serviço
   // `app` sem `TZ`), então uma grade que desenhasse no fuso do SERVIDOR
   // divergiria em três horas para `America/Sao_Paulo` — e este par não bateria.
-  const cartaoCriado = page.locator(`button:has([data-testid="faixa-${idCriado}"])`);
+  const cartaoCriado = telaDaAgendaVisivel(page).locator(
+    `button:has([data-testid="faixa-${idCriado}"])`,
+  );
   await expect(
     cartaoCriado,
     `o horário ${rotulo} foi marcado e o cartão dele não anuncia esse horário`,
@@ -339,13 +355,22 @@ test("marcar pela ficha grava no lead exato e retira o horário livre", async ({
   const lead = (await leadRes.json()) as ApiOk<{ id: string }>;
 
   await page.goto(`/app/leads/${lead.data.id}`);
-  await expect(page.getByTestId("next-lead-tasks")).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: "Marcar compromisso" }).click();
-  await expect(page.getByTestId("painel-de-marcacao")).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: new RegExp(`^${creds.agenda.tipo_nome}`) }).click();
+  const ficha = page.getByTestId("lead-page-workspace").filter({ visible: true });
+  await expect(ficha).toBeVisible({ timeout: 20_000 });
+  const proximasTarefas = ficha.getByTestId("next-lead-tasks");
+  await expect(proximasTarefas).toBeVisible({ timeout: 20_000 });
+  await proximasTarefas.getByRole("button", { name: "Marcar compromisso" }).click();
+
+  const painel = page.getByTestId("painel-de-marcacao").filter({ visible: true });
+  await expect(painel).toBeVisible({
+    timeout: 15_000,
+  });
+  const tipos = page.getByTestId("tipos-de-agendamento").filter({ visible: true });
+  await expect(tipos).toBeVisible({ timeout: 15_000 });
+  await tipos.getByRole("button", { name: new RegExp(`^${creds.agenda.tipo_nome}`) }).click();
   await escolherPrimeiroDiaCheio(page);
 
-  const horario = page.locator('[data-testid^="horario-"]').first();
+  const horario = painel.locator('[data-testid^="horario-"]').first();
   await expect(horario).toBeVisible({ timeout: 15_000 });
   await horario.click();
 
@@ -354,7 +379,7 @@ test("marcar pela ficha grava no lead exato e retira o horário livre", async ({
       resposta.url().includes("/api/v1/agenda/agendamentos") &&
       resposta.request().method() === "POST",
   );
-  await page.getByTestId("confirmar-marcacao").click();
+  await painel.getByTestId("confirmar-marcacao").click();
   const resposta = await respostaDaMarcacao;
   expect(resposta.status()).toBe(201);
   const corpo = (await resposta.json()) as ApiOk<{
@@ -370,7 +395,9 @@ test("marcar pela ficha grava no lead exato e retira o horário livre", async ({
     lead_id: lead.data.id,
     owner_user_id: usuario.id,
   });
-  await expect(page.getByText("Marcado.", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Marcado.", { exact: true }).filter({ visible: true })).toBeVisible({
+    timeout: 15_000,
+  });
 
   const timelineRes = await page.request.get(`/api/v1/leads/${lead.data.id}/timeline`);
   expect(timelineRes.ok()).toBe(true);
@@ -395,7 +422,9 @@ test("marcar pela ficha grava no lead exato e retira o horário livre", async ({
 
   await page.goto("/app/agenda");
   await irParaASemanaDoCompromisso(page, corpo.data.starts_at);
-  await expect(page.getByTestId(`faixa-${corpo.data.id}`)).toBeAttached({ timeout: 20_000 });
+  await expect(telaDaAgendaVisivel(page).getByTestId(`faixa-${corpo.data.id}`)).toBeAttached({
+    timeout: 20_000,
+  });
 
   const cancelou = await page.request.delete("/api/v1/agenda/agendamentos", {
     data: { id: corpo.data.id, reason: "limpeza da spec da ficha do lead" },

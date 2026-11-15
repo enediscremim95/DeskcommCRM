@@ -18,6 +18,8 @@ import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
 import { EmptyAgenda } from "@/components/empty";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
+import { horarioPublicadoNoFuso } from "@/lib/agenda/grade-interativa";
+import { dataNaParedeDoFuso, instanteDaDataDeParede } from "@/lib/agenda/fuso";
 import { Button } from "@/components/ui/button";
 import { PainelDeMarcacao } from "@/components/agenda/PainelDeMarcacao";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -65,7 +67,7 @@ const VISOES: Array<{ id: VisaoDaAgenda; rotulo: string }> = [
  * imports sem querer.
  */
 export function AgendaClient({
-  fusoDeApresentacao,
+  fusoDaOrganizacao,
   googleConfigurado,
   contaConectada,
   enderecoDeRetorno,
@@ -74,7 +76,7 @@ export function AgendaClient({
   tiposIniciais,
   agendamentosIniciais,
 }: {
-  fusoDeApresentacao: string | null;
+  fusoDaOrganizacao: string;
   googleConfigurado: boolean;
   contaConectada?: string | null;
   enderecoDeRetorno?: string;
@@ -135,7 +137,9 @@ export function AgendaClient({
   const tipo = tiposIniciais.find((t) => t.id === tipoId) ?? tiposIniciais[0] ?? null;
   const [visao, setVisao] = React.useState<VisaoDaAgenda>("semana");
   const [isolada, setIsolada] = React.useState<string | null>(null);
-  const [ancora, setAncora] = React.useState(() => new Date());
+  const [ancora, setAncora] = React.useState(() =>
+    dataNaParedeDoFuso(new Date(), fusoDaOrganizacao),
+  );
 
   // AS PESSOAS SÃO REAIS: vêm de `/api/v1/team`, com a trilha de cor derivada do
   // `user_id`. Até esta linha o filtro por pessoa era invisível na tela do
@@ -178,13 +182,13 @@ export function AgendaClient({
 
   const horariosPorDia = React.useMemo(() => {
     const mapa: Record<string, Array<{ instante: string; rotulo: string }>> = {};
-    for (const s of horarios?.slots ?? []) {
-      const d = new Date(s.inicio);
-      const chave = format(d, "yyyy-MM-dd");
-      (mapa[chave] ??= []).push({ instante: s.inicio, rotulo: format(d, "HH:mm") });
+    if (!horarios) return mapa;
+    for (const s of horarios.slots) {
+      const publicado = horarioPublicadoNoFuso(s.inicio, fusoDaOrganizacao);
+      (mapa[publicado.dia] ??= []).push(publicado.horario);
     }
     return mapa;
-  }, [horarios]);
+  }, [fusoDaOrganizacao, horarios]);
 
   // OS AGENDAMENTOS SÃO REAIS, e agora TAMBÉM se atualizam sem recarregar.
   //
@@ -210,8 +214,11 @@ export function AgendaClient({
           : startOfDay(ancora);
     const fim =
       visao === "mes" ? addDays(endOfMonth(ancora), 1) : addDays(inicio, visao === "semana" ? 7 : 1);
-    return { de: inicio.toISOString(), ate: fim.toISOString() };
-  }, [visao, ancora]);
+    return {
+      de: instanteDaDataDeParede(inicio, fusoDaOrganizacao).toISOString(),
+      ate: instanteDaDataDeParede(fim, fusoDaOrganizacao).toISOString(),
+    };
+  }, [visao, ancora, fusoDaOrganizacao]);
 
   // A janela que o SERVIDOR pintou. Sem esta comparação, navegar para outra
   // semana mostraria os compromissos DESTA por um instante — o fallback estaria
@@ -282,7 +289,8 @@ export function AgendaClient({
     <div
       data-testid="tela-agenda"
       data-fonte={agendamentosIniciais.length > 0 ? "api" : "api-sem-dado"}
-      data-fuso={fusoDeApresentacao ?? "organizacao"}
+      data-fuso="organizacao"
+      data-timezone={fusoDaOrganizacao}
       className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-6"
     >
       {/*
@@ -311,7 +319,11 @@ export function AgendaClient({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setAncora(new Date())}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAncora(dataNaParedeDoFuso(new Date(), fusoDaOrganizacao))}
+          >
             {t("Hoje")}
           </Button>
           {/*
@@ -579,11 +591,11 @@ export function AgendaClient({
                 // arquivo proíbe — dado falso plausível numa tela multi-tenant é
                 // indistinguível de vazamento.
                 //
-                // `fuso_da_regra` já vinha da rota e já era tipado pelo hook;
-                // ninguém em tela o lia. Chutar São Paulo para quem atende em
-                // Manaus é uma hora de diferença no horário oferecido ao cliente.
+                // O fuso da organização vem do RSC e rege toda a Agenda. Chutar
+                // São Paulo para quem atende em Manaus é uma hora de diferença
+                // no horário oferecido ao cliente.
                 local={rotuloDoLocal(tipo.localKind, tipo.localDetalhes)}
-                fuso={horarios?.fuso_da_regra}
+                fuso={fusoDaOrganizacao}
                 horariosPorDia={horariosPorDia}
                 publicouHorarios={horarios?.publicou_horarios ?? true}
                 erroAoCarregar={horariosFalharam}
@@ -656,7 +668,7 @@ export function AgendaClient({
                 // acidente na visão de semana e escolheria a hora errada na de
                 // dia.
                 onVerNaAgenda={(instante) => {
-                  setAncora(startOfDay(new Date(instante)));
+                  setAncora(startOfDay(dataNaParedeDoFuso(instante, fusoDaOrganizacao)));
                   setMarcando(false);
                   setRemarcandoId(null);
                 }}
@@ -686,7 +698,7 @@ export function AgendaClient({
                 const alvo = todos.find((a) => a.id === cancelandoId);
                 if (!alvo) return t("Este agendamento não está mais na lista.");
                 const quem = alvo.quemSeraAtendido ? ` ${t("de")} ${alvo.quemSeraAtendido}` : "";
-                return `${alvo.titulo}${quem}, ${format(new Date(alvo.comeca), t("d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}.`;
+                return `${alvo.titulo}${quem}, ${format(dataNaParedeDoFuso(alvo.comeca, fusoDaOrganizacao), t("d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}.`;
               })()}
             </p>
             <label className="block text-xs font-medium text-text-muted" htmlFor="motivo-do-cancelamento">
@@ -760,6 +772,7 @@ export function AgendaClient({
         agendamentos={agendamentosAcionaveis}
         pessoas={pessoas}
         agora={new Date()}
+        fuso={fusoDaOrganizacao}
         className="max-h-[320px]"
         // ⚠️ ESTAS DUAS PROPS FALTAVAM, e a ausência tinha cara de permissão.
         // `HistoricoDaAgenda` usa `disabled={!onRemarcar}`; sem elas os botões
@@ -814,6 +827,7 @@ export function AgendaClient({
         visao={visao}
         ancora={ancora}
         agora={new Date()}
+        fuso={fusoDaOrganizacao}
         pessoas={pessoas}
         agendamentos={agendamentosDaGrade}
         recorte={recorteDaGrade}
@@ -821,7 +835,7 @@ export function AgendaClient({
         tipo={tipo ? { id: tipo.id, duracaoMin: tipo.duracaoMin } : null}
         onEscolherTipo={setTipoId}
         onMarcarEm={(instante) => {
-          setHorarioEscolhido({ instante, rotulo: format(new Date(instante), "HH:mm") });
+          setHorarioEscolhido(horarioPublicadoNoFuso(instante, fusoDaOrganizacao).horario);
           setRemarcandoId(null);
           setMarcando(true);
         }}

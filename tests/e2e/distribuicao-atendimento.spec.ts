@@ -49,10 +49,16 @@ async function login(page: Page, email: string): Promise<void> {
   await aguardarSessaoCompleta(page, "aal1");
 }
 
+function formularioVisivel(page: Page) {
+  return page.getByTestId("form-atendimento").filter({ visible: true });
+}
+
 /** O estado marcado vem do atributo que o próprio componente escreve. */
 async function marcada(page: Page, nome: string, valor: string): Promise<boolean> {
   return (
-    (await page.getByTestId(`opcao-${nome}-${valor}`).getAttribute("data-marcada")) === "sim"
+    (await formularioVisivel(page)
+      .getByTestId(`opcao-${nome}-${valor}`)
+      .getAttribute("data-marcada")) === "sim"
   );
 }
 
@@ -86,29 +92,31 @@ test.describe("distribuição de atendimento — a tela que liga o rodízio e a 
     await expect(
       page.getByRole("heading", { name: "Distribuição de atendimento" }),
     ).toBeVisible();
+    const formulario = formularioVisivel(page);
+    await expect(formulario).toBeVisible();
 
     // 2. O default do produto aparece: manual + "os seus e os sem dono".
     expect(await marcada(page, "modo", "manual")).toBe(true);
 
     // 3. Liga o rodízio — e só então os knobs aparecem (config de retentativa
     //    não faz sentido no modo manual, em que ninguém retenta).
-    await expect(page.locator("#max_retries")).toHaveCount(0);
-    await page.getByTestId("opcao-modo-round_robin").click();
-    await expect(page.locator("#max_retries")).toBeVisible();
+    await expect(formulario.locator("#max_retries")).toHaveCount(0);
+    await formulario.getByTestId("opcao-modo-round_robin").click();
+    await expect(formulario.locator("#max_retries")).toBeVisible();
 
     // 4. Restringe a visibilidade ao próprio atendente.
-    await page.getByTestId("opcao-visibilidade-own").click();
+    await formulario.getByTestId("opcao-visibilidade-own").click();
     expect(await marcada(page, "visibilidade", "own")).toBe(true);
 
     // 5. Salva e recarrega: o estado tem de vir do BANCO. Sem o reload isto
     //    provaria só que o React guardou o clique.
-    await page.getByRole("button", { name: /^Salvar$/ }).click();
-    await expect(page.getByText(/Distribuição de atendimento salva/i)).toBeVisible();
+    await formulario.getByRole("button", { name: /^Salvar$/ }).click();
+    await expect(page.getByText(/Distribuição de atendimento salva/i).filter({ visible: true })).toBeVisible();
 
     await page.reload();
     expect(await marcada(page, "modo", "round_robin")).toBe(true);
     expect(await marcada(page, "visibilidade", "own")).toBe(true);
-    await expect(page.locator("#max_retries")).toBeVisible();
+    await expect(formulario.locator("#max_retries")).toBeVisible();
 
     // 6. E a API concorda com a tela — se divergissem, uma das duas estaria
     //    mentindo e o operador não teria como saber qual.
@@ -127,20 +135,22 @@ test.describe("distribuição de atendimento — a tela que liga o rodízio e a 
     // achando que está sendo restritivo.
     await login(page, creds.users.manager!.email);
     await page.goto("/app/settings/atendimento");
+    const formulario = formularioVisivel(page);
+    await expect(formulario).toBeVisible();
 
-    await page.getByTestId("opcao-modo-manual").click();
-    await page.getByTestId("opcao-visibilidade-own").click();
-    await expect(page.getByTestId("aviso-combinacao-morta")).toBeVisible();
+    await formulario.getByTestId("opcao-modo-manual").click();
+    await formulario.getByTestId("opcao-visibilidade-own").click();
+    await expect(formulario.getByTestId("aviso-combinacao-morta")).toBeVisible();
 
-    await page.getByTestId("opcao-modo-round_robin").click();
-    await expect(page.getByTestId("aviso-combinacao-morta")).toHaveCount(0);
+    await formulario.getByTestId("opcao-modo-round_robin").click();
+    await expect(formulario.getByTestId("aviso-combinacao-morta")).toHaveCount(0);
   });
 
   test("atendente não abre a tela nem consegue gravar pela API", async ({ page }) => {
     await login(page, creds.users.agent!.email);
 
     await page.goto("/app/settings/atendimento");
-    await expect(page.getByTestId("form-atendimento")).toHaveCount(0);
+    await expect(formularioVisivel(page)).toHaveCount(0);
 
     // O redirect da página não é a defesa — é conforto. A defesa é o servidor:
     // sem esta asserção, tirar o `requireRole` da rota deixaria a spec verde.
