@@ -120,7 +120,10 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
     expect(pronta.error).toBeNull();
     expect(pronta.data?.onboarded_at).toBeTruthy();
     const conversationB = await conversation(orgB, `Cliente B ${suffix}`);
-    await page.getByRole("link", { name: "Voltar ao aplicativo" }).click();
+    await Promise.all([
+      page.waitForURL(url => url.pathname.startsWith("/app/pipelines/")),
+      page.getByRole("link", { name: "Voltar ao aplicativo" }).click(),
+    ]);
     // A conversa sem dono pode estar sob comando do automático. `Fila` não é
     // sinônimo de todas as conversas; a aba Todas é a superfície que mede o
     // isolamento entre organizações sem depender de quem está atendendo.
@@ -152,7 +155,7 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
         await route.continue();
       });
       await page.getByTestId("tenant-switcher").click();
-      const navigation = page.waitForNavigation({ waitUntil: "load" });
+      const navigation = page.waitForURL(url => url.pathname.startsWith("/app/pipelines/"), { waitUntil: "load" });
       await page.getByTestId(`tenant-switcher-item-${target}`).click({ noWaitAfter: true });
       try {
         const guard = page.getByTestId("organization-transition");
