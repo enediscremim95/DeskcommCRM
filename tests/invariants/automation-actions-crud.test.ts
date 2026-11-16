@@ -64,8 +64,7 @@ class FakeQuery implements PromiseLike<QResult> {
   private updateData: Record<string, unknown> | null = null;
   private insertData: Record<string, unknown> | null = null;
   private filters: Filter[] = [];
-  private orderCol?: string;
-  private orderAsc = true;
+  private orders: Array<{ col: string; ascending: boolean }> = [];
   private limitN?: number;
 
   constructor(private table: string) {}
@@ -104,8 +103,7 @@ class FakeQuery implements PromiseLike<QResult> {
   }
 
   order(col: string, opts: { ascending: boolean }): this {
-    this.orderCol = col;
-    this.orderAsc = opts.ascending;
+    this.orders.push({ col, ascending: opts.ascending });
     return this;
   }
 
@@ -127,7 +125,8 @@ class FakeQuery implements PromiseLike<QResult> {
   private toSql(): string {
     if (this.mode === "select") {
       let q = `select ${this.selectCols} from public.${this.table}${this.buildWhere()}`;
-      if (this.orderCol) q += ` order by ${this.orderCol} ${this.orderAsc ? "asc" : "desc"}`;
+      if (this.orders.length)
+        q += ` order by ${this.orders.map((o) => `${o.col} ${o.ascending ? "asc" : "desc"}`).join(", ")}`;
       if (this.limitN !== undefined) q += ` limit ${this.limitN}`;
       return q;
     }
