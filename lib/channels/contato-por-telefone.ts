@@ -162,13 +162,25 @@ export async function encontrarOuCriarContatoPorTelefone(
   );
   if (existente) return { contato: existente, criado: false };
 
+  // E-mail é identidade alternativa, não apenas recuperação de colisão.
+  if (input.email?.trim()) {
+    const { data, error } = await admin.from("contacts")
+      .select("id, phone_number, name")
+      .eq("organization_id", input.organizationId)
+      .eq("email_normalized", input.email.trim().toLowerCase())
+      .is("is_merged_into", null)
+      .maybeSingle();
+    if (error) return { contato: null, criado: false, error };
+    if (data) return { contato: data, criado: false };
+  }
+
   const { data: criado, error } = await admin
     .from("contacts")
     .insert({
       organization_id: input.organizationId,
       name: input.name,
-      phone_number: input.phone,
-      email: input.email ?? null,
+      phone_number: canonicalPhoneBR(input.phone),
+      email: input.email?.trim().toLowerCase() || null,
       source: input.source,
       source_metadata: input.sourceMetadata ?? {},
       ...(input.consent !== undefined ? { consent: input.consent } : {}),

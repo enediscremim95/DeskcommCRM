@@ -25,6 +25,13 @@ function digitsOf(raw: string): string {
   return raw.replace(/\D/g, "");
 }
 
+function digitsOfBR(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  // Captação brasileira também aceita DDD + número, sem código do país.
+  return !raw.trim().startsWith("+") && /^(?:[1-9][0-9][2-9][0-9]{7}|[1-9][0-9]9[0-9]{8})$/.test(digits)
+    ? `55${digits}` : digits;
+}
+
 /**
  * Formas pelas quais este número pode estar gravado. A primeira é sempre a original;
  * a segunda (quando existe) é a contraparte com/sem o nono dígito.
@@ -32,7 +39,7 @@ function digitsOf(raw: string): string {
  * Devolve E.164 **com `+`**, que é como `contacts.phone_number` guarda.
  */
 export function phoneLookupVariants(raw: string): string[] {
-  const d = digitsOf(raw);
+  const d = digitsOfBR(raw);
   if (d.length === 0) return [];
 
   const original = `+${d}`;
