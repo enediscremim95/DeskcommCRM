@@ -34,6 +34,7 @@ export type Actor =
   | { type: "webhook_source"; id: string };
 
 export interface HandlerCtx {
+  internalPhoneCandidate?: string;
   agentOperation?: AgentOperationContext;
   meetingDelivery?: MeetingDeliveryContext;
   approvedReply?: ApprovedReplyContext;

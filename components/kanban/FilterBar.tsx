@@ -221,7 +221,25 @@ export function FilterBar({ filters, onChange, leads, extra }: FilterBarProps) {
         {t("Apenas atrasados")}
       </label>
 
-      {(filters.search ||
+      <fieldset className="flex w-full flex-wrap items-end gap-2 sm:w-auto">
+        <legend className="text-xs text-muted-foreground">{t("Período · America/Sao_Paulo")}</legend>
+        <label className="flex flex-col gap-1 text-xs">{t("Data")}
+          <select aria-label={t("Data do período")} className="h-9 rounded-md border border-border bg-surface px-2 text-sm"
+            value={filters.dateField ?? "created_at"}
+            onChange={(e) => onChange({ ...filters, dateField: e.target.value as "created_at" | "last_activity_at" })}>
+            <option value="created_at">{t("Criação")}</option><option value="last_activity_at">{t("Última atividade")}</option>
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs">{t("De")}
+          <Input aria-label={t("Período de")} type="date" className="h-9 w-36" value={filters.dateFrom ?? ""}
+            max={filters.dateUntil} onChange={(e) => onChange({ ...filters, dateFrom: e.target.value || undefined })} />
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs">{t("Até")}
+          <Input aria-label={t("Período até")} type="date" className="h-9 w-36" value={filters.dateUntil ?? ""}
+            min={filters.dateFrom} onChange={(e) => onChange({ ...filters, dateUntil: e.target.value || undefined })} />
+        </label>
+      </fieldset>
+      {(filters.dateFrom || filters.dateUntil || filters.search ||
         filters.owner ||
         filters.tag ||
         filters.overdueOnly ||

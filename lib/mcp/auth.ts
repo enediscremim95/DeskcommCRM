@@ -57,7 +57,8 @@ function deriveActor(scopes: string[], tokenId: string): Actor {
     const runId = runScope ? runScope.slice("agent_run:".length) : tokenId;
     return { type: "ai_agent", id: runId, role, api_token_id: tokenId };
   }
-  return { type: "user", id: tokenId, role };
+  // Um bearer é uma integração, nunca prova de uma decisão humana nesta requisição.
+  return { type: "ai_agent", id: tokenId, role, api_token_id: tokenId };
 }
 
 export function extractBearer(authHeader: string | null): string | null {

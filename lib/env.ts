@@ -62,6 +62,7 @@ const diasDeRetencao = (nome: string, padrao: number) =>
     });
 
 const schema = z.object({
+  PROACTIVITY_EMAIL_ENV_DIR: z.string().optional().default("/etc/crm/org-email"),
   // Node
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 

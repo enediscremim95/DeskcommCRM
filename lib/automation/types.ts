@@ -11,6 +11,7 @@ export interface ActionResultDetail {
 }
 
 export interface ActionCtx {
+  internalPhoneCandidate?: string;
   /** Privado à execução: nunca vem do payload nem do contexto de condições. */
   serviceBoundaries?: Map<string, Promise<ServiceBoundary>>;
   admin: SupabaseClient;

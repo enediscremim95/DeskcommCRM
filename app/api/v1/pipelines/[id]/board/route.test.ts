@@ -17,7 +17,7 @@ interface QueryResult {
 }
 
 interface Filter {
-  kind: "eq" | "neq" | "in";
+  kind: "eq" | "neq" | "in" | "gte" | "lt";
   column: string;
   value: unknown;
 }
@@ -44,6 +44,8 @@ function buildDataset() {
       owner_kind: null,
       owner_agent_id: null,
       contact_id: null,
+      created_at: "2026-11-16T03:00:00.000Z",
+      last_activity_at: index < 60 ? "2026-11-17T02:59:59.999Z" : "2026-11-17T03:00:00.000Z",
       updated_at: "2026-09-25T00:00:00.000Z",
     }));
   });
@@ -78,6 +80,8 @@ class Query implements PromiseLike<QueryResult> {
     this.filters.push({ kind: "neq", column, value });
     return this;
   }
+  gte(column: string, value: string) { this.filters.push({ kind: "gte", column, value }); return this; }
+  lt(column: string, value: string) { this.filters.push({ kind: "lt", column, value }); return this; }
   in(column: string, values: readonly unknown[]) {
     this.inBatchSizes.push(values.length);
     if (values.length > 200) this.badRequest = true;
@@ -113,6 +117,8 @@ class Query implements PromiseLike<QueryResult> {
       const current = row[filter.column];
       if (filter.kind === "eq") return current === filter.value;
       if (filter.kind === "neq") return current !== filter.value;
+      if (filter.kind === "gte") return typeof current === "string" && current >= String(filter.value);
+      if (filter.kind === "lt") return typeof current === "string" && current < String(filter.value);
       return (filter.value as readonly unknown[]).includes(current);
     });
     if (!matchesFilters || !this.cursor) return matchesFilters;
@@ -265,6 +271,8 @@ describe("GET /api/v1/pipelines/[id]/board com muitos negócios", () => {
       owner_kind: null,
       owner_agent_id: null,
       contact_id: null,
+      created_at: "2026-11-16T03:00:00.000Z",
+      last_activity_at: "2026-11-16T03:00:00.000Z",
       updated_at: "2026-10-01T00:00:00.000Z",
     });
 
@@ -293,5 +301,37 @@ describe("GET /api/v1/pipelines/[id]/board com muitos negócios", () => {
     expect(secondIds).not.toContain("lead-novo-no-topo");
     expect(rpc).toHaveBeenCalledTimes(2);
     expect(exactCountQueries).toEqual([]);
+  });
+});
+
+
+describe("período aplicado antes de paginação e contagem", () => {
+  it("60 negócios elegíveis atravessam duas páginas e preservam os limites e o total", async () => {
+    const dataset = buildDataset();
+    const rpc = vi.fn();
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: { id: "human" } }, error: null }) },
+      from: (table: string) => new Query(table, dataset, [], []), rpc,
+    } as never);
+    const { GET } = await import("@/app/api/v1/pipelines/[id]/board/route");
+    const base = `http://localhost/api/v1/pipelines/${PIPELINE_ID}/board?stage_id=stage-0&date_field=last_activity_at&date_from=2026-11-16&date_until=2026-11-16`;
+    const ctx = { params: Promise.resolve({ id: PIPELINE_ID }) };
+    const first = await GET(new NextRequest(base), ctx);
+    expect(first.status).toBe(200);
+    const a = (await first.json()).data;
+    expect(a.leads).toHaveLength(50);
+    expect(a.page.total).toBe(60);
+    const second = await GET(new NextRequest(base + `&cursor=${encodeURIComponent(a.page.cursor)}`), ctx);
+    const b = (await second.json()).data;
+    expect(b.leads).toHaveLength(10);
+    expect(b.page.total).toBe(60);
+    expect(b.page.has_more).toBe(false);
+    expect(new Set([...a.leads, ...b.leads].map((l: { id: string }) => l.id)).size).toBe(60);
+    expect(rpc).not.toHaveBeenCalledWith("fn_contagem_por_etapa", expect.anything());
+  });
+  it.each(["date_from=2026-02-30", "date_from=2026-11-17&date_until=2026-11-16", "date_field=updated_at"])("recusa filtro inválido %s", async (query) => {
+    const { GET } = await import("@/app/api/v1/pipelines/[id]/board/route");
+    const result = await GET(new NextRequest(`http://localhost/api/v1/pipelines/${PIPELINE_ID}/board?${query}`), { params: Promise.resolve({ id: PIPELINE_ID }) });
+    expect(result.status).toBe(400);
   });
 });

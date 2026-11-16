@@ -256,6 +256,14 @@ test("silêncio consulta proveniência real pelo PostgREST: legado e reabertura 
     const old = await inbound(new Date(Date.now() - 600_000).toISOString());
     const sweep = createSupabaseSilenceSweepDb(db);
     const cutoff = new Date(Date.now() + 1000).toISOString();
+    // Organização nova nasce desligada, mesmo com inbound de procedência válida.
+    expect(await sweep.loadSilentContactIds(org, cutoff, [])).toEqual([]);
+    const optIn = await db.from("organizations").update({ settings: {
+      proactive_followup: { enabled: true, start_hour: 0, end_hour: 24,
+        weekdays: [0, 1, 2, 3, 4, 5, 6], timezone: "UTC" },
+    } }).eq("id", org);
+    if (optIn.error) throw optIn.error;
+    // Com opt-in explícito no banco de teste, isolamos a guarda de procedência.
     expect(await sweep.loadSilentContactIds(org, cutoff, [])).toEqual([contact]);
     const legacy = await db.from("messages").update({ service_revision: null, demanda_id: null, demanda_revision: null }).eq("organization_id", org).eq("id", old);
     if (legacy.error) throw legacy.error;
