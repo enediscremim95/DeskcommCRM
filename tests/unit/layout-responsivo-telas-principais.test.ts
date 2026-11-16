@@ -47,3 +47,33 @@ describe("layout responsivo das telas principais", () => {
     }
   });
 });
+
+describe("carga enxuta e alvos de toque nas telas principais", () => {
+  const ler = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
+
+  it("campos de texto usam 16px no celular (evita zoom automático do iOS no login e nas buscas)", () => {
+    expect(ler("components/ui/input.tsx")).toMatch(/text-base md:text-sm/);
+  });
+
+  it("contatos: diálogos pesados são carregados sob demanda, não no bundle inicial", () => {
+    const src = ler("app/app/contacts/_client.tsx");
+    for (const d of ["NewContactDialog", "ImportContactsDialog", "MergeDialog"]) {
+      expect(src).not.toMatch(new RegExp(`import \\{ ${d} \\} from`));
+      expect(src).toMatch(new RegExp(`const ${d} = dynamic\\(`));
+    }
+  });
+
+  it("relatório: painel nativo é import dinâmico e o iframe tem respiro menor no celular", () => {
+    const src = ler("app/app/relatorio/_client.tsx");
+    expect(src).not.toMatch(/import \{ TrafficDashboard \} from/);
+    expect(src).toMatch(/const TrafficDashboard = dynamic\(/);
+    expect(src).toMatch(/p-4 sm:p-6/);
+  });
+
+  it("conversas: a lista e o painel alternam no celular (uma coluna por vez) e só dividem a tela a partir de md", () => {
+    const src = ler("components/inbox/InboxLayout.tsx");
+    expect(src).toContain('lista: temSelecao ? "hidden md:flex" : "flex"');
+    expect(src).toContain('conversa: temSelecao ? "flex" : "hidden md:flex"');
+    expect(src).toMatch(/grid-cols-1 md:grid-cols-\[300px_1fr\]/);
+  });
+});

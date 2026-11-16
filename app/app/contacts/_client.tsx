@@ -1,4 +1,5 @@
 "use client";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { Plus, MagnifyingGlass, UploadSimple, UsersThree } from "@/lib/ui/icons";
@@ -17,9 +18,10 @@ import {
 import { useContactList } from "@/hooks/contacts/useContactList";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ContactsTable } from "@/components/contacts/ContactsTable";
-import { NewContactDialog } from "@/components/contacts/NewContactDialog";
-import { ImportContactsDialog } from "@/components/contacts/ImportContactsDialog";
-import { MergeDialog } from "@/components/contacts/MergeDialog";
+// Diálogos pesados só são baixados na primeira abertura (a lista abre mais rápido, sobretudo no celular).
+const NewContactDialog = dynamic(() => import("@/components/contacts/NewContactDialog").then((m) => m.NewContactDialog));
+const ImportContactsDialog = dynamic(() => import("@/components/contacts/ImportContactsDialog").then((m) => m.ImportContactsDialog));
+const MergeDialog = dynamic(() => import("@/components/contacts/MergeDialog").then((m) => m.MergeDialog));
 import { BaixarLeadsButton } from "@/components/leads/BaixarLeadsButton";
 import { EmptyContacts } from "@/components/empty";
 import { roleAtLeast } from "@/lib/auth/types";
@@ -254,9 +256,9 @@ export function ContactsListClient() {
         </>
       )}
 
-      <NewContactDialog open={createOpen} onOpenChange={setCreateOpen} />
-      <ImportContactsDialog open={importOpen} onOpenChange={setImportOpen} />
-      <MergeDialog open={duplicadosOpen} onOpenChange={setDuplicadosOpen} />
+      {createOpen && <NewContactDialog open={createOpen} onOpenChange={setCreateOpen} />}
+      {importOpen && <ImportContactsDialog open={importOpen} onOpenChange={setImportOpen} />}
+      {duplicadosOpen && <MergeDialog open={duplicadosOpen} onOpenChange={setDuplicadosOpen} />}
     </div>
   );
 }
