@@ -291,6 +291,11 @@ function hasDelivery(bucket: Bucket): boolean {
     bucket.messaging_conversations,
   ].some((value) => value > 0);
 }
+const CAMPOS_DE_CONTAGEM = [
+  "landing_page_views", "add_to_cart", "initiate_checkout", "purchases",
+  "messaging_conversations", "impressions", "clicks", "link_clicks",
+  "video_views", "video_p25", "video_p50", "video_p75", "video_p95",
+] as const;
 function ratios(
   bucket: Bucket,
   model: DashboardModel,
@@ -306,8 +311,15 @@ function ratios(
   const leads = Math.round(bucket.conversions);
   const reach = periodReach != null ? Math.round(periodReach) : null;
   const metricClicks = platform === "google_ads" ? bucket.clicks : bucket.link_clicks;
+  // Toda CONTAGEM sai inteira (leads, conversas, vendas, cliques, impressões,
+  // visualizações...) para qualquer organização e modelo. Os custos usam a soma
+  // bruta de `bucket` mais acima, para não distorcer o CPM/CTR.
+  const contagens = Object.fromEntries(
+    CAMPOS_DE_CONTAGEM.map((campo) => [campo, Math.round(bucket[campo])]),
+  ) as Record<(typeof CAMPOS_DE_CONTAGEM)[number], number>;
   return {
     ...bucket,
+    ...contagens,
     ...budget,
     conversions: leads,
     reach,

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 
 import { audit } from "@/lib/audit";
+import { COOKIE_ORG_NOVA_DA_ABA } from "@/lib/auth/org-da-aba";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { InvitePayload } from "@/lib/auth/invite-token";
@@ -76,6 +77,12 @@ export async function aplicarConvite(params: {
     secure: cookieSecure(),
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
+  });
+
+  // A aba que aceitou o convite deve ADOTAR a org nova (a org por aba, em
+  // sessionStorage, senão a devolveria à antiga). Cookie legível de 30 s.
+  (await cookies()).set(COOKIE_ORG_NOVA_DA_ABA, payload.organization_id, {
+    httpOnly: false, sameSite: "strict", secure: cookieSecure(), path: "/", maxAge: 30,
   });
 
   return { ok: true, membershipId: resultado.id as string, mudou: Boolean(resultado.changed) };

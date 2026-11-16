@@ -85,27 +85,25 @@ describe("criação administrativa", () => {
   });
 });
 describe("troca normal exige vínculo ativo mesmo sendo platform admin", () => {
-  function membership(data: unknown) {
-    const chain: Record<string, unknown> = {};
-    for (const method of ["select", "eq", "is", "not"]) chain[method] = vi.fn(() => chain);
-    chain.maybeSingle = vi.fn(async () => ({ data }));
-    h.query.mockReturnValue(chain);
-    return chain;
-  }
+  // A fonte é a MESMA lista que `resolveActiveOrg` aceita (vínculos não revogados
+  // lidos por `loadAuthUser`): uma consulta própria mais rígida recusava, com
+  // "Seu acesso pode ter mudado", quem tinha acesso (vínculo sem accepted_at, org
+  // em status diferente de "active").
+  const vinculos = (ids: string[]) =>
+    h.user.mockResolvedValue({ id: actor, support: null, is_platform_admin: true, organizations: ids.map((id) => ({ organization_id: id })) });
   it("valida UUID antes de gravar cookie", async () => {
     expect((await setActiveOrg("invalid")).ok).toBe(false);
     expect(h.cookie).not.toHaveBeenCalled();
   });
   it("não inventa bypass de platform admin", async () => {
-    membership(null);
+    vinculos([]);
     expect((await setActiveOrg(org)).ok).toBe(false);
     expect(h.cookie).not.toHaveBeenCalled();
   });
-  it("filtra aceito/ativo e audita org alvo com ator autenticado", async () => {
-    const chain = membership({ organization_id: org });
+  it("com vínculo não revogado grava o cookie e audita org alvo com ator autenticado", async () => {
+    vinculos([org]);
+    h.query.mockReturnValue({ select: () => ({ eq: () => ({ eq: () => ({ order: () => ({ order: () => ({ limit: () => ({ maybeSingle: async () => ({ data: null }) }) }) }) }) }) }) });
     expect((await setActiveOrg(org)).ok).toBe(true);
-    expect(chain.eq).toHaveBeenCalledWith("organizations.status", "active");
-    expect(chain.not).toHaveBeenCalledWith("accepted_at", "is", null);
     expect(h.cookie).toHaveBeenCalledWith("active_org", org, expect.objectContaining({ httpOnly: true, sameSite: "strict" }));
     expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "organization.switched", actorUserId: actor, organizationId: org }));
   });

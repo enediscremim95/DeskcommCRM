@@ -48,13 +48,15 @@ export async function queryInBatches<T>(
   const uniqueValues = [...new Set(values)];
   if (uniqueValues.length === 0) return { data: [], error: null };
 
+  // Lotes em PARALELO: eram em série, e com centenas de cards cada um dos quatro
+  // enriquecimentos do quadro pagava N idas ao banco uma depois da outra. A ordem
+  // do resultado segue a dos lotes.
+  const lotes = emLotes(uniqueValues, requestedBatchSize);
+  const resultados = await Promise.all(lotes.map((batch) => query(batch)));
   const data: T[] = [];
-
-  for (const batch of emLotes(uniqueValues, requestedBatchSize)) {
-    const result = await query(batch);
+  for (const result of resultados) {
     if (result.error) return { data: [], error: result.error.message };
     data.push(...(result.data ?? []));
   }
-
   return { data, error: null };
 }

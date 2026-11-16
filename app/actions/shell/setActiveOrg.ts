@@ -19,14 +19,16 @@ export async function setActiveOrg(orgId: string): Promise<{ ok: boolean; error?
   if (!user) return { ok: false, error: "auth_required" };
   if (user.support) return { ok: false, error: "Encerre o acompanhamento antes de trocar de organização." };
   if (await mfaEmDivida()) return { ok: false, error: "mfa_required" };
-  // Consulta fresca: não usa status de membership serializado no browser.
+  // MESMA fonte que `resolveActiveOrg` usa para aceitar uma organização: os
+  // vínculos não revogados lidos agora por `loadAuthUser` (ação não memoiza).
+  // Antes havia uma consulta própria, MAIS RÍGIDA que a RLS e o layout
+  // (exigia `accepted_at` e `organizations.status = 'active'`, e `maybeSingle`
+  // falhava com mais de uma linha): dono com vínculo sem `accepted_at` ou org em
+  // outro status recebia "Não foi possível trocar de organização" tendo acesso.
+  if (!user.organizations.some((org) => org.organization_id === orgId)) {
+    return { ok: false, error: "forbidden" };
+  }
   const db = await createClient();
-  const { data: membership, error } = await db.from("user_organizations")
-    .select("organization_id, organizations!inner(status)")
-    .eq("organization_id", orgId).eq("user_id", user.id)
-    .is("revoked_at", null).not("accepted_at", "is", null)
-    .eq("organizations.status", "active").maybeSingle();
-  if (error || !membership) return { ok: false, error: "forbidden" };
   const store = await cookies();
   const previous = store.get("active_org")?.value;
   store.set("active_org", orgId, {

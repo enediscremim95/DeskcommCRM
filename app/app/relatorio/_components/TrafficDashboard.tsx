@@ -230,6 +230,10 @@ function money(value: number, currency: string): string {
 function number(value: number): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
 }
+/** Contagem de pessoas/eventos: sempre inteira ("141,04 leads" não existe). */
+function contagem(value: number): string {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(Math.round(value));
+}
 // Valor vazio nunca vira travessão (regra do dono): quem chama diz o que mostrar.
 function percent(value: number | null, blank = ""): string {
   return value == null ? blank : `${number(value)}%`;
@@ -509,7 +513,7 @@ function metricValue(
   if (MONEY_COLUMNS.has(column)) return money(value, currency);
   if (column === "ctr") return percent(value);
   if (column === "roas") return `${number(value)}x`;
-  return number(value);
+  return contagem(value);
 }
 
 type CampaignStatusFilter = "all" | "active" | "paused";
@@ -1300,7 +1304,7 @@ function CampaignTable({
             {t("Investimento")}: <strong>{money(selectedTotal.spend, currency)}</strong>
           </span>
           <span>
-            {labels.conversions}: <strong>{number(selectedTotal.conversions)}</strong>
+            {labels.conversions}: <strong>{contagem(selectedTotal.conversions)}</strong>
           </span>
           <span>
             {t("Custo por conversão")}:{" "}
@@ -2341,7 +2345,7 @@ export function TrafficDashboard() {
                 if (meta.format === "money") return money(metricValue, group.currency);
                 if (meta.format === "percent") return percent(metricValue, "0%");
                 if (meta.format === "ratio") return `${number(metricValue)}x`;
-                return number(metricValue);
+                return contagem(metricValue);
               };
               return {
                 key: metric,
@@ -2447,7 +2451,7 @@ export function TrafficDashboard() {
                     { label: t("Investimento"), value: money(group.summary.spend, group.currency) },
                     {
                       label: t("Vendas fechadas"),
-                      value: number(richCrm.closed_won),
+                      value: contagem(richCrm.closed_won),
                       emphasis: true,
                     },
                     {
@@ -2508,12 +2512,12 @@ export function TrafficDashboard() {
                       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                         <Kpi
                           label={t("Alcance")}
-                          value={meta.reach == null ? t("sem dado") : number(meta.reach)}
+                          value={meta.reach == null ? t("sem dado") : contagem(meta.reach)}
                           hint={t("pessoas únicas que viram")}
                         />
                         <Kpi
                           label={t("Impressões")}
-                          value={number(meta.impressions)}
+                          value={contagem(meta.impressions)}
                           hint={t("exibições totais")}
                         />
                         <Kpi
@@ -2542,7 +2546,7 @@ export function TrafficDashboard() {
                       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                         <Kpi
                           label={t("Cliques no link")}
-                          value={number(meta.link_clicks)}
+                          value={contagem(meta.link_clicks)}
                           hint={t("visitas ao site")}
                         />
                         <Kpi
@@ -2552,7 +2556,7 @@ export function TrafficDashboard() {
                         />
                         <Kpi
                           label={conversionLabel}
-                          value={number(meta.conversions)}
+                          value={contagem(meta.conversions)}
                           hint={
                             report.model === "ecommerce"
                               ? t("compras pelos anúncios")
@@ -2634,7 +2638,7 @@ export function TrafficDashboard() {
                                 <div className="mb-1 flex items-center justify-between text-xs">
                                   <span className="text-muted-foreground">{bar.label}</span>
                                   <span className="font-semibold tabular-nums">
-                                    {number(bar.value)}
+                                    {contagem(bar.value)}
                                   </span>
                                 </div>
                                 <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -2717,12 +2721,12 @@ export function TrafficDashboard() {
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                       <Kpi
                         label={t("Impressões")}
-                        value={number(google.impressions)}
+                        value={contagem(google.impressions)}
                         hint={t("vezes exibido")}
                       />
                       <Kpi
                         label={t("Cliques no link")}
-                        value={number(google.clicks)}
+                        value={contagem(google.clicks)}
                         hint={t("visitas ao site")}
                       />
                       <Kpi
@@ -2744,7 +2748,7 @@ export function TrafficDashboard() {
                       />
                       <Kpi
                         label={conversionLabel}
-                        value={number(google.conversions)}
+                        value={contagem(google.conversions)}
                         hint={
                           report.model === "ecommerce"
                             ? t("compras pelos anúncios")

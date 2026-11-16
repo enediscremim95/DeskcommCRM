@@ -10,7 +10,8 @@ import { lerInterface } from "@/lib/navigation/interface";
  * and then filter by `user_id` (a trusted source).
  */
 import { readSupportContext } from "@/lib/impersonate/support";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { HEADER_ORG_DA_ABA, ehOrgId } from "@/lib/auth/org-da-aba";
 import { redirect } from "next/navigation";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
@@ -40,8 +41,7 @@ interface OrgJoin {
  */
 async function localeDaOrgAtiva(memberships: UserOrgMembership[]): Promise<string | null> {
   if (memberships.length === 0) return null;
-  const store = await cookies();
-  return escolherMembroAtivo(memberships, store.get(ACTIVE_ORG_COOKIE)?.value)?.locale ?? null;
+  return escolherMembroAtivo(memberships, ...(await orgsSolicitadas()))?.locale ?? null;
 }
 
 /**
@@ -60,14 +60,33 @@ async function localeDaOrgAtiva(memberships: UserOrgMembership[]): Promise<strin
  */
 function escolherMembroAtivo(
   memberships: UserOrgMembership[],
-  cookieOrg: string | undefined,
+  ...candidatas: Array<string | undefined>
 ): UserOrgMembership | null {
   if (memberships.length === 0) return null;
-  if (cookieOrg) {
-    const achado = memberships.find((o) => o.organization_id === cookieOrg);
+  // Em ordem de precedência (aba, depois cookie). Candidata que não é membro é
+  // ignorada — o header da aba é só um PEDIDO, nunca autorização.
+  for (const orgId of candidatas) {
+    if (!orgId) continue;
+    const achado = memberships.find((o) => o.organization_id === orgId);
     if (achado) return achado;
   }
   return memberships[0] ?? null;
+}
+
+/**
+ * Organização pedida pela requisição: `x-org-aba` (a escolha DESTA aba) antes do
+ * cookie (o último escolhido em qualquer aba). Ver `lib/auth/org-da-aba.ts`.
+ */
+async function orgsSolicitadas(): Promise<Array<string | undefined>> {
+  let daAba: string | undefined;
+  try {
+    const valor = (await headers()).get(HEADER_ORG_DA_ABA);
+    daAba = ehOrgId(valor) ? valor : undefined;
+  } catch {
+    daAba = undefined; // fora de escopo de requisição (testes/scripts)
+  }
+  const store = await cookies();
+  return [daAba, store.get(ACTIVE_ORG_COOKIE)?.value];
 }
 
 /**
@@ -233,8 +252,7 @@ export async function resolveActiveOrg(authUser: AuthUser): Promise<ActiveOrg | 
       role: authUser.support.access_mode === "full" ? "admin" : "viewer",
     };
   }
-  const store = await cookies();
-  const ativo = escolherMembroAtivo(authUser.organizations, store.get(ACTIVE_ORG_COOKIE)?.value);
+  const ativo = escolherMembroAtivo(authUser.organizations, ...(await orgsSolicitadas()));
   if (!ativo) return null;
   return {
     orgId: ativo.organization_id,

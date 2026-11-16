@@ -101,6 +101,12 @@ test("trocar entre 8 organizações várias vezes não fica mais lento, não abr
       await expect(page.getByTestId("tenant-switcher")).toBeEnabled({ timeout: TETO_POR_TROCA_MS });
       await expect(page.getByTestId("organization-transition")).toHaveCount(0);
       const dt = Date.now() - t0;
+      // O quadro tem de CARREGAR (não ficar em "Carregando…"/esqueleto nem em
+      // "Não foi possível carregar este funil") em toda org, dentro do teto.
+      await expect(page.locator("[data-realtime-status]"), `rodada ${rodada + 1}, org ${org.id}: quadro não montou`)
+        .toBeVisible({ timeout: TETO_POR_TROCA_MS });
+      await expect(page.getByText("Carregando…", { exact: true })).toHaveCount(0, { timeout: TETO_POR_TROCA_MS });
+      await expect(page.getByText(/Não foi possível carregar este funil/)).toHaveCount(0);
       const contexto = `rodada ${rodada + 1}, org ${org.id}`;
       await assertNaoEmBranco(page, contexto);
       nomes.set(org.id, ((await page.getByTestId("tenant-switcher").textContent()) ?? "").trim());
@@ -172,4 +178,48 @@ test("token de acesso vencido: abrir /app/relatorio direto e clicar no menu reno
   await page.getByRole("navigation", { name: /navegação principal/i }).getByRole("link", { name: "Relatório" }).click();
   await page.waitForURL(/\/app\/relatorio/, { timeout: 20_000 });
   await expect(page.getByRole("heading", { name: "Relatório" }).first()).toBeVisible({ timeout: 20_000 });
+});
+
+/**
+ * A org escolhida é POR ABA. O cookie é compartilhado: antes, trocar na aba B e
+ * recarregar a aba A mostrava a org de B (e as chamadas de A passavam a ler B).
+ */
+test("a organização é por aba: trocar na aba B não muda a aba A, nem ao recarregar", async ({ page, context }) => {
+  const creds = lerCreds();
+  const [orgA, orgB] = creds.oito_orgs.orgs as [Org, Org];
+  await entrar(page, creds);
+  await page.goto("/app/kanban");
+  const trocarPara = async (p: Page, org: Org) => {
+    const atual = ((await p.getByTestId("tenant-switcher").textContent()) ?? "").trim();
+    if (atual === org.nome) return;
+    await p.getByTestId("tenant-switcher").click();
+    await p.getByTestId(`tenant-switcher-item-${org.id}`).click();
+    await p.waitForURL(/\/app\/(pipelines|kanban)/, { timeout: TETO_POR_TROCA_MS });
+    await expect(p.getByTestId("tenant-switcher")).toContainText(org.nome, { timeout: TETO_POR_TROCA_MS });
+  };
+  const nomeAtivo = async (p: Page) => ((await p.getByTestId("tenant-switcher").textContent()) ?? "").trim();
+
+  await trocarPara(page, orgA);
+  const abaB = await context.newPage();
+  await abaB.goto("/app/kanban");
+  // A aba B nasce com a org do cookie (A) e então escolhe B.
+  await trocarPara(abaB, orgB);
+  await expect(abaB.getByTestId("tenant-switcher")).toContainText(orgB.nome);
+
+  // Aba A recarrega: continua em A (o cookie já diz B).
+  await page.reload();
+  await expect(page.getByTestId("tenant-switcher")).toContainText(orgA.nome, { timeout: TETO_POR_TROCA_MS });
+  await expect(page.getByTestId("organization-transition")).toHaveCount(0, { timeout: TETO_POR_TROCA_MS });
+  expect(await nomeAtivo(page)).toContain(orgA.nome);
+
+  // A chamada de API da aba A é na org A, mesmo com o cookie em B.
+  const orgDaApi = await page.evaluate(async () => {
+    const r = await fetch("/api/v1/auth/interface", { cache: "no-store" });
+    return ((await r.json()) as { data?: { organization_id?: string } }).data?.organization_id ?? null;
+  });
+  expect(orgDaApi, "a API da aba A leu a org da aba B").toBe(orgA.id);
+
+  // E a aba B segue em B depois de recarregar.
+  await abaB.reload();
+  await expect(abaB.getByTestId("tenant-switcher")).toContainText(orgB.nome, { timeout: TETO_POR_TROCA_MS });
 });
