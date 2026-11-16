@@ -37,6 +37,12 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Período · America/Sao_Paulo": { es: "Período · America/Sao_Paulo" },
+  "Data": { es: "Fecha" },
+  "Data do período": { es: "Fecha del período" },
+  "Criação": { es: "Creación" },
+  "Período de": { es: "Período desde" },
+  "Período até": { es: "Período hasta" },
   "Busca inválida.": { es: "Búsqueda no válida." },
   "Mensagem não encontrada.": { es: "Mensaje no encontrado." },
   "Erro ao buscar mensagens.": { es: "No se pudieron buscar los mensajes." },
