@@ -8,7 +8,15 @@ import { getAction } from "@/lib/automation/actions";
 import type { ActionCtx } from "@/lib/automation/types";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import "@/lib/automation/actions/register-all";
-import { GOV_ORG, GOV_MANAGER, GOV_PIPELINE, GOV_STAGE, seedGov, sql, lastLine } from "./gov-helpers";
+import {
+  GOV_ORG,
+  GOV_MANAGER,
+  GOV_PIPELINE,
+  GOV_STAGE,
+  seedGov,
+  sql,
+  lastLine,
+} from "./gov-helpers";
 
 /**
  * Task 9 (spec webhooks/automação 2026-07-17) — executores add_tag,
@@ -36,7 +44,10 @@ function sqlLiteral(v: unknown): string {
 }
 
 type QResult = { data: unknown; error: { message: string; code?: string } | null };
-type RowResult = { data: Record<string, unknown> | null; error: { message: string; code?: string } | null };
+type RowResult = {
+  data: Record<string, unknown> | null;
+  error: { message: string; code?: string } | null;
+};
 
 type FilterOp = "eq" | "is";
 interface Filter {
@@ -106,7 +117,9 @@ class FakeQuery implements PromiseLike<QResult> {
   private buildWhere(): string {
     if (!this.filters.length) return "";
     const clauses = this.filters.map((f) =>
-      f.op === "is" ? `${f.col} is ${f.val === null ? "null" : sqlLiteral(f.val)}` : `${f.col} = ${sqlLiteral(f.val)}`,
+      f.op === "is"
+        ? `${f.col} is ${f.val === null ? "null" : sqlLiteral(f.val)}`
+        : `${f.col} = ${sqlLiteral(f.val)}`,
     );
     return ` where ${clauses.join(" and ")}`;
   }
@@ -153,7 +166,9 @@ class FakeQuery implements PromiseLike<QResult> {
       return { data: null, error: null };
     } catch (err) {
       const stderr = (err as { stderr?: string }).stderr ?? (err as Error).message;
-      const code = stderr.includes("duplicate key value violates unique constraint") ? "23505" : undefined;
+      const code = stderr.includes("duplicate key value violates unique constraint")
+        ? "23505"
+        : undefined;
       return { data: null, error: { message: stderr, code } };
     }
   }
@@ -176,7 +191,8 @@ class FakeQuery implements PromiseLike<QResult> {
     const { data, error } = await this.execute();
     if (error) return { data: null, error };
     const rows = (data as Array<Record<string, unknown>>) ?? [];
-    if (rows.length !== 1) return { data: null, error: { message: `expected 1 row, got ${rows.length}` } };
+    if (rows.length !== 1)
+      return { data: null, error: { message: `expected 1 row, got ${rows.length}` } };
     return { data: rows[0]!, error: null };
   }
 }
@@ -290,7 +306,7 @@ function baseCtx(context: Record<string, unknown>, overrides: Partial<ActionCtx>
     admin,
     organizationId: GOV_ORG,
     ruleId: RULE_ID,
-  ruleName: "Automação de teste",
+    ruleName: "Automação de teste",
     event: { id: lastLine(sql(`select gen_random_uuid();`)) } as unknown as EventRow,
     context,
     requestId: "test-request-id",
@@ -390,19 +406,22 @@ describe("assign_owner (Task 9)", () => {
 });
 
 describe("create_or_move_lead (Task 9)", () => {
-  it("6. contexto com lead + stage2 do mesmo pipeline — move, evento request_id prefixado rule:", async () => {
+  it("6. contexto com lead preserva a etapa e não emite movimento automático", async () => {
     const executor = getAction("create_or_move_lead")!;
+    const before = leadRow(LEAD_T9).stage_id;
+    const eventsBefore = rows(
+      `select id from public.event_log where event_type='lead.stage_changed' and entity_id='${LEAD_T9}'`,
+    ).length;
     const ctx = baseCtx({ lead: leadRow(LEAD_T9) });
     const result = await executor.execute(ctx, { pipeline_id: GOV_PIPELINE, stage_id: STAGE_2 });
-    expect(result.status).toBe("success");
-    expect(leadRow(LEAD_T9).stage_id).toBe(STAGE_2);
-
-    const found = rows(
-      `select metadata from public.event_log where event_type = 'lead.stage_changed' and entity_id = '${LEAD_T9}' order by created_at desc limit 1`,
-    );
-    expect(found.length).toBe(1);
-    const metadata = found[0]!.metadata as Record<string, unknown>;
-    expect(String(metadata.request_id ?? "")).toBe(`rule:${RULE_ID}`);
+    expect(result.status).toBe("skipped");
+    expect(result.detail?.reason).toBe("human_kanban_required");
+    expect(leadRow(LEAD_T9).stage_id).toBe(before);
+    expect(
+      rows(
+        `select id from public.event_log where event_type='lead.stage_changed' and entity_id='${LEAD_T9}'`,
+      ).length,
+    ).toBe(eventsBefore);
   });
 
   it("7. contexto só com contact — cria lead novo, lead.created carrega request_id rule:", async () => {
@@ -416,7 +435,10 @@ describe("create_or_move_lead (Task 9)", () => {
     const created = leadRow(createdId);
     expect(created.contact_id).toBe(CONTACT_T9);
     expect(created.pipeline_id).toBe(GOV_PIPELINE);
-    expect(created.stage_id).toBe(GOV_STAGE);
+    const entry = rows(
+      `select id from crm_stages where organization_id='${GOV_ORG}' and pipeline_id='${GOV_PIPELINE}' and not is_archived and not is_won and not is_lost order by position,id limit 1`,
+    )[0]!.id;
+    expect(created.stage_id).toBe(entry);
 
     const found = rows(
       `select metadata from public.event_log where event_type = 'lead.created' and entity_id = '${createdId}' order by created_at desc limit 1`,

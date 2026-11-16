@@ -73,6 +73,14 @@ describe("contaDaAgendaPrimaria", () => {
     expect(classificarErroDoGoogle(r.erro, "listar").desfecho).toBe("reautenticar");
   });
 
+  it("401 sem código no JSON também exige reconexão", async () => {
+    vi.mocked(fetch).mockResolvedValue(resposta({}, 401));
+    const r = await contaDaAgendaPrimaria("synthetic-token");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(classificarErroDoGoogle(r.erro, "listar").desfecho).toBe("reautenticar");
+  });
+
   it("rede caída e corpo ilegível não lançam", async () => {
     vi.mocked(fetch).mockRejectedValue(new Error("fetch failed"));
     await expect(contaDaAgendaPrimaria("t")).resolves.toMatchObject({ ok: false });

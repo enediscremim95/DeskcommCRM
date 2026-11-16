@@ -45,7 +45,6 @@
     { "id": "checkpoints", "lane": "agente", "col": 0, "type": "database", "label": "lead_checkpoints", "sublabel": "objeções e compromissos (por DIFF)" },
     { "id": "traces", "lane": "agente", "col": 0, "type": "database", "label": "before_send_traces", "sublabel": "os portões — e os vetos" },
     { "id": "ritual", "lane": "agente", "col": 1, "type": "service", "label": "inbound-turn (ritual)", "sublabel": "abre lendo checkpoint + lead_state" },
-    { "id": "espelho", "lane": "agente", "col": 5, "type": "service", "label": "mirrorLeadStageToCrm", "sublabel": "propõe quando há conflito" },
 
     { "id": "eventlog", "lane": "fila", "col": 2, "type": "database", "label": "event_log", "sublabel": "marca d'água: só evento novo" },
     { "id": "workerscore", "lane": "fila", "col": 2, "type": "service", "label": "worker do score", "sublabel": "fórmula determinística, nunca modelo" },
@@ -90,11 +89,6 @@
     { "id": "e31", "from": "risco", "to": "leadstate", "label": "esfriou ⇒ propõe reativação" },
     { "id": "e32", "from": "leadstate", "to": "inbox", "label": "proposta vencida", "route": "drop" },
     { "id": "e33", "from": "resolver", "to": "inbox", "label": "ambiguidade não some em silêncio", "route": "drop" },
-    { "id": "e34", "from": "leadstate", "to": "espelho", "label": "crm_lead_id — atalho, não identidade" },
-    { "id": "e35", "from": "stages", "to": "espelho", "label": "agent_stage_hint por pipeline" },
-    { "id": "e36", "from": "atividades", "to": "espelho", "label": "CONFLITO: humano moveu depois da IA?", "route": "highlight" },
-    { "id": "e37", "from": "espelho", "to": "leads", "label": "move — só sem conflito" },
-    { "id": "e38", "from": "espelho", "to": "slot", "label": "com conflito, propõe" },
     { "id": "e39", "from": "leads", "to": "card", "label": "realtime por pipeline_id" },
     { "id": "e40", "from": "leads", "to": "filtro", "label": "owner_kind: humano e agente são pares" },
     { "id": "e41", "from": "atividades", "to": "chat", "label": "âncora {conversation_id, message_id}" },
@@ -135,7 +129,7 @@
       "title": "As quatro arestas que ninguém reconstrói lendo o código",
       "items": [
         "e19 — a decisão humana volta ao PROMPT do turno seguinte",
-        "e36 — o barramento é a fonte da detecção de conflito da ponte",
+        "Etapa/status exigem uma pessoa; IA/automação só cria na entrada",
         "scores fora do realtime: recálculo não pode pulsar nem invalidar arrasto",
         "e32/e33 — o que o Kanban não resolve vai para a caixa, não some"
       ]

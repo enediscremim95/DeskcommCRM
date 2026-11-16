@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 /**
  * GET /api/v1/voice/sessions/status — estado do pareamento de chamada de voz
  * da organização ativa. Usado pelo discador (§5.1 da spec) pra decidir se
@@ -11,7 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+async function GETComAuth(): Promise<Response> {
   const requestId = randomUUID();
 
   const user = await loadAuthUser();
@@ -46,3 +47,5 @@ export async function GET(): Promise<Response> {
     { requestId },
   );
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

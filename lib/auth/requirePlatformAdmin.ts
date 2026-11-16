@@ -1,3 +1,4 @@
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * Server guard for /admin/* (Super-Admin Platform sub-product).
  *
@@ -36,7 +37,7 @@ export async function requirePlatformAdmin(): Promise<PlatformAdminContext> {
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (!user) {
     redirect("/login?next=/admin");
   }

@@ -1,3 +1,5 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * GET /api/v1/auth/realtime-token — o token que o canal Realtime precisa.
  *
@@ -32,7 +34,7 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE = { "cache-control": "no-store, max-age=0" } as const;
 
-export async function GET(_req: NextRequest): Promise<Response> {
+async function GETComAuth(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const supabase = await createClient();
 
@@ -40,7 +42,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId, headers: NO_STORE });
   }
@@ -59,3 +61,5 @@ export async function GET(_req: NextRequest): Promise<Response> {
     { requestId, headers: NO_STORE },
   );
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

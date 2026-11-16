@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 /**
  * GET /api/v1/admin/lgpd/requests/[id]
  *
@@ -15,7 +17,7 @@ import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
+async function GETComAuth(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -24,7 +26,8 @@ export async function GET(
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required.", 403, { requestId });
   }
 
@@ -88,3 +91,5 @@ export async function GET(
     { requestId },
   );
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

@@ -1,16 +1,8 @@
 /**
- * Espelho do avanço de funil no kanban do CRM — LIGADO. O harness (lead_state) é
- * a fonte da verdade do funil do agente; quando o agente avança um passo, o card
- * do tenant anda junto no board, traduzido pelo `crm_stages.agent_stage_hint`.
- *
- * ⚠️ Este arquivo NÃO decide qual negócio do contato se move: ele DELEGA para
- * `sincronizaEstagioDoAgente`, que reusa o `resolveActiveLeadForContact` da wave
- * 4. Um segundo resolvedor aqui seriam duas fontes que começam iguais e divergem
- * no primeiro ajuste.
- *
- * Cada não-movimento vira o rótulo que diz a verdade sobre ele (ver MIRROR_WARN_ONLY):
- * configuração e conflito com humano são estado normal; banco fora e escrita
- * falha são incidente e abrem item de inbox no caller.
+ * Adaptador legado de espelhamento: movimentos automáticos estão DESLIGADOS.
+ * O estado cognitivo do agente pode avançar; etapa/status do card exigem uma
+ * decisão humana, em toda organização. A assinatura é conservada para os
+ * chamadores receberem uma recusa explícita, sem escrita no banco.
  */
 import { sincronizaEstagioDoAgente } from '@/lib/leads/agent-stage-sync';
 import type { Queryable } from '../../queue/queue';

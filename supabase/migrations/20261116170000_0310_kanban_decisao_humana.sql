@@ -28,3 +28,20 @@ revoke execute on function public.fn_guard_kanban_human() from public, anon;
 drop trigger if exists zz_guard_kanban_human on public.crm_leads;
 create trigger zz_guard_kanban_human before insert or update on public.crm_leads
 for each row execute function public.fn_guard_kanban_human();
+
+-- Junção operacional (0307/0309) não pode promover etapa implicitamente.
+-- O estado original do absorvido continua no snapshot; desfazer humano usa JWT
+-- authenticated e restaura a decisão histórica sem conceder movimento a automações.
+do $patch$
+declare v_fn regprocedure; v_definition text;
+begin
+ v_fn := to_regprocedure('public.fn_juntar_negocios_mesma_pessoa(uuid,uuid,uuid)');
+ if v_fn is not null then
+  v_definition := pg_get_functiondef(v_fn);
+  if position('and s.id in (v_survivor.stage_id, v_absorbed.stage_id)' in v_definition) > 0 then
+   execute replace(v_definition,
+     'and s.id in (v_survivor.stage_id, v_absorbed.stage_id)',
+     'and s.id = v_survivor.stage_id');
+  end if;
+ end if;
+end $patch$;
