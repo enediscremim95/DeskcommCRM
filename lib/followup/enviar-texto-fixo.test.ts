@@ -38,20 +38,22 @@ const JOB = {
 const statusUpdates: string[] = [];
 
 /** Admin stub: job_queue (select pending / claim / status) + followup_enrollments. */
-function admin() {
+function admin(jobs = [JOB]) {
   const make = (table: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
       _table: table,
+      _ids: null as string[] | null,
+      _limit: Infinity,
       _upd: null as Record<string, unknown> | null,
       select: () => chain,
       eq: () => chain,
       lte: () => chain,
-      in: () => chain,
+      in: (column: string, ids: string[]) => { if (column === "contact_id") chain._ids = ids; return chain; },
       single: () => Promise.resolve({data:table==="send_ledger"?{id:"ledger-1"}:{settings:{}},error:null}),
       insert: () => chain,
       order: () => chain,
-      limit: () => chain,
+      limit: (count: number) => { chain._limit = count; return chain; },
       update: (p: Record<string, unknown>) => {
         chain._upd = p;
         if (table === "job_queue" && typeof p.status === "string") statusUpdates.push(p.status);
@@ -65,7 +67,7 @@ function admin() {
       },
       then: (r: (v: unknown) => unknown) => {
         if (table === "job_queue" && !chain._upd) {
-          return Promise.resolve({ data: [JOB], error: null }).then(r);
+          return Promise.resolve({ data: jobs.filter(job => !chain._ids || chain._ids.includes(job.contact_id)).slice(0, chain._limit), error: null }).then(r);
         }
         return Promise.resolve({ data: null, error: null }).then(r);
       },
@@ -113,4 +115,15 @@ it.each(["queued","failed"])("%s não conta envio nem avança o fluxo",async sta
  decidir.mockResolvedValue({permite:true});sendMessageHandler.mockResolvedValueOnce({id:"msg-1",status});
  expect(await enviarTextoFixoPendente(admin())).toBe(0);
  expect(completeTurnForEnrollment).not.toHaveBeenCalled();expect(statusUpdates).toContain("pending");
+});
+
+it("retry do contato não é escondido por cinco pendências de outros contatos", async () => {
+  decidir.mockResolvedValue({ permite: true });
+  const outros = Array.from({ length: 5 }, (_, i) => ({ ...JOB, id: `outro-${i}`, contact_id: `outro-contato-${i}` }));
+  expect(await enviarTextoFixoPendente(admin([...outros, JOB]), [JOB.contact_id])).toBe(1);
+  expect(sendMessageHandler).toHaveBeenCalledOnce();
+});
+it("lista vazia não pode processar contatos de outra chamada", async () => {
+  expect(await enviarTextoFixoPendente(admin(), [])).toBe(0);
+  expect(sendMessageHandler).not.toHaveBeenCalled();
 });
