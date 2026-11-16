@@ -32229,6 +32229,10 @@ drop trigger if exists zz_guard_kanban_human on public.crm_leads;
 create trigger zz_guard_kanban_human before insert or update on public.crm_leads
 for each row execute function public.fn_guard_kanban_human();
 
+-- ---- origem do follow-up por silêncio (migration 0311) ----
+-- Origem explícita para aplicar opt-in sem alterar follow-ups agendados existentes.
+alter table public.followup_enrollments add column if not exists automatic_silence boolean not null default false;
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$

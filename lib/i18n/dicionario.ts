@@ -37,6 +37,17 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Follow-up por silêncio": { es: "Seguimiento por silencio" },
+  "Desligado por padrão. Quando ligado, os fluxos de silêncio publicados podem retomar o contato no horário escolhido e dentro de 24 horas da última mensagem recebida. Etapa e desfecho do negócio continuam sendo decisões humanas.": { es: "Desactivado por defecto. Los flujos de silencio publicados pueden retomar el contacto en el horario elegido y dentro de las 24 horas del último mensaje recibido. La etapa y el cierre siguen siendo decisiones humanas." },
+  "Ativar para esta organização": { es: "Activar para esta organización" },
+  "Tentativas por resposta recebida": { es: "Intentos por respuesta recibida" },
+  "Início (hora)": { es: "Inicio (hora)" },
+  "Fim (hora)": { es: "Fin (hora)" },
+  "Dias de atendimento": { es: "Días de atención" },
+  "Salvar follow-up proativo": { es: "Guardar seguimiento proactivo" },
+  "Limite de tentativas proativas": { es: "Límite de intentos proactivos" },
+  "Follow-up proativo salvo.": { es: "Seguimiento proactivo guardado." },
+  "Não foi possível salvar. Recarregue e tente novamente.": { es: "No se pudo guardar. Recargue e inténtelo nuevamente." },
   "Período · America/Sao_Paulo": { es: "Período · America/Sao_Paulo" },
   "Data": { es: "Fecha" },
   "Data do período": { es: "Fecha del período" },

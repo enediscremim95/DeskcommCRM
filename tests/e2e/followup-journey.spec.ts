@@ -42,6 +42,7 @@ import { test, expect, type Page, type Locator } from "@playwright/test";
 import { afirmarAdminDeTenantPuro } from "./utils/precondicao";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { habilitarProatividadeNoTeste } from "./utils/proatividade-de-teste";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const ARTIFACTS_DIR = path.join(process.cwd(), "e2e-artifacts");
@@ -480,9 +481,11 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     // publish, seed do contato, o loop de varredura, os ticks do engine...)
     // NUNCA pode deixar o pointer `active`/o agent `published+enabled` órfãos.
     let agentId: string | undefined;
+    let restaurarProatividade: (() => Promise<void>) | undefined;
     let seed: { contactId: string; contactName: string; conversationId: string; channelSessionId: string } | undefined;
 
     try {
+      restaurarProatividade = await habilitarProatividadeNoTeste(creds.org_id);
       // =========================================================================
       // 2. [REAL UI + API] Vincula o fluxo a um agente publicado — só um agente
       //    PUBLICADO com followup.enabled=true habilita o gatilho automático
@@ -789,6 +792,7 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
           console.error("cleanup: falha ao limpar o contato semeado", err);
         }
       }
+      await restaurarProatividade?.();
     }
   });
 });

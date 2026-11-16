@@ -26,6 +26,7 @@ export type EnrollmentOutcome = "converted" | "replied" | "exhausted" | "opted_o
  * can produce it. Field names mirror the table (migration 0054) 1:1.
  */
 export interface EnrollmentRow {
+  automatic_silence?: boolean;
   service_boundary?: ServiceBoundary | null;
   revision?: number;
   appointment_id?: string | null;

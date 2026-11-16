@@ -127,7 +127,7 @@ export async function enviarTextoFixoPendente(
         continue;
       }
 
-      const proactiveContext={organizationId:job.organization_id as string,contactId,enrollmentId,nodeId,jobId:job.id,jobClaim};
+      const proactiveContext={automaticSilence:(job.payload as Record<string, unknown>).automatic_silence===true,organizationId:job.organization_id as string,contactId,enrollmentId,nodeId,jobId:job.id,jobClaim};
       await assertAgendaEffectSupabase(admin,proactiveContext);
       const resultado=await sendWithLedger(supabaseSendLedger(admin),{tenantId:job.organization_id,leadId:contactId,jobId:job.id,seq:1,body},async(key,messageId)=>sendMessageHandler(
         admin,
