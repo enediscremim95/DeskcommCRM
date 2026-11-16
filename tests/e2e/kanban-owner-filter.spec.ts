@@ -72,3 +72,17 @@ test("filtro por responsável reflete na URL e esconde leads com dono", async ({
   await expect(unowned).toBeVisible();
   await expect(owned).toHaveCount(0);
 });
+
+test("período filtra no servidor e persiste ao recarregar", async ({ page }) => {
+  await login(page, creds.users.manager!.email);
+  const unowned = page.getByRole("heading", { name: "Pedido E2E sem responsavel" });
+  await expect(unowned).toBeVisible();
+  await page.getByLabel("Período de", { exact: true }).fill("2099-01-01");
+  await expect(page).toHaveURL(/date_from=2099-01-01/);
+  await expect(unowned).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByLabel("Período de", { exact: true })).toHaveValue("2099-01-01");
+  await expect(unowned).toHaveCount(0);
+  await page.getByLabel("Período de", { exact: true }).fill("");
+  await expect(unowned).toBeVisible();
+});
