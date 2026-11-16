@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Atkinson_Hyperlegible, IBM_Plex_Mono, Sora } from "next/font/google";
+import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { Toaster } from "sonner";
 import { coresDaBarraDoNavegador } from "@/lib/branding/barra-do-navegador";
@@ -27,16 +27,20 @@ import { PublicEnvScript } from "./public-env-script";
 import "./globals.css";
 import "./veritas-theme.css";
 
-const atkinson = Atkinson_Hyperlegible({
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "700"],
+const atkinson = localFont({
+  src: [
+    { path: "./fonts/atkinsonhyperlegible/AtkinsonHyperlegible-Regular.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/atkinsonhyperlegible/AtkinsonHyperlegible-Bold.woff2", weight: "700", style: "normal" },
+  ],
   display: "swap",
   variable: "--font-atkinson",
 });
 
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "500"],
+const plexMono = localFont({
+  src: [
+    { path: "./fonts/ibmplexmono/IBMPlexMono-Regular.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/ibmplexmono/IBMPlexMono-Medium.woff2", weight: "500", style: "normal" },
+  ],
   display: "swap",
   variable: "--font-mono",
 });
@@ -44,9 +48,9 @@ const plexMono = IBM_Plex_Mono({
 // Sora é deliberadamente uma fonte de destaque: títulos e números que precisam
 // orientar a leitura. O restante da interface permanece em Atkinson, que é a
 // fonte de trabalho e leitura contínua do produto.
-const sora = Sora({
-  subsets: ["latin", "latin-ext"],
-  weight: ["600", "700"],
+const sora = localFont({
+  src: "./fonts/sora/Sora[wght].woff2",
+  weight: "600 700",
   display: "swap",
   variable: "--font-sora",
 });
