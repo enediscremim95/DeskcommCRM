@@ -2097,3 +2097,7 @@ unitária; a RLS permanece coberta pelos invariantes de banco.
 A segunda rodada acrescenta testes unitários das jornadas CM7 a CM9 e um invariante
 para as colunas da migration `0299`. A prova visual da tela bloqueada ainda depende
 da execução E2E em ambiente local completo.
+
+### Correções compartilhadas de CI — 2026-11-16
+
+Agenda: a confirmação precisa manter o horário oferecido pela grade também em navegador UTC com regra America/Sao_Paulo (`agenda-grade-interativa`). Suporte somente leitura não busca `draft-reply` (`suporte-temporario`). Troca de organização aguarda o destino final `/app/pipelines/`, inclusive após `/app/kanban`, antes de navegar para Inbox/Agenda. Seletores de tela exigem unicidade entre elementos visíveis; rotas ocultas preservadas pelo App Router não são a tela atual. Asserções e cobertura permanecem ativas.

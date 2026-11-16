@@ -217,6 +217,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   );
   const replySuggestion = useReplySuggestion({
     conversationId,
+    enabled: !isDisabled,
     autoEligible: autoSuggestionEligible && clienteAguardaResposta && !respostaBarrada,
     autoContextKey: lastInboundAt,
     composerEmpty: mode === "reply" && text.length === 0,

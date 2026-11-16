@@ -84,7 +84,7 @@ async function criarLeadExistente(args: LeadExistenteArgs): Promise<string> {
      values
        ($1, $2, $3, $4, $5, $6,
         case when $6 = 'open' then null else now() end,
-        case when $6 = 'lost' then 'Sem avanço' else null end,
+        case when $6 = 'lost' then 'no_response' else null end,
         $7, $8, $9, now() - $10::interval)
      returning id`,
     [
