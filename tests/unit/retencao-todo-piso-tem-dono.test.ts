@@ -43,6 +43,8 @@ const BASELINE = readFileSync(join(RAIZ, "supabase", "baseline.sql"), "utf8");
 const DONO_NO_SQL: Record<string, string> = {
   FILA: "fn_podar_fila_de_jobs",
   AUDITORIA: "fn_expurgar_auditoria_vencida",
+  WEBHOOK_EVENTS_LOG: "fn_expurgar_webhook_events_log_arquivado",
+  EVENT_LOG: "fn_expurgar_event_log_concluido",
   ESPELHO_AGENDA: "fn_expurgar_espelho_da_agenda",
 };
 
@@ -55,13 +57,16 @@ const SEM_FUNCAO_NO_SQL: Record<string, string> = {
 };
 
 function paresDeclarados(): string[] {
-  const nomes = [...POLITICA.matchAll(/export const RETENCAO_([A-Z_]+)_DIAS_PADRAO\b/g)]
-    .map((m) => m[1] as string);
+  const nomes = [...POLITICA.matchAll(/export const RETENCAO_([A-Z_]+)_DIAS_PADRAO\b/g)].map(
+    (m) => m[1] as string,
+  );
   return [...new Set(nomes)].sort();
 }
 
 function valor(prefixo: string, qual: "PADRAO" | "PISO"): number {
-  const m = new RegExp(`export const RETENCAO_${prefixo}_DIAS_${qual}\\s*=\\s*(\\d+)`).exec(POLITICA);
+  const m = new RegExp(`export const RETENCAO_${prefixo}_DIAS_${qual}\\s*=\\s*(\\d+)`).exec(
+    POLITICA,
+  );
   if (!m) throw new Error(`INSTRUMENTO: não achei RETENCAO_${prefixo}_DIAS_${qual} em politica.ts`);
   return Number(m[1]);
 }
