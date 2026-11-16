@@ -38,8 +38,9 @@ describe("relatório com organização alterada em outra aba", () => {
     mocks.createAdminClient.mockReturnValue({ from: vi.fn().mockReturnValue(query) });
   });
 
-  it("retorna conflito antes de consultar configuração ou dados de outra organização", async () => {
-    const response = await GET(request(oldOrg));
+  it.each([currentOrg, oldOrg])("retorna conflito antes de consultar dados, organização ativa %s", async active => {
+    mocks.requireRole.mockResolvedValue({ok:true,org:{orgId:active},user:{is_platform_admin:true}});
+    const response = await GET(request(active===currentOrg ? oldOrg : currentOrg));
     expect(response.status).toBe(409);
     expect((await response.json()).error.details.reason).toBe("active_organization_changed");
     expect(mocks.createAdminClient).not.toHaveBeenCalled();

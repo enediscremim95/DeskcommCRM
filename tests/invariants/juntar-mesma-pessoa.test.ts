@@ -195,7 +195,8 @@ describe("mesma pessoa por outro número", () => {
       from unnest(array['public.fn_juntar_negocios_mesma_pessoa(uuid,uuid,uuid)',
         'public.fn_juntar_mesma_pessoa_da_organizacao(uuid,boolean)']) signature`);
     expect(rows).toHaveLength(2);
-    for (const row of rows) expect(row).toMatchObject({ usuario: false, anonimo: false, servico: true });
+    for (const row of rows)
+      expect(row).toMatchObject({ usuario: false, anonimo: false, servico: true });
   });
 
   it("junta Márcia pelo nome completo extraído da primeira mensagem", async () => {
@@ -355,8 +356,11 @@ describe("mesma pessoa por outro número", () => {
 });
 
 describe("junção contextual dos negócios da mesma pessoa", () => {
-  it("preserva contexto, usa a etapa mais avançada e desfaz todo o estado combinado", async () => {
-    const contato = await contatoFormulario({ nome: "Negócio Contextual", telefone: "+5511988881001" });
+  it("preserva contexto e etapa do sobrevivente sem promover o card; desfaz o estado combinado", async () => {
+    const contato = await contatoFormulario({
+      nome: "Negócio Contextual",
+      telefone: "+5511988881001",
+    });
     const survivor = await negocio({
       contato,
       origem: { utm_source: "google", utm_medium: "cpc", utm_campaign: "franquia" },
@@ -386,30 +390,32 @@ describe("junção contextual dos negócios da mesma pessoa", () => {
       [task, ORG, absorbed],
     );
 
-    const merged = await comoServico(
-      "select fn_juntar_negocios_mesma_pessoa($1,$2,$3) result",
-      [ORG, survivor, absorbed],
-    );
+    const merged = await comoServico("select fn_juntar_negocios_mesma_pessoa($1,$2,$3) result", [
+      ORG,
+      survivor,
+      absorbed,
+    ]);
     const result = merged.rows[0]!.result as { log_id: string };
     const state = await pool.query(
       `select stage_id,custom_fields,tags from crm_leads where id=$1`,
       [survivor],
     );
     expect(state.rows[0]).toMatchObject({
-      stage_id: ETAPA_AVANCADA,
+      stage_id: ETAPA_INICIAL,
       custom_fields: { cidade: "Curitiba", capital: "100000" },
     });
     expect(state.rows[0]!.tags.sort()).toEqual(["formulario", "whatsapp"]);
     expect(
-      (await pool.query("select count(*)::int n from crm_leads where id=$1", [absorbed])).rows[0]!.n,
+      (await pool.query("select count(*)::int n from crm_leads where id=$1", [absorbed])).rows[0]!
+        .n,
     ).toBe(0);
     expect(
       (await pool.query("select lead_id from crm_lead_activities where id=$1", [activity])).rows[0]!
         .lead_id,
     ).toBe(survivor);
-    expect((await pool.query("select lead_id from crm_tasks where id=$1", [task])).rows[0]!.lead_id).toBe(
-      survivor,
-    );
+    expect(
+      (await pool.query("select lead_id from crm_tasks where id=$1", [task])).rows[0]!.lead_id,
+    ).toBe(survivor);
     const sourceActivity = await pool.query(
       `select reason from crm_lead_activities
         where lead_id=$1 and source_id=$2 and type='lead_source_preserved'`,
@@ -433,13 +439,16 @@ describe("junção contextual dos negócios da mesma pessoa", () => {
       (await pool.query("select lead_id from crm_lead_activities where id=$1", [activity])).rows[0]!
         .lead_id,
     ).toBe(absorbed);
-    expect((await pool.query("select lead_id from crm_tasks where id=$1", [task])).rows[0]!.lead_id).toBe(
-      absorbed,
-    );
+    expect(
+      (await pool.query("select lead_id from crm_tasks where id=$1", [task])).rows[0]!.lead_id,
+    ).toBe(absorbed);
   });
 
   it("recusa donos humanos diferentes", async () => {
-    const contato = await contatoFormulario({ nome: "Donos Diferentes", telefone: "+5511988881002" });
+    const contato = await contatoFormulario({
+      nome: "Donos Diferentes",
+      telefone: "+5511988881002",
+    });
     const survivor = await negocio({
       contato,
       origem: { source: "form" },

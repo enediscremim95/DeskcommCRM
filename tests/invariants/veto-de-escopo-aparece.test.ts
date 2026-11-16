@@ -5,28 +5,7 @@ import { sincronizaEstagioDoAgente } from "@/lib/leads/agent-stage-sync";
 
 import { pgComoSupabase } from "../pg-como-supabase";
 
-/**
- * QUANDO O ASSISTENTE É VETADO, ALGUÉM FICA SABENDO (spec 17 passo 3).
- *
- * ═══ POR QUE ISTO É O CASO MAIS DELICADO DO PASSO ═══
- *
- * `fora_do_escopo` é estado LEGÍTIMO do produto — a regra funcionou. A tentação
- * era classificá-lo como "warn only", junto de `not_configured` e
- * `human_conflict`, e não avisar ninguém.
- *
- * Mas no dia 1 de cada assistente ele é **100% dos movimentos**. Um veto
- * silencioso em massa não se lê como proteção: lê-se como "a IA parou de
- * funcionar". Este é o item que decide se a feature parece cuidado ou parece bug.
- *
- * O que se congela aqui:
- *  1. o negócio fora do escopo NÃO é movido;
- *  2. o motivo é `fora_do_escopo` — distinto de `sem_negocio` e de
- *     `sem_mapeamento`, que mandariam o dono procurar no lugar errado;
- *  3. o negócio DENTRO do escopo continua sendo movido (senão o gate seria só
- *     um jeito caro de desligar a IA);
- *  4. chamador que não informa escopo segue como antes — migração não pode
- *     parar caminho que ainda não foi migrado.
- */
+/** Escopo de funil não autoriza IA a mover cards: política de 16/11/2026. */
 const container = process.env.TEST_DB_CONTAINER;
 if (!container) {
   throw new Error("TEST_DB_CONTAINER not set — rode via `pnpm test:db` (scripts/test-db.sh)");
@@ -96,105 +75,18 @@ afterAll(async () => {
   await pool.end();
 });
 
-describe("o negócio de um funil que o assistente NÃO cuida", () => {
-  it("controle: o cenário tem dois funis com etapas mapeadas", async () => {
-    // Sem mapeamento, o motivo seria `sem_mapeamento` e o teste passaria por
-    // um caminho que não é o que se quer medir.
-    const { rows } = await pool.query<{ n: string }>(
-      "select count(*) as n from crm_stages where organization_id = $1 and agent_stage_hint is not null",
-      [ORG],
-    );
-    expect(Number(rows[0]!.n)).toBe(4);
-  });
-
-  it("NÃO é movido, e o motivo é `fora_do_escopo`", async () => {
-    const r = await sincronizaEstagioDoAgente(db, {
-      organizationId: ORG,
-      contactId: contatoNoFunilAlheio,
-      passo: "qualifying",
-      escopoDeFunis: [funilDele], // cuida do Suporte, não do Comercial
-    });
-    expect(r.moveu).toBe(false);
-    expect(r.motivo).toBe("fora_do_escopo");
-  });
-
-  it("o motivo NÃO é `sem_negocio` — o negócio existe, o que falta é permissão", async () => {
-    // Filtrar os candidatos pelo escopo ANTES de rotear produziria
-    // `sem_negocio`, e o dono leria "esse cliente não tem negócio aberto" —
-    // falso, e manda procurar no lugar errado.
-    const r = await sincronizaEstagioDoAgente(db, {
-      organizationId: ORG,
-      contactId: contatoNoFunilAlheio,
-      passo: "qualifying",
-      escopoDeFunis: [funilDele],
-    });
-    expect(r.motivo).not.toBe("sem_negocio");
-    expect(r.motivo).not.toBe("sem_mapeamento");
-    // E aponta QUAL negócio, para o aviso poder linkar.
-    expect(r.leadId).toBeTruthy();
-  });
-
-  it("com escopo VAZIO o motivo é o mesmo, mas o detalhe distingue os dois casos", async () => {
-    // "nenhum funil liberado" e "funil de outro time" pedem ações diferentes de
-    // quem lê o aviso: marcar um funil, ou não fazer nada.
-    const r = await sincronizaEstagioDoAgente(db, {
-      organizationId: ORG,
-      contactId: contatoNoFunilAlheio,
-      passo: "qualifying",
-      escopoDeFunis: [],
-    });
-    expect(r.motivo).toBe("fora_do_escopo");
-    expect(r.detalhe).toMatch(/nenhum funil liberado/i);
-  });
-});
-
-describe("o negócio de um funil que ele CUIDA", () => {
-  it("continua sendo movido — senão o gate seria só um jeito caro de desligar a IA", async () => {
-    const r = await sincronizaEstagioDoAgente(db, {
-      organizationId: ORG,
-      contactId: contatoNoFunilDele,
-      passo: "qualifying",
-      escopoDeFunis: [funilDele],
-    });
-    expect(r.moveu, `esperava mover, veio ${JSON.stringify(r)}`).toBe(true);
-    expect(r.stageName).toBe("Qualificando");
-  });
-
-  it("e o card FICOU na etapa nova — a prova é o estado, não o retorno", async () => {
-    const { rows } = await pool.query<{ name: string }>(
-      `select s.name from crm_leads l join crm_stages s on s.id = l.stage_id
-        where l.organization_id = $1 and l.contact_id = $2`,
-      [ORG, contatoNoFunilDele],
-    );
-    expect(rows[0]!.name).toBe("Qualificando");
-  });
-});
-
-describe("migração", () => {
-  it("chamador que NÃO informa escopo segue como antes", async () => {
-    // `undefined` ≠ `[]`. Tratar "não informado" como "vazio" pararia todo
-    // caminho ainda não migrado, em silêncio — que é exatamente o modo de falha
-    // que o backfill da 0125 existe para evitar do outro lado.
-    const { rows: c } = await pool.query<{ id: string }>(
-      `insert into contacts (organization_id, display_name, source) values ($1, 'Sem Escopo', 'whatsapp') returning id`,
-      [ORG],
-    );
-    const { rows: s } = await pool.query<{ id: string }>(
-      "select id from crm_stages where pipeline_id = $1 and agent_stage_hint = 'new'",
-      [funilAlheio],
-    );
-    await pool.query(
-      `insert into crm_leads (organization_id, pipeline_id, stage_id, contact_id, title, status)
-       values ($1, $2, $3, $4, 'Negócio legado', 'open')`,
-      [ORG, funilAlheio, s[0]!.id, c[0]!.id],
-    );
-
-    const r = await sincronizaEstagioDoAgente(db, {
-      organizationId: ORG,
-      contactId: c[0]!.id,
-      passo: "qualifying",
-      // escopoDeFunis ausente de propósito
-    });
-    expect(r.moveu, "sem escopo informado, o comportamento antigo continua").toBe(true);
+describe("nenhum escopo autoriza mudança automática de Kanban", () => {
+  it("preserva etapa, status e updated_at no banco, com escopo autorizado, alheio, vazio e legado", async () => {
+    const before = await pool.query("select id,stage_id,status,updated_at from crm_leads where organization_id=$1 order by id", [ORG]);
+    for (const contactId of [contatoNoFunilDele, contatoNoFunilAlheio]) {
+      for (const escopoDeFunis of [[funilDele], [funilAlheio], [], undefined]) {
+        for (const passo of ["new", "qualifying", "won", "lost"]) {
+          const result = await sincronizaEstagioDoAgente(db, { organizationId: ORG, contactId, passo, escopoDeFunis });
+          expect(result).toEqual({ moveu: false, motivo: "decisao_humana_obrigatoria" });
+        }
+      }
+    }
+    const after = await pool.query("select id,stage_id,status,updated_at from crm_leads where organization_id=$1 order by id", [ORG]);
+    expect(after.rows).toEqual(before.rows);
   });
 });

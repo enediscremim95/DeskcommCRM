@@ -1,6 +1,7 @@
 import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
 /**
- * Ação `create_or_move_lead` — reusa os handlers core de /api/v1/leads
+ * Ação legada `create_or_move_lead` — agora somente cria na entrada, sem mover.
+ * Reusa os handlers core de /api/v1/leads
  * (mesmo caminho que REST/MCP) em vez de duplicar a lógica de criação/move.
  *
  * Actor = `webhook_source` com id = ruleId (ator automático; audit registra
@@ -12,7 +13,7 @@ import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
-import { createLeadHandler, moveLeadHandler } from "@/app/api/v1/leads/_handler";
+import { createLeadHandler } from "@/app/api/v1/leads/_handler";
 
 async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
   const pipelineId = typeof config.pipeline_id === "string" ? config.pipeline_id : null;
@@ -37,18 +38,14 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     : { kind: "unavailable", reason: "origin_capture_failed" };
 
   try {
-    // `message.received` hidrata o contato, não um lead específico. Antes de
-    // criar outro negócio, procura o aberto desse contato NO funil configurado.
-    // Sem isso o modelo "respondeu → próxima etapa" duplicaria o lead em vez de
-    // mover o que a pessoa acabou de responder.
+    // Preserva negócios existentes, inclusive Perdidos/Ganhos: nunca reabre nem move.
     if (!lead && contact) {
       const { data: existentes, error: buscaErro } = await ctx.admin
         .from("crm_leads")
         .select("id, pipeline_id, contact_id")
         .eq("organization_id", ctx.organizationId)
         .eq("contact_id", contact.id)
-        .eq("pipeline_id", pipelineId)
-        .eq("status", "open");
+        .eq("pipeline_id", pipelineId);
       if (buscaErro) {
         return { type: "create_or_move_lead", status: "failed", error: buscaErro.message };
       }
@@ -64,8 +61,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       if (lead.pipeline_id !== pipelineId) {
         return { type: "create_or_move_lead", status: "failed", error: "cross_pipeline_move_not_allowed" };
       }
-      await moveLeadHandler(ctx.admin, handlerCtx, lead.id, { to_stage_id: stageId });
-      return { type: "create_or_move_lead", status: "success", detail: { moved: lead.id } };
+      return { type: "create_or_move_lead", status: "skipped", detail: { reason: "human_kanban_required", preserved: lead.id } };
     }
     if (contact) {
       const created = await createLeadHandler(ctx.admin, handlerCtx, {
