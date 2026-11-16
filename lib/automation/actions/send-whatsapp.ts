@@ -182,6 +182,8 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     const message = await sendMessageHandler(
       ctx.admin,
       {
+        internalPhoneCandidate: ctx.internalPhoneCandidate,
+        deduplicateInternalMessage: !!ctx.internalMessageId,
         organization_id: ctx.organizationId,
         serviceBoundary: boundary,
         proactiveContext: { organizationId: ctx.organizationId, contactId: contact.id },

@@ -37,6 +37,23 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Primeiro contato salvo.": { es: "Primer contacto guardado." },
+  "Não foi possível salvar o primeiro contato.": { es: "No se pudo guardar el primer contacto." },
+  "Primeiro contato após formulário": { es: "Primer contacto tras el formulario" },
+  "Desligado por padrão. Tenta WhatsApp, uma variante equivalente do telefone e e-mail. Se não conseguir, destaca o card para revisão humana. Uma resposta interrompe a sequência.": { es: "Desactivado por defecto. Intenta WhatsApp, una variante equivalente del teléfono y correo. Si no lo consigue, destaca la tarjeta para revisión humana. Una respuesta interrumpe la secuencia." },
+  "Ativar primeiro contato nesta organização": { es: "Activar primer contacto en esta organización" },
+  "Canal do primeiro contato": { es: "Canal del primer contacto" },
+  "Canal sem nome": { es: "Canal sin nombre" },
+  "Mensagem de WhatsApp": { es: "Mensaje de WhatsApp" },
+  "Assunto do e-mail": { es: "Asunto del correo" },
+  "Mensagem de e-mail": { es: "Mensaje de correo" },
+  "Tentativas de WhatsApp": { es: "Intentos de WhatsApp" },
+  "Início do expediente": { es: "Inicio del horario laboral" },
+  "Fim do expediente": { es: "Fin del horario laboral" },
+  "Fuso do primeiro contato": { es: "Zona horaria del primer contacto" },
+  "Salvar primeiro contato": { es: "Guardar primer contacto" },
+  "Contato precisa de atenção": { es: "El contacto necesita atención" },
+  "O e-mail precisa estar configurado com o remetente exclusivo desta empresa. Sem ele, a falha fica visível no card. Números ambíguos são encaminhados para revisão.": { es: "El correo necesita un remitente exclusivo de esta empresa. Sin él, el fallo queda visible en la tarjeta. Los números ambiguos pasan a revisión." },
   "Follow-up por silêncio": { es: "Seguimiento por silencio" },
   "Desligado por padrão. Quando ligado, os fluxos de silêncio publicados podem retomar o contato no horário escolhido e dentro de 24 horas da última mensagem recebida. Etapa e desfecho do negócio continuam sendo decisões humanas.": { es: "Desactivado por defecto. Los flujos de silencio publicados pueden retomar el contacto en el horario elegido y dentro de las 24 horas del último mensaje recibido. La etapa y el cierre siguen siendo decisiones humanas." },
   "Ativar para esta organização": { es: "Activar para esta organización" },

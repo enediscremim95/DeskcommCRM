@@ -1,3 +1,5 @@
+import { capturePolicy } from "@/lib/proactivity/capture-policy";
+import { CaptureProactivityForm } from "./_capture-proactivity-form";
 import { proactivePolicy } from "@/lib/proactivity/policy";
 import { ProactivityForm } from "./_proactivity-form";
 /**
@@ -74,6 +76,7 @@ export default async function AtendimentoSettingsPage() {
         initial={{ ...routing, visibility_mode: settings.visibility_mode ?? DEFAULT_VISIBILITY_MODE }}
       />
       <ChannelRoutingForm initial={channels} />
+      {activeOrg.role === "admin" && <CaptureProactivityForm initial={capturePolicy(settings)} channels={channels.channels} />}
       {activeOrg.role === "admin" && <ProactivityForm initial={proactivePolicy(settings)} />}
     </div>
   );
