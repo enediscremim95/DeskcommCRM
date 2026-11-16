@@ -1,3 +1,4 @@
+import { requireHumanKanban } from "@/lib/leads/human-kanban";
 /**
  * ENCERRAR A DEMANDA — o outro lado do invariante 4 da doutrina.
  *
@@ -78,6 +79,7 @@ export async function encerraDemanda(
   ctx: HandlerCtx,
   input: EncerraDemandaInput,
 ): Promise<DemandaEncerrada> {
+  requireHumanKanban(ctx);
   if (input.desfecho === "lost" && !input.motivo?.trim()) {
     throw new ApiError(
       422,

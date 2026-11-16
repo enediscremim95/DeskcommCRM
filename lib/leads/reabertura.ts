@@ -1,3 +1,4 @@
+import { requireHumanKanban } from "@/lib/leads/human-kanban";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { HandlerCtx } from "@/lib/api/handlers/types";
@@ -25,6 +26,7 @@ export async function reabreLead(
   ctx: HandlerCtx,
   leadId: string,
 ): Promise<Record<string, unknown>> {
+  requireHumanKanban(ctx);
   const { data: lead, error } = await supabase
     .from("crm_leads")
     .select("*")

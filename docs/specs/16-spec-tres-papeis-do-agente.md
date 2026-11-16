@@ -1,3 +1,5 @@
+> Regra vigente desde 16/11/2026: IA/automação não muda etapa nem status de negócio. O espelhamento de `lead_state` no Kanban descrito abaixo foi desativado; decisões humanas são obrigatórias. Ver `docs/audits/2026-11-16-kanban-autoridade.md`.
+
 # Spec 16 — Os três papéis do agente
 
 > Executa [`docs/doctrine/separacao-fala-e-operacao.md`](../doctrine/separacao-fala-e-operacao.md),
