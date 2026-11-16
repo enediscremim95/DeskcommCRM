@@ -1,5 +1,5 @@
 /**
- * Seed do cenário "troca de organização em sequência": UM usuário em OITO
+ * Seed do cenário "troca de organização em sequência": UM usuário dedicado em OITO
  * organizações, todas com onboarding concluído, funil padrão e o Relatório
  * liberado (integração `windsor` visível) — é o que faz o link "Relatório"
  * aparecer no menu lateral de todas elas.
@@ -28,8 +28,8 @@ const admin = createClient(credenciais.url, credenciais.serviceRole, {
 });
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
-/** A organização A é a do `.e2e-creds.json`; as outras sete nascem aqui. */
-const EXTRAS = 7;
+/** Cenário isolado: não altera papéis, vínculos nem onboarding das outras specs. */
+const TOTAL_ORGS = 8;
 
 interface Creds {
   org_id: string;
@@ -75,13 +75,21 @@ async function liberarRelatorio(orgId: string): Promise<void> {
 async function main(): Promise<void> {
   if (!fs.existsSync(CREDS_PATH)) throw new Error(`${CREDS_PATH} não existe — rode seed-e2e-credentials.ts antes.`);
   const creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
-  const usuario = creds.users?.manager;
-  if (!usuario) throw new Error(".e2e-creds.json sem `users.manager`");
+  const email = "e2e-oito-organizacoes@deskcomm.test";
+  const { data: lista, error: listarErro } = await admin.auth.admin.listUsers({ perPage: 1000 });
+  if (listarErro) throw new Error(`listar usuário dedicado: ${listarErro.message}`);
+  let usuario = lista.users.find((u) => u.email === email);
+  if (!usuario) {
+    const { data, error } = await admin.auth.admin.createUser({
+      email, password: creds.password, email_confirm: true,
+      user_metadata: { full_name: "E2E Oito Organizações", locale: "pt-BR" },
+    });
+    if (error || !data.user) throw new Error(`criar usuário dedicado: ${error?.message}`);
+    usuario = data.user;
+  }
 
   const orgs: Array<{ id: string; nome: string }> = [];
-  const { data: a } = await admin.from("organizations").select("display_name").eq("id", creds.org_id).maybeSingle();
-  orgs.push({ id: creds.org_id, nome: (a as { display_name?: string } | null)?.display_name ?? "Org A" });
-  for (let i = 1; i <= EXTRAS; i++) {
+  for (let i = 0; i < TOTAL_ORGS; i++) {
     const nome = `E2E Troca ${i}`;
     orgs.push({ id: await orgPorSlug(`e2e-troca-${i}`, nome), nome });
   }
@@ -90,7 +98,7 @@ async function main(): Promise<void> {
     await liberarRelatorio(org.id);
   }
 
-  const bloco = { usuario_email: usuario.email, orgs };
+  const bloco = { usuario: { id: usuario.id, email }, orgs };
   fs.writeFileSync(CREDS_PATH, JSON.stringify({ ...creds, oito_orgs: bloco }, null, 2));
   console.info(`[seed-e2e-oito-organizacoes] ${orgs.length} organizações para ${usuario.email}`);
 }

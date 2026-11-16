@@ -29,23 +29,23 @@ const FATOR_DE_CRESCIMENTO = 1.6;
 const FOLGA_MS = 1_500;
 
 interface Org { id: string; nome: string }
-interface Creds { password: string; users: Record<string, { email: string } | undefined>; oito_orgs?: { orgs: Org[] } }
+interface Creds { password: string; users: Record<string, { email: string } | undefined>; oito_orgs?: { orgs: Org[]; usuario: { id: string; email: string } } }
 
-function lerCreds(): Creds & { oito_orgs: { orgs: Org[] } } {
+function lerCreds(): Creds & { oito_orgs: { orgs: Org[]; usuario: { id: string; email: string } } } {
   const p = path.join(RAIZ, ".e2e-creds.json");
   if (!fs.existsSync(p)) throw new Error("`.e2e-creds.json` ausente — rode `scripts/seed-e2e-credentials.ts`");
   let c = JSON.parse(fs.readFileSync(p, "utf8")) as Creds;
-  if (!c.oito_orgs) {
+  if (!c.oito_orgs?.usuario) {
     execFileSync("npx", ["tsx", "scripts/seed-e2e-oito-organizacoes.ts"], { stdio: "inherit" });
     c = JSON.parse(fs.readFileSync(p, "utf8")) as Creds;
   }
   if (!c.oito_orgs || c.oito_orgs.orgs.length < 8) throw new Error("o seed não deixou 8 organizações");
-  return c as Creds & { oito_orgs: { orgs: Org[] } };
+  return c as Creds & { oito_orgs: { orgs: Org[]; usuario: { id: string; email: string } } };
 }
 
 async function entrar(page: Page, creds: Creds) {
-  const usuario = creds.users.manager;
-  if (!usuario) throw new Error(".e2e-creds.json sem o usuário `manager`");
+  const usuario = creds.oito_orgs?.usuario;
+  if (!usuario) throw new Error(".e2e-creds.json sem o usuário dedicado");
   await page.goto("/login");
   await page.getByLabel(/e-?mail/i).fill(usuario.email);
   await page.getByLabel(/senha/i).fill(creds.password);
@@ -190,6 +190,7 @@ test("a organização é por aba: trocar na aba B não muda a aba A, nem ao reca
   await entrar(page, creds);
   await page.goto("/app/kanban");
   const trocarPara = async (p: Page, org: Org) => {
+    await expect(p.getByTestId("tenant-switcher")).toBeVisible({ timeout: TETO_POR_TROCA_MS });
     const atual = ((await p.getByTestId("tenant-switcher").textContent()) ?? "").trim();
     if (atual === org.nome) return;
     await p.getByTestId("tenant-switcher").click();
