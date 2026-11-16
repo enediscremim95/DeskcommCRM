@@ -1,3 +1,4 @@
+import { requireHumanKanban } from "@/lib/leads/human-kanban";
 /**
  * As operações de ETAPA de funil — ler o funil, criar, editar e arquivar coluna.
  *
@@ -436,6 +437,7 @@ export async function arquivarEtapa(
   deps: DepsDeEtapa,
   input: { pipelineId: string; stageId: string; destinoId: string | null },
 ): Promise<EtapaArquivada> {
+  requireHumanKanban({ organization_id: deps.organizationId, actor: deps.actor, requestId: deps.requestId });
   const { pipelineId, stageId, destinoId } = input;
   const etapas = await funilOuNadaFeito(deps, pipelineId);
   const alvo = etapas.find((e) => e.id === stageId);

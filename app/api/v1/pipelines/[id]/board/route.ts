@@ -39,6 +39,8 @@ import type {
 } from "@/lib/kanban/types";
 import type { Lead } from "@/lib/types/leads";
 
+import { applyBoardDateRange, boardDateRange, validBoardDate, type BoardDateRange } from "@/lib/kanban/date-range";
+
 export const dynamic = "force-dynamic";
 
 interface RouteCtx {
@@ -51,7 +53,11 @@ const querySchema = z
   .object({
     stage_id: z.string().min(1).max(128).optional(),
     cursor: z.string().min(1).max(512).optional(),
+    date_field: z.enum(["created_at", "last_activity_at"]).optional(),
+    date_from: z.string().refine(validBoardDate).optional(),
+    date_until: z.string().refine(validBoardDate).optional(),
   })
+  .refine((q) => !q.date_from || !q.date_until || q.date_from <= q.date_until, { path: ["date_until"] })
   .refine((query) => !query.cursor || query.stage_id, { path: ["cursor"] });
 
 interface BoardCursor {
@@ -86,6 +92,7 @@ async function loadStagePage(
   stageId: string,
   cursor: BoardCursor | null,
   total: number,
+  dates: BoardDateRange,
 ): Promise<{ chunk: BoardStageChunk | null; error: string | null }> {
   let pageQuery = supabase
     .from("crm_leads")
@@ -97,6 +104,8 @@ async function loadStagePage(
     .order("position_in_stage", { ascending: true })
     .order("id", { ascending: true })
     .limit(STAGE_PAGE_SIZE + 1);
+
+  pageQuery = applyBoardDateRange(pageQuery, dates);
 
   if (cursor) {
     pageQuery = pageQuery.or(
@@ -130,7 +139,19 @@ async function loadStageCounts(
   supabase: Awaited<ReturnType<typeof createClient>>,
   organizationId: string,
   pipelineId: string,
+  stageIds: string[],
+  dates: BoardDateRange,
 ): Promise<{ totals: Map<string, number>; error: string | null }> {
+  if (dates.from || dates.before) {
+    const counts = await Promise.all(stageIds.map(async (id) => {
+      const query = supabase.from("crm_leads").select("id", { count: "exact", head: true })
+        .eq("organization_id", organizationId).eq("pipeline_id", pipelineId)
+        .eq("stage_id", id).neq("status", "archived");
+      const result = await applyBoardDateRange(query, dates);
+      return { id, count: result.count ?? 0, error: result.error?.message };
+    }));
+    return { totals: new Map(counts.map((r) => [r.id, r.count])), error: counts.find((r) => r.error)?.error ?? null };
+  }
   const result = await supabase.rpc("fn_contagem_por_etapa" as never, {
     p_organization_id: organizationId,
     p_pipeline_id: pipelineId,
@@ -506,6 +527,8 @@ async function GETComAuth(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       details: parsedQuery.error.flatten(),
     });
   }
+  const dates = boardDateRange({ dateField: parsedQuery.data.date_field,
+    dateFrom: parsedQuery.data.date_from, dateUntil: parsedQuery.data.date_until });
   const rawCursor = parsedQuery.data.cursor;
   const cursor = rawCursor ? decodeBoardCursor(rawCursor) : null;
   if (rawCursor && !cursor) {
@@ -547,7 +570,7 @@ async function GETComAuth(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   if (requestedStageId) {
     const [countResult, pageResult] = await Promise.all([
-      loadStageCounts(supabase, typedPipeline.organization_id, pipelineId),
+      loadStageCounts(supabase, typedPipeline.organization_id, pipelineId, typedStages.map((s) => s.id), dates),
       loadStagePage(
         supabase,
         typedPipeline.organization_id,
@@ -555,6 +578,7 @@ async function GETComAuth(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         requestedStageId,
         cursor,
         0,
+        dates,
       ),
     ]);
     if (countResult.error) {
@@ -593,10 +617,10 @@ async function GETComAuth(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   const [countResult, pageResults] = await Promise.all([
-    loadStageCounts(supabase, typedPipeline.organization_id, pipelineId),
+    loadStageCounts(supabase, typedPipeline.organization_id, pipelineId, typedStages.map((s) => s.id), dates),
     Promise.all(
       typedStages.map((stage) =>
-        loadStagePage(supabase, typedPipeline.organization_id, pipelineId, stage.id, null, 0),
+        loadStagePage(supabase, typedPipeline.organization_id, pipelineId, stage.id, null, 0, dates),
       ),
     ),
   ]);
