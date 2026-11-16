@@ -130,7 +130,9 @@ test("trocar para uma organização não configurada leva ao wizard — e dá pa
   if ((await item.count()) > 0) await item.click();
 
   // ── e a volta CHEGA: o produto de novo, na organização de antes ────────
-  await page.waitForURL(/\/app(\/|$)/, { timeout: 60_000 });
+  // A saída passa por /app e /app/kanban antes de terminar no funil.
+  // A captura deve medir a tela final, com a organização restaurada.
+  await page.waitForURL(/\/app\/pipelines\//, { timeout: 60_000 });
   const seletorDeVolta = page.getByTestId("tenant-switcher");
   await expect(seletorDeVolta, "voltei para o produto e o seletor não reapareceu").toBeVisible({
     timeout: 20_000,
