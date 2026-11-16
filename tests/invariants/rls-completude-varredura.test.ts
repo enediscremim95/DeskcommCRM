@@ -135,6 +135,21 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "ligada, RPCs privadas e ator sem escopo full recusado.",
   },
   {
+    tabela: "inbox_user_conversation_state",
+    razao:
+      "tests/invariants/inbox-preferencias-pessoais-rls.test.ts prova com JWT real que " +
+      "outro usuário da MESMA organização não lê nem grava a linha, e que organização " +
+      "sem vínculo é barrada. Fora de TABLES porque a policy é por usuário, não só por " +
+      "organização, e o molde de rls-isolation.test.ts mede apenas o eixo da organização.",
+  },
+  {
+    tabela: "inbox_user_message_state",
+    razao:
+      "tests/invariants/inbox-preferencias-pessoais-rls.test.ts (\"isola estrelas de " +
+      "mensagem por usuário\") prova o isolamento por usuário e por organização com " +
+      "`countAs`/`writeCountAs` reais.",
+  },
+  {
     tabela: "notification_email_batches",
     razao:
       "tests/invariants/notification-email-batch.test.ts — JWT de admin, manager e agent " +
