@@ -49,10 +49,10 @@ async function login(page: Page, email: string): Promise<void> {
   await aguardarSessaoCompleta(page, "aal1");
 }
 
-/** O estado marcado vem do atributo que o próprio componente escreve. */
+/** O estado marcado vem do atributo da única opção visível, escrito pelo componente. */
 async function marcada(page: Page, nome: string, valor: string): Promise<boolean> {
   return (
-    (await page.getByTestId(`opcao-${nome}-${valor}`).getAttribute("data-marcada")) === "sim"
+    (await page.getByTestId(`opcao-${nome}-${valor}`).filter({ visible: true }).getAttribute("data-marcada")) === "sim"
   );
 }
 
@@ -95,11 +95,11 @@ test.describe("distribuição de atendimento — a tela que liga o rodízio e a 
     // O Next preserva cópias ocultas de rotas: valide o campo acessível da tela atual.
     const tentativas = page.getByRole("spinbutton", { name: "Tentativas antes de desistir" });
     await expect(tentativas).toHaveCount(0);
-    await page.getByTestId("opcao-modo-round_robin").click();
+    await page.getByTestId("opcao-modo-round_robin").filter({ visible: true }).click();
     await expect(tentativas).toBeVisible();
 
     // 4. Restringe a visibilidade ao próprio atendente.
-    await page.getByTestId("opcao-visibilidade-own").click();
+    await page.getByTestId("opcao-visibilidade-own").filter({ visible: true }).click();
     expect(await marcada(page, "visibilidade", "own")).toBe(true);
 
     // 5. Salva e recarrega: o estado tem de vir do BANCO. Sem o reload isto
@@ -130,11 +130,11 @@ test.describe("distribuição de atendimento — a tela que liga o rodízio e a 
     await login(page, creds.users.manager!.email);
     await page.goto("/app/settings/atendimento");
 
-    await page.getByTestId("opcao-modo-manual").click();
-    await page.getByTestId("opcao-visibilidade-own").click();
+    await page.getByTestId("opcao-modo-manual").filter({ visible: true }).click();
+    await page.getByTestId("opcao-visibilidade-own").filter({ visible: true }).click();
     await expect(page.getByTestId("aviso-combinacao-morta")).toBeVisible();
 
-    await page.getByTestId("opcao-modo-round_robin").click();
+    await page.getByTestId("opcao-modo-round_robin").filter({ visible: true }).click();
     await expect(page.getByTestId("aviso-combinacao-morta")).toHaveCount(0);
   });
 
