@@ -52,6 +52,7 @@ import {
 import { emitLeadActivity } from "./activity-emitter";
 import {
   alimentarLeadExistente,
+  buscarNegocioAbertoNoFunil,
   buscarVencedorDaJanela,
   CHAVE_REENVIO_CANAL_INBOUND,
   ehColisaoDaJanela,
@@ -76,7 +77,8 @@ const ROTULO_DE_ANUNCIO: Record<string, string> = {
  * "não devia nascer" de "falhou ao nascer", e a segunda é a que custa caro.
  */
 export type MotivoSemLead =
-  | "janela_reenvio" // a entrada curta alimentou o card recém-criado
+  | "negocio_aberto" // já havia negócio aberto no mesmo funil; a mensagem entrou nele
+  | "janela_reenvio" // a corrida do primeiro card alimentou o que venceu o índice
   | "contato_bloqueado" // pediu para sair; criar oportunidade seria desrespeito registrado
   | "sem_funil_de_entrada" // a organização não tem funil padrão — falha de configuração, visível
   | "sem_etapa" // o funil existe e não tem etapa utilizável
@@ -147,11 +149,13 @@ export async function funilDeEntrada(
 }
 
 /**
- * Garante que a conversa tenha um lead. Uma nova entrada dentro da janela curta
- * alimenta o card recém-criado; depois dela um novo card aberto é permitido.
+ * Garante que a conversa tenha um lead no funil de entrada.
  *
- * **Um lead por DEMANDA, não por mensagem.** O tempo separa o reenvio técnico da
- * nova demanda. Fechar o card também libera imediatamente uma nova demanda.
+ * Se o contato já tem um negócio aberto nesse funil, a mensagem entra nele,
+ * sem prazo. A janela curta continua só para a corrida em que dois primeiros
+ * cards nascem juntos. Negócio fechado, ou aberto em outro funil, libera um
+ * card novo. Criar um negócio pela tela, pela API ou pela ferramenta do agente
+ * não passa por aqui e pode abrir outro card de propósito.
  */
 export async function garantirLeadDaConversa(
   db: SupabaseClient,
@@ -171,7 +175,12 @@ export async function garantirLeadDaConversa(
 
   if (contato?.is_blocked === true) return { criado: false, motivo: "contato_bloqueado" };
 
-  const juntar = async (leadId: string, colisao: boolean): Promise<NascimentoDoLead> => {
+  const alimentar = async (
+    leadId: string,
+    motivo: "negocio_aberto" | "janela_reenvio",
+    colisao: boolean,
+    reason: string,
+  ): Promise<NascimentoDoLead> => {
     await alimentarLeadExistente(db, {
       organizationId,
       leadId,
@@ -179,22 +188,34 @@ export async function garantirLeadDaConversa(
       sourceModule: "canal.ingest",
       sourceId: conversationId,
       actor: { type: "webhook_source", id: "canal-inbound" },
-      reason: "Nova mensagem recebida dentro da janela de reenvio.",
+      reason,
       payload: { conversation_id: conversationId, collision_recovered: colisao },
     });
-    return { criado: false, motivo: "janela_reenvio", leadId, colisao };
+    return { criado: false, motivo, leadId, colisao };
   };
 
-  // 2 · existe card aberto criado dentro da janela curta?
-  let entrada;
+  // 2 · onde a mensagem entraria. Sem funil ou sem etapa não há o que reaproveitar
+  // neste caminho: um negócio aberto em outro funil não é o desta entrada.
+  const destino = await funilDeEntrada(db, organizationId);
+  if ("erro" in destino) return { criado: false, motivo: destino.erro };
+
+  // 3 · negócio já aberto no mesmo funil, de qualquer origem e de qualquer idade.
+  // A trava `canal:inbound` não serve aqui: o card do formulário, e o card que
+  // sobrevive à junção dos dois, não carregam essa chave.
   try {
-    entrada = await prepararEntradaNaJanela(db, {
+    const aberto = await buscarNegocioAbertoNoFunil(db, {
       organizationId,
       contactId,
-      guardKey: CHAVE_REENVIO_CANAL_INBOUND,
-      depoisDaLeitura: dados.depoisDaLeituraDaJanela,
+      pipelineId: destino.pipelineId,
     });
-    if (entrada.existente) return await juntar(entrada.leadId, false);
+    if (aberto) {
+      return await alimentar(
+        aberto,
+        "negocio_aberto",
+        false,
+        "Mensagem recebida no negócio que já estava aberto neste funil.",
+      );
+    }
   } catch (error) {
     return {
       criado: false,
@@ -203,11 +224,32 @@ export async function garantirLeadDaConversa(
     };
   }
 
-  // 3 · onde entra
-  const destino = await funilDeEntrada(db, organizationId);
-  if ("erro" in destino) return { criado: false, motivo: destino.erro };
+  // 4 · não há card aberto. A janela só segura a corrida de dois primeiros nascimentos.
+  let entrada;
+  try {
+    entrada = await prepararEntradaNaJanela(db, {
+      organizationId,
+      contactId,
+      guardKey: CHAVE_REENVIO_CANAL_INBOUND,
+      depoisDaLeitura: dados.depoisDaLeituraDaJanela,
+    });
+    if (entrada.existente) {
+      return await alimentar(
+        entrada.leadId,
+        "janela_reenvio",
+        false,
+        "Nova mensagem recebida dentro da janela de reenvio.",
+      );
+    }
+  } catch (error) {
+    return {
+      criado: false,
+      motivo: "erro",
+      detalhe: (error instanceof Error ? error.message : String(error)).slice(0, 120),
+    };
+  }
 
-  // 4 · o card.
+  // 5 · o card.
   //
   // O nome vem do CADASTRO, não do payload — e a correção é do próprio passo 1.
   // A versão anterior usava `notifyNameOf(p)` cru, então um contato conhecido
@@ -271,12 +313,22 @@ export async function garantirLeadDaConversa(
         contactId,
         guardKey: CHAVE_REENVIO_CANAL_INBOUND,
       });
-      if (vencedor) return await juntar(vencedor, true);
+      if (vencedor) {
+        return await alimentar(
+          vencedor,
+          "janela_reenvio",
+          true,
+          "Nova mensagem recebida dentro da janela de reenvio.",
+        );
+      }
     } catch (collisionError) {
       return {
         criado: false,
         motivo: "erro",
-        detalhe: (collisionError instanceof Error ? collisionError.message : String(collisionError)).slice(0, 120),
+        detalhe: (collisionError instanceof Error
+          ? collisionError.message
+          : String(collisionError)
+        ).slice(0, 120),
       };
     }
   }
@@ -284,7 +336,7 @@ export async function garantirLeadDaConversa(
     return { criado: false, motivo: "erro", detalhe: error?.message.slice(0, 120) };
   }
 
-  // 5 · o registro, pelo EMISSOR CANÔNICO — não por insert cru.
+  // 6 · o registro, pelo EMISSOR CANÔNICO — não por insert cru.
   //
   // `emitLeadActivity` existe porque há vários escritores da timeline e o tipo
   // solto foi como a tela e o banco divergiram antes. Ele também é

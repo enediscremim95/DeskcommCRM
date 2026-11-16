@@ -301,9 +301,7 @@ export function TenantForm({ initial, channels = [] }: Props) {
         </fieldset>
 
         <div className="space-y-2">
-          <Label htmlFor="lead_reentry_window_minutes">
-            {t("Tempo para juntar envios repetidos (minutos)")}
-          </Label>
+          <Label htmlFor="lead_reentry_window_minutes">{t("Tempo para segurar envios que chegam juntos (minutos)")}</Label>
           <Input
             id="lead_reentry_window_minutes"
             type="number"
@@ -313,9 +311,7 @@ export function TenantForm({ initial, channels = [] }: Props) {
             onChange={(e) => set("lead_reentry_window_minutes", Number(e.target.value))}
           />
           <p className="text-xs text-muted-foreground">
-            {t(
-              "Vale para o WhatsApp e para as fontes marcadas como capazes de repetir o mesmo envio.",
-            )}
+            {t("Um negócio já aberto no mesmo funil recebe o WhatsApp e o formulário, sem este prazo. O prazo só evita dois cards quando as duas entradas nascem juntas.")}
           </p>
         </div>
 
