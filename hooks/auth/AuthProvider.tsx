@@ -4,12 +4,10 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
-  useState,
   type ReactNode,
 } from "react";
 import { Providers } from "@/app/providers";
-import { createClient, resetRealtimeAuthentication } from "@/lib/supabase/browser";
+import { resetRealtimeAuthentication } from "@/lib/supabase/browser";
 import type { AuthUser, ActiveOrg } from "@/lib/auth/types";
 import { userHasPermission, type Permission } from "@/lib/auth/permissions";
 
@@ -32,8 +30,6 @@ export function AuthProvider({
   activeOrg: ActiveOrg | null;
   children: ReactNode;
 }) {
-  const [refreshing, setRefreshing] = useState(false);
-  const supabaseRef = useRef(createClient());
 
   useEffect(() => {
     resetRealtimeAuthentication();
@@ -56,21 +52,12 @@ export function AuthProvider({
     return () => clearInterval(timer);
   }, [user.support]);
 
-  // Refresh session every 40 minutes (JWT default 1h, with margin).
-  useEffect(() => {
-    const interval = setInterval(
-      async () => {
-        setRefreshing(true);
-        try {
-          await supabaseRef.current.auth.refreshSession();
-        } finally {
-          setRefreshing(false);
-        }
-      },
-      40 * 60 * 1000,
-    );
-    return () => clearInterval(interval);
-  }, []);
+  // ⚠️ Havia aqui um `refreshSession()` a cada 40 min no client do browser. Ele
+  // nunca renovava nada útil — o cookie é httpOnly, o supabase-js do browser não
+  // enxerga a sessão — e, se enxergasse, disputaria o MESMO refresh token com o
+  // servidor (refresh concorrente = sessão invalidada). A renovação é do
+  // servidor (proxy.ts); o cliente só pergunta via rotas de API.
+  const refreshing = false;
 
   const value = useMemo<AuthCtx>(
     () => ({

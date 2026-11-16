@@ -1,8 +1,9 @@
+import { AutenticacaoIndisponivel } from "@/components/feedback/AutenticacaoIndisponivel";
 import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
 import { InterfaceRefresh } from "@/hooks/auth/InterfaceRefresh";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { isMfaEnrolled, loadAuthUser, requiresMfa, resolveActiveOrg } from "@/lib/auth/server";
+import { isMfaEnrolled, loadAuthUserDaRequisicao, requiresMfa, resolveActiveOrg } from "@/lib/auth/server";
 import { DEFAULT_VISIBILITY_MODE, type VisibilityMode } from "@/lib/auth/types";
 import { AuthProvider } from "@/hooks/auth/AuthProvider";
 import { AppShell } from "./_components/AppShell";
@@ -23,15 +24,22 @@ import { VoiceCallProvider } from "@/components/voice/VoiceCallContext";
 import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
 import { assinaturaDosAcessosAsOrganizacoes } from "@/lib/auth/assinatura-acessos-organizacoes";
 import { integrationAccessForOrganization } from "@/lib/integrations/access";
+import { OrgDaAba } from "@/components/shell/OrgDaAba";
+import { comPrazoOuPadrao } from "@/lib/async/com-prazo";
 import { BrowserExtensionHeartbeat } from "./_components/BrowserExtensionHeartbeat";
+
+/** Teto para o que só enfeita a tela (faixa de conexão, marca da instalação). */
+const PRAZO_ENFEITE_MS = 3_000;
+/** Teto da leitura de fatores MFA no GoTrue (sem ele, o layout ficava mudo). */
+const PRAZO_MFA_MS = 8_000;
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   let user;
   try {
-    user = await loadAuthUser();
+    user = await loadAuthUserDaRequisicao();
   } catch (error) {
     if (!(error instanceof AuthTemporariamenteIndisponivel)) throw error;
-    return <main role="alert" className="p-8"><p>{error.message}</p><a href="">Tentar novamente</a></main>;
+    return <AutenticacaoIndisponivel />;
   }
   if (!user) redirect("/login");
 
@@ -56,7 +64,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // promises participa da escolha de tenant ou idioma: elas podem correr sem
   // transformar a resolução de escopo numa corrida.
   const storePromise = cookies();
-  const enrolledPromise = isMfaEnrolled();
+  // `null` = o GoTrue não respondeu a tempo. Só importa se a tela exigir MFA.
+  const enrolledPromise = comPrazoOuPadrao<boolean | null>(isMfaEnrolled(), PRAZO_MFA_MS, null);
 
   /**
    * A cor desta organização, serializada, ou `null` quando ela não tem uma.
@@ -69,7 +78,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   let cssDaOrganizacao: string | null = null;
   let conexoesCaidas: ConexaoCaida[] = [];
   let store: Awaited<ReturnType<typeof cookies>>;
-  let enrolled: boolean;
+  let enrolled: boolean | null;
   let needsMfaGate: boolean;
 
   // EPIC-02: gate /app/* on completed onboarding.
@@ -84,7 +93,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       .maybeSingle()
       .then(({ data }) => data);
     const integrationAccessPromise = integrationAccessForOrganization(admin, organizationId);
-    const marcaDaInstalacaoPromise = marcaDaInstalacao();
+    // Enfeite: marca lenta não segura o layout (usa a marca padrão).
+    const marcaDaInstalacaoPromise = comPrazoOuPadrao(marcaDaInstalacao(), PRAZO_ENFEITE_MS, null);
     const needsMfaPromise = requiresMfa(
       activeOrg.role,
       user.is_platform_admin,
@@ -112,6 +122,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         ? await listarConexoesCaidas(admin, organizationId)
         : [];
     })();
+    // A faixa de "conexão caiu" é aviso, não condição para a tela abrir.
+    const conexoesCaidasComPrazo = comPrazoOuPadrao<ConexaoCaida[]>(conexoesCaidasPromise, PRAZO_ENFEITE_MS, []);
 
     const [
       orgRow,
@@ -125,7 +137,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       orgRowPromise,
       integrationAccessPromise,
       marcaDaInstalacaoPromise,
-      conexoesCaidasPromise,
+      conexoesCaidasComPrazo,
       storePromise,
       enrolledPromise,
       needsMfaPromise,
@@ -203,6 +215,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     ]);
   }
 
+  // Gate de MFA sem resposta do GoTrue: tela com "tentar de novo", nunca um
+  // cadastro de MFA falso nem espera infinita.
+  if (needsMfaGate && enrolled === null) return <AutenticacaoIndisponivel />;
   // O cookie e a MFA vieram junto das demais leituras independentes.
   const collapsed = store.get("sidebar_collapsed")?.value === "1";
 
@@ -238,6 +253,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         organizationsCount={user.organizations.length}
         organizationsSignature={organizationsSignature}
       />
+      <OrgDaAba orgId={user.support ? null : (activeOrg?.orgId ?? null)} />
       <BrowserExtensionHeartbeat />
       {/*
         O MARCADOR da marca da organização — o elemento cuja existência define o
@@ -262,7 +278,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           // Gate always mounted for MFA-required roles; it latches the blocking
           // decision client-side so the enroll Server Action's revalidation
           // can't tear down the recovery-codes screen mid-flow.
-          <MfaEnrollGate enrolled={enrolled}>{shell}</MfaEnrollGate>
+          <MfaEnrollGate enrolled={enrolled === true}>{shell}</MfaEnrollGate>
         ) : (
           shell
         )}

@@ -26,7 +26,7 @@ describe("caminho quente do layout autenticado", () => {
 
   it("reúne as leituras independentes do tenant no mesmo lote", () => {
     expect(layout).toMatch(
-      /Promise\.all\(\[\s*orgRowPromise,\s*integrationAccessPromise,\s*marcaDaInstalacaoPromise,\s*conexoesCaidasPromise,\s*storePromise,\s*enrolledPromise,\s*needsMfaPromise/,
+      /Promise\.all\(\[\s*orgRowPromise,\s*integrationAccessPromise,\s*marcaDaInstalacaoPromise,\s*conexoesCaidasComPrazo,\s*storePromise,\s*enrolledPromise,\s*needsMfaPromise/,
     );
   });
 

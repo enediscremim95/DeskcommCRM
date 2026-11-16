@@ -1,6 +1,5 @@
 import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
 import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
-import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * GET /api/v1/pipelines/[id]/board
  *
@@ -20,6 +19,7 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
+import { AuthIndisponivelError, MENSAGEM_AUTH_INDISPONIVEL } from "@/lib/auth/auth-indisponivel";
 import { loadAuthUser } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
@@ -165,15 +165,21 @@ async function GETComAuth(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { id: pipelineId } = await ctx.params;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: authErr,
-  } = await getUserComBackoff(() => supabase.auth.getUser());
-  if (authErr || !user) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
+  // UMA validação de sessão, com prazo (`loadAuthUser`). Antes havia um
+  // `supabase.auth.getUser()` cru E depois `loadAuthUser()`: duas idas ao GoTrue,
+  // a primeira sem prazo (o auth-js repete refresh falho por até 30 s) — o quadro
+  // ficava em "Carregando…" por mais de um minuto e a falha virava 500/401.
+  let authUser;
+  try {
+    authUser = await loadAuthUser();
+  } catch (error) {
+    if (error instanceof AuthIndisponivelError) {
+      return fail("auth_unavailable", MENSAGEM_AUTH_INDISPONIVEL, 503, { requestId });
+    }
+    throw error;
   }
-  const authUser = await loadAuthUser();
-  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
+  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
+  const t = (texto: string) => traduzir(texto, authUser.idioma ?? "pt-BR");
 
   const parsedQuery = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams.entries()));
   if (!parsedQuery.success) {
