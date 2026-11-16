@@ -8,6 +8,12 @@ const mocks = vi.hoisted(() => ({
   validate: vi.fn(),
   agenda: vi.fn(),
 }));
+vi.mock("@/lib/automation/throttle", () => ({
+  espacarEnvio: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/automation/janela-do-canal", () => ({
+  adiarAteAJanelaAbrir: vi.fn().mockResolvedValue(null),
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: mocks.send }));
 vi.mock("@/lib/atendimento/origem", () => ({ serviceForEvent: mocks.boundary }));

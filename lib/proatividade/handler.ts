@@ -3,6 +3,8 @@ import type { EventRow, HandlerResult, EventHandler } from "@/lib/event-log/disp
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { serviceForEvent } from "@/lib/atendimento/origem";
+import { espacarEnvio } from "@/lib/automation/throttle";
+import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
 import { sendEmail } from "@/lib/email/resend";
 import { CHANNEL_SESSION_REF_COLUMNS, type ChannelSessionRef } from "@/lib/channels";
 import { validarTelefoneFormulario } from "@/lib/channels/telefone-formulario";
@@ -53,12 +55,15 @@ export async function processarFormulario(
     .maybeSingle();
   assertRead(leadError);
   // A fonte verificável é a captação vinculada ao card; nunca aplica a importações/manuais.
-  if (!lead || !lead.source_metadata?.webhook_source_id)
-    return result("skipped", "not_form");
+  if (!lead || !lead.source_metadata?.webhook_source_id) return result("skipped", "not_form");
   if (!lead.contact_id) {
-    const {error} = await db.rpc("fn_form_proactivity_attention",{p_org:org,p_lead:lead.id,p_tag:ATENCAO_CONTATO});
+    const { error } = await db.rpc("fn_form_proactivity_attention", {
+      p_org: org,
+      p_lead: lead.id,
+      p_tag: ATENCAO_CONTATO,
+    });
     assertRead(error);
-    return result("ok","missing_contact");
+    return result("ok", "missing_contact");
   }
   const { data: attempts, error: attemptError } = await db
     .from("form_proactivity_attempts")
@@ -66,6 +71,14 @@ export async function processarFormulario(
     .eq("organization_id", org)
     .eq("lead_id", lead.id);
   assertRead(attemptError);
+  if (
+    config.channel_session_id &&
+    (attempts ?? []).length < 2 &&
+    !(attempts ?? []).some((a) => a.outcome === "sent")
+  ) {
+    const retryAt = await adiarAteAJanelaAbrir(db, org, config.channel_session_id, now);
+    if (retryAt) return { ...result("retry"), retry_at: retryAt };
+  }
   const contactId = lead.contact_id as string;
   const loadContact = async () => {
     const { data, error } = await db
@@ -212,6 +225,7 @@ export async function processarFormulario(
           config.channel_session_id,
         );
         if (!boundary) return "failed";
+        await espacarEnvio(config.channel_session_id);
         const message = await sendMessageHandler(
           db,
           {
@@ -223,6 +237,11 @@ export async function processarFormulario(
           },
           { conversation_id: boundary.conversation_id, type: "text", body: config.whatsapp_text },
         );
+        if (
+          message.status === "failed" &&
+          /timeout|timed out|fetch failed|ECONNRESET|abort/i.test(message.error_message ?? "")
+        )
+          return "uncertain";
         return ["sent", "delivered", "read"].includes(message.status)
           ? "sent"
           : message.status === "failed"
