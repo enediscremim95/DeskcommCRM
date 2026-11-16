@@ -19,6 +19,15 @@ describe("tentativas duráveis de primeiro contato", () => {
     );
     expect(out.split("\n").slice(-2, -1)[0]).toBe("0");
   });
+  it("permite ler a tentativa da própria organização", () => {
+    const out = sql(`begin;${setup}
+      insert into user_organizations(user_id,organization_id,role,accepted_at) values('${user}','${b}','agent',now());
+      insert into form_proactivity_attempts(organization_id,lead_id,phase) values('${b}','${lead}','whatsapp');
+      set local role authenticated;
+      select set_config('request.jwt.claims','{"sub":"${user}","role":"authenticated"}',true);
+      select count(*) from form_proactivity_attempts;rollback;`);
+    expect(out.split("\n").slice(-2, -1)[0]).toBe("1");
+  });
   it("não aceita lead de outra org e não permite escrever pelo browser", () => {
     expect(() =>
       sql(
