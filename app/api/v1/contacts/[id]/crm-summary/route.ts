@@ -1,3 +1,5 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * GET /api/v1/contacts/[id]/crm-summary — o resumo de CRM do painel do inbox.
  *
@@ -65,7 +67,7 @@ const ACTIVITY_COLS =
 const DEMANDA_COLS =
   "id, revision, aberta_em, origem, estado, proximo_passo, proximo_passo_em, prazo_em";
 
-export async function GET(
+async function GETComAuth(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -76,7 +78,7 @@ export async function GET(
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
@@ -164,3 +166,5 @@ function comCamposDoFunil(row: Record<string, unknown>) {
     field_defs: camposDoFunil(settingsDoEmbed(crm_pipelines)),
   };
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

@@ -984,11 +984,11 @@ export const DICIONARIO: Traducoes = {
   "DPO email": { es: "Email del DPO" },
   "Retenção de mídia (dias)": { es: "Retención de medios (días)" },
   "URL política de privacidade": { es: "URL de la política de privacidad" },
-  "Tempo para juntar envios repetidos (minutos)": {
-    es: "Tiempo para unir envíos repetidos (minutos)",
+  "Tempo para segurar envios que chegam juntos (minutos)": {
+    es: "Tiempo para sostener envíos que llegan juntos (minutos)",
   },
-  "Vale para o WhatsApp e para as fontes marcadas como capazes de repetir o mesmo envio.": {
-    es: "Se aplica a WhatsApp y a las fuentes marcadas como capaces de repetir el mismo envío.",
+  "Um negócio já aberto no mesmo funil recebe o WhatsApp e o formulário, sem este prazo. O prazo só evita dois cards quando as duas entradas nascem juntas.": {
+    es: "Un negocio ya abierto en el mismo embudo recibe WhatsApp y el formulario, sin este plazo. El plazo solo evita dos tarjetas cuando las dos entradas nacen juntas.",
   },
   "Motivos de perda extras (separados por vírgula)": {
     es: "Motivos de pérdida adicionales (separados por coma)",
@@ -3993,17 +3993,17 @@ export const DICIONARIO: Traducoes = {
   "Pausada, ela para de aceitar novos envios.": { es: "Pausada, deja de aceptar nuevos envíos." },
   "Fonte ativada.": { es: "Fuente activada." },
   "Fonte pausada.": { es: "Fuente pausada." },
-  "Esta origem pode repetir o mesmo envio": {
-    es: "Esta fuente puede repetir el mismo envío",
+  "Segurar envios que chegam juntos": {
+    es: "Sostener envíos que llegan juntos",
   },
-  "Ative se a ferramenta às vezes manda a mesma pessoa mais de uma vez. Os envios próximos ficam no mesmo card.": {
-    es: "Actívalo si la herramienta a veces envía a la misma persona más de una vez. Los envíos cercanos quedan en la misma tarjeta.",
+  "Dois envios da mesma pessoa no mesmo instante ficam num card só. Um negócio já aberto neste funil recebe o novo envio mesmo com esta opção desligada.": {
+    es: "Dos envíos de la misma persona en el mismo instante quedan en una sola tarjeta. Un negocio ya abierto en este embudo recibe el nuevo envío aunque esta opción esté apagada.",
   },
-  "Envios repetidos serão mantidos no mesmo card.": {
-    es: "Los envíos repetidos se mantendrán en la misma tarjeta.",
+  "Envios no mesmo instante ficam no mesmo card.": {
+    es: "Los envíos en el mismo instante quedan en la misma tarjeta.",
   },
-  "Cada novo envio voltará a criar um card.": {
-    es: "Cada nuevo envío volverá a crear una tarjeta.",
+  "Dois envios no mesmo instante podem abrir dois cards. Um negócio já aberto continua recebendo o novo envio.": {
+    es: "Dos envíos en el mismo instante pueden abrir dos tarjetas. Un negocio ya abierto sigue recibiendo el nuevo envío.",
   },
   "Excluir fonte": { es: "Eliminar fuente" },
   "Excluir esta fonte?": { es: "¿Eliminar esta fuente?" },
@@ -9286,6 +9286,11 @@ export const DICIONARIO: Traducoes = {
   "Link ainda não solicitado": { es: "Enlace aún no solicitado" },
   "Criando link do Google Meet": { es: "Creando enlace de Google Meet" },
   "Link do Google Meet pronto": { es: "Enlace de Google Meet listo" },
+  "Link da reunião pronto": { es: "Enlace de la reunión listo" },
+  "Reunião por vídeo": { es: "Reunión por vídeo" },
+  "Google desconectado": { es: "Google desconectado" },
+  "Não foi possível validar a conexão. Os agendamentos continuam com link próprio.": { es: "No se pudo validar la conexión. Las citas continúan con un enlace propio." },
+  "A conexão com o Google expirou. Reconecte a agenda.": { es: "La conexión con Google caducó. Vuelve a conectar la agenda." },
   "Não foi possível confirmar o link": { es: "No se pudo confirmar el enlace" },
   "Solicitação de link cancelada": { es: "Solicitud de enlace cancelada" },
   "O envio do link ainda não foi autorizado.": { es: "El envío del enlace aún no ha sido autorizado." },
@@ -9319,6 +9324,7 @@ export const DICIONARIO: Traducoes = {
   "Uma regra de envio impediu a mensagem. Confira o aviso na Central antes de tentar novamente.": { es: "Una regla de envío bloqueó el mensaje. Revisa el aviso en la Central antes de intentarlo de nuevo." },
   "Sua reunião está marcada para": { es: "Tu reunión está programada para" },
   "Link do Google Meet:": { es: "Enlace de Google Meet:" },
+  "Link da reunião:": { es: "Enlace de la reunión:" },
 
   // Dashboard nativo de tráfego e configuração Windsor.
   "A atualização mais recente falhou.": { es: "La actualización más reciente falló." },

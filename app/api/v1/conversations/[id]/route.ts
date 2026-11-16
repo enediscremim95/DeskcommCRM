@@ -1,3 +1,6 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET   /api/v1/conversations/[id] — single conversation (handler em ../_handler.ts)
@@ -26,7 +29,7 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+async function GETComAuth(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const supabase = await createClient();
@@ -34,7 +37,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
@@ -68,6 +71,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     const [comNome] = await comNomeDoAtendente([comEstado ?? conv]);
     return ok(comNome ?? conv, { requestId });
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });
     }
@@ -75,7 +79,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 }
 
-export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+async function PATCHComAuth(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -93,6 +97,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   try {
     input = await validateRequest(patchConversationSchema, req);
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, {
         details: err.details as Record<string, unknown> | undefined,
@@ -134,9 +139,13 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     );
     return ok(conv, { requestId });
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });
     }
     throw err;
   }
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const PATCH = comAuthDisponivel(PATCHComAuth);

@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { randomUUID } from "node:crypto";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
@@ -13,7 +15,7 @@ import {
 } from "@/lib/channels/connection-failure-audit";
 import { loadOnboardingChannel } from "@/lib/channels/onboarding-session";
 
-export async function GET(): Promise<Response> {
+async function GETComAuth(): Promise<Response> {
   const requestId = randomUUID();
   const user = await loadAuthUser(); if (!user) return fail("unauthenticated", "Sessão expirada", 401, { requestId });
   const org = await resolveActiveOrg(user); if (!org) return fail("tenant_not_found", "Sem organização ativa", 404, { requestId });
@@ -28,10 +30,11 @@ export async function GET(): Promise<Response> {
       .eq("organization_id", org.orgId).eq("id", channel.id).is("archived_at", null).select("id").maybeSingle();
     if (error || !data) throw new Error("connection_sync_failed");
     return ok({ status, session: channel.waha_session_name, channel_session_id: channel.id }, { requestId });
-  } catch { return fail("connection_status_failed", "Não foi possível conferir a conexão. Tente novamente.", 502, { requestId }); }
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth; return fail("connection_status_failed", "Não foi possível conferir a conexão. Tente novamente.", 502, { requestId }); }
 }
 
-export async function POST(req: Request): Promise<Response> {
+async function POSTComAuth(req: Request): Promise<Response> {
   const requestId = randomUUID();
   const denied = await requireSupportWrite();
   if (denied) {
@@ -75,9 +78,13 @@ export async function POST(req: Request): Promise<Response> {
     });
     return ok({ status: result.channel.status, session: result.channel.waha_session_name, channel_session_id: result.channel.id }, { requestId });
   } catch (error) {
+    if (error instanceof AuthTemporariamenteIndisponivel) throw error;
     if (error instanceof ChannelConnectionError) return fail(error.code,
       error.code === "connection_in_progress" ? "A conexão ainda está sendo preparada. Aguarde e tente novamente." : "Não foi possível concluir a conexão. Tente novamente ou repare o número em Conexões.",
       error.status, { requestId, details: error.technical });
     return fail("internal_error", "Não foi possível concluir a conexão. Tente novamente.", 500, { requestId });
   }
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const POST = comAuthDisponivel(POSTComAuth);

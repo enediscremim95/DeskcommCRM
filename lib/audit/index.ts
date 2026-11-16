@@ -1,3 +1,4 @@
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * Append-only audit log writer. Fire-and-forget — failure must NEVER block the
  * primary mutation. Errors are surfaced via console.error (Sentry breadcrumb in prod).
@@ -70,7 +71,7 @@ export async function audit(entry: AuditEntry): Promise<void> {
         };
       } else if (entry.actorUserId && !entry.actorApiTokenId) {
         const db = await createClient();
-        const { data: { user } } = await db.auth.getUser();
+        const { data: { user } } = await getUserComBackoff(() => db.auth.getUser());
         if (user?.id === entry.actorUserId) {
           const { readSupportContext } = await import("@/lib/impersonate/support");
           const support = await readSupportContext(db);

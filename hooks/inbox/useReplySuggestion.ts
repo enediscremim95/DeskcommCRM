@@ -41,6 +41,7 @@ interface Options {
   autoContextKey: string | null;
   composerEmpty: boolean;
   delayMs?: number;
+  enabled?: boolean;
 }
 
 /**
@@ -56,6 +57,7 @@ export function useReplySuggestion({
   autoContextKey,
   composerEmpty,
   delayMs = 900,
+  enabled = true,
 }: Options) {
   const qc = useQueryClient();
   const queryKey = useMemo(() => ["reply-drafts", conversationId] as const, [conversationId]);
@@ -66,6 +68,7 @@ export function useReplySuggestion({
     queryFn: () =>
       apiClient.get<ReplySuggestionState>(`/api/v1/conversations/${conversationId}/draft-reply`),
     retry: false,
+    enabled,
   });
 
   const upsert = useCallback(
@@ -147,16 +150,17 @@ export function useReplySuggestion({
   // barato e usa fn_reply_context_current, a autoridade dessa decisão.
   useEffect(() => {
     attemptedAutoKey.current = null;
-    if (autoContextKey) void query.refetch();
+    if (enabled && autoContextKey) void query.refetch();
     // query.refetch é estável no React Query; a chave é o evento que interessa.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, autoContextKey]);
+  }, [conversationId, autoContextKey, enabled]);
 
   useEffect(() => {
     if (
       !query.isSuccess ||
       !assistant.enabled ||
       !assistant.auto_suggest ||
+      !enabled ||
       !autoEligible ||
       !autoContextKey ||
       !composerEmpty ||
@@ -172,6 +176,7 @@ export function useReplySuggestion({
     }, delayMs);
     return () => window.clearTimeout(timer);
   }, [
+    enabled,
     assistant.auto_suggest,
     assistant.enabled,
     autoContextKey,

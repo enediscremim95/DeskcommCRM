@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET /api/v1/channel-sessions/[id] — health check AO VIVO de um canal.
@@ -146,7 +148,7 @@ async function loadDeletionImpact(
   return { outcome: nada ? "delete" : "archive", history, configuration };
 }
 
-export async function GET(
+async function GETComAuth(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -200,7 +202,8 @@ export async function GET(
       statusAoVivo: liveStatus,
       gravado: phoneNumber,
     });
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("connection_status_failed", "Não foi possível conferir a conexão. Tente novamente.", 502, { requestId });
   }
 
@@ -299,7 +302,7 @@ export async function GET(
  * depois o banco passa a mostrar STOPPED. Falha externa preserva o estado
  * anterior e nunca vira sucesso otimista na tela.
  */
-export async function PATCH(
+async function PATCHComAuth(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -352,6 +355,7 @@ export async function PATCH(
     });
     await waha.stopSession(session.waha_session_name);
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     if (err instanceof ChannelConnectionError) {
       return fail(
         err.code,
@@ -393,7 +397,7 @@ export async function PATCH(
   return ok({ id, status: "STOPPED", disconnected: true }, { requestId });
 }
 
-export async function DELETE(
+async function DELETEComAuth(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -451,6 +455,7 @@ export async function DELETE(
       await waha.logoutSession(session.waha_session_name as string);
       await waha.deleteSession(session.waha_session_name as string);
     } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
       if (err instanceof ChannelConnectionError) return fail(err.code, "Uma conexão está em andamento. Aguarde e tente novamente.", err.status, { requestId });
       await supabase.from("channel_sessions").update({ status: "FAILED", status_reason: "connection_repair_required", last_status_change_at: now })
         .eq("organization_id", activeOrg.orgId).eq("id", id);
@@ -498,3 +503,7 @@ export async function DELETE(
 
   return ok({ id, archived: arquivar, impact }, { requestId });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const PATCH = comAuthDisponivel(PATCHComAuth);
+export const DELETE = comAuthDisponivel(DELETEComAuth);

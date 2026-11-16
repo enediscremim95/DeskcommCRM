@@ -151,7 +151,7 @@ async function evidence(
   mkdirSync(dir, { recursive: true });
   let control;
   if (controlSelector) {
-    const locator = page.locator(controlSelector);
+    const locator = page.locator(controlSelector).filter({ visible: true });
     await locator.scrollIntoViewIfNeeded();
     await expect(locator).toBeInViewport({ ratio: 1 });
     control = await locator.evaluate((el) => {
@@ -169,7 +169,7 @@ async function evidence(
       };
     });
   }
-  const measured = await page.locator(selector).evaluate((el) => {
+  const measured = await page.locator(selector).filter({ visible: true }).evaluate((el) => {
     const r = el.getBoundingClientRect();
     return {
       left: r.left,
@@ -236,7 +236,7 @@ test("fontes e destino entre duas contas, somente leitura e ocupação imediatam
   const day = days[2]!;
   const start = new Date(`${day}T10:00:00-03:00`).toISOString();
   const end = new Date(`${day}T11:00:00-03:00`).toISOString();
-  const block = page.getByTestId(`bloco-${day}-10:00`);
+  const block = page.getByTestId(`bloco-${day}-10:00`).filter({ visible: true });
   await expect(block).toBeEnabled({ timeout: 20000 });
   const externalId = await insert("calendar_external_events", {
     organization_id: f.org,
@@ -250,18 +250,18 @@ test("fontes e destino entre duas contas, somente leitura e ocupação imediatam
   });
   await page.goto("/app/agenda");
   await irParaASemanaDoCompromisso(page, start);
-  const card = page.getByTestId(`agendamento-${externalId}`);
+  const card = page.getByTestId(`agendamento-${externalId}`).filter({ visible: true });
   await card.scrollIntoViewIfNeeded();
   await expect(card).toBeVisible();
   await expect(block).toBeDisabled();
   await expect(block).toHaveAttribute("aria-label", /já há um compromisso/i);
   await evidence(page, info, "fonte-ocupada-grade", "[data-testid='grade-da-agenda']");
   // O painel também mostra disponibilidade: 12h permanece, 10h está ausente.
-  await page.getByTestId(`bloco-${day}-12:00`).click();
-  await expect(page.getByTestId("painel-de-marcacao")).toBeVisible();
-  await expect(page.getByTestId("horario-12:00")).toBeVisible();
-  await expect(page.getByTestId("confirmacao")).toContainText("12:00");
-  await expect(page.getByTestId("horario-10:00")).toHaveCount(0);
+  await page.getByTestId(`bloco-${day}-12:00`).filter({ visible: true }).click();
+  await expect(page.getByTestId("painel-de-marcacao").filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("horario-12:00").filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("confirmacao").filter({ visible: true })).toContainText("12:00");
+  await expect(page.getByTestId("horario-10:00").filter({ visible: true })).toHaveCount(0);
   await evidence(
     page,
     info,
@@ -324,10 +324,10 @@ test("fontes e destino entre duas contas, somente leitura e ocupação imediatam
   await expect(block).toHaveAttribute("aria-label", /Marcar às 10:00/);
   await evidence(page, info, "fonte-retirada-grade", "[data-testid='grade-da-agenda']");
   await block.click();
-  await expect(page.getByTestId("painel-de-marcacao")).toBeVisible();
-  await expect(page.getByTestId("horario-10:00")).toBeVisible();
-  await expect(page.getByTestId("confirmacao")).toContainText("10:00");
-  await expect(page.getByTestId("horario-12:00")).toBeAttached();
+  await expect(page.getByTestId("painel-de-marcacao").filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("horario-10:00").filter({ visible: true })).toBeVisible();
+  await expect(page.getByTestId("confirmacao").filter({ visible: true })).toContainText("10:00");
+  await expect(page.getByTestId("horario-12:00").filter({ visible: true })).toBeAttached();
   await evidence(
     page,
     info,

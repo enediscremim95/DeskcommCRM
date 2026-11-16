@@ -545,3 +545,8 @@ it("URL assíncrona Meet não altera projeção de local; vídeo manual continua
   expect(paraEventoDoGoogle({ ...pending, meeting_url: "https://meet.google.com/abc-defg-hij" })).toEqual(paraEventoDoGoogle(pending));
   expect(paraEventoDoGoogle({ ...pending, location_kind: "video_link", meeting_url: "https://video.example/room" }).location).toBe("https://video.example/room");
 });
+
+ it("publica a sala Jitsi local no evento bônus do Google", () => {
+ const url = "https://meet.jit.si/consulta-0123456789abcdef0123";
+ expect(paraEventoDoGoogle(agendamento({ location_kind: "google_meet", meeting_url: url })).location).toBe(url);
+ });

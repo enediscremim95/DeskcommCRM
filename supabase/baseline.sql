@@ -101,6 +101,8 @@ end $$;
 
 
 
+
+
 ALTER FUNCTION "public"."emit_event"("p_event_type" "text", "p_entity_kind" "text", "p_entity_id" "uuid", "p_payload" "jsonb", "p_metadata" "jsonb", "p_organization_id" "uuid") OWNER TO "postgres";
 
 
@@ -24904,6 +24906,169 @@ begin
   end loop;
 end $$;
 
+-- ============================================================================
+-- 0308, agenda com link Jitsi quando o Google não está utilizável.
+-- ============================================================================
+-- 0308: o agendamento continua com sala Jitsi quando o Google não está utilizável.
+-- Forward-fix idempotente. Não altera migrations já aplicadas nem dados históricos.
+
+create or replace function public.fn_meet_stamp()
+returns trigger language plpgsql set search_path=public as $$
+declare redacted boolean; j public.job_queue; b jsonb; valid_jitsi boolean; valid_ready boolean;
+begin
+ valid_jitsi:=new.meeting_url ~ '^https://meet[.]jit[.]si/[A-Za-z0-9_-]+/?$' and new.location_kind in ('google_meet','video_link');
+ valid_ready:=new.meeting_state='ready' and new.meeting_request_id is not null and
+  (valid_jitsi or (new.location_kind='google_meet' and new.meeting_url ~ '^https://meet[.]google[.]com/[A-Za-z0-9-]+/?$'));
+ if current_user in ('authenticated','anon') then
+  if tg_op='INSERT' then
+   if (new.meeting_delivery<>'{"state":"none"}'::jsonb or new.meeting_request_id is not null or new.meeting_url is not null or new.meeting_state<>'not_requested' or new.meeting_requested_at is not null or new.meeting_received_at is not null or new.meeting_ready_at is not null or new.meeting_attempts<>0 or new.meeting_last_error is not null or new.meeting_next_attempt_at is not null or new.meeting_delivery_job_id is not null)
+    and not (valid_jitsi and valid_ready and new.meeting_requested_at is null and new.meeting_received_at is null and new.meeting_attempts=0 and new.meeting_last_error is null and new.meeting_next_attempt_at is null and new.meeting_delivery_job_id is null)
+   then raise exception 'meet_metadata_private' using errcode='42501';end if;
+  elsif row(new.meeting_state,new.meeting_request_id,new.meeting_requested_at,new.meeting_received_at,new.meeting_ready_at,new.meeting_attempts,new.meeting_last_error,new.meeting_next_attempt_at,new.meeting_delivery,new.meeting_delivery_job_id,new.meeting_url)
+   is distinct from row(old.meeting_state,old.meeting_request_id,old.meeting_requested_at,old.meeting_received_at,old.meeting_ready_at,old.meeting_attempts,old.meeting_last_error,old.meeting_next_attempt_at,old.meeting_delivery,old.meeting_delivery_job_id,old.meeting_url) then
+   raise exception 'meet_metadata_private' using errcode='42501';
+  end if;
+ end if;
+ select is_anonymized into redacted from public.contacts where id=new.contact_id and organization_id=new.organization_id;
+ if new.meeting_state='ready' and not valid_ready then raise exception 'meet_invalid_url' using errcode='22023';end if;
+ if (redacted or new.status='cancelled' or new.location_kind not in ('google_meet','video_link') or (new.location_kind='video_link' and coalesce(new.location_details,'')<>'' and new.meeting_state<>'ready'))
+  and (new.location_kind in ('google_meet','video_link') or new.meeting_state<>'not_requested') then
+  if new.location_kind in ('google_meet','video_link') or new.meeting_state<>'not_requested' or new.meeting_requested_at is not null or new.meeting_received_at is not null or new.meeting_ready_at is not null or new.meeting_attempts<>0 or new.meeting_last_error is not null or new.meeting_next_attempt_at is not null or new.meeting_delivery_job_id is not null then new.meeting_state:='cancelled';end if;
+  new.meeting_request_id:=null;new.meeting_url:=null;new.meeting_last_error:=null;new.meeting_next_attempt_at:=null;
+  new.meeting_delivery:=jsonb_build_object('state',case when redacted then 'blocked' else 'stale' end);
+ elsif new.location_kind='google_meet' and new.meeting_state='not_requested' then
+  new.meeting_state:='pending';new.meeting_request_id:=gen_random_uuid();new.meeting_next_attempt_at:=now();
+ end if;
+ if tg_op='INSERT' and new.meeting_delivery ? 'booking_claim' then
+  perform public.fn_service_lock(new.organization_id,new.contact_id);
+  select * into j from public.job_queue where organization_id=new.organization_id and id=(new.meeting_delivery->>'source_operation_id')::uuid for update;
+  b:=new.meeting_delivery->'service_boundary';
+  if j.contact_id is distinct from new.contact_id or j.status is distinct from 'running' or j.kind not in ('inbound_turn','followup_turn','case_reply_turn','operator_turn')
+   or j.locked_by is distinct from new.meeting_delivery->'booking_claim'->>'worker_id' or j.locked_at is distinct from (new.meeting_delivery->'booking_claim'->>'acquired_at')::timestamptz
+   or j.payload->'service_boundary' is distinct from b or not public.fn_meet_boundary_current(b) or b->>'conversation_id' is distinct from new.conversation_id::text then
+   raise exception 'meet_booking_stale' using errcode='40001';end if;
+  if new.meeting_delivery->'authorized_by'->>'kind' is distinct from 'ai_agent' then raise exception 'meet_booking_origin_invalid' using errcode='42501';end if;
+  new.meeting_delivery:=new.meeting_delivery-'booking_claim';
+ end if;
+ if new.meeting_delivery ? 'generation' and (tg_op='INSERT' or new.meeting_delivery->>'generation' is distinct from old.meeting_delivery->>'generation') then
+  new.meeting_delivery:=new.meeting_delivery||jsonb_build_object('channel_session_id',(select channel_session_id from public.conversations where organization_id=new.organization_id and contact_id=new.contact_id and id::text=new.meeting_delivery->'service_boundary'->>'conversation_id'));
+ end if;
+ if new.meeting_state='pending' and new.meeting_next_attempt_at is not null then new.google_next_attempt_at:=least(new.google_next_attempt_at,new.meeting_next_attempt_at);end if;
+ return new;
+end;$$;
+revoke all on function public.fn_meet_stamp() from public,anon,authenticated;
+
+create or replace function public.fn_meet_delivery_current(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns boolean language sql stable security definer set search_path=public as $$
+ select exists(select 1 from public.job_queue j join public.calendar_appointments a on a.organization_id=j.organization_id and a.id::text=j.payload->>'appointment_id'
+  join public.contacts c on c.organization_id=a.organization_id and c.id=a.contact_id
+  join public.conversations v on v.organization_id=a.organization_id and v.contact_id=a.contact_id and v.id::text=j.payload->'service_boundary'->>'conversation_id'
+  join public.channel_sessions cs on cs.organization_id=v.organization_id and cs.id=v.channel_session_id
+  join public.organizations o on o.id=a.organization_id and o.status='active'
+  where cs.archived_at is null and a.meeting_delivery->>'channel_session_id'=cs.id::text and j.organization_id=p_org and j.id=p_job and j.kind='transactional_delivery' and j.status='running' and j.locked_by=p_worker and j.locked_at=p_acquired_at
+   and a.contact_id=j.contact_id and not c.is_anonymized and not c.is_blocked and a.status<>'cancelled' and a.meeting_state='ready'
+   and (a.meeting_url ~ '^https://meet[.]google[.]com/[A-Za-z0-9-]+/?$' or a.meeting_url ~ '^https://meet[.]jit[.]si/[A-Za-z0-9_-]+/?$')
+   and a.meeting_request_id::text=j.payload->>'meeting_request_id' and a.meeting_delivery->>'generation'=j.payload->>'delivery_generation'
+   and a.meeting_delivery_job_id=j.id and a.meeting_delivery->>'state'='queued'
+   and exists(select 1 from public.user_organizations where organization_id=p_org and user_id=a.owner_user_id and revoked_at is null)
+   and (a.meeting_delivery->'authorized_by'->>'kind'='ai_agent' or
+    (a.meeting_delivery->'authorized_by'->>'kind'='user' and a.meeting_delivery->'authorized_by'->>'id'=a.owner_user_id::text and exists(
+     select 1 from public.user_organizations u where u.organization_id=p_org and u.user_id=a.owner_user_id and u.revoked_at is null and u.role in ('agent','manager','admin')
+      and (u.role in ('manager','admin') or v.assigned_to_user_id=u.user_id or o.settings->>'visibility_mode'='all'
+       or (coalesce(o.settings->>'visibility_mode','own_and_unassigned')='own_and_unassigned' and v.assigned_to_user_id is null)))))
+   and a.meeting_delivery->'service_boundary'=j.payload->'service_boundary' and public.fn_meet_boundary_current(j.payload->'service_boundary'));
+$$;
+revoke all on function public.fn_meet_delivery_current(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_meet_delivery_current(uuid,uuid,text,timestamptz) to service_role;
+
+create or replace function public.fn_meet_action(p_org uuid,p_id uuid,p_revision text,p_request uuid,p_action text,p_conversation uuid default null)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare a public.calendar_appointments; contact uuid; b jsonb; destination_channel uuid;
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org) then raise exception 'meet_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'meet_mfa_required' using errcode='42501';end if;
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
+ if contact is not null then perform public.fn_service_lock(p_org,contact);end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
+ if not found or a.owner_user_id is distinct from auth.uid() or not exists(select 1 from public.user_organizations where organization_id=p_org and user_id=auth.uid() and revoked_at is null) then raise exception 'meet_forbidden' using errcode='42501';end if;
+ if a.revision::text is distinct from p_revision or a.meeting_request_id is distinct from p_request or a.status='cancelled' or a.location_kind not in ('google_meet','video_link')
+  or exists(select 1 from public.contacts where id=a.contact_id and organization_id=p_org and is_anonymized) then raise exception 'meet_stale' using errcode='40001';end if;
+ if p_action='retry' then
+  if a.location_kind<>'google_meet' then raise exception 'meet_action_invalid' using errcode='22023';end if;
+  if a.google_conflict is not null then raise exception 'google_conflict_requires_choice' using errcode='40001';end if;
+  if a.meeting_state='ready' then return false;end if;
+  if a.meeting_state<>'failed' then
+   update public.calendar_appointments set meeting_next_attempt_at=now(),google_next_attempt_at=now() where organization_id=p_org and id=p_id;return true;
+  end if;
+  update public.calendar_appointments set meeting_request_id=case when meeting_last_error='google_failure' and meeting_received_at is not null then gen_random_uuid() else meeting_request_id end,
+   meeting_requested_at=case when meeting_last_error='google_failure' and meeting_received_at is not null then null else meeting_requested_at end,
+   meeting_received_at=case when meeting_last_error='google_failure' then null else meeting_received_at end,
+   meeting_state='pending',meeting_attempts=0,meeting_last_error=null,meeting_next_attempt_at=now(),google_next_attempt_at=now() where organization_id=p_org and id=p_id;
+ elsif p_action='deliver' then
+  if a.contact_id is null then raise exception 'meet_conversation_unavailable' using errcode='42501';end if;
+  select channel_session_id into destination_channel from public.conversations where organization_id=p_org and id=p_conversation and contact_id=a.contact_id and not is_group and public.fn_can_view_conversation(organization_id,assigned_to_user_id) for update;
+  if not found then raise exception 'meet_conversation_unavailable' using errcode='42501';end if;
+  b:=public.fn_service_boundary(p_org,p_conversation)-'status'-'demanda_fechada_em'-'service_started_at';
+  if not public.fn_meet_boundary_current(b) then raise exception 'meet_conversation_stale' using errcode='40001';end if;
+  if a.meeting_delivery->'service_boundary'=b and a.meeting_delivery->>'channel_session_id'=destination_channel::text then
+   if a.meeting_delivery->>'state' in ('waiting_for_link','sent') then return false;end if;
+   if a.meeting_delivery->>'state'='queued' and a.meeting_delivery_job_id is not null then
+    update public.job_queue set status='pending',locked_by=null,locked_at=null,attempts=0,run_after=now(),last_error=null
+     where organization_id=p_org and id=a.meeting_delivery_job_id and kind='transactional_delivery' and status in ('dead','failed','done');
+    return found;
+   end if;
+  end if;
+  update public.job_queue set status='failed',locked_by=null,locked_at=null,last_error='meet_delivery_superseded' where organization_id=p_org and id=a.meeting_delivery_job_id and kind='transactional_delivery' and status in ('pending','running');
+  update public.calendar_appointments set meeting_delivery=jsonb_build_object('state','waiting_for_link','generation',gen_random_uuid(),'service_boundary',b,'authorized_by',jsonb_build_object('kind','user','id',auth.uid()),'source_operation_id',gen_random_uuid()),meeting_delivery_job_id=null where organization_id=p_org and id=p_id;
+ else raise exception 'meet_action_invalid' using errcode='22023';end if;
+ return true;
+end;$$;
+revoke all on function public.fn_meet_action(uuid,uuid,text,uuid,text,uuid) from public,anon;
+grant execute on function public.fn_meet_action(uuid,uuid,text,uuid,text,uuid) to authenticated;
+
+create or replace function public.fn_appointment_fallback_jitsi(p_org uuid,p_id uuid,p_url text)
+returns boolean language plpgsql security definer set search_path=public as $$
+begin
+ if p_url !~ '^https://meet[.]jit[.]si/[A-Za-z0-9_-]+/?$' then raise exception 'meet_invalid_url' using errcode='22023';end if;
+ update public.calendar_appointments set meeting_state='ready',meeting_url=p_url,meeting_ready_at=now(),meeting_last_error=null,meeting_next_attempt_at=null
+  where organization_id=p_org and id=p_id and location_kind='google_meet' and meeting_state in ('pending','failed');
+ return found;
+end;$$;
+revoke all on function public.fn_appointment_fallback_jitsi(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.fn_appointment_fallback_jitsi(uuid,uuid,text) to service_role;
+
+-- URLs de ambos os provedores continuam fora de snapshots e resultados derivados.
+create or replace function public.fn_meet_minimize_runtime()
+returns trigger language plpgsql set search_path=public as $$
+begin
+ new:=jsonb_populate_record(new,regexp_replace(to_jsonb(new)::text,'https://meet[.](google[.]com|jit[.]si)/[A-Za-z0-9_-]+',case when tg_table_name='outbound_copies' then '[meet-link]' else '[link da reunião disponível na Agenda]' end,'g')::jsonb);
+ return new;
+end;$$;
+revoke all on function public.fn_meet_minimize_runtime() from public,anon,authenticated;
+
+create unique index if not exists uniq_event_agenda_owner_ics
+ on public.event_log(organization_id,event_type,entity_id)
+ where event_type='agenda.owner_ics_invite';
+
+create or replace function public.fn_agenda_owner_ics_enqueue()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.status<>'cancelled' and new.meeting_state='ready'
+  and new.meeting_url ~ '^https://meet[.]jit[.]si/[A-Za-z0-9_-]+/?$'
+  and (tg_op='INSERT' or old.meeting_state is distinct from 'ready' or old.meeting_url is distinct from new.meeting_url) then
+  insert into public.event_log(organization_id,event_type,entity_kind,entity_id,payload,metadata)
+  values(new.organization_id,'agenda.owner_ics_invite','calendar_appointment',new.id,'{}'::jsonb,jsonb_build_object('email_dedupe_key','agenda-owner-ics:'||new.id::text))
+  on conflict(organization_id,event_type,entity_id) where event_type='agenda.owner_ics_invite' do nothing;
+ end if;
+ return new;
+end;$$;
+revoke all on function public.fn_agenda_owner_ics_enqueue() from public,anon,authenticated;
+drop trigger if exists trg_agenda_owner_ics_enqueue on public.calendar_appointments;
+create trigger trg_agenda_owner_ics_enqueue after insert or update of meeting_state,meeting_url on public.calendar_appointments
+ for each row execute function public.fn_agenda_owner_ics_enqueue();
+
+notify pgrst,'reload schema';
+
 -- ---- revisao humana de negocios duplicados (migration 0282) ----
 -- 0282, revisao humana de negocios abertos duplicados.
 --
@@ -30744,6 +30909,1385 @@ comment on table public.inbox_user_message_state is
   'Estado pessoal da mensagem no Inbox; estrela pertence somente ao usuário atual.';
 notify pgrst, 'reload schema';
 -- END migration 0306: preferências pessoais do atendimento
+-- ---- retenção dos logs que crescem sozinhos (migration 0285) ----
+-- `webhook_events_log`: somente linhas cujo corpo pesado já foi descartado;
+-- default 14 dias desde received_at, piso de 7 para preservar a deduplicação.
+-- `event_log`: somente done/dead, por updated_at; default 30 dias, piso 14.
+-- O cron chama cinco lotes de 2.000 por tabela; SKIP LOCKED e lock_timeout curto
+-- fazem a manutenção ceder para o tráfego normal da instalação.
+create index if not exists idx_webhook_events_log_expurgo_arquivado
+  on public.webhook_events_log (received_at, id)
+  where archived_at is not null;
+
+create index if not exists idx_event_log_expurgo_concluido
+  on public.event_log (updated_at, id)
+  where status in ('done', 'dead');
+
+create or replace function public.fn_expurgar_webhook_events_log_arquivado(
+  p_retencao_dias int default null,
+  p_lote int default 2000
+) returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_dias int := greatest(coalesce(p_retencao_dias, 14), 7);
+  v_lote int := least(greatest(coalesce(p_lote, 2000), 1), 10000);
+  v_apagadas int;
+begin
+  perform set_config('lock_timeout', '1s', true);
+
+  with candidatas as materialized (
+    select w.id
+      from public.webhook_events_log w
+     where w.archived_at is not null
+       and w.received_at < now() - make_interval(days => v_dias)
+     order by w.received_at, w.id
+     limit v_lote
+     for update skip locked
+  )
+  delete from public.webhook_events_log w
+   using candidatas c
+   where w.id = c.id;
+
+  get diagnostics v_apagadas = row_count;
+  return v_apagadas;
+end;
+$$;
+
+create or replace function public.fn_expurgar_event_log_concluido(
+  p_retencao_dias int default null,
+  p_lote int default 2000
+) returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_dias int := greatest(coalesce(p_retencao_dias, 30), 14);
+  v_lote int := least(greatest(coalesce(p_lote, 2000), 1), 10000);
+  v_apagadas int;
+begin
+  perform set_config('lock_timeout', '1s', true);
+
+  with candidatas as materialized (
+    select e.id
+      from public.event_log e
+     where e.status in ('done', 'dead')
+       and e.updated_at < now() - make_interval(days => v_dias)
+     order by e.updated_at, e.id
+     limit v_lote
+     for update skip locked
+  )
+  delete from public.event_log e
+   using candidatas c
+   where e.id = c.id;
+
+  get diagnostics v_apagadas = row_count;
+  return v_apagadas;
+end;
+$$;
+
+revoke execute on function public.fn_expurgar_webhook_events_log_arquivado(int, int)
+  from public, anon, authenticated;
+grant execute on function public.fn_expurgar_webhook_events_log_arquivado(int, int)
+  to service_role;
+
+revoke execute on function public.fn_expurgar_event_log_concluido(int, int)
+  from public, anon, authenticated;
+grant execute on function public.fn_expurgar_event_log_concluido(int, int)
+  to service_role;
+
+comment on function public.fn_expurgar_webhook_events_log_arquivado(int, int) is
+  'Apaga em lote apenas linhas de webhook já sem corpo, por received_at. Default 14 dias; piso 7.';
+
+comment on function public.fn_expurgar_event_log_concluido(int, int) is
+  'Apaga em lote apenas eventos done/dead pela última mudança. Default 30 dias; piso 14.';
+
+notify pgrst, 'reload schema';
+
+
+
+-- ---- juntar a mesma pessoa (migration 0307) ----
+-- 0307, reconhece a mesma pessoa por mensagem pronta e junta seus negócios sob demanda.
+--
+-- A reconciliação mantém a regra dos oito dígitos como primeira tentativa. Somente
+-- quando ela não acha candidato a primeira mensagem inbound é lida. Nome completo
+-- e único em até 60 minutos pode juntar; primeiro nome, ambiguidade e nome apenas
+-- parecido alimentam a fila humana existente.
+--
+-- A junção contextual é uma porta nova e deliberadamente separada da
+-- fn_juntar_negocios. A função antiga continua recusando card com contexto, pois é
+-- usada pela tela e pelo cron curto. Esta é chamada somente sob demanda para uma
+-- organização e guarda o antes/depois do sobrevivente para o mesmo desfazer.
+
+alter table public.crm_lead_merge_log
+  add column if not exists survivor_snapshot jsonb;
+
+create or replace function public.fn_normalizar_nome_reconciliacao(p_nome text)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select btrim(regexp_replace(
+    regexp_replace(
+      translate(lower(coalesce(p_nome, '')),
+        'áàâãäéèêëíìîïóòôõöúùûüç',
+        'aaaaaeeeeiiiiooooouuuuc'),
+      '[^a-z0-9]+', ' ', 'g'),
+    '[[:space:]]+', ' ', 'g'));
+$$;
+
+revoke execute on function public.fn_normalizar_nome_reconciliacao(text)
+  from public, anon, authenticated;
+grant execute on function public.fn_normalizar_nome_reconciliacao(text)
+  to service_role;
+
+create or replace function public.fn_reconciliar_contato_whatsapp_formulario(
+  p_organization_id uuid,
+  p_contato_whatsapp uuid,
+  p_external_message_id text,
+  p_janela_dias integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_whatsapp public.contacts%rowtype;
+  v_form public.contacts%rowtype;
+  v_fila public.merge_queue%rowtype;
+  v_candidatos uuid[] := '{}'::uuid[];
+  v_similares uuid[] := '{}'::uuid[];
+  v_candidato uuid;
+  v_sufixo text;
+  v_nome_whatsapp text;
+  v_nome_form text;
+  v_nome_extraido text;
+  v_nome_normalizado text;
+  v_mensagem text;
+  v_mensagem_em timestamptz;
+  v_palavras integer := 0;
+  v_motivo text;
+  v_regra text := 'ultimos_8_digitos_7_dias_nome_compativel';
+  v_alvo record;
+  v_ids jsonb;
+  v_movidos jsonb := '{}'::jsonb;
+  v_antes jsonb;
+  v_depois jsonb;
+  v_tags text[];
+  v_atividades integer := 0;
+begin
+  if p_organization_id is null or p_contato_whatsapp is null
+     or nullif(p_external_message_id, '') is null
+     or p_janela_dias <> 7 then
+    raise exception using errcode = '22023', message = 'reconciliacao_parametros_invalidos';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(p_organization_id::text || ':' || p_contato_whatsapp::text, 0)
+  );
+
+  select * into v_fila from public.merge_queue q
+   where q.organization_id = p_organization_id
+     and q.reason in ('whatsapp_form_auto_merge', 'whatsapp_form_provavel')
+     and q.trigger_payload->>'external_message_id' = p_external_message_id
+   order by q.created_at desc limit 1 for update;
+  if found then
+    return coalesce(v_fila.resolution, '{}'::jsonb) || jsonb_build_object(
+      'merge_queue_id', v_fila.id,
+      'outcome', case when v_fila.reason = 'whatsapp_form_auto_merge' then 'merged' else 'suggestion' end,
+      'contact_id', v_fila.trigger_payload->>'whatsapp_contact_id',
+      'regra', v_fila.trigger_payload->>'regra'
+    );
+  end if;
+
+  select * into v_whatsapp from public.contacts c
+   where c.id = p_contato_whatsapp
+     and c.organization_id = p_organization_id
+     and c.source = 'whatsapp'
+     and c.is_merged_into is null
+     and c.is_anonymized = false
+   for update;
+  if not found then
+    return jsonb_build_object('outcome', 'none', 'contact_id', p_contato_whatsapp);
+  end if;
+
+  if coalesce((v_whatsapp.source_metadata->>'reconciliacao_formulario_pendente')::boolean, false) = false then
+    return jsonb_build_object('outcome', 'none', 'contact_id', p_contato_whatsapp);
+  end if;
+
+  v_sufixo := right(regexp_replace(coalesce(v_whatsapp.phone_number, ''), '\D', '', 'g'), 8);
+  if length(v_sufixo) = 8 then
+    select coalesce(array_agg(c.id order by c.created_at, c.id), '{}'::uuid[])
+      into v_candidatos
+      from public.contacts c
+     where c.organization_id = p_organization_id
+       and c.id <> p_contato_whatsapp
+       and c.source = 'webhook'
+       and c.is_merged_into is null
+       and c.is_anonymized = false
+       and c.created_at >= now() - make_interval(days => p_janela_dias)
+       and length(regexp_replace(coalesce(c.phone_number, ''), '\D', '', 'g')) >= 8
+       and right(regexp_replace(c.phone_number, '\D', '', 'g'), 8) = v_sufixo
+       and not exists (
+         select 1 from public.conversations cv
+          where cv.organization_id = p_organization_id and cv.contact_id = c.id
+       );
+  end if;
+
+  if cardinality(v_candidatos) > 0 then
+    v_nome_whatsapp := coalesce(v_whatsapp.display_name, v_whatsapp.name);
+    if cardinality(v_candidatos) > 1 then
+      v_motivo := 'multiplos_candidatos';
+    else
+      v_candidato := v_candidatos[1];
+      select * into v_form from public.contacts c
+       where c.id = v_candidato and c.organization_id = p_organization_id for update;
+      v_nome_form := coalesce(v_form.name, v_form.display_name);
+      if not public.fn_nome_compativel_whatsapp_formulario(v_nome_form, v_nome_whatsapp) then
+        v_motivo := 'nome_incompativel';
+      end if;
+    end if;
+  else
+    -- A chamada normal acontece depois do INSERT. No lote, a mesma consulta usa
+    -- a primeira mensagem que já estava gravada. Em ambos os casos uma mensagem
+    -- posterior nunca toma o lugar da primeira.
+    select m.body, coalesce(m.sent_at, m.created_at)
+      into v_mensagem, v_mensagem_em
+      from public.messages m
+     where m.organization_id = p_organization_id
+       and m.contact_id = p_contato_whatsapp
+       and m.direction = 'inbound'
+     order by coalesce(m.sent_at, m.created_at), m.created_at, m.id
+     limit 1;
+
+    if not found or not exists (
+      select 1 from public.messages m
+       where m.organization_id = p_organization_id
+         and m.contact_id = p_contato_whatsapp
+         and m.direction = 'inbound'
+         and m.external_id = p_external_message_id
+         and m.body is not distinct from v_mensagem
+         and coalesce(m.sent_at, m.created_at) = v_mensagem_em
+    ) then
+      v_mensagem := null;
+    end if;
+
+    if v_mensagem is not null then
+      select (pg_catalog.regexp_match(
+        v_mensagem,
+        '\mme[[:space:]]+chamo[[:space:]]+(.+?)[[:space:]]+e[[:space:]]+quero\M',
+        'i'
+      ))[1] into v_nome_extraido;
+    end if;
+    v_nome_normalizado := public.fn_normalizar_nome_reconciliacao(v_nome_extraido);
+    if nullif(v_nome_normalizado, '') is not null then
+      v_palavras := cardinality(pg_catalog.regexp_split_to_array(v_nome_normalizado, ' '));
+      select coalesce(array_agg(c.id order by c.created_at, c.id), '{}'::uuid[])
+        into v_candidatos
+        from public.contacts c
+       where c.organization_id = p_organization_id
+         and c.id <> p_contato_whatsapp
+         and c.source = 'webhook'
+         and c.is_merged_into is null
+         and c.is_anonymized = false
+         and c.created_at between v_mensagem_em - interval '60 minutes' and v_mensagem_em
+         and not exists (
+           select 1 from public.conversations cv
+            where cv.organization_id = p_organization_id and cv.contact_id = c.id
+         )
+         and public.fn_normalizar_nome_reconciliacao(coalesce(c.name, c.display_name)) = v_nome_normalizado;
+
+      if cardinality(v_candidatos) = 0 then
+        select coalesce(array_agg(c.id order by c.created_at, c.id), '{}'::uuid[])
+          into v_similares
+          from public.contacts c
+         where c.organization_id = p_organization_id
+           and c.id <> p_contato_whatsapp
+           and c.source = 'webhook'
+           and c.is_merged_into is null
+           and c.is_anonymized = false
+           and c.created_at between v_mensagem_em - interval '60 minutes' and v_mensagem_em
+           and not exists (
+             select 1 from public.conversations cv
+              where cv.organization_id = p_organization_id and cv.contact_id = c.id
+           )
+           and public.fn_nome_compativel_whatsapp_formulario(
+             coalesce(c.name, c.display_name), v_nome_extraido
+           );
+        if cardinality(v_similares) > 0 then
+          v_candidatos := v_similares;
+          v_motivo := 'nome_parecido';
+        end if;
+      elsif cardinality(v_candidatos) > 1 then
+        v_motivo := 'multiplos_candidatos';
+      elsif v_palavras < 2 then
+        v_motivo := 'nome_incompleto';
+      else
+        v_candidato := v_candidatos[1];
+        select * into v_form from public.contacts c
+         where c.id = v_candidato and c.organization_id = p_organization_id for update;
+      end if;
+      v_regra := 'mensagem_pronta_nome_60_min';
+    end if;
+  end if;
+
+  if cardinality(v_candidatos) = 0 then
+    update public.contacts set
+      source_metadata = (source_metadata - 'reconciliacao_formulario_pendente')
+        || jsonb_build_object('reconciliacao_formulario_processada_em', to_jsonb(now())),
+      updated_at = now()
+     where id = p_contato_whatsapp and organization_id = p_organization_id;
+    return jsonb_build_object('outcome', 'none', 'contact_id', p_contato_whatsapp);
+  end if;
+
+  perform 1 from public.contacts c
+   where c.organization_id = p_organization_id and c.id = any(v_candidatos)
+   order by c.id for update;
+
+  if v_motivo is not null then
+    insert into public.merge_queue
+      (organization_id, candidates, reason, trigger_payload, status, resolution)
+    values (
+      p_organization_id,
+      array[p_contato_whatsapp] || v_candidatos,
+      'whatsapp_form_provavel',
+      jsonb_strip_nulls(jsonb_build_object(
+        'external_message_id', p_external_message_id,
+        'whatsapp_contact_id', p_contato_whatsapp,
+        'motivo', v_motivo,
+        'regra', v_regra,
+        'janela_dias', p_janela_dias,
+        'janela_minutos', case when v_regra = 'mensagem_pronta_nome_60_min' then 60 else null end,
+        'nome_extraido', v_nome_extraido
+      )),
+      'pending',
+      jsonb_build_object('outcome', 'suggestion', 'motivo', v_motivo, 'regra', v_regra)
+    ) returning * into v_fila;
+
+    update public.contacts set
+      source_metadata = (source_metadata - 'reconciliacao_formulario_pendente')
+        || jsonb_build_object('reconciliacao_formulario_processada_em', to_jsonb(now())),
+      updated_at = now()
+     where id = p_contato_whatsapp and organization_id = p_organization_id;
+    return v_fila.resolution || jsonb_build_object(
+      'merge_queue_id', v_fila.id, 'contact_id', p_contato_whatsapp
+    );
+  end if;
+
+  if exists (
+    select 1 from public.conversations c
+     where c.organization_id = p_organization_id and c.contact_id = v_candidato
+  ) then
+    update public.contacts set
+      source_metadata = (source_metadata - 'reconciliacao_formulario_pendente')
+        || jsonb_build_object('reconciliacao_formulario_processada_em', to_jsonb(now())),
+      updated_at = now()
+     where id = p_contato_whatsapp and organization_id = p_organization_id;
+    return jsonb_build_object('outcome', 'none', 'contact_id', p_contato_whatsapp);
+  end if;
+
+  select * into v_form from public.contacts c
+   where c.id = v_candidato and c.organization_id = p_organization_id for update;
+
+  insert into public.merge_queue
+    (organization_id, candidates, reason, trigger_payload, status, resolution, resolved_at)
+  values (
+    p_organization_id,
+    array[p_contato_whatsapp, v_candidato],
+    'whatsapp_form_auto_merge',
+    jsonb_strip_nulls(jsonb_build_object(
+      'external_message_id', p_external_message_id,
+      'whatsapp_contact_id', p_contato_whatsapp,
+      'form_contact_id', v_candidato,
+      'telefone_original_formulario', v_form.phone_number,
+      'regra', v_regra,
+      'juntado_por', 'sistema',
+      'janela_dias', p_janela_dias,
+      'janela_minutos', case when v_regra = 'mensagem_pronta_nome_60_min' then 60 else null end,
+      'nome_extraido', v_nome_extraido
+    )),
+    'resolved', '{}'::jsonb, now()
+  ) returning * into v_fila;
+
+  v_antes := jsonb_build_object(
+    'name', v_whatsapp.name,
+    'display_name', v_whatsapp.display_name,
+    'birthdate', v_whatsapp.birthdate,
+    'email', v_whatsapp.email,
+    'tags', to_jsonb(v_whatsapp.tags),
+    'last_activity_at', v_whatsapp.last_activity_at
+  ) || case when v_regra = 'mensagem_pronta_nome_60_min'
+    then jsonb_build_object(
+      'nome_perfil_whatsapp', coalesce(v_whatsapp.display_name, v_whatsapp.name)
+    )
+    else '{}'::jsonb
+  end;
+
+  update public.contacts set
+    is_merged_into = p_contato_whatsapp,
+    merged_at = now(),
+    updated_at = now()
+   where id = v_candidato and organization_id = p_organization_id
+     and is_merged_into is null;
+  if not found then raise exception 'candidato_indisponivel' using errcode = 'P0002'; end if;
+
+  for v_alvo in
+    select n.nspname as esquema, t.relname as tabela, a.attname as coluna,
+           pk_a.attname as pk_coluna, ''::text as filtro
+      from pg_catalog.pg_constraint fk
+      join pg_catalog.pg_class t on t.oid = fk.conrelid
+      join pg_catalog.pg_namespace n on n.oid = t.relnamespace
+      join pg_catalog.pg_attribute a on a.attrelid = fk.conrelid and a.attnum = fk.conkey[1]
+      left join pg_catalog.pg_constraint pk
+        on pk.conrelid = t.oid and pk.contype = 'p' and array_length(pk.conkey, 1) = 1
+      left join pg_catalog.pg_attribute pk_a
+        on pk_a.attrelid = pk.conrelid and pk_a.attnum = pk.conkey[1]
+     where fk.contype = 'f'
+       and fk.confrelid = 'public.contacts'::regclass
+       and fk.conrelid <> 'public.contacts'::regclass
+       and array_length(fk.conkey, 1) = 1
+       and t.relkind = 'r' and n.nspname = 'public'
+    union all
+    select 'public', 'crm_lead_links', 'target_id', 'id',
+           ' and target_kind = ''contact'''
+     where to_regclass('public.crm_lead_links') is not null
+    order by 2, 3
+  loop
+    if v_alvo.pk_coluna is null then
+      execute format(
+        'select case when exists(select 1 from %I.%I where %I = $1%s) then ''[true]''::jsonb else ''[]''::jsonb end',
+        v_alvo.esquema, v_alvo.tabela, v_alvo.coluna, v_alvo.filtro
+      ) into v_ids using v_candidato;
+      if jsonb_array_length(v_ids) > 0 then
+        raise exception 'historico_sem_chave_para_desfazer' using errcode = '55000';
+      end if;
+      continue;
+    end if;
+
+    execute format(
+      'select coalesce(jsonb_agg(to_jsonb(%I)), ''[]''::jsonb) from %I.%I where %I = $1%s',
+      v_alvo.pk_coluna, v_alvo.esquema, v_alvo.tabela, v_alvo.coluna, v_alvo.filtro
+    ) into v_ids using v_candidato;
+    if jsonb_array_length(v_ids) = 0 then continue; end if;
+
+    execute format(
+      'update %I.%I set %I = $1 where %I = $2%s',
+      v_alvo.esquema, v_alvo.tabela, v_alvo.coluna, v_alvo.coluna, v_alvo.filtro
+    ) using p_contato_whatsapp, v_candidato;
+
+    v_movidos := v_movidos || jsonb_build_object(
+      v_alvo.esquema || '.' || v_alvo.tabela || '.' || v_alvo.coluna,
+      jsonb_build_object('pk_column', v_alvo.pk_coluna, 'ids', v_ids, 'filter', v_alvo.filtro)
+    );
+  end loop;
+
+  select coalesce(array_agg(distinct tag), '{}'::text[]) into v_tags
+    from (
+      select unnest(c.tags) as tag from public.contacts c
+       where c.id in (p_contato_whatsapp, v_candidato)
+         and c.organization_id = p_organization_id
+    ) tags_unidas;
+
+  update public.contacts set
+    name = case when v_regra = 'mensagem_pronta_nome_60_min'
+      then coalesce(v_form.name, v_form.display_name)
+      else coalesce(name, display_name, v_form.name, v_form.display_name)
+    end,
+    display_name = case when v_regra = 'mensagem_pronta_nome_60_min'
+      then coalesce(v_form.display_name, v_form.name)
+      else coalesce(display_name, name, v_form.display_name, v_form.name)
+    end,
+    birthdate = coalesce(birthdate, v_form.birthdate),
+    email = coalesce(email, v_form.email),
+    tags = v_tags,
+    last_activity_at = greatest(last_activity_at, v_form.last_activity_at),
+    source_metadata = (source_metadata - 'reconciliacao_formulario_pendente')
+      || jsonb_build_object(
+        'reconciliacao_formulario_processada_em', to_jsonb(now()),
+        'telefones_originais_formulario',
+        coalesce(source_metadata->'telefones_originais_formulario', '[]'::jsonb)
+          || jsonb_build_array(jsonb_build_object(
+            'merge_queue_id', v_fila.id,
+            'contact_id', v_candidato,
+            'telefone', v_form.phone_number,
+            'nome', coalesce(v_form.name, v_form.display_name),
+            'juntado_em', now()
+          ))
+      )
+      || case when v_regra = 'mensagem_pronta_nome_60_min'
+        then jsonb_build_object(
+          'nome_perfil_whatsapp', coalesce(v_whatsapp.display_name, v_whatsapp.name)
+        )
+        else '{}'::jsonb
+      end,
+    updated_at = now()
+   where id = p_contato_whatsapp and organization_id = p_organization_id;
+
+  select jsonb_build_object(
+    'name', c.name, 'display_name', c.display_name, 'birthdate', c.birthdate,
+    'email', c.email, 'tags', to_jsonb(c.tags), 'last_activity_at', c.last_activity_at
+  ) into v_depois
+  from public.contacts c
+  where c.id = p_contato_whatsapp and c.organization_id = p_organization_id;
+
+  insert into public.crm_lead_activities
+    (organization_id, lead_id, contact_id, source_module, source_id, type,
+     payload, metadata, performed_at)
+  select p_organization_id, l.id, p_contato_whatsapp, 'whatsapp_reconciliation',
+         v_fila.id, 'contacts_merged',
+         jsonb_build_object(
+           'automatico', true,
+           'merge_queue_id', v_fila.id,
+           'contato_formulario', v_candidato,
+           'telefone_original_formulario', v_form.phone_number,
+           'regra', v_regra
+         ), '{}'::jsonb, now()
+    from public.crm_leads l
+   where l.organization_id = p_organization_id and l.contact_id = p_contato_whatsapp;
+  get diagnostics v_atividades = row_count;
+
+  update public.merge_queue set resolution = jsonb_build_object(
+      'outcome', 'merged',
+      'contact_id', p_contato_whatsapp,
+      'form_contact_id', v_candidato,
+      'telefone_original_formulario', v_form.phone_number,
+      'regra', v_regra,
+      'juntado_por', 'sistema',
+      'merged_at', now(),
+      'moved_references', v_movidos,
+      'winner_before', v_antes,
+      'winner_after', v_depois,
+      'timeline_activities', v_atividades
+    )
+   where id = v_fila.id and organization_id = p_organization_id;
+
+  return jsonb_build_object(
+    'outcome', 'merged',
+    'contact_id', p_contato_whatsapp,
+    'form_contact_id', v_candidato,
+    'merge_queue_id', v_fila.id,
+    'telefone_original_formulario', v_form.phone_number,
+    'regra', v_regra
+  );
+end;
+$$;
+
+revoke execute on function public.fn_reconciliar_contato_whatsapp_formulario(uuid, uuid, text, integer)
+  from public, anon, authenticated;
+grant execute on function public.fn_reconciliar_contato_whatsapp_formulario(uuid, uuid, text, integer)
+  to service_role;
+
+create or replace function public.fn_juntar_negocios_mesma_pessoa(
+  p_organization_id uuid,
+  p_survivor uuid,
+  p_absorbed uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_survivor public.crm_leads%rowtype;
+  v_absorbed public.crm_leads%rowtype;
+  v_after public.crm_leads%rowtype;
+  v_target record;
+  v_ids jsonb;
+  v_moved jsonb := '{}'::jsonb;
+  v_org_filter text;
+  v_log_id uuid := gen_random_uuid();
+  v_stage_final uuid;
+  v_stage_position numeric;
+  v_expected_survivor uuid;
+  v_tags text[];
+  v_source_message text;
+  v_service boolean := coalesce(auth.role() = 'service_role', false);
+  v_exists boolean;
+begin
+  if not v_service and (
+    auth.uid() is null or not public.fn_role_at_least(p_organization_id, 'manager')
+  ) then
+    raise exception using errcode = '42501', message = 'insufficient_role';
+  end if;
+  if p_survivor is null or p_absorbed is null or p_survivor = p_absorbed then
+    raise exception using errcode = '22023', message = 'selecao_de_negocios_invalida';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      p_organization_id::text || ':' || least(p_survivor, p_absorbed)::text
+      || ':' || greatest(p_survivor, p_absorbed)::text, 0
+    )
+  );
+  perform 1 from public.crm_leads l
+   where l.organization_id = p_organization_id and l.id in (p_survivor, p_absorbed)
+   order by l.id for update;
+
+  select * into v_survivor from public.crm_leads l
+   where l.organization_id = p_organization_id and l.id = p_survivor;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'negocio_sobrevivente_nao_encontrado';
+  end if;
+  select * into v_absorbed from public.crm_leads l
+   where l.organization_id = p_organization_id and l.id = p_absorbed;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'negocio_absorvido_nao_encontrado';
+  end if;
+
+  if v_survivor.contact_id is null or v_survivor.contact_id is distinct from v_absorbed.contact_id then
+    raise exception using errcode = '22023', message = 'negocios_de_contatos_diferentes';
+  end if;
+  if v_survivor.pipeline_id is distinct from v_absorbed.pipeline_id then
+    raise exception using errcode = '22023', message = 'negocios_de_funis_diferentes';
+  end if;
+  if v_survivor.status <> 'open' or v_absorbed.status <> 'open' then
+    raise exception using errcode = '55000', message = 'negocio_nao_esta_aberto';
+  end if;
+
+  select l.id into v_expected_survivor
+    from public.crm_leads l
+   where l.organization_id = p_organization_id
+     and l.id in (p_survivor, p_absorbed)
+   order by (coalesce(l.source_metadata, '{}'::jsonb) <> '{}'::jsonb) desc,
+            l.created_at, l.id
+   limit 1;
+  if v_expected_survivor <> p_survivor then
+    raise exception using errcode = '22023', message = 'sobrevivente_incorreto';
+  end if;
+
+  if v_survivor.owner_user_id is not null and v_absorbed.owner_user_id is not null
+     and v_survivor.owner_user_id <> v_absorbed.owner_user_id then
+    raise exception using errcode = '55000', message = 'donos_humanos_diferentes';
+  end if;
+  if v_survivor.value_cents is not null and v_absorbed.value_cents is not null
+     and v_survivor.value_cents <> v_absorbed.value_cents then
+    raise exception using errcode = '55000', message = 'valores_diferentes';
+  end if;
+  if exists (
+    select 1 from public.crm_lead_risk_states r
+     where r.organization_id = p_organization_id and r.lead_id = p_survivor
+  ) and exists (
+    select 1 from public.crm_lead_risk_states r
+     where r.organization_id = p_organization_id and r.lead_id = p_absorbed
+  ) then
+    raise exception using errcode = '55000', message = 'ambos_com_estado_de_risco';
+  end if;
+  if exists (
+    select 1 from public.cron_jobs j
+     where j.organization_id = p_organization_id and j.job_kind = 'followup_turn'
+       and j.enabled and j.payload->>'lead_id' = p_absorbed::text
+  ) and exists (
+    select 1 from public.cron_jobs j
+     where j.organization_id = p_organization_id and j.job_kind = 'followup_turn'
+       and j.enabled and j.payload->>'lead_id' = p_survivor::text
+  ) then
+    raise exception using errcode = '55000', message = 'followup_agendado_nao_pode_ser_movido';
+  end if;
+
+  -- Referência sem FK, mas estável por id. É segura quando o sobrevivente não
+  -- tem outro follow-up ativo, condição conferida acima.
+  select coalesce(jsonb_agg(to_jsonb(j.id)), '[]'::jsonb) into v_ids
+    from public.cron_jobs j
+   where j.organization_id = p_organization_id
+     and j.job_kind = 'followup_turn'
+     and j.payload->>'lead_id' = p_absorbed::text;
+  if jsonb_array_length(v_ids) > 0 then
+    update public.cron_jobs j set
+      payload = jsonb_set(j.payload, '{lead_id}', to_jsonb(p_survivor::text), false),
+      updated_at = now()
+     where j.organization_id = p_organization_id
+       and j.id::text in (select jsonb_array_elements_text(v_ids));
+    v_moved := v_moved || jsonb_build_object(
+      'special.cron_jobs.payload_lead_id',
+      jsonb_build_object('kind', 'payload_lead_id', 'pk_column', 'id', 'ids', v_ids,
+                         'organization_scoped', true)
+    );
+  end if;
+
+  for v_target in
+    select n.nspname as schema_name,
+           t.relname as table_name,
+           fk_col.attname as fk_column,
+           pk_col.attname as pk_column,
+           exists (
+             select 1 from pg_catalog.pg_attribute org_col
+              where org_col.attrelid = t.oid and org_col.attname = 'organization_id'
+                and org_col.attnum > 0 and not org_col.attisdropped
+           ) as has_organization
+      from pg_catalog.pg_constraint fk
+      join pg_catalog.pg_class t on t.oid = fk.conrelid
+      join pg_catalog.pg_namespace n on n.oid = t.relnamespace
+      join pg_catalog.pg_attribute fk_col
+        on fk_col.attrelid = fk.conrelid and fk_col.attnum = fk.conkey[1]
+      left join pg_catalog.pg_constraint pk
+        on pk.conrelid = t.oid and pk.contype = 'p' and array_length(pk.conkey, 1) = 1
+      left join pg_catalog.pg_attribute pk_col
+        on pk_col.attrelid = pk.conrelid and pk_col.attnum = pk.conkey[1]
+     where fk.contype = 'f'
+       and fk.confrelid = 'public.crm_leads'::regclass
+       and array_length(fk.conkey, 1) = 1
+       and array_length(fk.confkey, 1) = 1
+       and t.relkind = 'r'
+       and n.nspname = 'public'
+     order by t.relname, fk_col.attname
+  loop
+    v_org_filter := case when v_target.has_organization
+      then ' and organization_id = $2' else '' end;
+    execute format(
+      'select coalesce(jsonb_agg(to_jsonb(%I)), ''[]''::jsonb) from %I.%I where %I = $1%s',
+      coalesce(v_target.pk_column, v_target.fk_column),
+      v_target.schema_name, v_target.table_name, v_target.fk_column, v_org_filter
+    ) into v_ids using p_absorbed, p_organization_id;
+    if jsonb_array_length(v_ids) = 0 then continue; end if;
+    if v_target.pk_column is null then
+      raise exception using errcode = '55000', message = 'historico_sem_chave_para_desfazer';
+    end if;
+
+    if v_target.pk_column = v_target.fk_column then
+      execute format(
+        'select exists(select 1 from %I.%I where %I = $1%s)',
+        v_target.schema_name, v_target.table_name, v_target.fk_column, v_org_filter
+      ) into v_exists using p_survivor, p_organization_id;
+      if v_exists then
+        raise exception using errcode = '55000',
+          message = 'referencia_unica_conflitante_' || v_target.table_name;
+      end if;
+      execute format(
+        'update %I.%I set %I = $1 where %I = $2%s',
+        v_target.schema_name, v_target.table_name, v_target.fk_column,
+        v_target.fk_column,
+        case when v_target.has_organization then ' and organization_id = $3' else '' end
+      ) using p_survivor, p_absorbed, p_organization_id;
+      v_moved := v_moved || jsonb_build_object(
+        v_target.schema_name || '.' || v_target.table_name || '.' || v_target.fk_column,
+        jsonb_build_object('kind', 'primary_fk', 'pk_column', v_target.pk_column,
+                           'ids', v_ids, 'organization_scoped', v_target.has_organization)
+      );
+      continue;
+    end if;
+
+    execute format(
+      'update %I.%I set %I = $1 where %I = $2%s',
+      v_target.schema_name, v_target.table_name, v_target.fk_column,
+      v_target.fk_column,
+      case when v_target.has_organization then ' and organization_id = $3' else '' end
+    ) using p_survivor, p_absorbed, p_organization_id;
+    v_moved := v_moved || jsonb_build_object(
+      v_target.schema_name || '.' || v_target.table_name || '.' || v_target.fk_column,
+      jsonb_build_object('kind', 'foreign_key', 'pk_column', v_target.pk_column,
+                         'ids', v_ids, 'organization_scoped', v_target.has_organization)
+    );
+  end loop;
+
+  select s.id, s.position into v_stage_final, v_stage_position
+    from public.crm_stages s
+   where s.organization_id = p_organization_id
+     and s.pipeline_id = v_survivor.pipeline_id
+     and s.id in (v_survivor.stage_id, v_absorbed.stage_id)
+   order by s.position desc, s.id
+   limit 1;
+  if v_stage_final is null then
+    raise exception using errcode = '55000', message = 'etapa_final_nao_encontrada';
+  end if;
+
+  select coalesce(array_agg(distinct t order by t), '{}'::text[]) into v_tags
+    from unnest(coalesce(v_survivor.tags, '{}'::text[]) || coalesce(v_absorbed.tags, '{}'::text[])) t;
+
+  update public.crm_leads set
+    stage_id = v_stage_final,
+    owner_user_id = coalesce(v_survivor.owner_user_id, v_absorbed.owner_user_id),
+    assigned_at = coalesce(v_survivor.assigned_at, v_absorbed.assigned_at),
+    value_cents = coalesce(v_survivor.value_cents, v_absorbed.value_cents),
+    currency = case when v_survivor.value_cents is not null then v_survivor.currency
+                    else coalesce(v_absorbed.currency, v_survivor.currency) end,
+    custom_fields = coalesce(v_absorbed.custom_fields, '{}'::jsonb)
+      || coalesce(v_survivor.custom_fields, '{}'::jsonb),
+    tags = v_tags,
+    last_activity_at = greatest(v_survivor.last_activity_at, v_absorbed.last_activity_at),
+    updated_at = now()
+   where id = p_survivor and organization_id = p_organization_id;
+
+  delete from public.crm_leads
+   where id = p_absorbed and organization_id = p_organization_id;
+  if not found then
+    raise exception using errcode = '55000', message = 'estado_da_juncao_mudou';
+  end if;
+
+  if v_survivor.stage_id <> v_stage_final then
+    insert into public.crm_lead_activities (
+      organization_id, lead_id, contact_id, source_module, source_id, type,
+      payload, metadata, performed_at, performed_by_user_id, actor_kind, reason
+    ) values (
+      p_organization_id, p_survivor, v_survivor.contact_id,
+      'lead_duplicate_merge', v_log_id, 'stage_changed',
+      jsonb_build_object('from_stage_id', v_survivor.stage_id, 'to_stage_id', v_stage_final,
+                         'position', v_stage_position, 'automatico', true),
+      '{}'::jsonb, now(), auth.uid(), case when v_service then 'system' else 'user' end,
+      'etapa mais avançada preservada ao juntar negócios da mesma pessoa'
+    );
+  end if;
+
+  if coalesce(v_absorbed.source_metadata, '{}'::jsonb) <> '{}'::jsonb then
+    v_source_message := 'Nova entrada pelo formulário em '
+      || to_char(v_absorbed.created_at, 'DD/MM')
+      || ', origem '
+      || coalesce(nullif(concat_ws('/',
+           nullif(v_absorbed.source_metadata->>'utm_source', ''),
+           nullif(v_absorbed.source_metadata->>'utm_medium', '')), ''), v_absorbed.source)
+      || case when nullif(v_absorbed.source_metadata->>'utm_campaign', '') is not null
+           then ', campanha ' || (v_absorbed.source_metadata->>'utm_campaign') else '' end;
+    insert into public.crm_lead_activities (
+      organization_id, lead_id, contact_id, source_module, source_id, type,
+      payload, metadata, performed_at, performed_by_user_id, actor_kind, reason
+    ) values (
+      p_organization_id, p_survivor, v_survivor.contact_id,
+      'lead_duplicate_merge', v_log_id, 'lead_source_preserved',
+      jsonb_build_object('message', v_source_message,
+                         'absorbed_lead_id', p_absorbed,
+                         'source_metadata', v_absorbed.source_metadata),
+      '{}'::jsonb, now(), auth.uid(), case when v_service then 'system' else 'user' end,
+      v_source_message
+    );
+  end if;
+
+  insert into public.crm_lead_activities (
+    organization_id, lead_id, contact_id, source_module, source_id, type,
+    payload, metadata, performed_at, performed_by_user_id, actor_kind, reason
+  ) values (
+    p_organization_id, p_survivor, v_survivor.contact_id,
+    'lead_duplicate_merge', v_log_id, 'lead_duplicate_merged',
+    jsonb_build_object('merge_log_id', v_log_id, 'absorbed_lead_id', p_absorbed,
+                       'message', 'Negócios da mesma pessoa juntados com o contexto preservado'),
+    '{}'::jsonb, now(), auth.uid(), case when v_service then 'system' else 'user' end,
+    'junção sob demanda de negócios da mesma pessoa'
+  );
+
+  select * into v_after from public.crm_leads l
+   where l.id = p_survivor and l.organization_id = p_organization_id;
+
+  insert into public.crm_lead_merge_log (
+    id, organization_id, survivor_lead_id, absorbed_lead_id,
+    absorbed_snapshot, moved_references, merged_by_user_id, survivor_snapshot
+  ) values (
+    v_log_id, p_organization_id, p_survivor, p_absorbed,
+    to_jsonb(v_absorbed), v_moved, auth.uid(),
+    jsonb_build_object('before', to_jsonb(v_survivor), 'after', to_jsonb(v_after),
+                       'mode', 'mesma_pessoa_com_contexto')
+  );
+
+  return jsonb_build_object(
+    'outcome', 'merged', 'log_id', v_log_id,
+    'survivor_lead_id', p_survivor, 'absorbed_lead_id', p_absorbed,
+    'final_stage_id', v_stage_final
+  );
+end;
+$$;
+
+revoke execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid)
+  from public, anon;
+grant execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid)
+  to service_role;
+
+create or replace function public.fn_desfazer_juncao_de_negocios(
+  p_organization_id uuid,
+  p_log_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_log public.crm_lead_merge_log%rowtype;
+  v_item record;
+  v_schema text;
+  v_table text;
+  v_column text;
+  v_pk text;
+  v_kind text;
+  v_ids jsonb;
+  v_expected integer;
+  v_found integer;
+  v_has_org boolean;
+  v_org_filter text;
+  v_before jsonb;
+  v_after jsonb;
+  v_current public.crm_leads%rowtype;
+begin
+  if auth.uid() is null or not public.fn_role_at_least(p_organization_id, 'manager') then
+    raise exception using errcode = '42501', message = 'insufficient_role';
+  end if;
+
+  select * into v_log from public.crm_lead_merge_log m
+   where m.id = p_log_id and m.organization_id = p_organization_id for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'juncao_de_negocios_nao_encontrada';
+  end if;
+  if v_log.undone_at is not null then
+    return jsonb_build_object('outcome', 'already_undone', 'log_id', v_log.id,
+      'survivor_lead_id', v_log.survivor_lead_id,
+      'absorbed_lead_id', v_log.absorbed_lead_id);
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      p_organization_id::text || ':'
+      || least(v_log.survivor_lead_id, v_log.absorbed_lead_id)::text || ':'
+      || greatest(v_log.survivor_lead_id, v_log.absorbed_lead_id)::text, 0
+    )
+  );
+  select * into v_current from public.crm_leads l
+   where l.organization_id = p_organization_id and l.id = v_log.survivor_lead_id
+   for update;
+  if not found or exists (
+    select 1 from public.crm_leads l
+     where l.organization_id = p_organization_id and l.id = v_log.absorbed_lead_id
+  ) then
+    raise exception using errcode = '55000', message = 'historico_mudou_desde_a_juncao';
+  end if;
+
+  v_before := v_log.survivor_snapshot->'before';
+  v_after := v_log.survivor_snapshot->'after';
+  if v_after is not null and (
+    v_current.stage_id::text is distinct from v_after->>'stage_id'
+    or v_current.owner_user_id::text is distinct from v_after->>'owner_user_id'
+    or v_current.value_cents::text is distinct from v_after->>'value_cents'
+    or v_current.custom_fields is distinct from coalesce(v_after->'custom_fields', '{}'::jsonb)
+    or to_jsonb(v_current.tags) is distinct from coalesce(v_after->'tags', '[]'::jsonb)
+  ) then
+    raise exception using errcode = '55000', message = 'historico_mudou_desde_a_juncao';
+  end if;
+
+  for v_item in select * from jsonb_each(coalesce(v_log.moved_references, '{}'::jsonb))
+  loop
+    v_kind := coalesce(v_item.value->>'kind', 'foreign_key');
+    v_ids := coalesce(v_item.value->'ids', '[]'::jsonb);
+    v_expected := jsonb_array_length(v_ids);
+    v_has_org := coalesce((v_item.value->>'organization_scoped')::boolean, false);
+    if v_kind = 'payload_lead_id' then
+      select count(*) into v_found from public.cron_jobs j
+       where j.organization_id = p_organization_id
+         and j.id::text in (select jsonb_array_elements_text(v_ids))
+         and j.payload->>'lead_id' = v_log.survivor_lead_id::text;
+      if v_found <> v_expected then
+        raise exception using errcode = '55000', message = 'historico_mudou_desde_a_juncao';
+      end if;
+      continue;
+    end if;
+
+    v_schema := split_part(v_item.key, '.', 1);
+    v_table := split_part(v_item.key, '.', 2);
+    v_column := split_part(v_item.key, '.', 3);
+    v_pk := v_item.value->>'pk_column';
+    if v_schema <> 'public' or v_table !~ '^[a-z0-9_]+$'
+       or v_column !~ '^[a-z0-9_]+$' or v_pk !~ '^[a-z0-9_]+$' then
+      raise exception using errcode = '22023', message = 'registro_de_desfazer_invalido';
+    end if;
+    v_org_filter := case when v_has_org then ' and organization_id = $3' else '' end;
+    if v_kind = 'primary_fk' then
+      execute format(
+        'select count(*) from %I.%I where %I = $1%s',
+        v_schema, v_table, v_column, v_org_filter
+      ) into v_found using v_log.survivor_lead_id, v_ids, p_organization_id;
+    else
+      execute format(
+        'select count(*) from %I.%I where %I = $1 and %I::text in '
+        || '(select jsonb_array_elements_text($2))%s',
+        v_schema, v_table, v_column, v_pk, v_org_filter
+      ) into v_found using v_log.survivor_lead_id, v_ids, p_organization_id;
+    end if;
+    if v_found <> v_expected then
+      raise exception using errcode = '55000', message = 'historico_mudou_desde_a_juncao';
+    end if;
+  end loop;
+
+  insert into public.crm_leads
+  select (pg_catalog.jsonb_populate_record(null::public.crm_leads, v_log.absorbed_snapshot)).*;
+
+  for v_item in select * from jsonb_each(coalesce(v_log.moved_references, '{}'::jsonb))
+  loop
+    v_kind := coalesce(v_item.value->>'kind', 'foreign_key');
+    v_ids := coalesce(v_item.value->'ids', '[]'::jsonb);
+    v_expected := jsonb_array_length(v_ids);
+    v_has_org := coalesce((v_item.value->>'organization_scoped')::boolean, false);
+    if v_kind = 'payload_lead_id' then
+      update public.cron_jobs j set
+        payload = jsonb_set(j.payload, '{lead_id}', to_jsonb(v_log.absorbed_lead_id::text), false),
+        updated_at = now()
+       where j.organization_id = p_organization_id
+         and j.id::text in (select jsonb_array_elements_text(v_ids))
+         and j.payload->>'lead_id' = v_log.survivor_lead_id::text;
+      get diagnostics v_found = row_count;
+      if v_found <> v_expected then
+        raise exception using errcode = '55000', message = 'historico_mudou_desde_a_juncao';
+      end if;
+      continue;
+    end if;
+
+    v_schema := split_part(v_item.key, '.', 1);
+    v_table := split_part(v_item.key, '.', 2);
+    v_column := split_part(v_item.key, '.', 3);
+    v_pk := v_item.value->>'pk_column';
+    v_org_filter := case when v_has_org then ' and organization_id = $4' else '' end;
+    if v_kind = 'primary_fk' then
+      execute format(
+        'update %I.%I set %I = $1 where %I = $2%s',
+        v_schema, v_table, v_column, v_column,
+        case when v_has_org then ' and organization_id = $3' else '' end
+      ) using v_log.absorbed_lead_id, v_log.survivor_lead_id, p_organization_id;
+    else
+      execute format(
+        'update %I.%I set %I = $1 where %I = $2 and %I::text in '
+        || '(select jsonb_array_elements_text($3))%s',
+        v_schema, v_table, v_column, v_column, v_pk, v_org_filter
+      ) using v_log.absorbed_lead_id, v_log.survivor_lead_id, v_ids, p_organization_id;
+    end if;
+    get diagnostics v_found = row_count;
+    if v_found <> v_expected then
+      raise exception using errcode = '55000', message = 'historico_mudou_desde_a_juncao';
+    end if;
+  end loop;
+
+  if v_before is not null then
+    update public.crm_leads set
+      stage_id = (v_before->>'stage_id')::uuid,
+      owner_user_id = nullif(v_before->>'owner_user_id', '')::uuid,
+      assigned_at = nullif(v_before->>'assigned_at', '')::timestamptz,
+      value_cents = nullif(v_before->>'value_cents', '')::bigint,
+      currency = v_before->>'currency',
+      custom_fields = coalesce(v_before->'custom_fields', '{}'::jsonb),
+      tags = coalesce(array(select jsonb_array_elements_text(v_before->'tags')), '{}'::text[]),
+      updated_at = now()
+     where id = v_log.survivor_lead_id and organization_id = p_organization_id;
+  end if;
+
+  update public.crm_lead_merge_log set
+    undone_at = now(), undone_by_user_id = auth.uid()
+   where id = p_log_id and organization_id = p_organization_id and undone_at is null;
+  if not found then
+    raise exception using errcode = '55000', message = 'estado_da_juncao_mudou';
+  end if;
+
+  insert into public.crm_lead_activities (
+    organization_id, lead_id, contact_id, source_module, source_id,
+    type, payload, metadata, performed_at, performed_by_user_id
+  )
+  select p_organization_id, l.id, l.contact_id,
+         'lead_duplicate_merge', p_log_id, 'lead_duplicate_merge_undone',
+         jsonb_build_object('merge_log_id', p_log_id,
+                            'restored_lead_id', v_log.absorbed_lead_id),
+         '{}'::jsonb, now(), auth.uid()
+    from public.crm_leads l
+   where l.id = v_log.survivor_lead_id and l.organization_id = p_organization_id;
+
+  return jsonb_build_object(
+    'outcome', 'undone', 'log_id', v_log.id,
+    'survivor_lead_id', v_log.survivor_lead_id,
+    'absorbed_lead_id', v_log.absorbed_lead_id
+  );
+end;
+$$;
+
+revoke execute on function public.fn_desfazer_juncao_de_negocios(uuid, uuid)
+  from public, anon;
+grant execute on function public.fn_desfazer_juncao_de_negocios(uuid, uuid)
+  to authenticated;
+
+create or replace function public.fn_juntar_mesma_pessoa_da_organizacao(
+  p_organization_id uuid,
+  p_simular boolean default true
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_service boolean := coalesce(auth.role() = 'service_role', false);
+  v_item record;
+  v_group record;
+  v_absorbed uuid;
+  v_result jsonb;
+  v_contacts jsonb := '[]'::jsonb;
+  v_business jsonb := '[]'::jsonb;
+  v_reason text;
+  v_action text;
+  v_rule text;
+  v_candidate_ids uuid[];
+  v_suffix_compatible boolean;
+  v_contact_map jsonb := '{}'::jsonb;
+begin
+  if not v_service and (
+    auth.uid() is null or not public.fn_role_at_least(p_organization_id, 'manager')
+  ) then
+    raise exception using errcode = '42501', message = 'insufficient_role';
+  end if;
+
+  -- Plano e execução usam a primeira inbound. O plano repete as duas regras sem
+  -- escrever e registra um mapa hipotético formulário -> WhatsApp; esse mapa é
+  -- usado na etapa B para agrupar negócios como eles ficariam depois da etapa A.
+  for v_item in
+    select w.id as whatsapp_id, m.external_id,
+           coalesce(w.display_name, w.name) as nome_whatsapp,
+           public.fn_normalizar_nome_reconciliacao((pg_catalog.regexp_match(
+             m.body,
+             '\mme[[:space:]]+chamo[[:space:]]+(.+?)[[:space:]]+e[[:space:]]+quero\M',
+             'i'
+           ))[1]) as nome_extraido,
+           antigos.ids as candidatos_sufixo,
+           exatos.ids as candidatos_exatos,
+           similares.ids as candidatos_similares
+      from public.contacts w
+      cross join lateral (
+        select msg.external_id, msg.body, coalesce(msg.sent_at, msg.created_at) as sent_at
+          from public.messages msg
+         where msg.organization_id = p_organization_id
+           and msg.contact_id = w.id and msg.direction = 'inbound'
+         order by coalesce(msg.sent_at, msg.created_at), msg.created_at, msg.id
+         limit 1
+       ) m
+      cross join lateral (
+        select public.fn_normalizar_nome_reconciliacao((pg_catalog.regexp_match(
+          m.body,
+          '\mme[[:space:]]+chamo[[:space:]]+(.+?)[[:space:]]+e[[:space:]]+quero\M',
+          'i'
+        ))[1]) as normalizado
+      ) nome
+      cross join lateral (
+        select coalesce(array_agg(c.id order by c.created_at, c.id), '{}'::uuid[]) as ids
+          from public.contacts c
+         where c.organization_id = p_organization_id
+           and c.id <> w.id and c.source = 'webhook'
+           and c.is_merged_into is null and not c.is_anonymized
+           and c.created_at >= now() - interval '7 days'
+           and length(regexp_replace(coalesce(w.phone_number, ''), '\D', '', 'g')) >= 8
+           and length(regexp_replace(coalesce(c.phone_number, ''), '\D', '', 'g')) >= 8
+           and right(regexp_replace(c.phone_number, '\D', '', 'g'), 8)
+             = right(regexp_replace(w.phone_number, '\D', '', 'g'), 8)
+           and not exists (
+             select 1 from public.conversations cv
+              where cv.organization_id = p_organization_id and cv.contact_id = c.id
+           )
+      ) antigos
+      cross join lateral (
+        select coalesce(array_agg(c.id order by c.created_at, c.id), '{}'::uuid[]) as ids
+          from public.contacts c
+         where c.organization_id = p_organization_id
+           and c.id <> w.id and c.source = 'webhook'
+           and c.is_merged_into is null and not c.is_anonymized
+           and c.created_at between m.sent_at - interval '60 minutes' and m.sent_at
+           and not exists (
+             select 1 from public.conversations cv
+              where cv.organization_id = p_organization_id and cv.contact_id = c.id
+           )
+           and nullif(nome.normalizado, '') is not null
+           and public.fn_normalizar_nome_reconciliacao(coalesce(c.name, c.display_name))
+             = nome.normalizado
+      ) exatos
+      cross join lateral (
+        select coalesce(array_agg(c.id order by c.created_at, c.id), '{}'::uuid[]) as ids
+          from public.contacts c
+         where c.organization_id = p_organization_id
+           and c.id <> w.id and c.source = 'webhook'
+           and c.is_merged_into is null and not c.is_anonymized
+           and c.created_at between m.sent_at - interval '60 minutes' and m.sent_at
+           and not exists (
+             select 1 from public.conversations cv
+              where cv.organization_id = p_organization_id and cv.contact_id = c.id
+           )
+           and nullif(nome.normalizado, '') is not null
+           and public.fn_normalizar_nome_reconciliacao(coalesce(c.name, c.display_name))
+             <> nome.normalizado
+           and public.fn_nome_compativel_whatsapp_formulario(
+             coalesce(c.name, c.display_name), (pg_catalog.regexp_match(
+               m.body,
+               '\mme[[:space:]]+chamo[[:space:]]+(.+?)[[:space:]]+e[[:space:]]+quero\M',
+               'i'
+             ))[1]
+           )
+      ) similares
+     where w.organization_id = p_organization_id
+       and w.source = 'whatsapp'
+       and w.is_merged_into is null
+       and not w.is_anonymized
+       and m.external_id is not null
+  loop
+    if p_simular then
+      v_action := 'nenhuma';
+      v_reason := null;
+      v_rule := null;
+      v_candidate_ids := '{}'::uuid[];
+
+      if cardinality(v_item.candidatos_sufixo) > 0 then
+        v_rule := 'ultimos_8_digitos_7_dias_nome_compativel';
+        v_candidate_ids := v_item.candidatos_sufixo;
+        if cardinality(v_candidate_ids) > 1 then
+          v_action := 'sugerir';
+          v_reason := 'multiplos_candidatos';
+        else
+          select public.fn_nome_compativel_whatsapp_formulario(
+                   coalesce(c.name, c.display_name), v_item.nome_whatsapp)
+            into v_suffix_compatible
+            from public.contacts c
+           where c.organization_id = p_organization_id and c.id = v_candidate_ids[1];
+          if coalesce(v_suffix_compatible, false) then
+            v_action := 'juntar';
+          else
+            v_action := 'sugerir';
+            v_reason := 'nome_incompativel';
+          end if;
+        end if;
+      elsif cardinality(v_item.candidatos_exatos) > 0 then
+        v_rule := 'mensagem_pronta_nome_60_min';
+        v_candidate_ids := v_item.candidatos_exatos;
+        if cardinality(v_candidate_ids) > 1 then
+          v_action := 'sugerir';
+          v_reason := 'multiplos_candidatos';
+        elsif cardinality(pg_catalog.regexp_split_to_array(v_item.nome_extraido, ' ')) < 2 then
+          v_action := 'sugerir';
+          v_reason := 'nome_incompleto';
+        else
+          v_action := 'juntar';
+        end if;
+      elsif cardinality(v_item.candidatos_similares) > 0 then
+        v_rule := 'mensagem_pronta_nome_60_min';
+        v_candidate_ids := v_item.candidatos_similares;
+        v_action := 'sugerir';
+        v_reason := 'nome_parecido';
+      end if;
+
+      if v_action <> 'nenhuma' then
+        v_contacts := v_contacts || jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+          'whatsapp_contact_id', v_item.whatsapp_id,
+          'external_message_id', v_item.external_id,
+          'nome_extraido', nullif(v_item.nome_extraido, ''),
+          'regra', v_rule,
+          'acao', v_action,
+          'grupo', to_jsonb(array[v_item.whatsapp_id] || v_candidate_ids),
+          'motivo_recusa', v_reason
+        )));
+        if v_action = 'juntar' then
+          v_contact_map := v_contact_map || jsonb_build_object(
+            v_candidate_ids[1]::text, v_item.whatsapp_id
+          );
+        end if;
+      end if;
+    else
+      update public.contacts set
+        source_metadata = (source_metadata - 'reconciliacao_formulario_processada_em')
+          || jsonb_build_object('reconciliacao_formulario_pendente', true),
+        updated_at = now()
+       where id = v_item.whatsapp_id and organization_id = p_organization_id;
+      v_result := public.fn_reconciliar_contato_whatsapp_formulario(
+        p_organization_id, v_item.whatsapp_id, v_item.external_id, 7
+      );
+      v_contacts := v_contacts || jsonb_build_array(v_result);
+    end if;
+  end loop;
+
+  for v_group in
+    with leads_efetivos as (
+      select l.*,
+             case when p_simular and v_contact_map ? l.contact_id::text
+                  then (v_contact_map->>l.contact_id::text)::uuid
+                  else l.contact_id end as contato_efetivo
+        from public.crm_leads l
+       where l.organization_id = p_organization_id
+         and l.status = 'open' and l.contact_id is not null
+    )
+    select l.contato_efetivo as contact_id, l.pipeline_id,
+           l.contato_efetivo::text || ':' || l.pipeline_id::text as group_key,
+           (array_agg(l.id order by
+             (coalesce(l.source_metadata, '{}'::jsonb) <> '{}'::jsonb) desc,
+             l.created_at, l.id))[1] as survivor,
+           array_agg(l.id order by l.created_at, l.id) as members,
+           (array_agg(l.stage_id order by s.position desc, l.id))[1] as final_stage
+      from leads_efetivos l
+      join public.crm_stages s
+        on s.id = l.stage_id and s.organization_id = l.organization_id
+     group by l.contato_efetivo, l.pipeline_id
+     having count(*) > 1
+     order by min(l.created_at), l.contato_efetivo, l.pipeline_id
+  loop
+    foreach v_absorbed in array v_group.members loop
+      if v_absorbed = v_group.survivor then continue; end if;
+      v_reason := null;
+      if exists (
+        select 1 from public.crm_leads a
+        join public.crm_leads b on b.id = v_absorbed and b.organization_id = a.organization_id
+        where a.id = v_group.survivor and a.organization_id = p_organization_id
+          and a.owner_user_id is not null and b.owner_user_id is not null
+          and a.owner_user_id <> b.owner_user_id
+      ) then v_reason := 'donos_humanos_diferentes';
+      elsif exists (
+        select 1 from public.crm_leads a
+        join public.crm_leads b on b.id = v_absorbed and b.organization_id = a.organization_id
+        where a.id = v_group.survivor and a.organization_id = p_organization_id
+          and a.value_cents is not null and b.value_cents is not null
+          and a.value_cents <> b.value_cents
+      ) then v_reason := 'valores_diferentes';
+      elsif exists (
+        select 1 from public.crm_lead_risk_states r
+         where r.organization_id = p_organization_id and r.lead_id = v_group.survivor
+      ) and exists (
+        select 1 from public.crm_lead_risk_states r
+         where r.organization_id = p_organization_id and r.lead_id = v_absorbed
+      ) then v_reason := 'ambos_com_estado_de_risco';
+      end if;
+
+      if p_simular then
+        v_business := v_business || jsonb_build_array(jsonb_build_object(
+          'grupo', v_group.group_key,
+          'sobrevivente', v_group.survivor,
+          'absorvido', v_absorbed,
+          'absorvidos', to_jsonb(array_remove(v_group.members, v_group.survivor)),
+          'etapa_final', v_group.final_stage,
+          'motivo_recusa', v_reason
+        ));
+      elsif v_reason is not null then
+        v_business := v_business || jsonb_build_array(jsonb_build_object(
+          'grupo', v_group.group_key, 'sobrevivente', v_group.survivor,
+          'absorvido', v_absorbed, 'etapa_final', v_group.final_stage,
+          'outcome', 'refused', 'motivo_recusa', v_reason
+        ));
+      else
+        begin
+          v_result := public.fn_juntar_negocios_mesma_pessoa(
+            p_organization_id, v_group.survivor, v_absorbed
+          );
+          v_business := v_business || jsonb_build_array(
+            jsonb_build_object('grupo', v_group.group_key) || v_result
+          );
+        exception when others then
+          v_business := v_business || jsonb_build_array(jsonb_build_object(
+            'grupo', v_group.group_key, 'sobrevivente', v_group.survivor,
+            'absorvido', v_absorbed, 'etapa_final', v_group.final_stage,
+            'outcome', 'refused', 'motivo_recusa', sqlerrm
+          ));
+        end;
+      end if;
+    end loop;
+  end loop;
+
+  return jsonb_build_object(
+    'simular', p_simular,
+    'contatos', v_contacts,
+    'negocios', v_business
+  );
+end;
+$$;
+
+revoke execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean)
+  from public, anon;
+grant execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean)
+  to service_role;
+
+notify pgrst, 'reload schema';
 
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
@@ -30779,3 +32323,12 @@ begin
     end if;
   end loop;
 end $$;
+
+-- ---- junção operacional só por serviço (migration 0309) ----
+-- As funções de lote são ferramentas operacionais, chamadas por service_role.
+-- Não há consumidor da sessão authenticated; o desfazer segue acessível ao gerente.
+revoke execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid) from public, anon, authenticated;
+revoke execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean) from public, anon, authenticated;
+grant execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid) to service_role;
+grant execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean) to service_role;
+notify pgrst, 'reload schema';

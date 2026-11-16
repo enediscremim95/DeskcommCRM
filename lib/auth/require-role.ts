@@ -1,3 +1,4 @@
+import { AuthTemporariamenteIndisponivel } from "./get-user-com-backoff";
 /**
  * Helper ÚNICO de autorização por role nas rotas /api/v1 (spec 13 §4 — G2-01).
  *
@@ -65,7 +66,13 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
     organizationId,
   } = opts;
 
-  const user = await loadAuthUser();
+  let user: AuthUser | null;
+  try {
+    user = await loadAuthUser();
+  } catch (error) {
+    if (!(error instanceof AuthTemporariamenteIndisponivel)) throw error;
+    return { ok: false, response: fail("service_unavailable", error.message, 503, { requestId, headers: { "Retry-After": "1" } }) };
+  }
   if (!user) {
     return { ok: false, response: fail("unauthenticated", "Auth required.", 401, { requestId }) };
   }

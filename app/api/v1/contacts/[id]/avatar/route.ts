@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 /**
  * GET /api/v1/contacts/{id}/avatar — serve a foto de perfil do contato.
  *
@@ -44,7 +45,7 @@ const SIGNED_TTL_SECONDS = 300;
  */
 const BROWSER_CACHE_SECONDS = 240;
 
-export async function GET(
+async function GETComAuth(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -92,3 +93,5 @@ export async function GET(
     },
   });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

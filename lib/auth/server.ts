@@ -1,3 +1,4 @@
+import { getUserComBackoff } from "./get-user-com-backoff";
 import { lerInterface } from "@/lib/navigation/interface";
 /**
  * Server-side auth helpers — load AuthUser, resolve active org, gate routes.
@@ -77,77 +78,12 @@ function escolherMembroAtivo(
  * - organizations: id IN fn_user_org_ids()  (orgs_select)
  * - platform_admins: only platform admins read (so non-admins get null — correct)
  */
-/**
- * "Não havia sessão nenhuma" — o estado NORMAL, não um incidente.
- *
- * `getUser()` não devolve `error: null` para quem não está logado. Sem cookie de
- * sessão, `GoTrueClient._getUser` corta antes de falar com o GoTrue e devolve
- * `{ data: { user: null }, error: new AuthSessionMissingError() }` (status 400).
- * Medido em `@supabase/auth-js` 2.112.1, com um cookie store vazio:
- *
- *     user  = null
- *     error = AuthSessionMissingError: Auth session missing! (status=400)
- *
- * Isso importa porque **não há `middleware.ts` neste projeto**: o gate de
- * `/app/*` é o próprio `app/app/layout.tsx`, que chama `loadAuthUser()` e só
- * então redireciona. Ou seja, todo visitante deslogado — e todo crawler — passa
- * por aqui sem sessão. Logar esse caso como erro reintroduziria, do lado do log,
- * exatamente a ambiguidade que o bloco acima existe para desfazer: o estado
- * normal e a falha transitória voltariam a ser a mesma linha, agora afogadas em
- * volume de tráfego anônimo.
- *
- * Compara por `name` e não por `instanceof`: há DUAS cópias de `@supabase/auth-js`
- * na árvore (2.111.0 e 2.112.1 em `node_modules/.pnpm`), e `instanceof` só acerta
- * quando o erro vem da mesma cópia que o teste importou.
- */
-export function ehSessaoAusente(error: { name?: string } | null | undefined): boolean {
-  return error?.name === "AuthSessionMissingError";
-}
+export { ehSessaoAusente } from "./get-user-com-backoff";
 
 export async function loadAuthUser(): Promise<AuthUser | null> {
   const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  // ⚠️ O `error` era DESCARTADO — nem chegava a ser desestruturado —, e aqui
-  // `user: null` é tão ambíguo quanto o `data: null` que a query logo abaixo
-  // trata com todo o cuidado: significa "não está logado" (estado normal) E
-  // "não deu para perguntar" (rede, GoTrue fora do ar, token ilegível).
-  //
-  // A ação não muda, e isso é deliberado: sem usuário confirmado, devolver
-  // `null` — e portanto redirecionar para o login — é o desfecho seguro.
-  // Falhar FECHADO na ação continua certo. O que estava errado era falhar
-  // fechado também na INFORMAÇÃO: quem investigasse depois via só uma pessoa
-  // "deslogada", sem nada distinguindo isso de uma falha transitória.
-  //
-  // Custou caro uma vez: um vermelho de e2e em que a barra lateral "perdeu o
-  // logo" foi, por eliminação, uma casca de app que não era a casca do app —
-  // e a hipótese nº 1 é justamente um redirect nascido aqui. Com este log, a
-  // próxima ocorrência se explica sozinha em vez de custar uma investigação.
-  //
-  // ⚠️ MAS NEM TODO `error` AQUI É INCIDENTE — e é por isso que `ehSessaoAusente`
-  // existe. Ver o comentário dela: sem esse filtro, este log dispara em todo
-  // visitante deslogado e refaz, do lado do log, a mesma fusão que este bloco
-  // existe para desfazer.
-  if (error && !ehSessaoAusente(error)) {
-    // As chaves são as MESMAS do outro `logger.error` desta função (linha ~134):
-    // `code` e `message`. Dois nomes para o mesmo conceito, dentro da mesma
-    // função, obrigariam quem consulta o agregador a escrever duas buscas — num
-    // conserto cujo objeto é diagnóstico.
-    //
-    // `name` viaja junto porque é o que separa as CLASSES: `AuthRetryableFetchError`
-    // (rede, GoTrue fora do ar) de `AuthApiError` (token ilegível). Ambas podem
-    // chegar com o mesmo `status`, e a mensagem vem em inglês do upstream — sem o
-    // nome, distinguir as duas viraria regex sobre texto que muda entre versões.
-    logger.error("[auth] getUser falhou — tratando como não autenticado", {
-      name: error.name,
-      code: error.code ?? null,
-      status: error.status ?? null,
-      message: error.message,
-    });
-  }
-  if (!user) return null;
+  const { data: { user }, error } = await getUserComBackoff(() => supabase.auth.getUser());
+  if (error || !user) return null;
 
   // Platform admin? (active = no revoked_at). RLS returns null for non-admins.
   //

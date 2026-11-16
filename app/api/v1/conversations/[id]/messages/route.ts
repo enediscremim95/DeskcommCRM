@@ -1,3 +1,6 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * GET /api/v1/conversations/[id]/messages — histórico de mensagens (handler
  * em /app/api/v1/messages/_handler.ts → listMessagesHandler).
@@ -21,7 +24,7 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+async function GETComAuth(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: conversationId } = await ctx.params;
   const supabase = await createClient();
@@ -29,7 +32,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
@@ -76,9 +79,12 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       { requestId, meta: { cursor, has_more } },
     );
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });
     }
     throw err;
   }
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

@@ -35,6 +35,9 @@ export function ImpersonateBanner({ impersonating, ended = false }: {
     try {
       const res = await fetch("/api/v1/admin/impersonate/end", { method: "POST" });
       if (!res.ok) throw new Error("Não foi possível encerrar o acompanhamento. Tente novamente.");
+      // Consuma a confirmação inteira antes de recarregar: só os cabeçalhos
+      // chegam antes do fim do request, que a navegação poderia cancelar.
+      await res.json();
       notifySupportTransition();
       window.location.assign("/app/kanban");
     } catch (error) {

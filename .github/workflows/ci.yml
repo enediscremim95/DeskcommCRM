@@ -13,7 +13,7 @@ on:
 # nenhum passo `run:` enxerga o token — ele só entra no ambiente via
 # `secrets.GITHUB_TOKEN`, que não aparece em nenhum destes workflows.
 #
-# No topo, e não por job, porque os dois jobs precisam do mesmo escopo e job
+# No topo, e não por job, porque todos os jobs precisam do mesmo escopo e job
 # acrescentado depois nasce restrito em vez de herdar o default do repositório.
 # Esse default hoje é `read` (medido em actions/permissions/workflow), então isto
 # não corrige vazamento em vigor: tira a garantia de uma configuração que muda
@@ -23,9 +23,30 @@ permissions:
   contents: read
 
 jobs:
+  # A suíte inteira usa a partição nativa do Vitest, sem filtro de arquivos.
+  # No run 43798384617 os 1.029 arquivos passaram em 707s, mas a soma com
+  # typecheck/lint/shell excedeu os 15 min. Cada parte mantém esse mesmo teto;
+  # verify só aceita a matriz inteira bem-sucedida, inclusive se uma parte falhar.
+  unitarios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        parte: [1, 2]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/preparar-node
+        timeout-minutes: 5
+      - name: Unitários — parte ${{ matrix.parte }} de 2
+        run: pnpm test:unit --shard=${{ matrix.parte }}/2
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: [unitarios]
+    # Falha/cancelamento/skip da matriz precisa gerar verify vermelho, não skipped.
+    if: always()
     steps:
       - uses: actions/checkout@v7
 
@@ -47,10 +68,6 @@ jobs:
       - name: Channel provider leak
         run: pnpm lint:channels
 
-      - name: Unit tests
-        run: pnpm test:unit
-
-
       # Scripts do kit self-host num repo git descartável (docker/crontab
       # dublados). É o único gate que exercita o update.sh — um erro aqui
       # rebobina a instalação de quem hospeda, e nenhum teste TS o veria.
@@ -62,6 +79,10 @@ jobs:
       # deixava o .env pela metade — passaram por todos os checks verdes. 15s.
       - name: Kit self-host (bash)
         run: pnpm test:shell
+
+      - name: Exigir sucesso de todas as partes unitárias
+        run: |
+          [ "${{ needs.unitarios.result }}" = "success" ]
 
   # Gate de isolamento multi-tenant + invariantes de governança.
   # Job separado de propósito: roda em paralelo ao verify (não atrasa o feedback

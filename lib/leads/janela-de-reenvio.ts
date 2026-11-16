@@ -3,15 +3,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 
 import { emitLeadActivity } from "./activity-emitter";
-import {
-  minutosDaJanelaDeReenvio,
-} from "./janela-de-reenvio-config";
+import { minutosDaJanelaDeReenvio } from "./janela-de-reenvio-config";
 
 /**
- * O primeiro corte medido em produção que separa o bloco curto do bloco diário.
- * Até 1 hora havia 63 pares; acima dela havia 56, distribuídos de horas a dias.
- * O valor não tenta adivinhar intenção depois desse corte e pode ser afinado por
- * organização em Configurações da empresa.
+ * Prazo da trava que segura dois primeiros cards nascendo juntos.
+ *
+ * Não decide mais se um negócio já aberto recebe a entrada: isso é
+ * `buscarNegocioAbertoNoFunil`, sem limite de tempo. O número continua
+ * afinável em Configurações da empresa e o piso medido segue 60 minutos.
  */
 export const INDICE_JANELA_REENVIO = "uniq_crm_leads_reentry_guard";
 export const CHAVE_REENVIO_CANAL_INBOUND = "canal:inbound";
@@ -46,12 +45,67 @@ async function configuracaoDaJanela(db: SupabaseClient, organizationId: string):
   return minutosDaJanelaDeReenvio(data?.settings);
 }
 
+export interface NegocioAbertoCandidato {
+  id: string;
+  last_activity_at: string | Date | null;
+  created_at: string | Date;
+}
+
+function instante(valor: string | Date | null | undefined): number {
+  if (valor == null) return 0;
+  const t = valor instanceof Date ? valor.getTime() : new Date(valor).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+/**
+ * Qual negócio aberto recebe a entrada automática.
+ *
+ * Mais recentemente ativo; no empate, o criado por último; ainda empatados, o
+ * id maior. A escolha tem de ser determinística: recusar o empate aqui criaria
+ * mais um card, que é o defeito que esta função existe para impedir. Não junta
+ * nem apaga os outros abertos.
+ */
+export function escolherNegocioAberto(candidatos: NegocioAbertoCandidato[]): string | null {
+  if (candidatos.length === 0) return null;
+  const ordenados = [...candidatos].sort((a, b) => {
+    const porAtividade =
+      instante(b.last_activity_at ?? b.created_at) - instante(a.last_activity_at ?? a.created_at);
+    if (porAtividade !== 0) return porAtividade;
+    const porCriacao = instante(b.created_at) - instante(a.created_at);
+    if (porCriacao !== 0) return porCriacao;
+    if (a.id === b.id) return 0;
+    return a.id < b.id ? 1 : -1;
+  });
+  return ordenados[0]!.id;
+}
+
+/**
+ * Negócio aberto do mesmo contato, no mesmo funil, nesta organização.
+ *
+ * Não olha idade nem a chave da janela. Negócio fechado, de outro funil, de
+ * outro contato ou de outra organização não entra.
+ */
+export async function buscarNegocioAbertoNoFunil(
+  db: SupabaseClient,
+  args: { organizationId: string; contactId: string; pipelineId: string },
+): Promise<string | null> {
+  const { data, error } = await db
+    .from("crm_leads")
+    .select("id, last_activity_at, created_at")
+    .eq("organization_id", args.organizationId)
+    .eq("contact_id", args.contactId)
+    .eq("pipeline_id", args.pipelineId)
+    .eq("status", "open");
+  if (error) throw new Error(`negocio_aberto_buscar: ${error.message}`);
+  return escolherNegocioAberto((data ?? []) as NegocioAbertoCandidato[]);
+}
+
 /**
  * Lê o card recente e prepara a trava da tentativa de INSERT.
  *
- * A leitura sozinha não decide a corrida. O índice parcial no banco deixa
- * exatamente uma tentativa com `reentry_guard_until` vencer; as demais relêem
- * esse vencedor. Cards mais antigos continuam abertos e válidos.
+ * Quem chama esta função já olhou o negócio aberto no mesmo funil. Aqui só
+ * resta a corrida do primeiro card: o índice parcial deixa exatamente uma
+ * tentativa com `reentry_guard_until` vencer; as demais relêem esse vencedor.
  */
 export async function prepararEntradaNaJanela(
   db: SupabaseClient,
