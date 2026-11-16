@@ -1,72 +1,71 @@
-import {
-  Bricolage_Grotesque,
-  Plus_Jakarta_Sans,
-  Fraunces,
-  Manrope,
-  Atkinson_Hyperlegible,
-  Source_Serif_4,
-  IBM_Plex_Sans,
-  IBM_Plex_Mono,
-  JetBrains_Mono,
-} from "next/font/google";
+import localFont from "next/font/local";
 
 // Note: next/font requires module-level constants; we expose all 4 pair vars
 // at once. CSS swaps via --font-display / --font-body / --font-mono picker.
 
-export const bricolage = Bricolage_Grotesque({
-  subsets: ["latin"],
+export const bricolage = localFont({
+  src: "../../fonts/bricolagegrotesque/BricolageGrotesque[opsz,wdth,wght].woff2",
+  weight: "200 800",
   display: "swap",
   variable: "--font-bricolage",
 });
 
-export const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
+export const jakarta = localFont({
+  src: "../../fonts/plusjakartasans/PlusJakartaSans[wght].woff2",
+  weight: "200 800",
   display: "swap",
   variable: "--font-jakarta",
 });
 
-export const fraunces = Fraunces({
-  subsets: ["latin"],
+export const fraunces = localFont({
+  src: "../../fonts/fraunces/Fraunces[SOFT,WONK,opsz,wght].woff2",
+  weight: "100 900",
   display: "swap",
   variable: "--font-fraunces",
-  axes: ["SOFT", "WONK", "opsz"],
 });
 
-export const manrope = Manrope({
-  subsets: ["latin"],
+export const manrope = localFont({
+  src: "../../fonts/manrope/Manrope[wght].woff2",
+  weight: "200 800",
   display: "swap",
   variable: "--font-manrope",
 });
 
-export const atkinson = Atkinson_Hyperlegible({
-  subsets: ["latin"],
-  weight: ["400", "700"],
+export const atkinson = localFont({
+  src: [
+    { path: "../../fonts/atkinsonhyperlegible/AtkinsonHyperlegible-Regular.woff2", weight: "400", style: "normal" },
+    { path: "../../fonts/atkinsonhyperlegible/AtkinsonHyperlegible-Bold.woff2", weight: "700", style: "normal" },
+  ],
   display: "swap",
   variable: "--font-atkinson",
 });
 
-export const sourceSerif = Source_Serif_4({
-  subsets: ["latin"],
+export const sourceSerif = localFont({
+  src: "../../fonts/sourceserif4/SourceSerif4[opsz,wght].woff2",
+  weight: "200 900",
   display: "swap",
   variable: "--font-source-serif",
 });
 
-export const plexSans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
+export const plexSans = localFont({
+  src: "../../fonts/ibmplexsans/IBMPlexSans[wdth,wght].woff2",
+  weight: "300 700",
   display: "swap",
   variable: "--font-plex-sans",
 });
 
-export const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+export const plexMono = localFont({
+  src: [
+    { path: "../../fonts/ibmplexmono/IBMPlexMono-Regular.woff2", weight: "400", style: "normal" },
+    { path: "../../fonts/ibmplexmono/IBMPlexMono-Medium.woff2", weight: "500", style: "normal" },
+  ],
   display: "swap",
   variable: "--font-plex-mono",
 });
 
-export const jetbrains = JetBrains_Mono({
-  subsets: ["latin"],
+export const jetbrains = localFont({
+  src: "../../fonts/jetbrainsmono/JetBrainsMono[wght].woff2",
+  weight: "100 800",
   display: "swap",
   variable: "--font-jetbrains",
 });
