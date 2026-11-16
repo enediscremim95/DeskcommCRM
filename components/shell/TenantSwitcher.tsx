@@ -28,6 +28,20 @@ export function destinoAposTroca(pipelineId?: string): string {
   return pipelineId && /^[0-9a-f-]{36}$/i.test(pipelineId) ? `/app/pipelines/${pipelineId}` : "/app/kanban";
 }
 
+/** Teto da troca: acima disto a sobreposição "Carregando…" vira erro com saída. */
+export const PRAZO_DA_TROCA_MS = 20_000;
+
+/** Rejeita se `promessa` não resolver em `ms` — a Server Action não é abortável. */
+export function comPrazo<T>(promessa: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("troca_excedeu_o_prazo")), ms);
+    promessa.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e: unknown) => { clearTimeout(timer); reject(e instanceof Error ? e : new Error(String(e))); },
+    );
+  });
+}
+
 export function TenantSwitcher() {
   const t = useT();
   const user = useUser();
@@ -36,10 +50,10 @@ export function TenantSwitcher() {
   const [isPending, setPending] = useState(false);
   const [busca, setBusca] = useState("");
   const switchTo = async (orgId: string) => {
-    if (orgId === active?.orgId) return;
+    if (orgId === active?.orgId || isPending) return;
     flushSync(() => { setPending(true); transition.begin(t("Carregando organização…")); });
     try {
-      const result = await setActiveOrg(orgId);
+      const result = await comPrazo(setActiveOrg(orgId), PRAZO_DA_TROCA_MS);
       if (!result.ok) throw new Error(result.error);
       // Novo documento elimina QueryClient, subscriptions e respostas em voo.
       window.location.assign(destinoAposTroca(result.pipelineId));

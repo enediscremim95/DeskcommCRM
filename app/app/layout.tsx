@@ -2,7 +2,7 @@ import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff
 import { InterfaceRefresh } from "@/hooks/auth/InterfaceRefresh";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { isMfaEnrolled, loadAuthUser, requiresMfa, resolveActiveOrg } from "@/lib/auth/server";
+import { isMfaEnrolled, loadAuthUserDaRequisicao, requiresMfa, resolveActiveOrg } from "@/lib/auth/server";
 import { DEFAULT_VISIBILITY_MODE, type VisibilityMode } from "@/lib/auth/types";
 import { AuthProvider } from "@/hooks/auth/AuthProvider";
 import { AppShell } from "./_components/AppShell";
@@ -28,7 +28,7 @@ import { BrowserExtensionHeartbeat } from "./_components/BrowserExtensionHeartbe
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   let user;
   try {
-    user = await loadAuthUser();
+    user = await loadAuthUserDaRequisicao();
   } catch (error) {
     if (!(error instanceof AuthTemporariamenteIndisponivel)) throw error;
     return <main role="alert" className="p-8"><p>{error.message}</p><a href="">Tentar novamente</a></main>;

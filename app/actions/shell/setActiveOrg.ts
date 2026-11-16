@@ -5,10 +5,17 @@ import { loadAuthUser, mfaEmDivida } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { audit } from "@/lib/audit";
+import { AuthIndisponivelError } from "@/lib/auth/auth-indisponivel";
 
 export async function setActiveOrg(orgId: string): Promise<{ ok: boolean; error?: string; pipelineId?: string }> {
   if (!z.string().uuid().safeParse(orgId).success) return { ok: false, error: "invalid_organization" };
-  const user = await loadAuthUser();
+  let user;
+  try {
+    user = await loadAuthUser();
+  } catch (error) {
+    if (error instanceof AuthIndisponivelError) return { ok: false, error: "auth_unavailable" };
+    throw error;
+  }
   if (!user) return { ok: false, error: "auth_required" };
   if (user.support) return { ok: false, error: "Encerre o acompanhamento antes de trocar de organização." };
   if (await mfaEmDivida()) return { ok: false, error: "mfa_required" };

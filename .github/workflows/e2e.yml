@@ -587,6 +587,7 @@ jobs:
       # todas. Os 3 arquivos que o cancelamento impediu de medir vêm junto, porque
       # eles são justamente o fim da fila.
       SPECS_PARTE_3: >-
+        troca-de-organizacao-em-sequencia.spec.ts
         aparencias.spec.ts
         atendimento-fluxo-real.spec.ts
         autonomia-assistida.spec.ts

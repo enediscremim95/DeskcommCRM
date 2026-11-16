@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { getUserComBackoff } from "./get-user-com-backoff";
 import { lerInterface } from "@/lib/navigation/interface";
 /**
@@ -221,6 +222,8 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
  * Priority: cookie `active_org` (if member of) → first membership.
  * Returns null if user has zero memberships.
  */
+export const loadAuthUserDaRequisicao = cache(loadAuthUser);
+
 export async function resolveActiveOrg(authUser: AuthUser): Promise<ActiveOrg | null> {
   if (authUser.support) {
     if (authUser.support.status !== "active") redirect("/support-ended");
@@ -246,7 +249,7 @@ export async function resolveActiveOrg(authUser: AuthUser): Promise<ActiveOrg | 
  * an authenticated user. Redirects to /login if not.
  */
 export async function requireAuth(): Promise<AuthUser> {
-  const user = await loadAuthUser();
+  const user = await loadAuthUserDaRequisicao();
   if (!user) redirect("/login");
   return user;
 }
