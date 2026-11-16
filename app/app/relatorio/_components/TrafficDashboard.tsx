@@ -158,7 +158,7 @@ interface ReportResponse {
       };
     currencies: CurrencyGroup[];
   };
-  error?: { message?: string };
+  error?: { message?: string; details?: { reason?: string } };
 }
 
 function columnsForPlatform(
@@ -1737,13 +1737,27 @@ export function TrafficDashboard() {
     let active = true;
     fetch(`/api/v1/reports/traffic?from=${window.from}&to=${window.to}`, {
       signal: controller.signal,
-      headers: { accept: "application/json" },
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        ...(activeOrg?.orgId ? { "x-report-organization": activeOrg.orgId } : {}),
+      },
     })
       .then(async (response) => {
         const body = (await response.json()) as ReportResponse;
+        if (!active) return;
+        if (
+          response.status === 409 &&
+          body.error?.details?.reason === "active_organization_changed"
+        ) {
+          // Recarrega título, permissões e consultas juntos, usando o cookie atual.
+          globalThis.window.location.reload();
+          return;
+        }
         if (!response.ok)
           throw new Error(body.error?.message ?? t("Não foi possível carregar o relatório."));
         if (active) {
+          setError(null);
           setReport(body.data);
           setVisiblePriorityMetrics(
             body.data.priority_metrics ?? defaultPriorityMetrics(body.data.model),
@@ -1757,6 +1771,7 @@ export function TrafficDashboard() {
       })
       .catch((cause: unknown) => {
         if (active && (cause as { name?: string }).name !== "AbortError") {
+          setReport(null);
           setError(
             cause instanceof Error ? cause.message : t("Não foi possível carregar o relatório."),
           );
@@ -1927,7 +1942,11 @@ export function TrafficDashboard() {
               <p className="mt-1 text-sm text-muted-foreground">
                 {dataUntil
                   ? `${t("Dados até")} ${dataUntil}`
-                  : t("Aguardando a primeira sincronização.")}
+                  : error
+                    ? t("Não foi possível carregar o relatório.")
+                    : loading
+                      ? t("Carregando…")
+                      : t("Aguardando a primeira sincronização.")}
               </p>
             </div>
             {/* Fixa no lugar que o dono escolheu arrastando (21/09/2026): alinhada ao
