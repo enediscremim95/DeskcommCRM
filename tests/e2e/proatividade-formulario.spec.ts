@@ -57,6 +57,7 @@ test("primeiro contato nasce desligado e permite editar textos sem ativar envios
   const field = page
     .getByRole("group", { name: "Primeiro contato de formulário" })
     .filter({ visible: true });
+  await field.waitFor({state:"visible"});
   await expect(field.getByRole("checkbox")).not.toBeChecked();
   await expect(field.locator("#proactive-attempts")).toHaveValue("3");
   await field.locator("#proactive-channel").selectOption({ label: "Canal sintético" });
