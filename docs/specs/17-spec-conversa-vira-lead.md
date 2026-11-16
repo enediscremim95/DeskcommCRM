@@ -80,12 +80,15 @@ mensagem chega → contato (existe) → [LEAD]  ← a peça nova
                               kanban · timeline · Operador · follow-up
 ```
 
-**Quando:** primeira mensagem **inbound** de um contato que não tem lead aberto.
+**Quando:** primeira mensagem **inbound** de um contato que não tem lead aberto no funil de entrada.
 **Onde:** funil `is_default` da organização, etapa de menor `position`.
 **Quem:** o runtime, determinístico — não o modelo (mesma razão do checkpoint imposto na spec 16).
 
 **Não nasce lead** quando: é grupo (`@g.us`), o contato está bloqueado/opt-out, ou já existe lead
-aberto para ele. Cada recusa é registrada — silêncio não distingue "não devia" de "falhou".
+aberto para ele **nesse funil**. Aberto em outro funil não bloqueia. Negócio encerrado libera
+o próximo. Criar um card de propósito (tela, API ou ferramenta do agente) não passa por esta
+regra e pode abrir outro negócio ao lado. Cada recusa é registrada — silêncio não distingue
+"não devia" de "falhou". O reenvio do formulário no mesmo funil segue a mesma regra.
 
 ---
 

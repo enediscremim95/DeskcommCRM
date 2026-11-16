@@ -22,7 +22,10 @@
 
 /** Só dígitos, sem `+`. */
 function digitsOf(raw: string): string {
-  return raw.replace(/\D/g, "");
+  const digits = raw.replace(/\D/g, "");
+  // Captação brasileira também aceita DDD + número, sem código do país.
+  return !raw.trim().startsWith("+") && /^(?:[1-9][0-9][2-9][0-9]{7}|[1-9][0-9]9[0-9]{8})$/.test(digits)
+    ? `55${digits}` : digits;
 }
 
 /**
