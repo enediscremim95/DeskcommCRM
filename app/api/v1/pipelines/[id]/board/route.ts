@@ -481,28 +481,43 @@ async function withNextActions(
   };
 }
 
-async function enrichLeads(
+/**
+ * Os quatro enriquecimentos (agente dono, próxima ação, score, conversa) leem
+ * só a lista original de leads e cada um acrescenta um campo próprio — nenhum
+ * lê o que o outro escreveu. Rodavam em SÉRIE (4+ idas ao banco, cada uma em
+ * lotes), e era o que deixava o quadro 4–8 s em "Carregando…" ao trocar de
+ * organização. Agora disparam juntos e o resultado é mesclado por posição.
+ */
+export async function enrichLeads(
   supabase: Awaited<ReturnType<typeof createClient>>,
   organizationId: string,
   leads: Lead[],
   defaultPipelineId: string | null,
 ): Promise<{ leads: Lead[]; error: string | null }> {
-  const leadsWithOwner = await withOwnerAgents(supabase, organizationId, leads);
-  if (leadsWithOwner.error) return leadsWithOwner;
+  const [owner, acao, score, conversa] = await Promise.all([
+    withOwnerAgents(supabase, organizationId, leads),
+    withNextActions(supabase, organizationId, leads, defaultPipelineId),
+    withScores(supabase, organizationId, leads),
+    withConversas(supabase, organizationId, leads),
+  ]);
+  const error = owner.error ?? acao.error ?? score.error ?? conversa.error;
+  if (error) return { leads, error };
 
-  const leadsComAcao = await withNextActions(
-    supabase,
-    organizationId,
-    leadsWithOwner.leads,
-    defaultPipelineId,
-  );
-  if (leadsComAcao.error) return leadsComAcao;
-
-  const leadsComScore = await withScores(supabase, organizationId, leadsComAcao.leads);
-  if (leadsComScore.error) return leadsComScore;
-
-  const leadsComConversa = await withConversas(supabase, organizationId, leadsComScore.leads);
-  return leadsComConversa;
+  return {
+    leads: leads.map((lead, i) => {
+      const merged: Lead = { ...lead };
+      const o = owner.leads[i]!;
+      const a = acao.leads[i]!;
+      const sc = score.leads[i]!;
+      const c = conversa.leads[i]!;
+      if (o.owner_agent !== lead.owner_agent) merged.owner_agent = o.owner_agent;
+      if (a.next_action !== lead.next_action) merged.next_action = a.next_action;
+      if (sc.score !== lead.score) merged.score = sc.score;
+      if (c.conversa !== lead.conversa) merged.conversa = c.conversa;
+      return merged;
+    }),
+    error: null,
+  };
 }
 
 async function GETComAuth(req: NextRequest, ctx: RouteCtx): Promise<Response> {

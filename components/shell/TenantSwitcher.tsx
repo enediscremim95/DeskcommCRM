@@ -23,6 +23,11 @@ import { setActiveOrg } from "@/app/actions/shell/setActiveOrg";
  */
 const MINIMO_PARA_BUSCAR = 6;
 
+/** Direto no quadro do funil padrão quando o servidor já o informou. */
+export function destinoAposTroca(pipelineId?: string): string {
+  return pipelineId && /^[0-9a-f-]{36}$/i.test(pipelineId) ? `/app/pipelines/${pipelineId}` : "/app/kanban";
+}
+
 export function TenantSwitcher() {
   const t = useT();
   const user = useUser();
@@ -37,7 +42,7 @@ export function TenantSwitcher() {
       const result = await setActiveOrg(orgId);
       if (!result.ok) throw new Error(result.error);
       // Novo documento elimina QueryClient, subscriptions e respostas em voo.
-      window.location.assign("/app/kanban");
+      window.location.assign(destinoAposTroca(result.pipelineId));
     } catch {
       transition.cancel();
       setPending(false);
