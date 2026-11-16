@@ -1,3 +1,5 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -9,10 +11,10 @@ import { audit } from "@/lib/audit";
 import { IMPERSONATE_COOKIE_NAME } from "@/lib/impersonate/cookie";
 
 /** A própria sessão pode sair depois de expiração/revogação de plataforma. */
-export async function POST() {
+async function POSTComAuth() {
   const requestId = randomUUID();
   const db = await createClient();
-  const { data: { user } } = await db.auth.getUser();
+  const { data: { user } } = await getUserComBackoff(() => db.auth.getUser());
   if (!user) return fail("unauthenticated", "Entre novamente.", 401, { requestId });
   const { data: claims } = await db.auth.getClaims();
   const sessionId = claims?.claims.session_id;
@@ -29,3 +31,5 @@ export async function POST() {
     metadata: { auth_session_id: sessionId, support_session_id: session.id, access_mode: session.access_mode } });
   return ok({ ended: !!session?.id, redirect_url: "/app/kanban" }, { requestId });
 }
+
+export const POST = comAuthDisponivel(POSTComAuth);

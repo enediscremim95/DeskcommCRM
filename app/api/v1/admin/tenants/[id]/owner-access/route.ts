@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -8,12 +10,13 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { provisionOwnerAccess } from "@/lib/auth/provision-owner-access";
 import { ok, fail } from "@/lib/api/wrappers";
 
-export async function POST(_req: Request, context: { params: Promise<{ id: string }> }) {
+async function POSTComAuth(_req: Request, context: { params: Promise<{ id: string }> }) {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
   let ctx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
-  try { ctx = await requirePlatformAdmin(); } catch {
+  try { ctx = await requirePlatformAdmin(); } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Acesso de administrador necessário.", 403, { requestId });
   }
   if (ctx.platformAdmin.scope !== "full") return fail("forbidden", "Acesso de administrador necessário.", 403, { requestId });
@@ -24,7 +27,7 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
 }
 
 /** Estado recuperável depois de recarregar a tela, sem projetar segredo ou e-mail. */
-export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
+async function GETComAuth(_req: Request, context: { params: Promise<{ id: string }> }) {
   const requestId = randomUUID();
   try {
     const ctx = await requirePlatformAdmin();
@@ -40,7 +43,11 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
       login_url: `${env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/login`,
       retryable: data.status === "pending",
     } : null }, { requestId });
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Acesso de administrador necessário.", 403, { requestId });
   }
 }
+
+export const POST = comAuthDisponivel(POSTComAuth);
+export const GET = comAuthDisponivel(GETComAuth);

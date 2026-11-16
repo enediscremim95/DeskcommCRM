@@ -13,6 +13,7 @@ interface E2EOutboxMessage {
   subject: string;
   html: string;
   text?: string;
+  attachments?: Array<{ filename: string; content: string; contentType: string }>;
 }
 
 function isLocalUrl(value: string): boolean {

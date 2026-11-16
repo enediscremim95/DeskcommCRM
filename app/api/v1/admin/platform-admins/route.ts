@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { type NextRequest } from "next/server";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -17,13 +19,14 @@ const T04_MESSAGE =
 // GET /api/v1/admin/platform-admins
 // ---------------------------------------------------------------------------
 
-export async function GET(_req: NextRequest) {
+async function GETComAuth(_req: NextRequest) {
   const requestId = randomUUID();
 
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
@@ -212,3 +215,5 @@ export type PlatformAdminRow = Awaited<
 > extends Response
   ? never
   : never;
+
+export const GET = comAuthDisponivel(GETComAuth);

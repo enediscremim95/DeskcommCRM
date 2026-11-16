@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { type NextRequest } from "next/server";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -168,7 +170,7 @@ function auditOverallStatus(lagSeconds: number | null): HealthStatus {
 // GET /api/v1/admin/tenants/[id]/health
 // ---------------------------------------------------------------------------
 
-export async function GET(
+async function GETComAuth(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -178,7 +180,8 @@ export async function GET(
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
@@ -328,3 +331,5 @@ export async function GET(
 
   return ok(health, { requestId });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

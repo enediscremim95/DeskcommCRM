@@ -1,3 +1,4 @@
+import { AuthTemporariamenteIndisponivel } from "./get-user-com-backoff";
 /**
  * G2-01 — helper único de autorização (spec 13 §4).
  *
@@ -245,4 +246,13 @@ describe("requireRole — helper único (spec 13 §4)", () => {
     if (!granted.ok) throw new Error("unreachable");
     expect(granted.org.orgId).toBe(ORG_ID);
   });
+});
+
+it("indisponibilidade de auth devolve 503, nunca 401", async () => {
+  vi.mocked(loadAuthUser).mockRejectedValueOnce(new AuthTemporariamenteIndisponivel());
+  const res = await requireRole("viewer");
+  expect(res.ok).toBe(false);
+  if (res.ok) throw new Error("unreachable");
+  expect(res.response.status).toBe(503);
+  expect(res.response.headers.get("Retry-After")).toBe("1");
 });

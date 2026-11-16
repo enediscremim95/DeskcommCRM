@@ -54,6 +54,7 @@ export function CartaoDaConexaoGoogle({
   configurado,
   falta,
   contaConectada,
+  conexaoExpirada,
   enderecoDeRetorno,
   linkDeConfiguracao,
 }: {
@@ -67,6 +68,7 @@ export function CartaoDaConexaoGoogle({
   /** O que falta, PELO NOME — para a tela dizer em vez de só esconder o botão. */
   falta: string[];
   contaConectada?: string | null;
+  conexaoExpirada?: boolean;
   /** O endereço EXATO que o Google exige registrado. Ver o bloco no JSX. */
   enderecoDeRetorno?: string;
 }) {
@@ -74,6 +76,24 @@ export function CartaoDaConexaoGoogle({
   const router = useRouter();
   const podeExcluir = usePermission("resource.delete");
   const [desconectando, setDesconectando] = React.useState(false);
+
+  if (contaConectada && conexaoExpirada) {
+    return (
+      <div
+        data-testid="google-token-expirado"
+        role="alert"
+        className="flex flex-col gap-3 rounded-lg border border-red-500 bg-red-50 p-3 text-red-900 sm:flex-row sm:items-center"
+      >
+        <p className="min-w-0 flex-1 text-sm">
+          {t("Google desconectado")}{" "}
+          {t("Não foi possível validar a conexão. Os agendamentos continuam com link próprio.")}
+        </p>
+        <a href="/api/v1/agenda/google/connect" className="text-sm font-medium underline">
+          {t("Reconectar")}
+        </a>
+      </div>
+    );
+  }
 
   if (!configurado) {
     return (
