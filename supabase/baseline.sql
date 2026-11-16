@@ -32197,6 +32197,10 @@ grant execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boo
 
 notify pgrst, 'reload schema';
 
+-- ---- origem do follow-up por silêncio (migration 0311) ----
+-- Origem explícita para aplicar opt-in sem alterar follow-ups agendados existentes.
+alter table public.followup_enrollments add column if not exists automatic_silence boolean not null default false;
+
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
 do $$
