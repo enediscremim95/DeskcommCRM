@@ -156,7 +156,7 @@ export function FormularioDeTarefa({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="tarefa-dia">{t("Prazo")}</Label>
               <Input
@@ -178,7 +178,7 @@ export function FormularioDeTarefa({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="tarefa-prioridade">{t("Prioridade")}</Label>
               <Select
