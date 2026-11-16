@@ -67,6 +67,8 @@ export async function mirrorLeadStageToCrm(
       passo: input.toStage,
     });
 
+    if (r.motivo === 'decisao_humana_obrigatoria') return { ok: false, reason: 'not_configured', detail: 'Etapas e desfechos são decisões humanas.' };
+
     if (r.moveu || r.motivo === 'ja_esta_la') return { ok: true };
 
     // Cada motivo vira o rótulo que DIZ A VERDADE sobre ele. Os três primeiros

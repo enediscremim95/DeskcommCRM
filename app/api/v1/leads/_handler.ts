@@ -1,3 +1,4 @@
+import { requireHumanKanban } from "@/lib/leads/human-kanban";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
 /**
@@ -249,6 +250,17 @@ export async function createLeadHandler(
     reentry_guard_key?: string;
   },
 ): Promise<Record<string, unknown>> {
+  if (ctx.actor.type !== "user") {
+    const { data: entry, error } = await supabase.from("crm_stages")
+      .select("id").eq("organization_id", ctx.organization_id)
+      .eq("pipeline_id", input.pipeline_id).eq("is_archived", false)
+      .eq("is_won", false).eq("is_lost", false)
+      .order("position", { ascending: true }).order("id", { ascending: true })
+      .limit(1).maybeSingle();
+    if (error || !entry) throw new ApiError(422, "validation_failed", undefined, ctx.requestId,
+      "O funil precisa de uma etapa de entrada aberta.");
+    input = { ...input, stage_id: entry.id };
+  }
   // Validate stage belongs to pipeline within active org.
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
@@ -582,6 +594,7 @@ export async function moveLeadHandler(
   leadId: string,
   input: MoveLeadAdminInput,
 ): Promise<Record<string, unknown>> {
+  requireHumanKanban(ctx);
   const { data: lead, error: selErr } = await supabase
     .from("crm_leads")
     .select("*")

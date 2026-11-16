@@ -1,0 +1,17 @@
+# Autoridade do Kanban — pedido de 16/11/2026
+
+Regra vigente: somente uma pessoa decide etapa e desfecho. IA/automação pode criar na primeira etapa aberta; nunca move, fecha ou reabre negócio existente. Esta regra substitui o espelhamento descrito na spec 16 e nas waves de sincronização do agente.
+
+Caminhos conferidos: os dois webhooks WAHA delegam a `lib/waha/ingest.ts`, que cria via `garantirLeadDaConversa` (não atualiza etapa). `createLeadHandler` força a entrada para ator automático. A ação legada `create_or_move_lead` preserva qualquer negócio existente, inclusive fechado. `sincronizaEstagioDoAgente`, `moverLeadParaEtapaDeHandoff` e `moverLeadParaEtapaDeAgendamento` devolvem decisão humana obrigatória sem ler/escrever o banco. Os handlers compartilhados de movimento, encerramento e reabertura e o arquivamento de etapa recusam atores automáticos. Bearer MCP é integração, inclusive sem escopo explícito de IA.
+
+O risk-watcher observa risco e produz propostas; `lead_reactivated` com payload de/para em_dia/em_risco/critico não é reabertura de Kanban. Scheduler, follow-up e workers não ganham permissão de etapa. O trigger de fechamento continua derivando ganho/perda em movimentos humanos; o novo trigger final recusa alterações protegidas com JWT service_role/anon, inclusive chamadas de função em lote. SQL administrativo direto permanece ferramenta de manutenção: a credencial de superusuário não deve ser exposta a agentes externos.
+
+Living System Checklist: entrada = evento WAHA/estado interno/handoff/agendamento; saída = conversa, atribuição e propostas existentes, com card preservado; registro = recusa 403 nos handlers e motivo explícito nos adaptadores; tela/porta = Kanban e timeline existentes; configuração = regra global, sem opt-out; continuidade = handoff existente preservado; anti-morte = radar e follow-up existentes preservados; retorno = testes de regressão e erro SQL 42501 para impedir nova mutação. Não há componente novo no grafo, apenas remoção de arestas automáticas para `crm_leads.stage_id`.
+
+Auditoria de produção realizada somente leitura, fora do git: `/root/backups/kanban-revert-20261116/`. Nenhuma atribuição a IA foi inferida só pela proximidade de mensagens. Nenhum dado foi devolvido. Não houve deploy nem migration aplicada na produção.
+
+## Revisão global do lote 2
+
+Fonte: pedido do Enedi, 16/11/2026 11:16. Auditoria READ ONLY em 16/11: 8 de 8 organizações com dashboard nativo configurado, habilitado e sync_status=ready. Apquita Autos, Bendito Ponto, Imobiliária A, Imobiliária Sul, Lecote, Sublimando PR e Sublimando Santa Catarina usam modelo leads; Rota Automotiva usa messages. Campos de conversão variam por organização e são preservados, sem normalização indevida. Configurações e presets são selecionados por organização autenticada. PR #231 já está na main, e sua precondição de organização não contém exceção por cliente. Teste regressivo agora cobre troca nas duas direções.
+
+A trava humana do lote anterior estava no commit local 49ceb51c, sem PR e sem aplicação na produção. Foi recuperada nesta branch, sem o script privado de harness, e sua migration renumerada para 0310 para não colidir com a 0306 do PR #221. Produção ainda não contém fn_guard_kanban_human; este PR não afirma que a proteção já esteja implantada. Nenhum deploy ou alteração de configuração foi executado. Testes por ator e por organizações distintas cobrem a regra incondicional.
