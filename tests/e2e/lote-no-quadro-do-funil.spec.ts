@@ -201,7 +201,17 @@ test.describe("Quadro do funil — agir em vários cards de uma vez", () => {
       position_in_stage: 5000,
       source: "manual",
     });
-    const { error: erroLeads } = await admin.from("crm_leads").insert(linhas);
+    // O card já no destino representa uma decisão humana anterior. Service
+    // role só pode criar na entrada; a fixture usa o mesmo manager da tela.
+    const humano = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { error: erroLogin } = await humano.auth.signInWithPassword({
+      email: creds.users.manager!.email,
+      password: creds.password,
+    });
+    if (erroLogin) throw new Error(`login da fixture: ${erroLogin.message}`);
+    const { error: erroLeads } = await humano.from("crm_leads").insert(linhas);
     if (erroLeads) throw new Error(`leads: ${erroLeads.message}`);
   });
 
