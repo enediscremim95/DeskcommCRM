@@ -339,7 +339,7 @@ test("marcar pela ficha grava no lead exato e retira o horário livre", async ({
   const lead = (await leadRes.json()) as ApiOk<{ id: string }>;
 
   await page.goto(`/app/leads/${lead.data.id}`);
-  await expect(page.getByTestId("next-lead-tasks")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("next-lead-tasks").filter({ visible: true })).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "Marcar compromisso" }).click();
   await expect(page.getByTestId("painel-de-marcacao")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: new RegExp(`^${creds.agenda.tipo_nome}`) }).click();
