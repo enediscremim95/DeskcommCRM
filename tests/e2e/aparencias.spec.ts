@@ -22,13 +22,14 @@ test("aparência acompanha navegação, reload, menus e celular", async ({ page 
     await page.getByRole("radio", { name: theme.name, exact: true }).check();
     await expect(page.locator("html")).toHaveAttribute("data-appearance", theme.id);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme.mode);
-    await expect(page.locator('input[name="appearance"]:checked')).toHaveCount(1);
+    await expect(page.locator('input[name="appearance"]:checked:visible')).toHaveCount(1);
     await page.reload();
     await expect(page.getByRole("radio", { name: theme.name, exact: true })).toBeChecked();
     await expect(page.locator("body")).toHaveCSS("background-color", theme.bg);
     await page.screenshot({ path: path.join(evidence, `${theme.id}.png`), fullPage: true });
-    await page.getByRole("link", { name: "Ver nas conversas", exact: true }).click();
-    await expect(page).toHaveURL(/\/app\/inbox/);
+    await page.getByRole("link", { name: "Voltar ao aplicativo", exact: true }).click();
+    // A entrada canônica termina nos Funis; Inbox exige conversa vinculada.
+    await expect(page).toHaveURL(/\/app\/pipelines\//);
     await expect(page.locator("html")).toHaveAttribute("data-appearance", theme.id);
     await page.getByRole("link", { name: "Aparência", exact: true }).click();
   }

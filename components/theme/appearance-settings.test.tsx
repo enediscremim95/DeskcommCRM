@@ -26,8 +26,8 @@ it("seleciona uma aparência por teclado e grava a preferência aplicada", async
   await user.keyboard("{ArrowRight}");
   expect(screen.getByRole("radio", { name: "ChatGPT claro" })).toBeChecked();
   expect(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBe("chatgpt-light");
-  expect(screen.getByRole("link", { name: "Ver nas conversas" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Voltar ao aplicativo" })).toHaveAttribute(
     "href",
-    "/app/inbox",
+    "/app",
   );
 });
