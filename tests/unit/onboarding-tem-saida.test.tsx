@@ -75,7 +75,7 @@ describe("a saída do wizard", () => {
     fireEvent.click(screen.getByTestId("sair-do-onboarding"));
 
     await waitFor(() => expect(setActiveOrg).toHaveBeenCalledWith("o1"));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/app/inbox"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/app/kanban"));
   });
 
   it("com várias, vira menu — e cada organização é um destino", async () => {

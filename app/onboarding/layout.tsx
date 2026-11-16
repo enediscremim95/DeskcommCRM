@@ -15,14 +15,14 @@ export default async function OnboardingLayout({ children }: { children: React.R
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   // Acompanhamento observa a organização incompleta no shell com saída explícita.
-  if (user.support) redirect("/app/inbox");
+  if (user.support) redirect("/app/kanban");
   // Sem organização o onboarding não tem o que mostrar — mas mandar para
   // `/login` fechava o círculo: quem entrasse de novo voltaria para cá. A saída
   // é a tela que CRIA a organização que falta.
   if (!activeOrg) redirect("/get-started");
 
   const { state, onboardedAt } = await loadOnboardingState(activeOrg.orgId);
-  if (onboardedAt) redirect("/app/inbox");
+  if (onboardedAt) redirect("/app/kanban");
 
   // Os passos que ESTA instalação oferece, com o que já foi resolvido. O
   // indicador não decide mais nada sozinho — ele desenha o que recebe.

@@ -6,7 +6,7 @@ export default async function SupportEndedPage() {
   const user = await loadAuthUser();
   if (!user) redirect("/login");
   const t = (text: string) => traduzir(text, user.idioma);
-  if (!user.support) redirect("/app/inbox");
+  if (!user.support) redirect("/app/kanban");
   return <main className="min-h-screen bg-background">
     <ImpersonateBanner ended impersonating={{tenantId: user.support.organization_id,
       tenantName: user.support.name, expiresAt: user.support.expires_at}} />

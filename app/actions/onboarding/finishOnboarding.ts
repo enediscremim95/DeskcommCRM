@@ -60,5 +60,5 @@ export async function finishOnboarding(): Promise<FinishOnboardingResult> {
     });
   }
 
-  redirect("/app/inbox");
+  redirect("/app/kanban");
 }

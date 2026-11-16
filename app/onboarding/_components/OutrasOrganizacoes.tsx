@@ -60,7 +60,7 @@ export function OutrasOrganizacoes({
       try {
         const r = await setActiveOrg(id);
         if (!r.ok) throw new Error(r.error);
-        window.location.assign("/app/inbox");
+        window.location.assign("/app/kanban");
       } catch {
         transition.cancel();
         toast.error(t("Não foi possível trocar de organização. Tente novamente."));

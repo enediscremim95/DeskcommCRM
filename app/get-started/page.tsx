@@ -25,7 +25,7 @@ export default async function GetStartedPage() {
   const activeOrg = await resolveActiveOrg(user);
   // Quem já tem organização não passa por aqui: sem isto, a tela viraria um
   // "abra outra empresa" alcançável por quem digitasse a URL.
-  if (activeOrg) redirect("/app/inbox");
+  if (activeOrg) redirect("/app/kanban");
 
   // O nome da empresa que a pessoa digitou no cadastro mora no `user_metadata`,
   // que `AuthUser` não carrega — e alargar `AuthUser` por causa de uma tela de
