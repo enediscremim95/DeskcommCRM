@@ -648,43 +648,6 @@ async function handleInbound(
   );
   if (!contactId) return;
 
-  // Só a PRIMEIRA entrada de um número novo é elegível. A RPC reconhece a
-  // marca gravada atomicamente no nascimento do contato, procura apenas nesta
-  // organização e remove a marca em qualquer desfecho. Se houver ambiguidade,
-  // ela alimenta a fila que a tela de duplicados já mostra.
-  const reconciliacao = await reconciliarContatoWhatsappComFormulario(admin, {
-    organizationId: session.organization_id,
-    whatsappContactId: contactId,
-    externalMessageId: p.id,
-  });
-  if (reconciliacao?.outcome === "merged") {
-    await audit({
-      action: "contact.merged",
-      organizationId: session.organization_id,
-      resourceType: "contact",
-      resourceId: contactId,
-      requestId,
-      metadata: {
-        automatic: true,
-        rule: "ultimos_8_digitos_7_dias_nome_compativel",
-        form_contact_id: reconciliacao.form_contact_id,
-        merge_queue_id: reconciliacao.merge_queue_id,
-      },
-    });
-  } else if (reconciliacao?.outcome === "suggestion") {
-    await audit({
-      action: "contact.merge_pending",
-      organizationId: session.organization_id,
-      resourceType: "contact",
-      resourceId: contactId,
-      requestId,
-      metadata: {
-        reason: reconciliacao.motivo,
-        merge_queue_id: reconciliacao.merge_queue_id,
-      },
-    });
-  }
-
   // Best-effort: o dado do anúncio (se houver) vai embutido na PRÓPRIA
   // mensagem que o app do cliente manda ao clicar num anúncio "Clique para o
   // WhatsApp" — não é exclusivo da API oficial. NUNCA verificado contra um
@@ -753,6 +716,11 @@ async function handleInbound(
     const existente = await mensagemIngeridaPorExternalId(admin, session.organization_id, p.id);
     if (existente) {
       try {
+        await reconciliarContatoWhatsappComFormulario(admin, {
+          organizationId: session.organization_id,
+          whatsappContactId: existente.contact_id,
+          externalMessageId: p.id,
+        });
         await acelerarPipelineDeEventos(admin, {
           organizationId: session.organization_id,
           contactId: existente.contact_id,
@@ -768,6 +736,44 @@ async function handleInbound(
       }
     }
     return;
+  }
+
+  // Só a PRIMEIRA entrada de um número novo é elegível. A regra por nome
+  // precisa da primeira mensagem persistida; a regra antiga dos oito dígitos
+  // continua sendo avaliada primeiro dentro da RPC. Se houver ambiguidade, a
+  // função alimenta a fila que a tela de duplicados já mostra.
+  const reconciliacao = await reconciliarContatoWhatsappComFormulario(admin, {
+    organizationId: session.organization_id,
+    whatsappContactId: contactId,
+    externalMessageId: p.id,
+  });
+  if (reconciliacao?.outcome === "merged") {
+    await audit({
+      action: "contact.merged",
+      organizationId: session.organization_id,
+      resourceType: "contact",
+      resourceId: contactId,
+      requestId,
+      metadata: {
+        automatic: true,
+        rule: reconciliacao.regra ?? "ultimos_8_digitos_7_dias_nome_compativel",
+        form_contact_id: reconciliacao.form_contact_id,
+        merge_queue_id: reconciliacao.merge_queue_id,
+      },
+    });
+  } else if (reconciliacao?.outcome === "suggestion") {
+    await audit({
+      action: "contact.merge_pending",
+      organizationId: session.organization_id,
+      resourceType: "contact",
+      resourceId: contactId,
+      requestId,
+      metadata: {
+        reason: reconciliacao.motivo,
+        rule: reconciliacao.regra,
+        merge_queue_id: reconciliacao.merge_queue_id,
+      },
+    });
   }
 
   await markConversation(admin, session.organization_id, conversationId, "inbound", previewFromMessage(p), p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now);
