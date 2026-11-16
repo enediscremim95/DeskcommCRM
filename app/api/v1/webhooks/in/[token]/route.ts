@@ -17,6 +17,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
 import {
   alimentarLeadExistente,
+  buscarNegocioAbertoNoFunil,
   buscarVencedorDaJanela,
   chaveDaJanelaDaFonte,
   ehColisaoDaJanela,
@@ -633,52 +634,85 @@ async function processInbound(
     source.merge_repeated_submissions === true,
   );
   try {
-    const entrada =
-      contactId && chaveDaJanela
-        ? await prepararEntradaNaJanela(admin, {
-            organizationId: source.organization_id,
-            contactId,
-            guardKey: chaveDaJanela,
-          })
-        : null;
+    // Negócio já aberto neste funil recebe o reenvio, sem prazo e sem depender
+    // da opção da fonte. A opção continua só para a corrida de dois primeiros
+    // envios. Card novo de propósito segue pela tela, pela API ou pelo agente;
+    // negócio fechado, ou aberto em outro funil, também abre card novo.
+    const negocioAberto = contactId
+      ? await buscarNegocioAbertoNoFunil(admin, {
+          organizationId: source.organization_id,
+          contactId,
+          pipelineId: source.default_pipeline_id,
+        })
+      : null;
 
-    if (entrada?.existente && contactId) {
+    if (negocioAberto && contactId) {
       lead = await alimentarLeadExistente(admin, {
         organizationId: source.organization_id,
-        leadId: entrada.leadId,
+        leadId: negocioAberto,
         contactId,
         sourceModule: "webhook",
         sourceId: source.id,
         actor: { type: "webhook_source", id: source.id },
-        reason: "Nova captação recebida dentro da janela de reenvio.",
+        reason: "Nova captação recebida no negócio que já estava aberto neste funil.",
         customFields: leadInput.custom_fields,
         sourceMetadata: leadInput.source_metadata,
         tags: leadInput.tags,
         payload: {
           webhook_source_id: source.id,
           external_id: externalId,
-          collision_recovered: false,
+          negocio_aberto: true,
         },
       });
       juntadoNaJanela = true;
     } else {
-      lead = await createLeadHandler(
-        admin,
-        {
-          organization_id: source.organization_id,
+      const entrada =
+        contactId && chaveDaJanela
+          ? await prepararEntradaNaJanela(admin, {
+              organizationId: source.organization_id,
+              contactId,
+              guardKey: chaveDaJanela,
+            })
+          : null;
+
+      if (entrada?.existente && contactId) {
+        lead = await alimentarLeadExistente(admin, {
+          organizationId: source.organization_id,
+          leadId: entrada.leadId,
+          contactId,
+          sourceModule: "webhook",
+          sourceId: source.id,
           actor: { type: "webhook_source", id: source.id },
-          requestId,
-        },
-        {
-          ...leadInput,
-          ...(entrada && !entrada.existente
-            ? {
-                reentry_guard_until: entrada.guardUntil,
-                reentry_guard_key: entrada.guardKey,
-              }
-            : {}),
-        },
-      );
+          reason: "Nova captação recebida dentro da janela de reenvio.",
+          customFields: leadInput.custom_fields,
+          sourceMetadata: leadInput.source_metadata,
+          tags: leadInput.tags,
+          payload: {
+            webhook_source_id: source.id,
+            external_id: externalId,
+            collision_recovered: false,
+          },
+        });
+        juntadoNaJanela = true;
+      } else {
+        lead = await createLeadHandler(
+          admin,
+          {
+            organization_id: source.organization_id,
+            actor: { type: "webhook_source", id: source.id },
+            requestId,
+          },
+          {
+            ...leadInput,
+            ...(entrada && !entrada.existente
+              ? {
+                  reentry_guard_until: entrada.guardUntil,
+                  reentry_guard_key: entrada.guardKey,
+                }
+              : {}),
+          },
+        );
+      }
     }
   } catch (err) {
     if (contactId && chaveDaJanela && ehColisaoDaJanela(err)) {
