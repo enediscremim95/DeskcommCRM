@@ -93,7 +93,7 @@ class FakeQuery implements PromiseLike<QResult> {
   }
 
   order(col: string, opts: { ascending: boolean }): this {
-    this.orderCol = col;
+    this.orderCol = this.orderCol ? `${this.orderCol} ${this.orderAsc ? "asc" : "desc"}, ${col}` : col;
     this.orderAsc = opts.ascending;
     return this;
   }
@@ -390,19 +390,13 @@ describe("assign_owner (Task 9)", () => {
 });
 
 describe("create_or_move_lead (Task 9)", () => {
-  it("6. contexto com lead + stage2 do mesmo pipeline — move, evento request_id prefixado rule:", async () => {
+  it("6. automação preserva card existente e não emite movimento", async () => {
+    const before = leadRow(LEAD_T9).stage_id;
     const executor = getAction("create_or_move_lead")!;
-    const ctx = baseCtx({ lead: leadRow(LEAD_T9) });
-    const result = await executor.execute(ctx, { pipeline_id: GOV_PIPELINE, stage_id: STAGE_2 });
-    expect(result.status).toBe("success");
-    expect(leadRow(LEAD_T9).stage_id).toBe(STAGE_2);
-
-    const found = rows(
-      `select metadata from public.event_log where event_type = 'lead.stage_changed' and entity_id = '${LEAD_T9}' order by created_at desc limit 1`,
-    );
-    expect(found.length).toBe(1);
-    const metadata = found[0]!.metadata as Record<string, unknown>;
-    expect(String(metadata.request_id ?? "")).toBe(`rule:${RULE_ID}`);
+    const result = await executor.execute(baseCtx({ lead: leadRow(LEAD_T9) }), { pipeline_id: GOV_PIPELINE, stage_id: STAGE_2 });
+    expect(result.status).toBe("skipped");
+    expect(leadRow(LEAD_T9).stage_id).toBe(before);
+    expect(rows(`select id from public.event_log where event_type='lead.stage_changed' and entity_id='${LEAD_T9}'`)).toHaveLength(0);
   });
 
   it("7. contexto só com contact — cria lead novo, lead.created carrega request_id rule:", async () => {
@@ -416,7 +410,8 @@ describe("create_or_move_lead (Task 9)", () => {
     const created = leadRow(createdId);
     expect(created.contact_id).toBe(CONTACT_T9);
     expect(created.pipeline_id).toBe(GOV_PIPELINE);
-    expect(created.stage_id).toBe(GOV_STAGE);
+    const entry = rows(`select id from crm_stages where pipeline_id='${GOV_PIPELINE}' and not is_archived and not is_won and not is_lost order by position,id limit 1`)[0]!;
+    expect(created.stage_id).toBe(entry.id);
 
     const found = rows(
       `select metadata from public.event_log where event_type = 'lead.created' and entity_id = '${createdId}' order by created_at desc limit 1`,
