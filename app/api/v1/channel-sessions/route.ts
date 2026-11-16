@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/channel-sessions — lista os canais WhatsApp da org (do DB).
@@ -32,7 +34,7 @@ export const dynamic = "force-dynamic";
 export const CHANNEL_COLUMNS =
   "id, waha_session_name, display_name, phone_number, status, status_reason, last_health_check_at, last_status_change_at, daily_message_limit, is_warmup_complete, created_at";
 
-export async function GET(): Promise<Response> {
+async function GETComAuth(): Promise<Response> {
   const requestId = randomUUID();
   const user = await loadAuthUser();
   if (!user) return fail("unauthenticated", "Auth required.", 401, { requestId });
@@ -70,7 +72,7 @@ export async function GET(): Promise<Response> {
   });
 }
 
-export async function POST(req: NextRequest): Promise<Response> {
+async function POSTComAuth(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const supportDenied = await requireSupportWrite();
   if (supportDenied) {
@@ -128,7 +130,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   let raw: unknown = {};
   try {
     raw = await req.json();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     raw = {};
   }
   const parsed = createChannelSchema.safeParse(raw ?? {});
@@ -153,9 +156,13 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
     return ok(result.channel, { requestId, status: result.replay ? 200 : 201 });
   } catch (error) {
+    if (error instanceof AuthTemporariamenteIndisponivel) throw error;
     if (error instanceof ChannelConnectionError) return fail(error.code,
       error.code === "connection_in_progress" ? t("A conexão ainda está sendo preparada. Aguarde e tente novamente.") : t("Não foi possível concluir a conexão. Abra Conexões para tentar novamente ou reparar o número."),
       error.status, { requestId, details: error.technical });
     return fail("internal_error", t("Não foi possível concluir a conexão. Tente novamente."), 500, { requestId });
   }
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const POST = comAuthDisponivel(POSTComAuth);

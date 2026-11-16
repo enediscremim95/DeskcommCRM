@@ -1,3 +1,6 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * GET /api/v1/pipelines/[id]/board
  *
@@ -70,7 +73,8 @@ function decodeBoardCursor(raw: string): BoardCursor | null {
     const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as BoardCursor;
     if (!Number.isFinite(parsed.position) || typeof parsed.id !== "string") return null;
     return parsed;
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return null;
   }
 }
@@ -480,7 +484,7 @@ async function enrichLeads(
   return leadsComConversa;
 }
 
-export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+async function GETComAuth(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: pipelineId } = await ctx.params;
 
@@ -488,7 +492,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
@@ -634,3 +638,5 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   return ok(board, { requestId });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

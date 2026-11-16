@@ -1,4 +1,6 @@
 "use server";
+
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -8,7 +10,7 @@ export async function signOut(): Promise<void> {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
 
   const hdrs = await headers();
   await supabase.auth.signOut();

@@ -116,11 +116,11 @@ function fixture(
       },
       then: (resolve: (r: unknown) => unknown) => {
         if (mode === "insert") {
-          if (tables[table].some((r) => r.lead_id === patch.lead_id && r.phase === patch.phase))
+          if (tables[table]!.some((r) => r.lead_id === patch.lead_id && r.phase === patch.phase))
             return Promise.resolve({ data: null, error: { code: "23505" } }).then(resolve);
-          tables[table].push({ ...patch, outcome: "started", created_at: now.toISOString() });
+          tables[table]!.push({ ...patch, outcome: "started", created_at: now.toISOString() });
         }
-        const rows = tables[table].filter((r) => filters.every(([k, v]) => r[k] === v));
+        const rows = tables[table]!.filter((r) => filters.every(([k, v]) => r[k] === v));
         if (mode === "update") rows.forEach((r) => Object.assign(r, patch));
         return Promise.resolve({ data: single ? (rows[0] ?? null) : rows, error: null }).then(
           resolve,
@@ -148,7 +148,7 @@ describe("handler real com transportes mockados", () => {
       for (let i = 0; i < 3; i++) await processarFormulario(f.db, event(org), now);
       expect(mocks.send).toHaveBeenCalledTimes(2);
       expect(mocks.email).toHaveBeenCalledOnce();
-      expect(f.tables.form_proactivity_attempts.map((a) => a.outcome)).toEqual([
+      expect(f.tables.form_proactivity_attempts!.map((a) => a.outcome)).toEqual([
         "failed",
         "failed",
         "sent",

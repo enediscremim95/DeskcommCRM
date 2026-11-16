@@ -109,7 +109,7 @@ export async function processarFormulario(
           .eq("organization_id", org)
           .eq("contact_id", contactId)
           .or(
-            `direction.eq.inbound,and(direction.eq.outbound,created_at.gte.${lead.created_at},status.neq.failed)`,
+            `direction.eq.inbound,and(direction.eq.outbound,created_at.gte.${lead.created_at},status.neq.failed,or(metadata->>form_proactivity_lead_id.is.null,metadata->>form_proactivity_lead_id.neq.${lead.id}))`,
           )
           .limit(1),
       ]);

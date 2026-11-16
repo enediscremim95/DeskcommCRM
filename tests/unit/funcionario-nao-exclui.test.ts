@@ -3,6 +3,8 @@ import { join, relative } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
+import { corpoDoHandlerExportado } from "./helpers/corpo-de-handler-http";
+
 import {
   replacementRemovesValues,
   roleHasPermission,
@@ -23,24 +25,48 @@ function caminho(file: string): string {
   return relative(ROOT, file).replaceAll("\\", "/");
 }
 
-function corpoDoDelete(source: ts.SourceFile): ts.Node | null {
+function exportaDelete(source: ts.SourceFile): boolean {
+  return source.statements.some((node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === "DELETE") return true;
+    if (!ts.isVariableStatement(node)) return false;
+    return node.declarationList.declarations.some(
+      (declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === "DELETE",
+    );
+  });
+}
+
+function acusarFormaNaoSuportadaDeDelete(source: ts.SourceFile, path: string): void {
   for (const statement of source.statements) {
-    if (ts.isFunctionDeclaration(statement) && statement.name?.text === "DELETE") {
-      return statement.body ?? null;
+    if (!ts.isExportDeclaration(statement)) continue;
+    if (statement.moduleSpecifier && statement.exportClause === undefined) {
+      throw new Error(
+        `Forma de export de DELETE não suportada em ${path}: export * from '...'.`,
+      );
     }
-    if (!ts.isVariableStatement(statement)) continue;
-    for (const declaration of statement.declarationList.declarations) {
-      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "DELETE") continue;
-      if (
-        declaration.initializer &&
-        (ts.isArrowFunction(declaration.initializer) ||
-          ts.isFunctionExpression(declaration.initializer))
-      ) {
-        return declaration.initializer.body;
-      }
+    if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue;
+    for (const element of statement.exportClause.elements) {
+      if (element.name.text !== "DELETE") continue;
+      const origem = statement.moduleSpecifier ? " from '...'" : "";
+      const alias = element.propertyName ? `${element.propertyName.text} as ` : "";
+      throw new Error(
+        `Forma de export de DELETE não suportada em ${path}: export { ${alias}DELETE }${origem}.`,
+      );
     }
   }
-  return null;
+}
+
+// Sem export de DELETE, devolve null (a rota não entra nesta varredura).
+// Com DELETE exportado e corpo invisível, lança: pular seria falhar aberto.
+function corpoDoDelete(source: ts.SourceFile, path: string): ts.Node | null {
+  acusarFormaNaoSuportadaDeDelete(source, path);
+  if (!exportaDelete(source)) return null;
+  const corpo = corpoDoHandlerExportado(source, "DELETE");
+  if (!corpo) {
+    throw new Error(
+      `Não foi possível ler o corpo do DELETE em ${path}; a varredura não pode pulá-lo.`,
+    );
+  }
+  return corpo;
 }
 
 function pisoHumanoBaixo(body: ts.Node): "viewer" | "agent" | null {
@@ -123,7 +149,7 @@ describe("Atendente não exclui recursos", () => {
         true,
         ts.ScriptKind.TS,
       );
-      const body = corpoDoDelete(source);
+      const body = corpoDoDelete(source, caminho(file));
       if (!body) continue;
       const role = pisoHumanoBaixo(body);
       if (role) encontrados.set(caminho(file), role);
@@ -131,6 +157,38 @@ describe("Atendente não exclui recursos", () => {
 
     expect([...encontrados.keys()].sort()).toEqual([...isencoes.keys()].sort());
     expect([...isencoes.values()].every((motivo) => motivo.length > 20)).toBe(true);
+  });
+
+  it.each([
+    ['export { handle as DELETE };', /export \{ handle as DELETE \}/],
+    ['export { DELETE } from "./handle";', /export \{ DELETE \} from/],
+    ['export { handle as DELETE } from "./handle";', /export \{ handle as DELETE \} from/],
+    ['export * from "./handle";', /export \* from/],
+  ])("falha quando a forma de export de DELETE não é suportada: %s", (codigo, padrao) => {
+    const path = "app/api/v1/exemplo-reexport/route.ts";
+    const source = ts.createSourceFile(
+      path,
+      codigo,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    expect(() => corpoDoDelete(source, path)).toThrow(padrao);
+    expect(() => corpoDoDelete(source, path)).toThrow(/não suportada/);
+  });
+
+  it("falha quando o DELETE é exportado mas o corpo não é visível à varredura", () => {
+    const path = "app/api/v1/exemplo-opaco/route.ts";
+    const source = ts.createSourceFile(
+      path,
+      'import { handle } from "./handle";\nexport const DELETE = handle;\n',
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    expect(() => corpoDoDelete(source, path)).toThrow(
+      /Não foi possível ler o corpo do DELETE em app\/api\/v1\/exemplo-opaco\/route\.ts/,
+    );
   });
 
   it("a exclusão de lead por POST também passa pelo gate antes do efeito", () => {
@@ -162,8 +220,17 @@ describe("Atendente não exclui recursos", () => {
   });
 
   it("a rota DELETE de contato exige lead.delete, não a permissão geral do admin", () => {
-    const source = readFileSync(join(ROOT, "app/api/v1/contacts/[id]/route.ts"), "utf8");
-    const deleteHandler = source.slice(source.indexOf("export async function DELETE"));
+    const file = join(ROOT, "app/api/v1/contacts/[id]/route.ts");
+    const source = ts.createSourceFile(
+      file,
+      readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const corpo = corpoDoHandlerExportado(source, "DELETE");
+    expect(corpo, "handler DELETE de contato não encontrado").not.toBeNull();
+    const deleteHandler = corpo!.getText(source);
     expect(deleteHandler).toContain('requirePermission("lead.delete"');
     expect(deleteHandler).not.toContain('requirePermission("resource.delete"');
   });

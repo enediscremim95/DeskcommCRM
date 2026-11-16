@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { classifyRisk, resolveStageWindow, type RiskBucket } from "@/lib/leads/risk-radar";
 import { sinceDoBucket } from "@/lib/leads/risk-since";
+import { fetchAllPages } from "@/lib/supabase/fetch-all-pages";
 import {
   IN_FILTER_DEFAULT_BATCH_SIZE,
   queryInBatches,
@@ -116,13 +117,29 @@ async function coletaEClassifica(
   organizationId: string,
   now: Date,
 ): Promise<{ estados: EstadoCalculado[]; semRelogio: number }> {
-  const { data: leadRows, error: leadErr } = await admin
-    .from("crm_leads")
-    .select("id, stage_id, contact_id, last_activity_at, created_at")
-    .eq("organization_id", organizationId)
-    .eq("status", "open");
-  if (leadErr) throw new Error(`seed de risco: ${leadErr.message}`);
-  const leads = (leadRows ?? []) as LeadRow[];
+  // PostgREST corta a resposta em `max_rows` (1000 neste repo, supabase/config.toml).
+  // Sem `range`, uma organização com mais negócios abertos do que o teto era
+  // classificada pela primeira página — e o observador tratava o resto como
+  // travessia nova. A ordem por `id` é estável e única, que é o que a paginação
+  // exige para não pular nem repetir linha entre páginas.
+  let leadRows: LeadRow[];
+  try {
+    leadRows = await fetchAllPages<LeadRow>(
+      (from, to) =>
+        admin
+          .from("crm_leads")
+          .select("id, stage_id, contact_id, last_activity_at, created_at")
+          .eq("organization_id", organizationId)
+          .eq("status", "open")
+          .order("id", { ascending: true })
+          .range(from, to),
+      { resource: "crm_leads.abertos", logContext: { organizationId } },
+    );
+  } catch (causa) {
+    const message = causa instanceof Error ? causa.message : String(causa);
+    throw new Error(`seed de risco: ${message}`);
+  }
+  const leads = leadRows;
 
   const stageIds = [...new Set(leads.map((l) => l.stage_id).filter(Boolean))];
   const janelaPorEstagio = new Map<string, ReturnType<typeof resolveStageWindow>>();

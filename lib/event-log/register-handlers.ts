@@ -24,6 +24,7 @@ import { webPushInboundHandler } from "@/lib/notifications/push.handler";
 import { leadEmailNotificationHandler } from "@/lib/notifications/email.handler";
 import { conversaoDeVendaHandler } from "@/lib/conversoes/envio.handler";
 import { registerHandler } from "@/lib/event-log/dispatcher";
+import { ownerIcsInviteHandler } from "@/lib/agenda/owner-ics-invite.handler";
 
 let _registered = false;
 
@@ -48,6 +49,7 @@ export function ensureHandlersRegistered(): void {
   registerHandler(mediaDeriveHandler);
   registerHandler(webPushInboundHandler);
   registerHandler(leadEmailNotificationHandler);
+  registerHandler(ownerIcsInviteHandler);
   // Por último: reportar a venda ao anúncio é o consumidor mais externo do
   // fechamento — depende de rede de terceiro e não pode atrasar quem escreve
   // no banco. Falha dele nunca segura os handlers acima.

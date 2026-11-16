@@ -362,6 +362,7 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261106160000` | `0305_fila_primeira_mensagem_imagens` | Amplia o snapshot da fila para até treze bolhas de texto ou imagem, preservando arrays antigos de strings e o progresso idempotente por índice. |
 
 | `20261116180000` | `0311_proatividade_formulario` | Tentativas duráveis de primeiro contato; isoladas por org, sem backfill, desligado por padrão. |
+| `20261115160001` | `0308_agenda_link_jitsi_sem_google` | Mantém o agendamento confirmado com sala Jitsi quando o Google não está utilizável, valida os dois provedores no banco e enfileira o convite ICS somente ao responsável. |
 | `20261110120000` | `0307_juntar_mesma_pessoa` | Mantém a reconciliação pelos oito dígitos e acrescenta o nome completo extraído da primeira mensagem como segunda regra, com sugestão humana nos casos ambíguos. Na regra nova, o contato do WhatsApp assume o nome digitado no formulário e preserva o nome anterior do perfil no metadado e no snapshot de desfazer. Cria uma junção contextual sob demanda e por organização, preserva etapa avançada, campos, tags, origem e referências, amplia o desfazer com o estado anterior do sobrevivente e oferece lote com simulação sem escrita. O número 0306 já estava ocupado na branch remota `feat/inbox-fase-1b`. |
 
 | `20261116021900` | `0309_juncao_operacional_so_servico` | Revoga as duas funções operacionais de junção de authenticated, PUBLIC e anon; mantém service_role e o desfazer gerencial existente. Não há call site de usuário para estas funções. |

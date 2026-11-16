@@ -11,6 +11,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 export interface MeetingDetail {
   state: string;
   url: string | null;
+  provider?: "google" | "jitsi" | null;
   request_id: string | null;
   error: keyof typeof meetingErrors | null;
   delivery_state: string;
@@ -56,7 +57,7 @@ export function MeetDoCompromisso({
   const stateLabel: Record<string, string> = {
     not_requested: "Link ainda não solicitado",
     pending: "Criando link do Google Meet",
-    ready: "Link do Google Meet pronto",
+    ready: meeting.provider === "jitsi" ? "Link da reunião pronto" : "Link do Google Meet pronto",
     failed: "Não foi possível confirmar o link",
     cancelled: "Solicitação de link cancelada",
   };
@@ -70,8 +71,8 @@ export function MeetDoCompromisso({
     failed: "O envio falhou. Confira o canal e tente novamente.",
   };
   return (
-    <section className="mt-3 space-y-3 rounded-md border p-3" aria-label={t("Google Meet")}>
-      <h3 className="text-sm font-medium">Google Meet</h3>
+    <section className="mt-3 space-y-3 rounded-md border p-3" aria-label={t("Reunião por vídeo")}>
+      <h3 className="text-sm font-medium">{t(meeting.provider === "google" ? "Google Meet" : "Reunião por vídeo")}</h3>
       <p role="status" className="text-sm">
         {t(stateLabel[meeting.state] ?? "Link ainda não solicitado")}
       </p>
@@ -108,7 +109,7 @@ export function MeetDoCompromisso({
           {t(meetingErrors[meeting.error])}
         </p>
       )}
-      {meeting.can_manage && meeting.state === "failed" && (
+      {meeting.can_manage && meeting.state === "failed" && meeting.provider !== "jitsi" && (
         <Button
           variant="outline"
           size="sm"
