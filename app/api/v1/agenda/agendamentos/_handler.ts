@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { gerarJitsiVideoUrl } from "@/lib/agenda/jitsi";
-import { googleDestinationUsable } from "@/lib/agenda/google/fallback";
 import type { Json } from "@/lib/database.types";
 /**
  * A REGRA de marcar, remarcar e cancelar — fora da rota, de propósito.
@@ -196,10 +195,8 @@ export async function marcarAgendamentoHandler(
   const precisaDeLink =
     tipo.location_kind === "google_meet" ||
     (tipo.location_kind === "video_link" && !tipo.location_details?.trim());
-  const googleUtilizavel =
-    tipo.location_kind === "google_meet" &&
-    (await googleDestinationUsable(supabase, ctx.organization_id, donoId));
-  const usarJitsi = precisaDeLink && !googleUtilizavel;
+  // O link nasce na transação local; o worker publica no Google como bônus.
+  const usarJitsi = precisaDeLink;
   const jitsiUrl = usarJitsi ? gerarJitsiVideoUrl(input.title ?? tipo.name) : null;
   const booking = precisaDeLink ? ctx.meetingBooking : undefined;
   if (booking && (booking.boundary.organization_id !== ctx.organization_id || booking.boundary.contact_id !== contatoId || ctx.actor.type !== "ai_agent")) {

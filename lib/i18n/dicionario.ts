@@ -9274,6 +9274,8 @@ export const DICIONARIO: Traducoes = {
   "Link do Google Meet pronto": { es: "Enlace de Google Meet listo" },
   "Link da reunião pronto": { es: "Enlace de la reunión listo" },
   "Reunião por vídeo": { es: "Reunión por vídeo" },
+  "Google desconectado": { es: "Google desconectado" },
+  "Não foi possível validar a conexão. Os agendamentos continuam com link próprio.": { es: "No se pudo validar la conexión. Las citas continúan con un enlace propio." },
   "A conexão com o Google expirou. Reconecte a agenda.": { es: "La conexión con Google caducó. Vuelve a conectar la agenda." },
   "Não foi possível confirmar o link": { es: "No se pudo confirmar el enlace" },
   "Solicitação de link cancelada": { es: "Solicitud de enlace cancelada" },

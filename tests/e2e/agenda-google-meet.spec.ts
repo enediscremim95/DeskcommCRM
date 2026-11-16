@@ -18,7 +18,6 @@ const db = createClient(credentials.url, credentials.serviceRole, {
 const password = `Local-${randomUUID()}!`;
 const orgs: string[] = [],
   users: string[] = [];
-const link = "https://meet.google.com/abc-defg-hij";
 test.use({ trace: "on", timezoneId: "America/Sao_Paulo", viewport: { width: 1440, height: 1000 } });
 test.describe.configure({ timeout: 180_000 });
 async function insert(table: string, value: Record<string, unknown>) {
@@ -80,20 +79,18 @@ async function fixture() {
     default_owner_user_id: user,
     is_active: true,
   });
-  const availability = await db
-    .from("attendant_availability")
-    .upsert(
-      {
-        organization_id: org,
-        user_id: user,
-        is_available: true,
-        schedule: {
-          timezone: "America/Sao_Paulo",
-          windows: [0, 1, 2, 3, 4, 5, 6].map((dow) => ({ dow, start: "09:00", end: "18:00" })),
-        },
+  const availability = await db.from("attendant_availability").upsert(
+    {
+      organization_id: org,
+      user_id: user,
+      is_available: true,
+      schedule: {
+        timezone: "America/Sao_Paulo",
+        windows: [0, 1, 2, 3, 4, 5, 6].map((dow) => ({ dow, start: "09:00", end: "18:00" })),
       },
-      { onConflict: "organization_id,user_id" },
-    );
+    },
+    { onConflict: "organization_id,user_id" },
+  );
   if (availability.error) throw availability.error;
   const sessionName = randomUUID();
   const session = await insert("channel_sessions", {
@@ -200,12 +197,13 @@ async function book(page: Page, f: Fixture) {
     contact_id: f.contact,
     conversation_id: f.conversation,
     location_kind: "google_meet",
-    meeting_state: "pending",
+    meeting_state: "ready",
     meeting_delivery: { state: "none" },
   });
+  expect((await row(f, a.id)).meeting_url).toMatch(/^https:\/\/meet[.]jit[.]si\//);
   return a.id as string;
 }
-const meet = (page: Page) => page.locator('section[aria-label="Google Meet"]');
+const meet = (page: Page) => page.locator('section[aria-label="Reunião por vídeo"]');
 async function detail(page: Page, id: string) {
   await page.goto(`/app/agenda?compromisso=${id}`);
   await expect(
@@ -270,6 +268,7 @@ async function capture(page: Page, info: TestInfo, name: string, control: string
 async function googleReceiver() {
   let remote: Record<string, unknown> | null = null,
     version = 0;
+  let failureStatus: number | null = null;
   const requests: Array<{ method: string; body: Record<string, unknown>; path: string }> = [];
   const server = createServer(async (req, res) => {
     let raw = "";
@@ -277,6 +276,11 @@ async function googleReceiver() {
     const body = raw ? JSON.parse(raw) : {};
     requests.push({ method: req.method!, body, path: req.url! });
     res.setHeader("content-type", "application/json");
+    if (failureStatus) {
+      res.statusCode = failureStatus;
+      res.end(JSON.stringify({ error: { code: failureStatus } }));
+      return;
+    }
     if (!req.url?.includes("/events")) {
       res.end(JSON.stringify({ id: "meet-calendar" }));
       return;
@@ -310,22 +314,8 @@ async function googleReceiver() {
   return {
     server,
     requests,
-    state(status: "success" | "failure") {
-      if (!remote) throw Error("missing remote");
-      const c = remote.conferenceData as { createRequest: { requestId: string } };
-      remote = {
-        ...remote,
-        etag: `"v${++version}"`,
-        conferenceData: {
-          createRequest: { ...c.createRequest, status: { statusCode: status } },
-          ...(status === "success"
-            ? {
-                conferenceSolution: { key: { type: "hangoutsMeet" } },
-                entryPoints: [{ entryPointType: "video", uri: link }],
-              }
-            : {}),
-        },
-      };
+    fail(status: number) {
+      failureStatus = status;
     },
     run: (f: Fixture, id: string) =>
       reconcileAppointment(db, f.org, id, {
@@ -336,19 +326,6 @@ async function googleReceiver() {
         },
       }),
   };
-}
-async function pollGoogle(
-  f: Fixture,
-  id: string,
-  receiver: Awaited<ReturnType<typeof googleReceiver>>,
-) {
-  const update = await db
-    .from("calendar_appointments")
-    .update({ meeting_next_attempt_at: new Date(Date.now() - 1000).toISOString() })
-    .eq("organization_id", f.org)
-    .eq("id", id);
-  if (update.error) throw update.error;
-  expect(await receiver.run(f, id)).toBe("processed");
 }
 async function close(server: Server) {
   server.closeAllConnections();
@@ -404,7 +381,7 @@ test.afterAll(async () => {
     if (result.error) throw result.error;
   }
 });
-test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente após reabrir mesmo UUID", async ({
+test("marca Jitsi, publica no Google como bônus e entrega após autorização e reabertura", async ({
   page,
 }, info) => {
   const f = await fixture(),
@@ -413,19 +390,13 @@ test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente
     pool = new pg.Pool({ connectionString: credentials.dbUrl, max: 5 });
   try {
     const id = await book(page, f);
+    const link = (await row(f, id)).meeting_url as string;
     await detail(page, id);
-    await expect(meet(page).getByText("Criando link do Google Meet")).toBeVisible();
+    await expect(meet(page).getByText("Link da reunião pronto")).toBeVisible();
     await expect(meet(page).getByText("O envio do link ainda não foi autorizado.")).toBeVisible();
-    await expect(meet(page).getByRole("link")).toHaveCount(0);
-    await capture(page, info, "pending-desktop", "Enviar quando ficar pronto");
-    await page.setViewportSize({ width: 390, height: 844 });
-    await capture(page, info, "pending-mobile", "Enviar quando ficar pronto");
-    await page.setViewportSize({ width: 1440, height: 1000 });
     expect(await google.run(f, id)).toBe("processed");
-    expect((await row(f, id)).meeting_received_at).toBeTruthy();
-    google.state("success");
-    await pollGoogle(f, id, google);
-    await detail(page, id);
+    expect(google.requests.find((r) => r.method === "POST")?.body.location).toBe(link);
+    expect((await row(f, id)).meeting_url).toBe(link);
     await expect(meet(page).getByRole("link", { name: "Abrir reunião" })).toHaveAttribute(
       "href",
       link,
@@ -449,7 +420,11 @@ test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente
         .eq("id", f.conversation)
         .single()
     ).data;
-    expect(before).toMatchObject({ assignee_kind: "user", assigned_to_user_id: f.user, bot_silenced_until: "infinity" });
+    expect(before).toMatchObject({
+      assignee_kind: "user",
+      assigned_to_user_id: f.user,
+      bot_silenced_until: "infinity",
+    });
     const beforeSend = await row(f, id);
     const sentRequest = await action(page, "Enviar link ao cliente", "deliver");
     expect(sentRequest.revision).toBe(String(beforeSend.revision));
@@ -470,7 +445,16 @@ test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente
         .single()
     ).data;
     expect(after).toEqual(before);
-    expect((await db.from("contacts").select("force_human,ai_authorized_at").eq("organization_id",f.org).eq("id",f.contact).single()).data).toEqual({force_human:true,ai_authorized_at:null});
+    expect(
+      (
+        await db
+          .from("contacts")
+          .select("force_human,ai_authorized_at")
+          .eq("organization_id", f.org)
+          .eq("id", f.contact)
+          .single()
+      ).data,
+    ).toEqual({ force_human: true, ai_authorized_at: null });
     await capture(page, info, "sent-desktop", "Link já enviado");
     const noOp = await page.request.post(`/api/v1/agenda/agendamentos/${id}/google/meet/deliver`, {
       data: sentRequest,
@@ -485,11 +469,28 @@ test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente
       ])
     ).rows;
     expect(oldLedger).toHaveLength(1);
-    expect(oldLedger[0]).toMatchObject({ organization_id: f.org, contact_id: f.contact, job_id: firstJob, seq: 1, status: "accepted" });
+    expect(oldLedger[0]).toMatchObject({
+      organization_id: f.org,
+      contact_id: f.contact,
+      job_id: firstJob,
+      seq: 1,
+      status: "accepted",
+    });
     expect(oldLedger[0].crm_message_id).toEqual(expect.any(String));
-    const oldJob = (await pool.query("select * from job_queue where organization_id=$1 and id=$2", [f.org, firstJob])).rows;
+    const oldJob = (
+      await pool.query("select * from job_queue where organization_id=$1 and id=$2", [
+        f.org,
+        firstJob,
+      ])
+    ).rows;
     expect(oldJob).toHaveLength(1);
-    expect(oldJob[0]).toMatchObject({ id: firstJob, organization_id: f.org, contact_id: f.contact, kind: "transactional_delivery", status: "done" });
+    expect(oldJob[0]).toMatchObject({
+      id: firstJob,
+      organization_id: f.org,
+      contact_id: f.contact,
+      kind: "transactional_delivery",
+      status: "done",
+    });
     await page.goto(`/app/inbox/${f.conversation}`);
     page.on("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Fechar", exact: true }).click();
@@ -529,7 +530,14 @@ test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente
         ])
       ).rows,
     ).toEqual(oldLedger);
-    expect((await pool.query("select * from job_queue where organization_id=$1 and id=$2", [f.org, firstJob])).rows).toEqual(oldJob);
+    expect(
+      (
+        await pool.query("select * from job_queue where organization_id=$1 and id=$2", [
+          f.org,
+          firstJob,
+        ])
+      ).rows,
+    ).toEqual(oldJob);
     await detail(page, id);
     await expect(meet(page).getByRole("button", { name: "Link já enviado" })).toBeDisabled();
     expect(google.requests.filter((r) => r.method === "POST")).toHaveLength(1);
@@ -540,53 +548,37 @@ test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente
     await pool.end();
   }
 });
-test("falha chega à Central, navegação conserva aviso e retry humano mantém identidade do evento", async ({
+test("Google 401 mostra alerta vermelho sem perder confirmação e link próprio", async ({
   page,
 }, info) => {
   const f = await fixture(),
     google = await googleReceiver();
   try {
     const id = await book(page, f);
-    expect(await google.run(f, id)).toBe("processed");
-    const pending = await row(f, id);
-    google.state("failure");
-    await pollGoogle(f, id, google);
-    await page.goto("/app/ai/inbox");
-    // A Central resolve o destino no servidor e não liquida o aviso ao navegar.
-    const destination = page.getByRole("link", { name: "Abrir compromisso", exact: true });
-    await expect(destination).toHaveAttribute("href", `/app/agenda?compromisso=${id}`);
-    await destination.click();
-    await expect(
-      meet(page).getByText("O Google não conseguiu criar o link. Tente criar novamente."),
-    ).toBeVisible();
-    const notices = await db
-      .from("agent_inbox_items")
-      .select("status")
-      .eq("organization_id", f.org)
-      .eq("ref_id", id);
-    expect(notices.error).toBeNull();
-    expect(notices.data?.some((n) => n.status === "open")).toBe(true);
-    await capture(page, info, "failure-desktop", "Tentar criar link novamente");
-    await page.setViewportSize({ width: 390, height: 844 });
-    await capture(page, info, "failure-mobile", "Tentar criar link novamente");
-    const beforeRetry = await row(f, id);
-    const request = await action(page, "Tentar criar link novamente", "retry");
-    expect(request.revision).toBe(String(beforeRetry.revision));
-    expect(request.request_id).toBe(pending.meeting_request_id);
-    const retry = await row(f, id);
-    expect(retry.meeting_request_id).not.toBe(pending.meeting_request_id);
-    expect(retry.google_event_id).toBe(pending.google_event_id);
-    expect(await google.run(f, id)).toBe("processed");
-    expect(google.requests.filter((r) => r.method === "POST")).toHaveLength(1);
-    google.state("success");
-    await pollGoogle(f, id, google);
+    const link = (await row(f, id)).meeting_url as string;
+    google.fail(401);
+    expect(await google.run(f, id)).toBe("failed");
+    expect(await row(f, id)).toMatchObject({
+      status: "confirmed",
+      meeting_state: "ready",
+      meeting_url: link,
+    });
     await detail(page, id);
+    await expect(page.getByRole("alert").filter({ hasText: "Google desconectado" })).toBeVisible();
     await expect(meet(page).getByRole("link", { name: "Abrir reunião" })).toHaveAttribute(
       "href",
       link,
     );
-    await capture(page, info, "retry-ready-mobile", "Enviar link ao cliente");
-    expect((await row(f, id)).meeting_delivery.state).toBe("none");
+    const notices = await db
+      .from("agent_inbox_items")
+      .select("status")
+      .eq("organization_id", f.org)
+      .eq("ref_id", f.connection);
+    expect(notices.error).toBeNull();
+    expect(notices.data?.some((n) => n.status === "open")).toBe(true);
+    await capture(page, info, "google-offline-desktop", "Enviar link ao cliente");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await capture(page, info, "google-offline-mobile", "Enviar link ao cliente");
   } finally {
     await page.close();
     await close(google.server);

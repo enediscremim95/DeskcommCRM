@@ -5,6 +5,8 @@ import { enderecoDeRetorno, faltaParaConectarOGoogle, googleEstaConfigurado } fr
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { verifiedGoogleStatus } from "@/lib/agenda/google/connection-health";
 
 import type { Agendamento as AgendamentoDaTela } from "@/components/agenda/tipos";
 
@@ -174,7 +176,7 @@ export default async function AgendaPage() {
   // não sumia depois de conectar. Segunda conexão era um clique no mesmo botão.
   const { data: conexoes } = await supabase
     .from("calendar_connections")
-    .select("account_email, status")
+    .select("id, account_email, status")
     .eq("organization_id", activeOrg.orgId)
     .eq("user_id", user.id)
     // ⚠️ A CONSTANTE, e não o literal. Isto era `.eq("provider", "google")` — um
@@ -186,6 +188,13 @@ export default async function AgendaPage() {
     .eq("provider", PROVEDOR_GOOGLE)
     .neq("status", "disconnected")
     .order("account_email");
+
+  const conexoesVerificadas = await Promise.all(
+    (conexoes ?? []).map(async (c) => ({
+      ...c,
+      status: await verifiedGoogleStatus(createAdminClient(), activeOrg.orgId, c.id),
+    })),
+  );
 
   // `await`: a credencial pode vir do BANCO agora (migration 0201), não só do
   // `.env`. `faltaParaConectarOGoogle` já só devolve nomes de variável quando as
@@ -199,7 +208,7 @@ export default async function AgendaPage() {
       fusoDeApresentacao={fusoDeApresentacao}
       googleConfigurado={googleConfigurado}
       contaConectada={conexoes?.map(c => c.account_email).join(", ") || null}
-      conexaoGoogleExpirada={conexoes?.some(c => c.status === "token_expired") ?? false}
+      conexaoGoogleExpirada={conexoesVerificadas.some(c => c.status !== "healthy")}
       enderecoDeRetorno={enderecoDeRetorno()}
       faltaNoGoogle={faltaNoGoogle}
       // SÓ para quem administra a INSTALAÇÃO. A tela do app OAuth vive em

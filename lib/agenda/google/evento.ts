@@ -42,6 +42,7 @@
  *   WhatsApp. Públicos diferentes — não é lembrete em dobro.
  */
 
+import { jitsiVideoUrl } from "@/lib/agenda/jitsi";
 import { instanteDaParede, primeiroInstanteDoDia } from "./tempo";
 
 /**
@@ -255,7 +256,7 @@ function localDoEvento(a: AgendamentoParaGoogle): string | undefined {
     case "video_link":
       return a.meeting_url?.trim() || detalhes || undefined;
     case "google_meet":
-      return detalhes || undefined;
+      return jitsiVideoUrl(a.meeting_url) || detalhes || undefined;
   }
 }
 

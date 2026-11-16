@@ -156,6 +156,10 @@ function coletaOk(): ResultadoDaConsulta {
 
 function dadoDaTabela(tabela: string, filtros: Record<string, unknown> = {}): unknown {
   switch (tabela) {
+    case "calendar_connections":
+      return { id: "google-connected", status: "healthy" };
+    case "calendar_connection_calendars":
+      return { id: "destination", access_role: "writer" };
     case "calendar_event_types":
       return banco.tipo;
     case "contacts":
@@ -164,7 +168,7 @@ function dadoDaTabela(tabela: string, filtros: Record<string, unknown> = {}): un
       return banco.agendamento;
     case "crm_leads":
       return filtros.id
-        ? banco.negocios.find((negocio) => negocio.id === filtros.id) ?? null
+        ? (banco.negocios.find((negocio) => negocio.id === filtros.id) ?? null)
         : banco.negocios.filter(
             (negocio) => !filtros.contact_id || negocio.contact_id === filtros.contact_id,
           );
@@ -221,9 +225,13 @@ function cliente(): SupabaseClient {
     }),
     rpc: async (fn: string, args: Linha) => {
       banco.rpc.push({ fn, args });
-      if(fn==="fn_appointment_change") {
-        expect(args.p_org).toBe(ORG);expect(args.p_id).toBe(AGENDAMENTO);
-        return {data:{...banco.agendamento,...args.p_patch as Linha,revision:2},error:null};
+      if (fn === "fn_appointment_change") {
+        expect(args.p_org).toBe(ORG);
+        expect(args.p_id).toBe(AGENDAMENTO);
+        return {
+          data: { ...banco.agendamento, ...(args.p_patch as Linha), revision: 2 },
+          error: null,
+        };
       }
       return { data: null, error: null };
     },
@@ -363,7 +371,8 @@ describe("a agenda grava na timeline", () => {
   it("traduz a colisão atômica do banco em recusa clara, sem vazar o erro cru", async () => {
     banco.erroAoGravar["calendar_appointments"] = {
       code: "23505",
-      message: "duplicate key value violates unique constraint calendar_appointments_sem_duplicata_idx",
+      message:
+        "duplicate key value violates unique constraint calendar_appointments_sem_duplicata_idx",
     };
 
     await expect(
@@ -522,4 +531,26 @@ describe("quando a gravação da timeline falha", () => {
       "o handler passou a contar a falha de escrita da timeline (o que é o comportamento CERTO): troque este caso para exigir 1 aviso — a dívida foi paga",
     ).toHaveLength(0);
   });
+});
+
+describe("link independente do Google", () => {
+  it.each(["google_meet", "video_link"])(
+    "confirma %s com sala própria mesmo com destino Google saudável",
+    async (kind) => {
+      banco.tipo!.location_kind = kind;
+      await marcarAgendamentoHandler(cliente(), ctx, {
+        event_type_id: TIPO,
+        contact_id: CONTATO,
+        starts_at: HORARIO,
+      });
+      const appointment = banco.inserido.calendar_appointments?.[0];
+      expect(appointment).toMatchObject({
+        status: "confirmed",
+        meeting_state: "ready",
+      });
+      expect(appointment?.meeting_url).toMatch(
+        /^https:\/\/meet[.]jit[.]si\//,
+      );
+    },
+  );
 });
