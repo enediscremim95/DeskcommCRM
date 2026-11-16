@@ -1,4 +1,4 @@
-import { requireHumanKanban } from "@/lib/leads/human-kanban";
+import { exigeMovimentoPermitido } from "@/lib/leads/kanban-guard";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
 /**
@@ -598,7 +598,6 @@ export async function moveLeadHandler(
   leadId: string,
   input: MoveLeadAdminInput,
 ): Promise<Record<string, unknown>> {
-  requireHumanKanban(ctx);
   const { data: lead, error: selErr } = await supabase
     .from("crm_leads")
     .select("*")
@@ -621,7 +620,7 @@ export async function moveLeadHandler(
 
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
-    .select("id, pipeline_id, organization_id, name")
+    .select("id, pipeline_id, organization_id, name, position, is_won, is_lost, is_archived")
     .eq("id", input.to_stage_id)
     .eq("organization_id", ctx.organization_id)
     .maybeSingle();
@@ -645,6 +644,25 @@ export async function moveLeadHandler(
       ctx.requestId,
       traduzir("Move cross-pipeline não é permitido.", ctx.idioma ?? "pt-BR"),
     );
+  }
+
+  // GUARDA CENTRAL (mesmo para IA, automações, webhooks e bearer de integração):
+  // humano move livre; automático só avança, nunca sai/entra em Ganho/Perdido.
+  if (ctx.actor.type !== "user") {
+    if (lead.status === "won" || lead.status === "lost") {
+      throw new ApiError(403, "forbidden", { reason: "etapa_final_so_humano" }, ctx.requestId,
+        "Somente uma pessoa pode mover um negócio já ganho ou perdido.");
+    }
+    const { data: de, error: deErr } = await supabase
+      .from("crm_stages")
+      .select("id, pipeline_id, position, is_won, is_lost, is_archived")
+      .eq("id", lead.stage_id)
+      .eq("organization_id", ctx.organization_id)
+      .maybeSingle();
+    if (deErr || !de) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, deErr?.message ?? "Etapa de origem não encontrada.");
+    }
+    exigeMovimentoPermitido(ctx, de, stage);
   }
 
   let position = input.position_in_stage;

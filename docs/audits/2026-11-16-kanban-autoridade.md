@@ -1,3 +1,5 @@
+> Atualização 16/11/2026 (tarde): a regra abaixo foi ajustada — IA/automação podem mover o card SÓ PARA A FRENTE (guarda único em `lib/leads/kanban-guard.ts`, migration 0312); retrocesso, voltar à 1ª etapa e mexer em Ganho/Perdido seguem só humanos.
+
 # Autoridade do Kanban — pedido de 16/11/2026
 
 Regra vigente: somente uma pessoa decide etapa e desfecho. IA/automação pode criar na primeira etapa aberta; nunca move, fecha ou reabre negócio existente. Esta regra substitui o espelhamento descrito na spec 16 e nas waves de sincronização do agente.

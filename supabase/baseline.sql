@@ -32197,19 +32197,31 @@ grant execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boo
 
 notify pgrst, 'reload schema';
 
--- ---- decisão humana no Kanban (migration 0310) ----
--- IA e automações só podem inserir na entrada. JWT de serviço nunca move/reabre/fecha.
--- Conexões administrativas diretas continuam disponíveis para manutenção explícita;
--- os workers não possuem nenhum caminho de movimentação (gate de código + testes).
+-- ---- decisão humana no Kanban (migrations 0310 + 0312: IA só avança) ----
+-- Serviço só avança a etapa (posição maior, mesmo funil, fora de Ganho/Perdido); nunca muda pipeline/status.
 create or replace function public.fn_guard_kanban_human() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
-declare entry_id uuid;
+declare entry_id uuid; o record; n record;
 begin
   if coalesce(auth.role(), current_user) in ('service_role', 'anon') then
     if tg_op = 'UPDATE' then
-      if (new.stage_id, new.pipeline_id, new.status, new.closed_at)
-         is distinct from (old.stage_id, old.pipeline_id, old.status, old.closed_at) then
+      -- Pipeline, status e fechamento continuam exclusivos de humano.
+      if (new.pipeline_id, new.status, new.closed_at)
+         is distinct from (old.pipeline_id, old.status, old.closed_at) then
         raise exception using errcode = '42501', message = 'human_kanban_required';
+      end if;
+      if new.stage_id is distinct from old.stage_id then
+        select position, is_won, is_lost into o from public.crm_stages where id = old.stage_id;
+        select position, is_won, is_lost, is_archived into n from public.crm_stages where id = new.stage_id;
+        -- Sair de Ganho/Perdido ou entrar neles: só humano.
+        if old.status <> 'open' or coalesce(o.is_won, false) or coalesce(o.is_lost, false)
+           or n.is_won is null or n.is_won or n.is_lost or n.is_archived then
+          raise exception using errcode = '42501', message = 'human_kanban_required';
+        end if;
+        -- Automação só avança (posição estritamente maior). Nunca volta, nunca empata.
+        if not (n.position > o.position) then
+          raise exception using errcode = '42501', message = 'kanban_only_forward';
+        end if;
       end if;
     else
       select id into entry_id from public.crm_stages

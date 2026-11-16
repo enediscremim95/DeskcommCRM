@@ -1,4 +1,17 @@
-/** Adaptador legado: preserva o card e informa que etapa/desfecho exigem decisão humana. */
+/**
+ * Espelho do avanço de funil no kanban do CRM — LIGADO. O harness (lead_state) é
+ * a fonte da verdade do funil do agente; quando o agente avança um passo, o card
+ * do tenant anda junto no board, traduzido pelo `crm_stages.agent_stage_hint`.
+ *
+ * ⚠️ Este arquivo NÃO decide qual negócio do contato se move: ele DELEGA para
+ * `sincronizaEstagioDoAgente`, que reusa o `resolveActiveLeadForContact` da wave
+ * 4. Um segundo resolvedor aqui seriam duas fontes que começam iguais e divergem
+ * no primeiro ajuste.
+ *
+ * Cada não-movimento vira o rótulo que diz a verdade sobre ele (ver MIRROR_WARN_ONLY):
+ * configuração e conflito com humano são estado normal; banco fora e escrita
+ * falha são incidente e abrem item de inbox no caller.
+ */
 import { sincronizaEstagioDoAgente } from '@/lib/leads/agent-stage-sync';
 import type { Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
@@ -54,8 +67,6 @@ export async function mirrorLeadStageToCrm(
       passo: input.toStage,
     });
 
-    if (r.motivo === 'decisao_humana_obrigatoria') return { ok: false, reason: 'not_configured', detail: 'Etapas e desfechos são decisões humanas.' };
-
     if (r.moveu || r.motivo === 'ja_esta_la') return { ok: true };
 
     // Cada motivo vira o rótulo que DIZ A VERDADE sobre ele. Os três primeiros
@@ -78,6 +89,10 @@ export async function mirrorLeadStageToCrm(
       ambiguo: {
         reason: 'not_configured',
         detail: 'o contato tem mais de um negócio aberto — nenhum foi movido',
+      },
+      bloqueado_pelo_guarda: {
+        reason: 'not_configured',
+        detail: `o guarda do Kanban recusou (${r.detalhe ?? 'só avança'}) — o card fica onde está`,
       },
       conflito_humano: {
         reason: 'human_conflict',

@@ -390,13 +390,19 @@ describe("assign_owner (Task 9)", () => {
 });
 
 describe("create_or_move_lead (Task 9)", () => {
-  it("6. automação preserva card existente e não emite movimento", async () => {
-    const before = leadRow(LEAD_T9).stage_id;
+  it("6. contexto com lead + stage2 do mesmo pipeline — move, evento request_id prefixado rule:", async () => {
     const executor = getAction("create_or_move_lead")!;
-    const result = await executor.execute(baseCtx({ lead: leadRow(LEAD_T9) }), { pipeline_id: GOV_PIPELINE, stage_id: STAGE_2 });
-    expect(result.status).toBe("skipped");
-    expect(leadRow(LEAD_T9).stage_id).toBe(before);
-    expect(rows(`select id from public.event_log where event_type='lead.stage_changed' and entity_id='${LEAD_T9}'`)).toHaveLength(0);
+    const ctx = baseCtx({ lead: leadRow(LEAD_T9) });
+    const result = await executor.execute(ctx, { pipeline_id: GOV_PIPELINE, stage_id: STAGE_2 });
+    expect(result.status).toBe("success");
+    expect(leadRow(LEAD_T9).stage_id).toBe(STAGE_2);
+
+    const found = rows(
+      `select metadata from public.event_log where event_type = 'lead.stage_changed' and entity_id = '${LEAD_T9}' order by created_at desc limit 1`,
+    );
+    expect(found.length).toBe(1);
+    const metadata = found[0]!.metadata as Record<string, unknown>;
+    expect(String(metadata.request_id ?? "")).toBe(`rule:${RULE_ID}`);
   });
 
   it("7. contexto só com contact — cria lead novo, lead.created carrega request_id rule:", async () => {

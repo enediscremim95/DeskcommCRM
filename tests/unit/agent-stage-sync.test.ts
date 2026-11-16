@@ -1,6 +1,7 @@
 import type * as LeadsActivityEmitterTypes from "@/lib/leads/activity-emitter";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import {
   razaoDaMudancaPeloAgente,
   resolveDestinoDoAgente,
@@ -91,18 +92,210 @@ describe("resolveDestinoDoAgente", () => {
   });
 });
 
+/* ────────────────────────────────────────────────────────────────────────── */
 
-import type { SupabaseClient } from "@supabase/supabase-js";
+/**
+ * `sincronizaEstagioDoAgente` contra um supabase-js falso — os dois defeitos que
+ * só viraram comportamento de produção quando a ponte da Fase 4 acordou este
+ * código (até então ele não tinha chamador nenhum):
+ *
+ *  1. o supabase-js NÃO LANÇA em falha de rede (devolve `{data:null, error}`), e
+ *     o erro dos SELECTs era descartado — banco fora virava "sem_negocio";
+ *  2. o UPDATE sem `.select()` não observa "0 linhas afetadas", então a trava
+ *     otimista barrar (humano arrastou o card) era reportado como movimento
+ *     feito, com atividade `stage_changed` de algo que não aconteceu.
+ */
+type Resposta = { data: unknown; error: { message: string } | null };
+interface Cenario {
+  leads: Resposta;
+  stages: Resposta;
+  update: Resposta;
+  /** Erro devolvido pelo `emit_event` — o rastro pode falhar sem desfazer o movimento. */
+  rpcError?: { message: string } | null;
+}
 
-describe("sincronizaEstagioDoAgente — decisão humana obrigatória", () => {
-  it.each(["new", "contacted", "qualifying", "qualified", "negotiating", "won", "lost", "confirmed", "handoff"])(
-    "%s não muda etapa/status nem emite evento de movimento", async (value) => {
-      const from = vi.fn(() => { throw new Error("nenhuma consulta deve acontecer"); });
-      const rpc = vi.fn();
-      const result = await sincronizaEstagioDoAgente({ from, rpc } as unknown as SupabaseClient, { organizationId: "org", contactId: "contact", passo: value });
-      expect(result).toEqual({ moveu: false, motivo: "decisao_humana_obrigatoria" });
-      expect(from).not.toHaveBeenCalled();
-      expect(rpc).not.toHaveBeenCalled();
+const ORG = "org-1";
+const CONTATO = "contato-1";
+const LEAD = { id: "lead-1", organization_id: ORG, pipeline_id: "pipe-1", stage_id: "s1", status: "open", created_at: "2026-01-01T00:00:00Z", last_activity_at: null };
+const STAGES = [
+  { id: "s1", name: "Primeiro contato", agent_stage_hint: "contacted", is_archived: false, position: 1000, is_won: false, is_lost: false },
+  { id: "s2", name: "Proposta enviada", agent_stage_hint: "negotiating", is_archived: false, position: 2000, is_won: false, is_lost: false },
+];
+
+function cenario(over: Partial<Cenario> = {}): Cenario {
+  return {
+    leads: { data: [LEAD], error: null },
+    stages: { data: STAGES, error: null },
+    update: { data: [{ id: LEAD.id }], error: null },
+    ...over,
+  };
+}
+
+/**
+ * Fake do query builder: thenable, e distingue SELECT de UPDATE pela chamada.
+ *
+ * ⚠️ UPDATE **sem** `.select()` devolve `data: null`, como o supabase-js real —
+ * é o que faz este fake exigir o `.select("id")` do código de produção. Sem essa
+ * regra, remover só o `.select("id")` (mantendo o check de comprimento) passaria
+ * verde aqui e, no banco de verdade, faria TODO movimento virar `conflito_humano`:
+ * o card nunca mais andaria e o painel mostraria conflito onde não há.
+ */
+/** As chamadas de `emit_event` que o código fez — o fake registra em vez de
+ *  engolir, porque é o `event_log` que ACIONA automação e follow-up, e um fake
+ *  que apenas aceitasse a chamada não distinguiria "emitiu certo" de "emitiu". */
+interface ChamadaRpc {
+  fn: string;
+  args: Record<string, unknown>;
+}
+
+function fakeAdmin(c: Cenario, rpcs: ChamadaRpc[] = []) {
+  return {
+    rpc(fn: string, args: Record<string, unknown>) {
+      rpcs.push({ fn, args });
+      return Promise.resolve({ data: null, error: c.rpcError ?? null });
     },
-  );
+    from(tabela: string) {
+      const b = {
+        _update: false,
+        _select: false,
+        select: () => {
+          b._select = true;
+          return b;
+        },
+        update: () => {
+          b._update = true;
+          return b;
+        },
+        eq: () => b,
+        maybeSingle: () => Promise.resolve({ data: { name: "Primeiro contato" }, error: null }),
+        then(onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) {
+          const r = b._update
+            ? b._select
+              ? c.update
+              : { ...c.update, data: null } // UPDATE sem .select() não devolve linha nenhuma
+            : tabela === "crm_leads"
+              ? c.leads
+              : c.stages;
+          return Promise.resolve(r).then(onF, onR);
+        },
+      };
+      return b;
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+}
+
+const sincroniza = (c: Cenario) =>
+  sincronizaEstagioDoAgente(fakeAdmin(c), { organizationId: ORG, contactId: CONTATO, passo: "negotiating" });
+
+/** Como `sincroniza`, mas devolve também o que foi para o `event_log`. */
+async function sincronizaObservando(c: Cenario) {
+  const rpcs: ChamadaRpc[] = [];
+  const r = await sincronizaEstagioDoAgente(fakeAdmin(c, rpcs), {
+    organizationId: ORG,
+    contactId: CONTATO,
+    passo: "negotiating",
+  });
+  return { r, eventos: rpcs.filter((x) => x.fn === "emit_event") };
+}
+
+describe("sincronizaEstagioDoAgente", () => {
+  beforeEach(() => vi.mocked(emitLeadActivity).mockClear());
+
+  it("caminho feliz: move e emite UMA atividade", async () => {
+    const r = await sincroniza(cenario());
+    expect(r).toMatchObject({ moveu: true, motivo: "movido", stageName: "Proposta enviada" });
+    expect(vi.mocked(emitLeadActivity)).toHaveBeenCalledTimes(1);
+  });
+
+  it("SELECT de leads com erro é INDISPONIBILIDADE, não 'sem_negocio'", async () => {
+    const r = await sincroniza(cenario({ leads: { data: null, error: { message: "TypeError: fetch failed" } } }));
+    expect(r.motivo).toBe("indisponivel");
+    expect(r.detalhe).toContain("fetch failed");
+    expect(vi.mocked(emitLeadActivity)).not.toHaveBeenCalled();
+  });
+
+  it("SELECT de stages com erro é INDISPONIBILIDADE, não 'sem_mapeamento'", async () => {
+    const r = await sincroniza(cenario({ stages: { data: null, error: { message: "connection refused" } } }));
+    expect(r.motivo).toBe("indisponivel");
+  });
+
+  it("UPDATE com erro é falha de escrita — jamais 'ja_esta_la' (que a ponte lê como sucesso)", async () => {
+    const r = await sincroniza(cenario({ update: { data: null, error: { message: "deadlock detected" } } }));
+    expect(r).toMatchObject({ moveu: false, motivo: "falha_de_escrita" });
+    expect(vi.mocked(emitLeadActivity)).not.toHaveBeenCalled();
+  });
+
+  it("trava otimista atuou (0 linhas): não moveu, e NÃO fabrica atividade na timeline", async () => {
+    const r = await sincroniza(cenario({ update: { data: [], error: null } }));
+    expect(r).toMatchObject({ moveu: false, motivo: "conflito_humano" });
+    expect(vi.mocked(emitLeadActivity)).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * MOVER PELO ASSISTENTE TEM DE SER INDISTINGUÍVEL DE MOVER PELA MÃO.
+ *
+ * A atividade em `crm_lead_activities` é para humano ler; o `event_log` é o que
+ * ACIONA quem reage — `lib/automation/engine.handler.ts` (regras do tenant) e
+ * `lib/followup/gatilho-etapa.ts` consomem `lead.stage_changed`. Antes deste
+ * bloco, o assistente movia o card, a timeline contava a história e NENHUMA
+ * regra rodava: metade dos movimentos da organização passava sem acionar nada,
+ * sem erro e sem log. Regra que ignora metade dos movimentos em silêncio é pior
+ * que regra que dispara demais, porque a primeira é invisível.
+ *
+ * ⚠️ `entity_kind` é asserido de propósito. O motor de automação FILTRA por
+ * `crm_lead` (o trigger legado `fn_emit_event_on_lead_change` emite `lead`, e o
+ * filtro é o que impede a regra de rodar duas vezes). Emitir com o valor errado
+ * seria emitir para ninguém — e o evento existiria no banco, o que faz esse
+ * defeito parecer resolvido em qualquer prova que só conte linhas.
+ */
+describe("sincronizaEstagioDoAgente — o evento que aciona automação e follow-up", () => {
+  beforeEach(() => vi.mocked(emitLeadActivity).mockClear());
+
+  it("movimento do assistente emite lead.stage_changed, com entity_kind que o motor de automação lê", async () => {
+    const { r, eventos } = await sincronizaObservando(cenario());
+    expect(r.moveu).toBe(true);
+    expect(eventos).toHaveLength(1);
+    expect(eventos[0]!.args).toMatchObject({
+      p_event_type: "lead.stage_changed",
+      p_entity_kind: "crm_lead",
+      p_entity_id: LEAD.id,
+      p_organization_id: ORG,
+      p_payload: {
+        pipeline_id: LEAD.pipeline_id,
+        from_stage_id: "s1",
+        to_stage_id: "s2",
+        status: "open",
+      },
+    });
+  });
+
+  it("o evento diz QUEM moveu — sem ator, quem depurar a regra disparada não tem por onde começar", async () => {
+    const { eventos } = await sincronizaObservando(cenario());
+    expect(eventos[0]!.args.p_metadata).toMatchObject({
+      actor_kind: "ai",
+      source: "agent-stage-sync",
+      passo_do_agente: "negotiating",
+    });
+  });
+
+  it("a trava otimista barrou (humano venceu a corrida): NÃO emite evento de um movimento que não houve", async () => {
+    const { r, eventos } = await sincronizaObservando(cenario({ update: { data: [], error: null } }));
+    expect(r.motivo).toBe("conflito_humano");
+    expect(eventos).toHaveLength(0);
+  });
+
+  it("escrita falhou: NÃO emite evento", async () => {
+    const { r, eventos } = await sincronizaObservando(
+      cenario({ update: { data: null, error: { message: "deadlock detected" } } }),
+    );
+    expect(r.motivo).toBe("falha_de_escrita");
+    expect(eventos).toHaveLength(0);
+  });
+
+  it("o rastro pode falhar sem desfazer o movimento — o card andou, e isso não se retira", async () => {
+    const { r } = await sincronizaObservando(cenario({ rpcError: { message: "event_log indisponível" } }));
+    expect(r).toMatchObject({ moveu: true, motivo: "movido" });
+  });
 });
