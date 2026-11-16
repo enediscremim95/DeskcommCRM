@@ -47,11 +47,13 @@ async function configuracaoDaJanela(db: SupabaseClient, organizationId: string):
 }
 
 /**
- * Lê o card recente e prepara a trava da tentativa de INSERT.
+ * Lê o card elegível e prepara a trava da tentativa de INSERT.
  *
  * A leitura sozinha não decide a corrida. O índice parcial no banco deixa
  * exatamente uma tentativa com `reentry_guard_until` vencer; as demais relêem
- * esse vencedor. Cards mais antigos continuam abertos e válidos.
+ * esse vencedor. No canal inbound, qualquer card aberto da própria chave
+ * continua elegível, sem prazo. Nas fontes de formulário, o corte configurado
+ * continua separando reenvio técnico de uma nova submissão.
  */
 export async function prepararEntradaNaJanela(
   db: SupabaseClient,
@@ -71,14 +73,18 @@ export async function prepararEntradaNaJanela(
     .lte("reentry_guard_until", agora.toISOString());
   if (liberarErro) throw new Error(`janela_reenvio_liberar: ${liberarErro.message}`);
 
-  const { data: recente, error: recenteErro } = await db
+  const consultaAberta = db
     .from("crm_leads")
     .select("id")
     .eq("organization_id", args.organizationId)
     .eq("contact_id", args.contactId)
     .eq("reentry_guard_key", args.guardKey)
-    .eq("status", "open")
-    .gte("created_at", corte)
+    .eq("status", "open");
+  const consultaElegivel =
+    args.guardKey === CHAVE_REENVIO_CANAL_INBOUND
+      ? consultaAberta
+      : consultaAberta.gte("created_at", corte);
+  const { data: recente, error: recenteErro } = await consultaElegivel
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -100,14 +106,18 @@ export async function buscarVencedorDaJanela(
 ): Promise<string | null> {
   const minutos = await configuracaoDaJanela(db, args.organizationId);
   const corte = new Date(Date.now() - minutos * 60_000).toISOString();
-  const { data, error } = await db
+  const consultaAberta = db
     .from("crm_leads")
     .select("id")
     .eq("organization_id", args.organizationId)
     .eq("contact_id", args.contactId)
     .eq("reentry_guard_key", args.guardKey)
-    .eq("status", "open")
-    .gte("created_at", corte)
+    .eq("status", "open");
+  const consultaElegivel =
+    args.guardKey === CHAVE_REENVIO_CANAL_INBOUND
+      ? consultaAberta
+      : consultaAberta.gte("created_at", corte);
+  const { data, error } = await consultaElegivel
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

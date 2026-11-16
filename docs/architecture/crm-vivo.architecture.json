@@ -33,7 +33,7 @@
     { "id": "timelineapi", "lane": "barramento", "col": 3, "type": "api", "label": "GET /leads/:id/timeline", "sublabel": "por NEGÓCIO — lead sem contato existe" },
     { "id": "notesapi", "lane": "barramento", "col": 4, "type": "api", "label": "POST/DELETE /leads/:id/notes", "sublabel": "texto imutável · autor ou gerente apaga" },
     { "id": "resolver", "lane": "barramento", "col": 1, "type": "service", "label": "resolveActiveLeadForContact", "sublabel": "ambíguo ⇒ não adivinha" },
-    { "id": "reenvio", "lane": "barramento", "col": 4, "type": "service", "label": "Janela curta de reenvio", "sublabel": "opt-in por fonte · canal protegido · corrida no banco" },
+    { "id": "reenvio", "lane": "barramento", "col": 4, "type": "service", "label": "Continuidade inbound e reenvio", "sublabel": "canal preserva card aberto · fonte usa prazo · corrida no banco" },
     { "id": "contactleadsapi", "lane": "barramento", "col": 4, "type": "api", "label": "GET /contacts/:id/leads", "sublabel": "org ativa · todos os funis · sem lista fixa de campos" },
 
     { "id": "leads", "lane": "negocio", "col": 4, "type": "database", "label": "crm_leads", "sublabel": "N negócios abertos · trava só na janela curta" },
@@ -123,8 +123,8 @@
     { "id": "e64", "from": "automacao", "to": "eventlog", "label": "espera persiste cursor + retry_at; worker segue livre", "route": "highlight" },
     { "id": "e65", "from": "chat", "to": "mensagens", "label": "atendente responde no painel ou celular" },
     { "id": "e66", "from": "mensagens", "to": "automacao", "label": "outbound humano posterior ao gatilho encerra a regra", "route": "highlight" },
-    { "id": "e67", "from": "reenvio", "to": "leads", "label": "fonte marcada ou canal alimenta · demais criam" },
-    { "id": "e68", "from": "leads", "to": "reenvio", "label": "fonte opta pela janela · prazo vencido cria novo card" },
+    { "id": "e67", "from": "reenvio", "to": "leads", "label": "canal alimenta aberto · fonte marcada alimenta no prazo" },
+    { "id": "e68", "from": "leads", "to": "reenvio", "label": "fechado libera nova entrada · fonte configura prazo" },
     { "id": "e69", "from": "reenvio", "to": "atividades", "label": "lead_merged visível na timeline" },
     { "id": "e70", "from": "dossie", "to": "notesapi", "label": "cria ou apaga anotação" },
     { "id": "e71", "from": "notesapi", "to": "atividades", "label": "type note · texto imutável" }

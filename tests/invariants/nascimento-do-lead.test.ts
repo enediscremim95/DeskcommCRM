@@ -257,7 +257,7 @@ describe("o lead NASCE", () => {
   });
 });
 
-describe("janela curta separa reenvio de demanda nova", () => {
+describe("entrada repetida alimenta a demanda correta", () => {
   it("a segunda mensagem não abre um segundo card", async () => {
     const contato = await criarContato(ORG_VIVA, "Repetido Souza");
     const dados = {
@@ -337,30 +337,56 @@ describe("janela curta separa reenvio de demanda nova", () => {
     expect(atividades.rows[0]!.n).toBe("5");
   });
 
-  it("passada a janela, cria outro negócio mesmo com o primeiro ainda aberto", async () => {
-    const contato = await criarContato(ORG_VIVA, "Nova Demanda Oliveira");
+  it("36 horas depois, preserva o card aberto e sua etapa avançada", async () => {
+    const contato = await criarContato(ORG_VIVA, "Retorno Oliveira");
     const dados = {
       organizationId: ORG_VIVA,
       contactId: contato,
       conversationId: CONVERSA,
-      nomeDoContato: "Nova Demanda Oliveira",
+      nomeDoContato: "Retorno Oliveira",
     };
     const primeira = await garantirLeadDaConversa(db, dados);
     expect(primeira.criado).toBe(true);
     if (!primeira.criado) return;
 
-    await pool.query(
-      "update crm_leads set created_at = now() - interval '61 minutes', reentry_guard_until = now() - interval '1 minute' where id = $1",
+    const { rows: etapasAvancadas } = await pool.query<{ id: string }>(
+      `select s.id
+         from crm_stages s
+        where s.pipeline_id = (select pipeline_id from crm_leads where id = $1)
+          and s.id <> (select stage_id from crm_leads where id = $1)
+          and s.is_archived = false
+          and s.is_won = false
+          and s.is_lost = false
+        order by s.position desc
+        limit 1`,
       [primeira.leadId],
     );
-    const segunda = await garantirLeadDaConversa(db, dados);
-    expect(segunda.criado, "card aberto antigo não bloqueia uma demanda nova").toBe(true);
+    expect(etapasAvancadas, "o funil semeado precisa ter uma etapa aberta avançada").toHaveLength(1);
+    const etapaAvancada = etapasAvancadas[0]!.id;
 
-    const cards = await pool.query<{ n: string }>(
-      "select count(*) as n from crm_leads where contact_id = $1 and status = 'open'",
+    await pool.query(
+      `update crm_leads
+          set stage_id = $2,
+              created_at = now() - interval '36 hours',
+              reentry_guard_until = now() - interval '35 hours'
+        where id = $1`,
+      [primeira.leadId, etapaAvancada],
+    );
+    const segunda = await garantirLeadDaConversa(db, dados);
+    expect(segunda.criado, "resposta tardia deve alimentar o card ainda aberto").toBe(false);
+    if (segunda.criado) return;
+    expect(segunda.motivo).toBe("janela_reenvio");
+    expect(segunda.leadId).toBe(primeira.leadId);
+
+    const cards = await pool.query<{ n: string; stage_id: string }>(
+      `select count(*) over ()::text as n, stage_id
+         from crm_leads
+        where contact_id = $1 and status = 'open'`,
       [contato],
     );
-    expect(cards.rows[0]!.n).toBe("2");
+    expect(cards.rows).toHaveLength(1);
+    expect(cards.rows[0]!.n).toBe("1");
+    expect(cards.rows[0]!.stage_id, "a resposta não pode devolver o card à entrada").toBe(etapaAvancada);
   });
 
   it("depois de FECHADO, quem volta a escrever abre demanda nova", async () => {
@@ -377,7 +403,7 @@ describe("janela curta separa reenvio de demanda nova", () => {
     if (!primeira.criado) return;
 
     await pool.query(
-      "update crm_leads set status = 'won', closed_at = now() where id = $1",
+      "update crm_leads set status = 'won', closed_at = now(), created_at = now() - interval '36 hours' where id = $1",
       [primeira.leadId],
     );
 
