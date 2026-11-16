@@ -58,7 +58,9 @@ function cardOf(locator: Locator): Locator {
 }
 
 async function login(page: Page, email: string): Promise<void> {
-  await loginComoMembro(page, email, creds.password);
+  // Destino sem a cadeia /app → kanban → pipeline: o clique no menu só
+  // acontece após o helper confirmar a navegação final, além da sessão.
+  await loginComoMembro(page, email, creds.password, "/app/settings/profile");
 }
 
 async function selectFirstOption(page: Page, combobox: Locator): Promise<void> {
