@@ -1,3 +1,4 @@
+import { samePhone } from "@/lib/channels/phone-variants";
 import { assertAgentOperationSupabase } from "@/lib/ai/agents/operation";
 import {
   assertApprovedReplySupabase,
@@ -654,11 +655,13 @@ export async function sendMessageHandler(
   // (`conversations.channel_session_id` é NOT NULL com FK ON DELETE RESTRICT),
   // e ainda assim mantido para não trocar o desfecho desse ramo defensivo.
   const adapter = getAdapter(c.channel_sessions?.provider ?? DEFAULT_CHANNEL_PROVIDER);
+  const candidate = ctx.internalPhoneCandidate;
+  if (candidate && (!c.contacts?.phone_number || !samePhone(candidate, c.contacts.phone_number))) throw new ApiError(422, "validation_failed", undefined, ctx.requestId, "Telefone alternativo não corresponde ao contato.");
   const chatId = adapter.resolveRecipient({
     isGroup: c.is_group,
     groupChatId: c.group_chat_id,
-    phoneNumber: c.contacts?.phone_number,
-    waIdentity: c.contacts?.wa_identity,
+    phoneNumber: candidate ?? c.contacts?.phone_number,
+    waIdentity: candidate ? null : c.contacts?.wa_identity,
     waLid: c.contacts?.wa_lid,
   });
 

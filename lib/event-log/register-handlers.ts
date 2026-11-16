@@ -1,3 +1,4 @@
+import { captureProactivityHandler } from "@/lib/proactivity/capture.handler";
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
 /**
  * Centralised handler registration for the event_log dispatcher.
@@ -48,6 +49,7 @@ export function ensureHandlersRegistered(): void {
   registerHandler(webPushInboundHandler);
   registerHandler(leadEmailNotificationHandler);
   registerHandler(ownerIcsInviteHandler);
+  registerHandler(captureProactivityHandler);
   // Por último: reportar a venda ao anúncio é o consumidor mais externo do
   // fechamento — depende de rede de terceiro e não pode atrasar quem escreve
   // no banco. Falha dele nunca segura os handlers acima.
