@@ -10,8 +10,10 @@
  *
  * A divisão é a do resto do produto: o servidor busca, o cliente desenha.
  */
+import dynamic from "next/dynamic";
 import { useT } from "@/hooks/i18n/useT";
-import { TrafficDashboard } from "./_components/TrafficDashboard";
+// O painel nativo é enorme (gráficos + tabelas): organizações que usam o relatório por URL (iframe) não baixam esse código.
+const TrafficDashboard = dynamic(() => import("./_components/TrafficDashboard").then((m) => m.TrafficDashboard));
 
 interface RelatorioClientProps {
   reportUrl: string | null;
@@ -24,7 +26,7 @@ export function RelatorioClient({ reportUrl, nativeConfigured }: RelatorioClient
   if (nativeConfigured) return <TrafficDashboard />;
 
   return (
-    <div className="flex h-full flex-col gap-5 p-6">
+    <div className="flex h-full flex-col gap-5 p-4 sm:p-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-[26px] font-bold tracking-tight">{t("Relatório")}</h1>

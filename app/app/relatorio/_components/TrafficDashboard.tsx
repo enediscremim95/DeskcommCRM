@@ -2594,7 +2594,7 @@ export function TrafficDashboard() {
                         contentClassName="border-t px-4 pb-4"
                       >
                         <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="rounded-lg border bg-card p-3">
                               <div className="flex items-baseline justify-between gap-2">
                                 <span className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">

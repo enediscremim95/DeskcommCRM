@@ -153,7 +153,7 @@ export function CostThresholdControl({
           const row = rows.find((item) => item.platform === platform);
           const rowInvalid = row != null && row.acceptable_until < row.good_until;
           return (
-            <fieldset key={platform} className="grid grid-cols-2 gap-2 rounded-lg border p-3">
+            <fieldset key={platform} className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-lg border p-3">
               <legend className="px-1 font-medium">
                 {platform === "meta_ads" ? "Meta Ads" : "Google Ads"}
               </legend>
