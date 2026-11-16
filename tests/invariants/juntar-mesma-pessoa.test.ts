@@ -17,11 +17,11 @@ const FUNIL = randomUUID();
 const ETAPA_INICIAL = randomUUID();
 const ETAPA_AVANCADA = randomUUID();
 
-async function comoGerente(statement: string, args: unknown[]) {
+async function comoGerente(statement: string, args: unknown[], conexaoAdministrativa = false) {
   const client = await pool.connect();
   try {
     await client.query("begin");
-    await client.query("set local role authenticated");
+    if (!conexaoAdministrativa) await client.query("set local role authenticated");
     await client.query("select set_config('request.jwt.claims',$1,true)", [
       JSON.stringify({ sub: GOV_MANAGER, role: "authenticated", aal: "aal1" }),
     ]);
@@ -401,10 +401,12 @@ describe("junção contextual dos negócios da mesma pessoa", () => {
     expect((await pool.query("select lead_id from crm_tasks where id=$1", [task])).rows[0]!.lead_id).toBe(absorbed);
     expect((await pool.query("select lead_id from crm_lead_activities where id=$1", [activity])).rows[0]!.lead_id).toBe(absorbed);
 
-    // Conexão administrativa direta, sem JWT de serviço: manutenção explícita.
-    const merged = await pool.query(
+    // Conexão administrativa direta com identidade humana de gestor. A RPC
+    // operacional segue revogada de authenticated; não reabrimos esse acesso.
+    const merged = await comoGerente(
       "select fn_juntar_negocios_mesma_pessoa($1,$2,$3) result",
       [ORG, survivor, absorbed],
+      true,
     );
     const result = merged.rows[0]!.result as { log_id: string };
     const state = await pool.query(
