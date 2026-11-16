@@ -563,8 +563,12 @@ test("Google 401 mostra alerta vermelho sem perder confirmação e link próprio
       meeting_state: "ready",
       meeting_url: link,
     });
-    await detail(page, id);
+    // O detalhe é modal e oculta o painel na árvore de acessibilidade.
+    // Confira o alerta na Agenda antes de abrir o compromisso.
+    await page.goto("/app/agenda");
     await expect(page.getByRole("alert").filter({ hasText: "Google desconectado" })).toBeVisible();
+    await page.screenshot({ path: info.outputPath("google-disconnected.png"), fullPage: true });
+    await detail(page, id);
     await expect(meet(page).getByRole("link", { name: "Abrir reunião" })).toHaveAttribute(
       "href",
       link,
