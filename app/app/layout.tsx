@@ -1,3 +1,4 @@
+import { AutenticacaoIndisponivel } from "@/components/feedback/AutenticacaoIndisponivel";
 import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
 import { InterfaceRefresh } from "@/hooks/auth/InterfaceRefresh";
 import { redirect } from "next/navigation";
@@ -38,7 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     user = await loadAuthUserDaRequisicao();
   } catch (error) {
     if (!(error instanceof AuthTemporariamenteIndisponivel)) throw error;
-    return <main role="alert" className="p-8"><p>{error.message}</p><a href="">Tentar novamente</a></main>;
+    return <AutenticacaoIndisponivel />;
   }
   if (!user) redirect("/login");
 

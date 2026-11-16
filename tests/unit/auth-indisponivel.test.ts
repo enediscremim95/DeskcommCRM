@@ -70,3 +70,20 @@ describe("comPrazo — a troca de organização não fica presa no 'Carregando'"
     }
   });
 });
+
+// Guarda a integração com o backoff já publicado, inclusive no caminho do proxy.
+describe("prazo total da autenticação com backoff", () => {
+  it("encerra uma chamada presa em oito segundos sem aceitar uma identidade", async () => {
+    vi.useFakeTimers();
+    try {
+      const { getUserComBackoff } = await import("@/lib/auth/get-user-com-backoff");
+      const chamada = getUserComBackoff(() => new Promise<{ error: unknown }>(() => {}));
+      const resultado = expect(chamada).rejects.toBeInstanceOf(AuthIndisponivelError);
+      await vi.advanceTimersByTimeAsync(8_000);
+      await resultado;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

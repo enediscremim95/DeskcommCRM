@@ -133,7 +133,7 @@ describe("a) quadro não fica preso", () => {
     vi.resetModules();
     h.auth.mockReset();
     const { AuthIndisponivelError } = await import("@/lib/auth/auth-indisponivel");
-    vi.doMock("@/lib/auth/server", () => ({ loadAuthUser: async () => { throw new AuthIndisponivelError("t"); } }));
+    vi.doMock("@/lib/auth/server", () => ({ loadAuthUser: async () => { throw new AuthIndisponivelError(); } }));
     const { GET } = await import("@/app/api/v1/pipelines/[id]/board/route");
     const res = await GET(new Request("http://x/api/v1/pipelines/p/board") as never, { params: Promise.resolve({ id: "p" }) });
     expect(res.status).toBe(503);
