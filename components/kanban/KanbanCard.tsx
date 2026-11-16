@@ -1,4 +1,5 @@
 "use client";
+import { ATENCAO_CONTATO } from "@/lib/proatividade/config";
 import { Draggable } from "@hello-pangea/dnd";
 import type { MouseEvent } from "react";
 import { useT } from "@/hooks/i18n/useT";
@@ -287,6 +288,14 @@ export function KanbanCard({
                 agentVersion={card.owner.agentVersion}
               />
             </div>
+            {card.tags.includes(ATENCAO_CONTATO) && (
+              <span
+                className="rounded-md bg-red-100 px-1 text-xs font-semibold text-red-800"
+                role="status"
+              >
+                {t("Atenção: contato não realizado")}
+              </span>
+            )}
             {card.canonicalTag && (
               <span
                 className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"

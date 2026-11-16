@@ -1,4 +1,5 @@
 "use server";
+import { listSelectableChannels } from "@/lib/channels/selectable";
 
 import { supportWriteError } from "@/lib/impersonate/support";
 import { headers } from "next/headers";
@@ -10,9 +11,7 @@ import { tenantSchema, type TenantInput } from "@/lib/schemas/settings";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 
-export type UpdateTenantResult =
-  | { ok: true }
-  | { ok: false; error: string; details?: unknown };
+export type UpdateTenantResult = { ok: true } | { ok: false; error: string; details?: unknown };
 
 export async function updateTenant(input: TenantInput): Promise<UpdateTenantResult> {
   const parsed = tenantSchema.safeParse(input);
@@ -29,25 +28,25 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
     return { ok: false, error: "forbidden_role" };
   }
 
-/**
- * A ESCRITA EM `organizations` VAI PELO ADMIN CLIENT — e não é preguiça.
- *
- * A única policy de escrita da tabela é `orgs_write_platform_admin`, com
- * `USING (fn_is_platform_admin())`. Pelo client de sessão, o UPDATE de quem não
- * é super-admin de plataforma casa ZERO linhas — e o PostgREST devolve sucesso,
- * porque "nenhuma linha casou o filtro" não é erro. Resultado: a tela dizia
- * "salvo", nada era gravado, e recarregar mostrava o estado antigo.
- *
- * Medido em Postgres com o baseline aplicado (issue #144): sob `authenticated`
- * com o JWT de um manager, `update organizations` devolve 0 linhas; sob
- * postgres, 1. Ninguém tinha notado porque o dono do repo e o owner criado pelo
- * `bootstrap-owner.ts` SÃO platform_admin — quem tropeça é o segundo admin
- * convidado e qualquer manager.
- *
- * O gate continua sendo o de cima (papel resolvido de fonte confiável), e o
- * filtro por `organization_id` é explícito, como a doutrina exige de todo
- * handler que usa service role.
- */
+  /**
+   * A ESCRITA EM `organizations` VAI PELO ADMIN CLIENT — e não é preguiça.
+   *
+   * A única policy de escrita da tabela é `orgs_write_platform_admin`, com
+   * `USING (fn_is_platform_admin())`. Pelo client de sessão, o UPDATE de quem não
+   * é super-admin de plataforma casa ZERO linhas — e o PostgREST devolve sucesso,
+   * porque "nenhuma linha casou o filtro" não é erro. Resultado: a tela dizia
+   * "salvo", nada era gravado, e recarregar mostrava o estado antigo.
+   *
+   * Medido em Postgres com o baseline aplicado (issue #144): sob `authenticated`
+   * com o JWT de um manager, `update organizations` devolve 0 linhas; sob
+   * postgres, 1. Ninguém tinha notado porque o dono do repo e o owner criado pelo
+   * `bootstrap-owner.ts` SÃO platform_admin — quem tropeça é o segundo admin
+   * convidado e qualquer manager.
+   *
+   * O gate continua sendo o de cima (papel resolvido de fonte confiável), e o
+   * filtro por `organization_id` é explícito, como a doutrina exige de todo
+   * handler que usa service role.
+   */
   const supabase = createAdminClient();
   const hdrs = await headers();
   const requestId = hdrs.get("x-request-id");
@@ -62,9 +61,24 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
     .maybeSingle();
   if (readErr) return { ok: false, error: readErr.message };
 
+  if (parsed.data.form_proactivity?.channel_session_id) {
+    const channels = await listSelectableChannels(supabase, activeOrg.orgId);
+    if (!channels.some((channel) => channel.id === parsed.data.form_proactivity?.channel_session_id))
+      return { ok: false, error: "invalid_channel" };
+  }
   const currentSettings = (orgRow?.settings as Record<string, unknown> | null) ?? {};
   const nextSettings = {
     ...currentSettings,
+    ...(parsed.data.form_proactivity
+      ? {
+          form_proactivity: parsed.data.form_proactivity,
+          form_proactivity_enabled_at:
+            parsed.data.form_proactivity.enabled &&
+            !(currentSettings.form_proactivity as { enabled?: boolean } | undefined)?.enabled
+              ? new Date().toISOString()
+              : currentSettings.form_proactivity_enabled_at,
+        }
+      : {}),
     lost_reasons_extra: parsed.data.lost_reasons_extra,
     lead_reentry_window_minutes: parsed.data.lead_reentry_window_minutes,
     ...(parsed.data.business_profile ? { business_profile: parsed.data.business_profile } : {}),

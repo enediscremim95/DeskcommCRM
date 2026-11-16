@@ -1,3 +1,5 @@
+import { lerProatividade } from "@/lib/proatividade/config";
+import { listSelectableChannels } from "@/lib/channels/selectable";
 import { redirect } from "next/navigation";
 
 import { userHasPermission } from "@/lib/auth/permissions";
@@ -44,11 +46,14 @@ export default async function TenantSettingsPage() {
     .eq("id", activeOrg.orgId)
     .maybeSingle();
 
+  const channels = await listSelectableChannels(supabase, activeOrg.orgId);
   const row = (data ?? null) as OrgRow | null;
-  const lostReasonsExtra =
-    (row?.settings && Array.isArray((row.settings as { lost_reasons_extra?: unknown }).lost_reasons_extra)
+  const lostReasonsExtra = (
+    row?.settings &&
+    Array.isArray((row.settings as { lost_reasons_extra?: unknown }).lost_reasons_extra)
       ? ((row.settings as { lost_reasons_extra?: string[] }).lost_reasons_extra ?? [])
-      : []) as string[];
+      : []
+  ) as string[];
   const idioma = user.idioma;
 
   return (
@@ -61,8 +66,15 @@ export default async function TenantSettingsPage() {
       </header>
       {row && (
         <TenantForm
+          channels={(channels ?? []).map((channel) => ({
+            id: channel.id,
+            name: channel.display_name,
+          }))}
           initial={{
-            business_profile: businessProfileSchema.catch(businessProfileSchema.parse({})).parse(row.settings?.business_profile ?? {}),
+            form_proactivity: lerProatividade(row.settings),
+            business_profile: businessProfileSchema
+              .catch(businessProfileSchema.parse({}))
+              .parse(row.settings?.business_profile ?? {}),
             display_name: row.display_name,
             legal_name: row.legal_name,
             cnpj: row.cnpj,

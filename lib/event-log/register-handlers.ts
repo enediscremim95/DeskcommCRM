@@ -1,3 +1,4 @@
+import { formProactivityHandler } from "@/lib/proatividade/handler";
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
 /**
  * Centralised handler registration for the event_log dispatcher.
@@ -39,6 +40,7 @@ export function ensureHandlersRegistered(): void {
   registerHandler(lgpdExportHandler);
   registerHandler(lgpdRedactHandler);
   registerHandler(automationRulesHandler);
+  registerHandler(formProactivityHandler);
   registerHandler(filaPrimeiraMensagemHandler);
   registerHandler(followupGatilhoEtapaHandler);
   registerHandler(followupGatilhoCasoHandler);

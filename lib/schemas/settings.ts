@@ -7,6 +7,7 @@
  * - pipelineConfigPatchSchema: pipeline vocabulary + settings.fields + settings.lost_reasons
  */
 import { z } from "zod";
+import { configProatividadeSchema } from "@/lib/proatividade/config";
 
 import { ehHexValido } from "@/lib/branding/rampa";
 import { ESTILOS_DE_ICONE_DA_ABA } from "@/lib/branding/icone-da-aba";
@@ -89,6 +90,7 @@ export type ProfileInput = z.infer<typeof profileSchema>;
 const MOEDAS = MOEDAS_SERVIDAS;
 
 export const tenantSchema = z.object({
+  form_proactivity: configProatividadeSchema.optional(),
   business_profile: businessProfileSchema.optional(),
   lead_reentry_window_minutes: z.coerce
     .number()

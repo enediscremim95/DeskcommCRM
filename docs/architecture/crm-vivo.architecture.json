@@ -17,6 +17,7 @@
   ],
   "mainPath": ["leadstate", "atividades", "slot", "decisao", "fila", "leads"],
   "nodes": [
+    { "id": "form-proactivity", "lane": "fila", "col": 5, "type": "backend", "label": "Primeiro contato", "sublabel": "opt-in por org · 3 tentativas · expediente" },
     { "id": "card", "lane": "humano", "col": 3, "type": "frontend", "label": "Card do Kanban", "sublabel": "5 elementos · altura constante" },
     { "id": "slot", "lane": "humano", "col": 2, "type": "frontend", "label": "O slot (faixa ③)", "sublabel": "aguardando > esfriando > normal" },
     { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Tela do lead", "sublabel": "dados + anotações + timeline única + resposta" },
@@ -57,6 +58,9 @@
     { "id": "inbox", "lane": "fora", "col": 4, "type": "frontend", "label": "agent_inbox_items", "sublabel": "demanda sem dono não mora no Kanban" }
   ],
   "edges": [
+    { "id": "form-proactivity-in", "from": "leads", "to": "form-proactivity", "label": "lead.created de formulário" },
+    { "id": "form-proactivity-log", "from": "form-proactivity", "to": "atividades", "label": "tentativa transacional na timeline" },
+    { "id": "form-proactivity-attention", "from": "form-proactivity", "to": "card", "label": "tag vermelha em falha ou incerteza" },
     { "id": "e1", "from": "ritual", "to": "leadstate", "label": "escreve estágio e next_action" },
     { "id": "e2", "from": "ritual", "to": "checkpoints", "label": "grava o turno" },
     { "id": "e3", "from": "ritual", "to": "traces", "label": "registra portões e veto" },

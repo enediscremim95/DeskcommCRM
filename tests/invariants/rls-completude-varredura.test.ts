@@ -76,6 +76,10 @@ interface Excecao {
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
   {
+    tabela: "form_proactivity_attempts",
+    razao: "tests/invariants/proatividade-formulario.test.ts — JWT authenticated prova isolamento cross-org, leitura própria e recusa de escrita pelo navegador.",
+  },
+  {
     tabela: "organization_shipping_settings",
     razao:
       "tests/invariants/frete-configuracao-isolamento.test.ts — RLS ligada sem " +
