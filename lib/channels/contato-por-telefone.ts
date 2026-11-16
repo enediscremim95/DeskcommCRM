@@ -130,7 +130,7 @@ export async function encontrarContatoPorTelefoneComNome(
 
 export interface EncontrarOuCriarContatoPorTelefoneInput {
   organizationId: string;
-  phone: string;
+  phone: string | null;
   name: string;
   email?: string | null;
   source: string;
@@ -155,12 +155,16 @@ export async function encontrarOuCriarContatoPorTelefone(
   admin: SupabaseClient,
   input: EncontrarOuCriarContatoPorTelefoneInput,
 ): Promise<ContatoPorTelefoneResolvido> {
-  const existente = await encontrarContatoPorTelefoneComNome(
-    admin,
-    input.organizationId,
-    input.phone,
-  );
+  const existente = input.phone ? await encontrarContatoPorTelefoneComNome(admin, input.organizationId, input.phone) : null;
   if (existente) return { contato: existente, criado: false };
+
+  if (input.email?.trim()) {
+    const { data: byEmail, error: emailError } = await admin.from("contacts").select("id, phone_number, name")
+      .eq("organization_id", input.organizationId).eq("email_normalized", input.email.trim().toLowerCase())
+      .is("is_merged_into", null).eq("is_anonymized", false).maybeSingle();
+    if (emailError) return { contato: null, criado: false, error: { code: emailError.code, message: emailError.message } };
+    if (byEmail) return { contato: byEmail, criado: false };
+  }
 
   const { data: criado, error } = await admin
     .from("contacts")
@@ -186,11 +190,7 @@ export async function encontrarOuCriarContatoPorTelefone(
     return { contato: null, criado: false, error: { code: error.code, message: error.message } };
   }
 
-  const vencedorPorTelefone = await encontrarContatoPorTelefoneComNome(
-    admin,
-    input.organizationId,
-    input.phone,
-  );
+  const vencedorPorTelefone = input.phone ? await encontrarContatoPorTelefoneComNome(admin, input.organizationId, input.phone) : null;
   if (vencedorPorTelefone) return { contato: vencedorPorTelefone, criado: false };
 
   if (input.email) {
