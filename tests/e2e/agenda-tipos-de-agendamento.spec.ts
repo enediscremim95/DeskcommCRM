@@ -92,9 +92,9 @@ test("chego nos tipos CLICANDO no menu, e a lista mostra o que existe", async ({
   await item.click();
 
   await expect(page).toHaveURL(/\/app\/settings\/tenant\/agenda/, { timeout: 20_000 });
-  await expect(page.getByTestId("tipos-de-agendamento-config")).toBeVisible();
+  await expect(page.getByTestId("tipos-de-agendamento-config").filter({ visible: true })).toBeVisible();
   await expect(
-    page.getByTestId("lista-de-tipos").getByRole("listitem").first(),
+    page.getByTestId("lista-de-tipos").filter({ visible: true }).getByRole("listitem").first(),
     "a lista veio vazia — a organização de teste tem tipos semeados",
   ).toBeVisible({ timeout: 15_000 });
 });
@@ -103,28 +103,28 @@ test("crio um tipo COM responsável, e ele passa a ser marcável na Agenda", asy
   const creds = lerCreds();
   await entrar(page, creds);
   await page.goto("/app/settings/tenant/agenda");
-  await expect(page.getByTestId("tipos-de-agendamento-config")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("tipos-de-agendamento-config").filter({ visible: true })).toBeVisible({ timeout: 20_000 });
 
   // Nome único por execução: a rota recusa slug repetido com 409, e uma spec que
   // só passa na primeira execução é pior que spec nenhuma.
   const nome = `Retorno E2E ${Date.now().toString().slice(-6)}`;
 
-  await page.getByTestId("abrir-novo-tipo").click();
-  await expect(page.getByTestId("form-novo-tipo")).toBeVisible();
-  await page.getByTestId("novo-tipo-nome").fill(nome);
-  await page.getByTestId("novo-tipo-categoria").selectOption("retorno");
-  await page.getByTestId("novo-tipo-duracao").fill("15");
+  await page.getByTestId("abrir-novo-tipo").filter({ visible: true }).click();
+  await expect(page.getByTestId("form-novo-tipo").filter({ visible: true })).toBeVisible();
+  await page.getByTestId("novo-tipo-nome").filter({ visible: true }).fill(nome);
+  await page.getByTestId("novo-tipo-categoria").filter({ visible: true }).selectOption("retorno");
+  await page.getByTestId("novo-tipo-duracao").filter({ visible: true }).fill("15");
 
   // ⚠️ O RESPONSÁVEL É O PONTO DESTA SPEC. Sem ele o tipo nasce igual aos três
   // semeados: existe na lista e não produz horário nenhum.
-  const dono = page.getByTestId("novo-tipo-dono");
+  const dono = page.getByTestId("novo-tipo-dono").filter({ visible: true });
   const opcoes = await dono.locator("option").count();
   expect(opcoes, "o seletor de responsável não listou ninguém — não há o que escolher").toBeGreaterThan(1);
   await dono.selectOption({ index: 1 });
 
-  await page.getByTestId("salvar-novo-tipo").click();
+  await page.getByTestId("salvar-novo-tipo").filter({ visible: true }).click();
 
-  const linha = page.getByTestId("lista-de-tipos").getByRole("listitem").filter({ hasText: nome });
+  const linha = page.getByTestId("lista-de-tipos").filter({ visible: true }).getByRole("listitem").filter({ hasText: nome });
   await expect(linha, "criei o tipo e ele não apareceu na lista").toBeVisible({ timeout: 20_000 });
   await expect(linha).toContainText("15 min");
   await expect(
@@ -134,9 +134,9 @@ test("crio um tipo COM responsável, e ele passa a ser marcável na Agenda", asy
 
   // ── O laço: o tipo novo chega na tela de marcar ───────────────────────
   await page.goto("/app/agenda");
-  await expect(page.getByTestId("tela-agenda").filter({ visible: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("tela-agenda").filter({ visible: true }).filter({ visible: true })).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: /novo agendamento/i }).click();
-  await expect(page.getByTestId("tipos-de-agendamento")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("tipos-de-agendamento").filter({ visible: true })).toBeVisible({ timeout: 15_000 });
   await expect(
     page.getByRole("button", { name: new RegExp(`^${nome}`) }),
     "o tipo foi criado em Configurações e não apareceu na tela de marcar — " +
@@ -169,16 +169,16 @@ test("o tipo NASCE com responsável — e quem escolhe 'Definir depois' recebe a
   const creds = lerCreds();
   await entrar(page, creds);
   await page.goto("/app/settings/tenant/agenda");
-  await expect(page.getByTestId("tipos-de-agendamento-config")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("tipos-de-agendamento-config").filter({ visible: true })).toBeVisible({ timeout: 20_000 });
 
   // ── METADE A: sem tocar no seletor, o tipo nasce COM dono ──────────────────
   const comDono = `Nasce Com Dono E2E ${Date.now().toString().slice(-6)}`;
-  await page.getByTestId("abrir-novo-tipo").click();
-  await page.getByTestId("novo-tipo-nome").fill(comDono);
-  await page.getByTestId("salvar-novo-tipo").click();
+  await page.getByTestId("abrir-novo-tipo").filter({ visible: true }).click();
+  await page.getByTestId("novo-tipo-nome").filter({ visible: true }).fill(comDono);
+  await page.getByTestId("salvar-novo-tipo").filter({ visible: true }).click();
 
   const linhaComDono = page
-    .getByTestId("lista-de-tipos")
+    .getByTestId("lista-de-tipos").filter({ visible: true })
     .getByRole("listitem")
     .filter({ hasText: comDono });
   await expect(linhaComDono).toBeVisible({ timeout: 20_000 });
@@ -191,7 +191,7 @@ test("o tipo NASCE com responsável — e quem escolhe 'Definir depois' recebe a
   // Ele oferecia `0c4f9a1e · admin`: escolher responsável entre fragmentos de
   // UUID não é escolha, é adivinhação.
   await linhaComDono.getByRole("button", { name: "Editar" }).click();
-  const seletor = page.getByTestId(/^editar-dono-/).first();
+  const seletor = page.getByTestId(/^editar-dono-/).filter({ visible: true }).first();
   await expect(seletor).toBeVisible({ timeout: 15_000 });
   const rotulos = await seletor.locator("option").allInnerTexts();
   const dePessoa = rotulos.filter((r) => r !== "Sem responsável");
@@ -204,15 +204,15 @@ test("o tipo NASCE com responsável — e quem escolhe 'Definir depois' recebe a
   // ── METADE B: quem escolhe "Definir depois" é acusado E recebe a saída ────
   const semDono = `Definir Depois E2E ${Date.now().toString().slice(-6)}`;
   await page.goto("/app/settings/tenant/agenda");
-  await page.getByTestId("abrir-novo-tipo").click();
-  await page.getByTestId("novo-tipo-nome").fill(semDono);
+  await page.getByTestId("abrir-novo-tipo").filter({ visible: true }).click();
+  await page.getByTestId("novo-tipo-nome").filter({ visible: true }).fill(semDono);
   // Índice 0 é "Definir depois", e a ordem importa: o outro caso desta spec faz
   // `selectOption({ index: 1 })` contando que a ausência seja a primeira opção.
-  await page.getByTestId("novo-tipo-dono").selectOption({ index: 0 });
-  await page.getByTestId("salvar-novo-tipo").click();
+  await page.getByTestId("novo-tipo-dono").filter({ visible: true }).selectOption({ index: 0 });
+  await page.getByTestId("salvar-novo-tipo").filter({ visible: true }).click();
 
   const linhaSemDono = page
-    .getByTestId("lista-de-tipos")
+    .getByTestId("lista-de-tipos").filter({ visible: true })
     .getByRole("listitem")
     .filter({ hasText: semDono });
   await expect(linhaSemDono).toBeVisible({ timeout: 20_000 });
@@ -223,14 +223,14 @@ test("o tipo NASCE com responsável — e quem escolhe 'Definir depois' recebe a
   // O AVISO ABRE O QUE RESOLVE. Antes era um `<span>`: acusava e a única saída
   // era descobrir sozinho que o botão "Editar" tem um seletor de responsável.
   await aviso.click();
-  const seletorDoOrfao = linhaSemDono.getByTestId(/^editar-dono-/).first();
+  const seletorDoOrfao = linhaSemDono.getByTestId(/^editar-dono-/).filter({ visible: true }).first();
   await expect(
     seletorDoOrfao,
     "cliquei no aviso e ele não abriu nada — continua acusando sem oferecer caminho",
   ).toBeVisible({ timeout: 15_000 });
 
   await seletorDoOrfao.selectOption({ index: 1 });
-  await linhaSemDono.getByTestId(/^salvar-/).first().click();
+  await linhaSemDono.getByTestId(/^salvar-/).filter({ visible: true }).first().click();
   await expect(
     linhaSemDono.getByText("sem responsável"),
     "defini o responsável pelo caminho que a tela ofereceu e o aviso continuou lá",
@@ -243,14 +243,14 @@ test("desativar tira o tipo da tela de marcar, sem apagar a história", async ({
   const creds = lerCreds();
   await entrar(page, creds);
   await page.goto("/app/settings/tenant/agenda");
-  await expect(page.getByTestId("tipos-de-agendamento-config")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("tipos-de-agendamento-config").filter({ visible: true })).toBeVisible({ timeout: 20_000 });
 
   const nome = `Temporario E2E ${Date.now().toString().slice(-6)}`;
-  await page.getByTestId("abrir-novo-tipo").click();
-  await page.getByTestId("novo-tipo-nome").fill(nome);
-  await page.getByTestId("salvar-novo-tipo").click();
+  await page.getByTestId("abrir-novo-tipo").filter({ visible: true }).click();
+  await page.getByTestId("novo-tipo-nome").filter({ visible: true }).fill(nome);
+  await page.getByTestId("salvar-novo-tipo").filter({ visible: true }).click();
 
-  const linha = page.getByTestId("lista-de-tipos").getByRole("listitem").filter({ hasText: nome });
+  const linha = page.getByTestId("lista-de-tipos").filter({ visible: true }).getByRole("listitem").filter({ hasText: nome });
   await expect(linha).toBeVisible({ timeout: 20_000 });
 
   await linha.getByRole("button", { name: "Desativar" }).click();
@@ -270,7 +270,7 @@ test("desativar tira o tipo da tela de marcar, sem apagar a história", async ({
   // E some de onde importa: da tela de marcar.
   await page.goto("/app/agenda");
   await page.getByRole("button", { name: /novo agendamento/i }).click();
-  await expect(page.getByTestId("tipos-de-agendamento")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("tipos-de-agendamento").filter({ visible: true })).toBeVisible({ timeout: 15_000 });
   await expect(
     page.getByRole("button", { name: new RegExp(`^${nome}`) }),
     "tipo desativado continua oferecido para marcar",
@@ -294,26 +294,26 @@ test("ligo o aviso do compromisso pela tela, e ele fica ligado", async ({ page }
   const creds = lerCreds();
   await entrar(page, creds);
   await page.goto("/app/settings/tenant/agenda");
-  await expect(page.getByTestId("tipos-de-agendamento-config")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("tipos-de-agendamento-config").filter({ visible: true })).toBeVisible({ timeout: 20_000 });
 
   const nome = `Lembrete E2E ${Date.now().toString().slice(-6)}`;
-  await page.getByTestId("abrir-novo-tipo").click();
-  await page.getByTestId("novo-tipo-nome").fill(nome);
-  await page.getByTestId("salvar-novo-tipo").click();
+  await page.getByTestId("abrir-novo-tipo").filter({ visible: true }).click();
+  await page.getByTestId("novo-tipo-nome").filter({ visible: true }).fill(nome);
+  await page.getByTestId("salvar-novo-tipo").filter({ visible: true }).click();
 
-  const linha = page.getByTestId("lista-de-tipos").getByRole("listitem").filter({ hasText: nome });
+  const linha = page.getByTestId("lista-de-tipos").filter({ visible: true }).getByRole("listitem").filter({ hasText: nome });
   await expect(linha).toBeVisible({ timeout: 20_000 });
 
   // ── NASCE DESLIGADO. A migration 0194 é explícita: mandar mensagem para o
   //    telefone de um cliente é irreversível, e ninguém é inscrito por default.
   await expect(
-    linha.getByTestId(/^lembrete-ligado-/),
+    linha.getByTestId(/^lembrete-ligado-/).filter({ visible: true }),
     "o tipo nasceu com o aviso LIGADO — ninguém escolheu isso",
   ).toHaveCount(0);
 
   await linha.getByRole("button", { name: "Editar" }).click();
-  const caixa = linha.getByTestId(/^editar-lembrete-[0-9a-f]/).first();
-  const minutos = linha.getByTestId(/^editar-lembrete-minutos-/).first();
+  const caixa = linha.getByTestId(/^editar-lembrete-[0-9a-f]/).filter({ visible: true }).first();
+  const minutos = linha.getByTestId(/^editar-lembrete-minutos-/).filter({ visible: true }).first();
   await expect(caixa).toBeVisible({ timeout: 15_000 });
 
   // ── O CAMPO DESLIGADO NÃO MENTE. Um campo de minutos editável ao lado de uma
@@ -326,20 +326,20 @@ test("ligo o aviso do compromisso pela tela, e ele fica ligado", async ({ page }
   await caixa.check();
   await expect(minutos, "marquei o aviso e o campo continuou travado").toBeEnabled();
   await minutos.fill("60");
-  await linha.getByTestId(/^salvar-/).first().click();
+  await linha.getByTestId(/^salvar-/).filter({ visible: true }).first().click();
 
   // ── O ESTADO APARECE SEM ABRIR NADA ────────────────────────────────────────
   await expect(
-    linha.getByTestId(/^lembrete-ligado-/),
+    linha.getByTestId(/^lembrete-ligado-/).filter({ visible: true }),
     "liguei o aviso e a lista não conta isso — quem olha a tela não sabe que mensagem vai sair",
   ).toBeVisible({ timeout: 20_000 });
   await expect(linha).toContainText("60 min");
 
   // ── E FICOU GRAVADO. Sem o recarregamento, isto mediria estado de React.
   await page.reload();
-  const depois = page.getByTestId("lista-de-tipos").getByRole("listitem").filter({ hasText: nome });
+  const depois = page.getByTestId("lista-de-tipos").filter({ visible: true }).getByRole("listitem").filter({ hasText: nome });
   await expect(
-    depois.getByTestId(/^lembrete-ligado-/),
+    depois.getByTestId(/^lembrete-ligado-/).filter({ visible: true }),
     "o aviso voltou desligado depois de recarregar — não chegou ao banco",
   ).toBeVisible({ timeout: 20_000 });
   await expect(depois).toContainText("60 min");
