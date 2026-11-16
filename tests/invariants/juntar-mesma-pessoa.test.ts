@@ -187,6 +187,17 @@ afterAll(async () => {
 });
 
 describe("mesma pessoa por outro número", () => {
+  it("funções operacionais não são RPC de usuário comum; serviço continua autorizado", async () => {
+    const { rows } = await pool.query(`select signature,
+      has_function_privilege('authenticated', signature, 'execute') as usuario,
+      has_function_privilege('anon', signature, 'execute') as anonimo,
+      has_function_privilege('service_role', signature, 'execute') as servico
+      from unnest(array['public.fn_juntar_negocios_mesma_pessoa(uuid,uuid,uuid)',
+        'public.fn_juntar_mesma_pessoa_da_organizacao(uuid,boolean)']) signature`);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row).toMatchObject({ usuario: false, anonimo: false, servico: true });
+  });
+
   it("junta Márcia pelo nome completo extraído da primeira mensagem", async () => {
     const enviadaEm = new Date();
     const form = await contatoFormulario({
