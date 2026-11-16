@@ -32197,50 +32197,6 @@ grant execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boo
 
 notify pgrst, 'reload schema';
 
--- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
--- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
-do $$
-declare
-  f record;
-  tinha_auth boolean;
-  tinha_service boolean;
-begin
-  if to_regrole('anon') is null then
-    return;
-  end if;
-
-  for f in
-    select p.oid, p.oid::regprocedure as assinatura
-      from pg_proc p
-      join pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = 'public'
-       and p.prosecdef
-  loop
-    tinha_auth := to_regrole('authenticated') is not null
-                  and has_function_privilege('authenticated', f.oid, 'EXECUTE');
-    tinha_service := to_regrole('service_role') is not null
-                     and has_function_privilege('service_role', f.oid, 'EXECUTE');
-
-    execute format('revoke execute on function %s from public, anon', f.assinatura);
-
-    if tinha_auth then
-      execute format('grant execute on function %s to authenticated', f.assinatura);
-    end if;
-    if tinha_service then
-      execute format('grant execute on function %s to service_role', f.assinatura);
-    end if;
-  end loop;
-end $$;
-
--- ---- junção operacional só por serviço (migration 0309) ----
--- As funções de lote são ferramentas operacionais, chamadas por service_role.
--- Não há consumidor da sessão authenticated; o desfazer segue acessível ao gerente.
-revoke execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid) from public, anon, authenticated;
-revoke execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean) from public, anon, authenticated;
-grant execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid) to service_role;
-grant execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean) to service_role;
-notify pgrst, 'reload schema';
-
 -- Sem backfill nem envio: configuração ausente significa desligado em TODA org.
 create table if not exists public.form_proactivity_attempts (
  organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -32287,3 +32243,47 @@ begin
 end $$;
 revoke execute on function public.fn_form_proactivity_attention(uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.fn_form_proactivity_attention(uuid,uuid,text) to service_role;
+
+-- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
+-- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
+do $$
+declare
+  f record;
+  tinha_auth boolean;
+  tinha_service boolean;
+begin
+  if to_regrole('anon') is null then
+    return;
+  end if;
+
+  for f in
+    select p.oid, p.oid::regprocedure as assinatura
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.prosecdef
+  loop
+    tinha_auth := to_regrole('authenticated') is not null
+                  and has_function_privilege('authenticated', f.oid, 'EXECUTE');
+    tinha_service := to_regrole('service_role') is not null
+                     and has_function_privilege('service_role', f.oid, 'EXECUTE');
+
+    execute format('revoke execute on function %s from public, anon', f.assinatura);
+
+    if tinha_auth then
+      execute format('grant execute on function %s to authenticated', f.assinatura);
+    end if;
+    if tinha_service then
+      execute format('grant execute on function %s to service_role', f.assinatura);
+    end if;
+  end loop;
+end $$;
+
+-- ---- junção operacional só por serviço (migration 0309) ----
+-- As funções de lote são ferramentas operacionais, chamadas por service_role.
+-- Não há consumidor da sessão authenticated; o desfazer segue acessível ao gerente.
+revoke execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid) from public, anon, authenticated;
+revoke execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean) from public, anon, authenticated;
+grant execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid) to service_role;
+grant execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean) to service_role;
+notify pgrst, 'reload schema';
