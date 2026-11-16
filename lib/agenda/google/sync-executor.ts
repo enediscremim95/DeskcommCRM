@@ -479,7 +479,11 @@ export async function reconcileAppointment(
         operation: "atualizar",
       });
       if (a.meeting_state === "pending" || a.meeting_state === "failed") {
-        await fallbackAppointmentToJitsi(db, org, id, a.title);
+        try {
+          await fallbackAppointmentToJitsi(db, org, id, a.title);
+        } catch {
+          /* sem a sala própria agora; o próximo ciclo tenta de novo */
+        }
       }
     }
     return "failed";

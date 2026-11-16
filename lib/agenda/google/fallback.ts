@@ -53,17 +53,23 @@ export async function recordGoogleConnectionFailure(
   },
 ): Promise<void> {
   const classified = classificarErroDoGoogle(args.error, args.operation);
-  const status = estadoDaConexaoApos(classified.desfecho);
-  if (!status) return;
-  const message = status === "token_expired" ? GOOGLE_EXPIRED_MESSAGE : classified.mensagem;
-  const updated = await db
-    .from("calendar_connections")
-    .update({ status, last_sync_error: message })
-    .eq("organization_id", args.organizationId)
-    .eq("id", args.connectionId);
-  if (updated.error || status !== "token_expired") return;
+  // Só a credencial morta rebaixa a conexão aqui. Erro de um evento isolado
+  // (conflito de versão, evento que sumiu, limite momentâneo) não diz nada sobre
+  // a conexão inteira, e gravar esses estados por cima esconderia o erro real.
+  if (estadoDaConexaoApos(classified.desfecho) !== "token_expired") return;
 
-  await openGoogleExpiredNotice(db, args.organizationId, args.connectionId);
+  // Anotar o estado é secundário: nunca pode mudar o resultado de quem sincroniza.
+  try {
+    const updated = await db
+      .from("calendar_connections")
+      .update({ status: "token_expired", last_sync_error: GOOGLE_EXPIRED_MESSAGE })
+      .eq("organization_id", args.organizationId)
+      .eq("id", args.connectionId);
+    if (updated.error) return;
+    await openGoogleExpiredNotice(db, args.organizationId, args.connectionId);
+  } catch {
+    /* a sincronização já falhou por outro motivo; o próximo ciclo anota de novo */
+  }
 }
 
 export async function openGoogleExpiredNotice(

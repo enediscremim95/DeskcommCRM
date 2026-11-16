@@ -3,6 +3,7 @@ import { marcaDaSaida } from "@/lib/branding/saida";
 import { isEmailConfigured, sendEmail } from "@/lib/email/resend";
 import type { EventHandler } from "@/lib/event-log/dispatcher";
 import { jitsiVideoUrl } from "@/lib/agenda/jitsi";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 const CONSUMER_KEY = "agenda.owner-ics-invite.v1";
 
@@ -52,7 +53,7 @@ export const ownerIcsInviteHandler: EventHandler = {
     const admin = createAdminClient();
     const { data, error } = await admin
       .from("calendar_appointments")
-      .select("id,title,starts_at,ends_at,time_zone,status,owner_user_id,meeting_state,meeting_url,contacts(name,display_name)")
+      .select("id,title,starts_at,ends_at,time_zone,status,owner_user_id,meeting_state,meeting_url,contacts(name,display_name,phone_number)")
       .eq("organization_id", row.organization_id)
       .eq("id", row.entity_id)
       .maybeSingle();
@@ -65,7 +66,7 @@ export const ownerIcsInviteHandler: EventHandler = {
     const email = user.data.user?.email;
     if (user.error || !email) return { consumer_key: CONSUMER_KEY, status: "error", detail: "responsável sem email" };
     const contact = Array.isArray(data.contacts) ? data.contacts[0] : data.contacts;
-    const contactName = contact?.name?.trim() || contact?.display_name?.trim() || "Contato";
+    const contactName = rotuloDoContato(contact);
     const title = data.title?.trim() || "Agendamento";
     const ics = buildOwnerIcs({ id: data.id, title, startsAt: data.starts_at, endsAt: data.ends_at, timeZone: data.time_zone, meetingUrl, contactName });
     const marca = await marcaDaSaida(row.organization_id);
