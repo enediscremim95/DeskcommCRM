@@ -63,7 +63,7 @@ export async function contaDaAgendaPrimaria(accessToken: string): Promise<Leitur
     // O corpo cru do Google (`{ error: { code, errors[] } }`) vai inteiro para
     // quem classifica — é a forma que `classificarErroDoGoogle` aprendeu a ler
     // depois de a revisão fria mostrar que ela não lia.
-    return { ok: false, erro: bruto, detalhe: `HTTP ${resposta.status}` };
+    return { ok: false, erro: { ...(typeof bruto === "object" && bruto !== null ? bruto : {}), status: resposta.status }, detalhe: `HTTP ${resposta.status}` };
   }
 
   const corpo = typeof bruto === "object" && bruto !== null ? (bruto as Record<string, unknown>) : {};

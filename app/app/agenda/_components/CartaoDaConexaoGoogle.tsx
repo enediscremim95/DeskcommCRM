@@ -77,6 +77,24 @@ export function CartaoDaConexaoGoogle({
   const podeExcluir = usePermission("resource.delete");
   const [desconectando, setDesconectando] = React.useState(false);
 
+  if (contaConectada && conexaoExpirada) {
+    return (
+      <div
+        data-testid="google-token-expirado"
+        role="alert"
+        className="flex flex-col gap-3 rounded-lg border border-red-500 bg-red-50 p-3 text-red-900 sm:flex-row sm:items-center"
+      >
+        <p className="min-w-0 flex-1 text-sm">
+          {t("Google desconectado")}{" "}
+          {t("Não foi possível validar a conexão. Os agendamentos continuam com link próprio.")}
+        </p>
+        <a href="/api/v1/agenda/google/connect" className="text-sm font-medium underline">
+          {t("Reconectar")}
+        </a>
+      </div>
+    );
+  }
+
   if (!configurado) {
     return (
       <div
@@ -148,19 +166,6 @@ export function CartaoDaConexaoGoogle({
         <p className="mt-2 text-xs leading-4 text-text-muted">
           {t("Até lá a agenda funciona normalmente, só não troca compromissos com o Google.")}
         </p>
-      </div>
-    );
-  }
-
-  if (contaConectada && conexaoExpirada) {
-    return (
-      <div data-testid="google-token-expirado" role="alert" className="flex flex-col gap-3 rounded-lg border border-red-500 bg-red-50 p-3 text-red-900 sm:flex-row sm:items-center">
-        <p className="min-w-0 flex-1 text-sm">
-          {t("A conexão com o Google expirou. Reconecte a agenda.")}
-        </p>
-        <a href="/api/v1/agenda/google/connect" className="text-sm font-medium underline">
-          {t("Reconectar")}
-        </a>
       </div>
     );
   }

@@ -471,7 +471,8 @@ export async function reconcileAppointment(
     } catch {
       /* aquisição perdida não escreve erro tardio */
     }
-    if (a.google_connection_id && e instanceof GoogleHttpError) {
+    // 412 é disputa de versão do evento, não uma conexão desconectada.
+    if (a.google_connection_id && e instanceof GoogleHttpError && e.status !== 412) {
       await recordGoogleConnectionFailure(db, {
         organizationId: org,
         connectionId: a.google_connection_id,

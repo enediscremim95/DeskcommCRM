@@ -177,14 +177,14 @@
       "lane": "execucao",
       "col": 7,
       "type": "service",
-      "label": "Jitsi: sala aleatória quando Google não está utilizável; URL validada antes de qualquer saída"
+      "label": "Jitsi: sala aleatória pronta ao confirmar no CRM; Google recebe o mesmo link como bônus; URL validada antes de qualquer saída"
     },
     {
       "id": "owner-ics",
       "lane": "execucao",
       "col": 8,
       "type": "service",
-      "label": "event_log e e-mail: convite ICS idempotente somente ao responsável"
+      "label": "event_log e e-mail: convite ICS idempotente ao responsável e ao cliente, separadamente"
     },
     {
       "id": "meet-export",
@@ -199,6 +199,13 @@
       "col": 8,
       "type": "service",
       "label": "PDF LGPD entregue: dados pessoais, controlador e DPO; sem marca ou autorização privada"
+    },
+    {
+      "id": "connection-health",
+      "lane": "execucao",
+      "col": 8,
+      "type": "service",
+      "label": "verifiedGoogleStatus: token decifrado e leitura autenticada do calendário primário; erro nunca é saúde presumida"
     }
   ],
   "edges": [
@@ -453,6 +460,24 @@
       "from": "meet-export",
       "to": "meet-pdf",
       "label": "renderLgpdPdf → assinatura/entrega existente; arrays vazios compatíveis"
+    },
+    {
+      "id": "e43",
+      "from": "hours",
+      "to": "connection-health",
+      "label": "Agenda verifica apenas conexões do usuário e organização ativos"
+    },
+    {
+      "id": "e44",
+      "from": "connection-health",
+      "to": "google",
+      "label": "calendarios.contaDaAgendaPrimaria: leitura sem cache e timeout"
+    },
+    {
+      "id": "e45",
+      "from": "connection-health",
+      "to": "hours",
+      "label": "status verificado controla alerta vermelho e reconexão; 401 persiste expiração e aviso na Central"
     }
   ]
 }
