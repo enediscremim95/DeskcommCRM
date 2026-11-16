@@ -6,6 +6,7 @@ import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { apiClient } from "@/lib/api/client";
 import type { BoardData, BoardStageChunk } from "@/lib/kanban/types";
+import { boardDatesToParams, type BoardDateFilter } from "@/lib/kanban/date-range";
 import type { Lead } from "@/lib/types/leads";
 
 /**
@@ -16,8 +17,8 @@ import type { Lead } from "@/lib/types/leads";
  * and PostgREST returns PGRST116. Routing through /api/v1/pipelines/[id]/board
  * uses the server-side cookie reader, identical to every other authed query.
  */
-async function fetchBoard(pipelineId: string): Promise<BoardData> {
-  const res = await apiClient.get<{ data: BoardData }>(`/api/v1/pipelines/${pipelineId}/board`);
+async function fetchBoard(pipelineId: string, dates: string): Promise<BoardData> {
+  const res = await apiClient.get<{ data: BoardData }>(`/api/v1/pipelines/${pipelineId}/board${dates ? `?${dates}` : ""}`);
   // apiClient unwraps { data, meta } envelope already in some helpers;
   // ours returns the parsed JSON literally. Handle both shapes safely.
   if (res && typeof res === "object" && "data" in res) {
@@ -30,8 +31,11 @@ async function fetchStagePage(
   pipelineId: string,
   stageId: string,
   cursor: string,
+  dates: string,
 ): Promise<BoardStageChunk> {
-  const query = new URLSearchParams({ stage_id: stageId, cursor });
+  const query = new URLSearchParams(dates);
+  query.set("stage_id", stageId);
+  query.set("cursor", cursor);
   const res = await apiClient.get<{ data: BoardStageChunk }>(
     `/api/v1/pipelines/${pipelineId}/board?${query.toString()}`,
   );
@@ -162,9 +166,10 @@ function aplicarEventoNoBoard(
   return { ...board, leads, stage_pages: stagePages };
 }
 
-export function useBoard(pipelineId: string | null) {
+export function useBoard(pipelineId: string | null, filters: BoardDateFilter = {}) {
+  const dates = boardDatesToParams(filters);
   const qc = useQueryClient();
-  const queryKey = useMemo(() => ["board", pipelineId] as const, [pipelineId]);
+  const queryKey = useMemo(() => dates ? ["board", pipelineId, dates] as const : ["board", pipelineId] as const, [pipelineId, dates]);
 
   /**
    * Cards que acabaram de mudar POR EVENTO REMOTO — o pulso da Wave 3.
@@ -183,7 +188,7 @@ export function useBoard(pipelineId: string | null) {
 
   const query = useQuery({
     queryKey,
-    queryFn: () => fetchBoard(pipelineId as string),
+    queryFn: () => fetchBoard(pipelineId as string, dates),
     enabled: !!pipelineId,
   });
 
@@ -203,7 +208,7 @@ export function useBoard(pipelineId: string | null) {
       });
 
       try {
-        const chunk = await fetchStagePage(pipelineId, stageId, page.cursor);
+        const chunk = await fetchStagePage(pipelineId, stageId, page.cursor, dates);
         qc.setQueryData<BoardData>(queryKey, (board) => {
           if (!board) return board;
           const byId = new Map(board.leads.map((lead) => [lead.id, lead]));
@@ -228,7 +233,7 @@ export function useBoard(pipelineId: string | null) {
         });
       }
     },
-    [pipelineId, qc, queryKey],
+    [pipelineId, qc, queryKey, dates],
   );
 
   const agendarRefetch = useCallback(() => {
@@ -244,7 +249,7 @@ export function useBoard(pipelineId: string | null) {
       // O evento já traz a linha alterada: atualiza a tela agora e agrupa a
       // reconciliação completa. Rajadas deixam de recarregar N páginas a cada
       // escrita sem esconder a mudança do operador.
-      if (pipelineId) {
+      if (pipelineId && !dates) {
         qc.setQueryData<BoardData>(queryKey, (board) =>
           aplicarEventoNoBoard(board, payload, pipelineId),
         );
@@ -284,7 +289,7 @@ export function useBoard(pipelineId: string | null) {
         }, PULSE_MS),
       );
     },
-    [agendarRefetch, pipelineId, qc, queryKey],
+    [agendarRefetch, pipelineId, qc, queryKey, dates],
   );
 
   // O STATUS DO CANAL NÃO PODE SER DESCARTADO. `useRealtimeChannel` calcula

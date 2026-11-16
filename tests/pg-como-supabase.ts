@@ -76,6 +76,11 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
     private readonly colunas: string,
   ) {}
 
+  is(coluna: string, valor: null | boolean): this {
+    this.filtros.push(["is", coluna, valor]);
+    return this;
+  }
+
   eq(coluna: string, valor: unknown): this {
     this.filtros.push(["=", coluna, valor]);
     return this;
@@ -128,8 +133,9 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
   }
 
   /** Presentes para ESTOURAR: o código que os usar precisa de implementação real. */
-  in(): never {
-    return naoImplementado("in");
+  in(coluna: string, valores: unknown[]): this {
+    this.filtros.push(["in", coluna, valores]);
+    return this;
   }
   neq(): never {
     return naoImplementado("neq");
@@ -138,8 +144,9 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
   private montar(): { texto: string; valores: unknown[] } {
     const valores: unknown[] = [];
     const onde = this.filtros.map(([op, c, v]) => {
+      if (op === "is") return `"${c}" is ${v === null ? "null" : v === true ? "true" : "false"}`;
       valores.push(v);
-      return `"${c}" ${op} $${valores.length}`;
+      return op === "in" ? `"${c}" = any($${valores.length})` : `"${c}" ${op} $${valores.length}`;
     });
     let texto = `select ${colunasSql(this.colunas)} from public."${this.tabela}"`;
     if (onde.length > 0) texto += ` where ${onde.join(" and ")}`;
@@ -295,8 +302,9 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
       return `"${k}" = $${valores.length}`;
     });
     const onde = this.filtros.map(([op, c, v]) => {
+      if (op === "is") return `"${c}" is ${v === null ? "null" : v === true ? "true" : "false"}`;
       valores.push(v);
-      return `"${c}" ${op} $${valores.length}`;
+      return op === "in" ? `"${c}" = any($${valores.length})` : `"${c}" ${op} $${valores.length}`;
     });
     let texto = `update public."${this.tabela}" set ${sets.join(", ")}`;
     if (onde.length > 0) texto += ` where ${onde.join(" and ")}`;

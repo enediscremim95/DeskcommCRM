@@ -37,6 +37,12 @@ export function PipelinePageClient({
   initialName: string;
 }) {
   const t = useT();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { activeOrg, user } = useAuth();
+  const preferenceKey = `crm:board-filters:${user.id}`;
+  const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
   const {
     data,
     isLoading,
@@ -48,13 +54,7 @@ export function PipelinePageClient({
     loadMoreStage,
     loadingStageIds,
     stageLoadErrors,
-  } = useBoard(pipelineId);
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const { activeOrg, user } = useAuth();
-  const preferenceKey = `crm:board-filters:${user.id}`;
-  const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
+  } = useBoard(pipelineId, filters);
   const setFilters = useCallback(
     (next: LeadFilters) => {
       window.localStorage.setItem(preferenceKey, serializeBoardFilterPreference(next));

@@ -1,4 +1,5 @@
 "use client";
+import { ATTENTION_CONTACT_TAG } from "@/lib/proactivity/capture-policy";
 import { Draggable } from "@hello-pangea/dnd";
 import type { MouseEvent } from "react";
 import { useT } from "@/hooks/i18n/useT";
@@ -352,6 +353,7 @@ export function KanbanCard({
               className="text-left decoration-accent/50 underline-offset-2 hover:underline"
             >
               {card.title}
+              {card.tags.includes(ATTENTION_CONTACT_TAG) && <span className="ml-2 inline-flex rounded-md bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-200" role="status">{t("Contato precisa de atenção")}</span>}
             </button>
           </h3>
 

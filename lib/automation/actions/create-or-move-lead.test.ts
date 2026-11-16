@@ -87,7 +87,7 @@ describe("create_or_move_lead — pontuação/classificação nunca bloqueia o E
     ["sem classificação nenhuma (custom_fields vazio)", {}],
   ];
 
-  it.each(CLASSIFICACOES)("%s → move normalmente, status success", async (_nome, customFields) => {
+  it.each(CLASSIFICACOES)("%s → preserva o negócio existente", async (_nome, customFields) => {
     const db = makeDb({
       pipelines: [funilRow({ id: PIPE, name: "funil comercial imobiliário" })],
       stages: [ETAPA_ORIGEM, ETAPA_DESTINO],
@@ -101,8 +101,8 @@ describe("create_or_move_lead — pontuação/classificação nunca bloqueia o E
       { pipeline_id: PIPE, stage_id: "triagem" },
     );
 
-    expect(resultado).toEqual({ type: "create_or_move_lead", status: "success", detail: { moved: "lead-1" } });
-    expect(db.tabelas.crm_leads.find((l) => l.id === "lead-1")?.stage_id).toBe("triagem");
+    expect(resultado).toEqual({ type: "create_or_move_lead", status: "skipped", detail: { reason: "human_kanban_required", preserved: "lead-1" } });
+    expect(db.tabelas.crm_leads.find((l) => l.id === "lead-1")?.stage_id).toBe("novo");
   });
 });
 
@@ -125,7 +125,7 @@ describe("create_or_move_lead — pontuação/classificação nunca bloqueia a C
       context: ctxComContato({ classificacao_inicial_classe: "D" }),
     };
 
-    const resultado = await action!.execute(ctx, { pipeline_id: PIPE, stage_id: "novo" });
+    const resultado = await action!.execute(ctx, { pipeline_id: PIPE, stage_id: "triagem" });
 
     expect(resultado.status).toBe("success");
     expect(resultado.type).toBe("create_or_move_lead");
@@ -151,13 +151,12 @@ describe("create_or_move_lead — não lê nenhuma chave classificacao_inicial_*
 });
 
 
-it("CRM derivado propaga referência original sem observar ou abrir atendimento", async () => {
+it("negócio preservado não emite evento derivado nem abre atendimento", async () => {
   originRpc.mockClear();
   const db = makeDb({ pipelines: [funilRow({ id: PIPE, name: "Funil" })], stages: [ETAPA_ORIGEM, ETAPA_DESTINO], leads: [negocio("lead-1", "novo")] });
   const ctx = ctxComLead({}, db.client as unknown as ActionCtx["admin"]);
   ctx.event = { id: "evento-original", event_type: "message.received" } as ActionCtx["event"];
   ctx.context.contact = { id: "contato-1" };
-  expect((await getAction("create_or_move_lead")!.execute(ctx, { pipeline_id: PIPE, stage_id: "triagem" })).status).toBe("success");
-  expect(originRpc).toHaveBeenCalledWith("emit_event", expect.objectContaining({ p_payload: expect.objectContaining({ service_origin: {kind:"event",event_id:"evento-original",organization_id:ORG_ID,contact_id:"contato-1"} }) }));
-  expect(originRpc.mock.calls.every(call => call[0] === "emit_event")).toBe(true);
+  expect((await getAction("create_or_move_lead")!.execute(ctx, { pipeline_id: PIPE, stage_id: "triagem" })).status).toBe("skipped");
+  expect(originRpc).not.toHaveBeenCalled();
 });
