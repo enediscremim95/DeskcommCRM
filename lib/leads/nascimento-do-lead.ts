@@ -153,9 +153,11 @@ export async function funilDeEntrada(
 /**
  * Garante que a conversa tenha um lead no funil de entrada.
  *
- * Se o contato já tem um negócio aberto nesse funil, a mensagem entra nele,
+ * Primeiro reencontra a captação aberta do contato/telefone, em qualquer funil;
+ * ambiguidade exige revisão humana. Depois, se há negócio aberto no funil de
+ * entrada, a mensagem entra nele,
  * sem prazo. A janela curta continua só para a corrida em que dois primeiros
- * cards nascem juntos. Negócio fechado, ou aberto em outro funil, libera um
+ * cards nascem juntos. Negócio fechado, ou aberto de outra origem em outro funil, libera um
  * card novo. Criar um negócio pela tela, pela API ou pela ferramenta do agente
  * não passa por aqui e pode abrir outro card de propósito.
  */

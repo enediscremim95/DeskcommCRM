@@ -473,7 +473,7 @@ describe("janela curta separa reenvio de demanda nova", () => {
     });
     expect(mensagem.criado).toBe(false);
     if (mensagem.criado) return;
-    expect(mensagem.motivo).toBe("negocio_aberto");
+    expect(mensagem.motivo).toBe("formulario_existente");
     expect(mensagem.leadId).toBe(formulario);
 
     const depoisDaJuncao = await garantirLeadDaConversa(db, {
@@ -524,8 +524,14 @@ describe("janela curta separa reenvio de demanda nova", () => {
     });
     expect(whatsapp.criado).toBe(false);
     if (whatsapp.criado) return;
-    expect(whatsapp.leadId).toBe(segundo);
-    expect(whatsapp.leadId).not.toBe(primeiro);
+    expect(whatsapp).toMatchObject({ motivo: "erro", detalhe: "ambiguous_form_leads" });
+    expect(whatsapp.leadId).toBeUndefined();
+    const preservados = await pool.query(
+      "select id,stage_id from crm_leads where id=any($1::uuid[]) order by id",
+      [[primeiro, segundo]],
+    );
+    expect(preservados.rows).toHaveLength(2);
+    expect(preservados.rows.every((row) => row.stage_id === funil.stageId)).toBe(true);
 
     const cards = await pool.query<{ n: string }>(
       "select count(*) as n from crm_leads where organization_id = $1 and contact_id = $2 and status = 'open'",
@@ -534,7 +540,7 @@ describe("janela curta separa reenvio de demanda nova", () => {
     expect(cards.rows[0]!.n).toBe("2");
   });
 
-  it("negócio aberto em outro funil não impede o card do funil de entrada", async () => {
+  it.each(["manual", "webhook"])("negócio %s em outro funil: só captação aberta recebe a conversa sem card novo", async (source) => {
     const contato = await criarContato(ORG_VIVA, "Outro Funil");
     const { rows: outro } = await pool.query<{ pipeline_id: string }>(
       `insert into crm_pipelines (organization_id, name, slug, is_default, position)
@@ -549,12 +555,12 @@ describe("janela curta separa reenvio de demanda nova", () => {
        returning id`,
       [ORG_VIVA, pipelineId, `entrada-paralela-${contato.slice(0, 8)}`],
     );
-    await inserirNegocio({
+    const existente = await inserirNegocio({
       org: ORG_VIVA,
       contato,
       pipelineId,
       stageId: etapa[0]!.id,
-      source: "webhook",
+      source,
     });
 
     const mensagem = await garantirLeadDaConversa(db, {
@@ -563,15 +569,17 @@ describe("janela curta separa reenvio de demanda nova", () => {
       conversationId: CONVERSA,
       nomeDoContato: "Outro Funil",
     });
-    expect(mensagem.criado).toBe(true);
-    if (!mensagem.criado) return;
-    expect(mensagem.pipelineId).not.toBe(pipelineId);
+    expect(mensagem.criado).toBe(source === "manual");
+    if (mensagem.criado) expect(mensagem.pipelineId).not.toBe(pipelineId);
+    else expect(mensagem).toMatchObject({ motivo: "formulario_existente", leadId: existente });
+    expect((await pool.query("select pipeline_id,stage_id from crm_leads where id=$1", [existente])).rows[0])
+      .toMatchObject({ pipeline_id: pipelineId, stage_id: etapa[0]!.id });
 
     const cards = await pool.query<{ n: string }>(
       "select count(*) as n from crm_leads where organization_id = $1 and contact_id = $2 and status = 'open'",
       [ORG_VIVA, contato],
     );
-    expect(cards.rows[0]!.n).toBe("2");
+    expect(cards.rows[0]!.n).toBe(source === "manual" ? "2" : "1");
   });
 
   it("a busca do negócio aberto não atravessa organização, contato nem funil", async () => {
