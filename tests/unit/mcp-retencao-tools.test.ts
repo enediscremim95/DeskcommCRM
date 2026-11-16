@@ -621,7 +621,7 @@ describe("crm_close_demand", () => {
 
     const res = (await crmCloseDemand.handler(
       { lead_id: LEAD, outcome: "lost", reason: "sem orçamento" },
-      ctxDe(resolver, cap),
+      humanCtx(resolver, cap),
     )) as { encerrado: boolean };
 
     expect(res.encerrado).toBe(true);
@@ -641,7 +641,7 @@ describe("crm_close_demand", () => {
     const cap = novasCapturas();
     const res = (await crmCloseDemand.handler(
       { lead_id: LEAD, outcome: "lost", reason: undefined },
-      ctxDe(() => ({ data: null, error: null }), cap),
+      humanCtx(() => ({ data: null, error: null }), cap),
     )) as { encerrado: boolean; motivo: string };
 
     expect(res.encerrado).toBe(false);
@@ -658,7 +658,7 @@ describe("crm_close_demand", () => {
 
     const res = (await crmCloseDemand.handler(
       { lead_id: LEAD, outcome: "won", reason: undefined },
-      ctxDe(semEstagio, cap),
+      humanCtx(semEstagio, cap),
     )) as { encerrado: boolean; motivo: string };
 
     expect(res.encerrado).toBe(false);
@@ -814,7 +814,7 @@ describe("o texto que aparece na linha do tempo", () => {
     };
     await crmCloseDemand.handler(
       { lead_id: LEAD, outcome: "lost", reason: "sem orçamento" },
-      ctxDe(resolver, cap),
+      humanCtx(resolver, cap),
     );
     const reason = String(
       cap.inserts.find((i) => i.table === "crm_lead_activities")?.values.reason,
@@ -1021,3 +1021,7 @@ describe("crm_list_at_risk_leads", () => {
     }
   });
 });
+
+function humanCtx(resolver: Resolver, cap: Capturas): McpContext {
+ return { ...ctxDe(resolver, cap), actor: { type: "user", id: "humano" } };
+}
