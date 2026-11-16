@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
@@ -34,10 +36,11 @@ const inputSchema = z.object({
 });
 
 async function platformAdmin() {
-  try { return await requirePlatformAdmin(); } catch { return null; }
+  try { return await requirePlatformAdmin(); } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth; return null; }
 }
 
-export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function GETComAuth(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const requestId = randomUUID();
   if (!(await platformAdmin())) return fail("forbidden", "Platform admin required", 403, { requestId });
   const { id } = await context.params;
@@ -61,7 +64,8 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
   let n8nAvailable = n8nIsConfigured();
   if (n8nAvailable) {
     try { workflows = await listN8nWorkflows(); }
-    catch { n8nAvailable = false; }
+    catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth; n8nAvailable = false; }
   }
   const bindings = (bindingsResult.data ?? []) as unknown as Array<{
     organization_id: string;
@@ -85,7 +89,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
   }, { requestId });
 }
 
-export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function PUTComAuth(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
@@ -108,6 +112,7 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
         return fail("validation_failed", "Há workflow que não existe mais no n8n.", 422, { requestId });
       }
     } catch (error) {
+    if (error instanceof AuthTemporariamenteIndisponivel) throw error;
       const status = error instanceof N8nReadError && error.status === 503 ? 503 : 502;
       return fail("upstream_unavailable", "Não foi possível validar os workflows no n8n.", status, { requestId });
     }
@@ -142,3 +147,6 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
   });
   return ok({ saved: true }, { requestId });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const PUT = comAuthDisponivel(PUTComAuth);

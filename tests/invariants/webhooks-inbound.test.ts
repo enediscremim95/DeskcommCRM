@@ -1059,11 +1059,13 @@ describe("POST /api/v1/webhooks/in/[token] — classificação inicial (2026-08-
     expect(disqualified.length).toBe(0);
   });
 
-  it("caso 11 — segundo envio com o MESMO telefone mas nome diferente do contato existente: revisão humana, lead ainda criado", async () => {
+  it("caso 11 — mesmo telefone com outro nome: reaproveita o lead e registra a revisão desta captação", async () => {
     const telefone = "55 15988880011";
     const primeiro = respondiPayload("resp-int-rev-a-0011", telefone, "maria.exemplo+0011a@example.com");
     const res1 = await POST(jsonReq(TOKEN_RESPONDI, primeiro), reqCtx(TOKEN_RESPONDI));
     expect(res1.status).toBe(200);
+    const primeiroId = ((await res1.json()) as { data: { lead_id: string } }).data.lead_id;
+    const revisoesAntes = rows(`select id from public.crm_lead_activities where lead_id = '${primeiroId}' and type = 'lead_needs_review'`).length;
 
     const segundo = respondiPayload("resp-int-rev-b-0011", telefone, "maria.exemplo+0011b@example.com", (p) => {
       const respondent = p.respondent as Record<string, unknown>;
@@ -1084,7 +1086,8 @@ describe("POST /api/v1/webhooks/in/[token] — classificação inicial (2026-08-
     const reviewRows = rows(
       `select id from public.crm_lead_activities where lead_id = '${leadId2}' and type = 'lead_needs_review'`,
     );
-    expect(reviewRows.length).toBe(1);
+    expect(leadId2).toBe(primeiroId);
+    expect(reviewRows.length).toBe(revisoesAntes + 1);
   });
 
   it("caso 12 — sem respondi_score no envio: lead válido classifica como nao_avaliado, nunca uma classe adivinhada", async () => {
@@ -1273,7 +1276,7 @@ describe("POST /api/v1/webhooks/in/[token] — RD Station (envelope leads[])", (
   });
 
   it("rd 2 — MESMO event_uuid reenviado NÃO duplica: 200 com o lead existente", async () => {
-    const payload = rdStationEnvelope({ eventUuid: "aaaa0002-0000-4000-8000-000000000002", leadId: "5035999002" });
+    const payload = rdStationEnvelope({ eventUuid: "aaaa0002-0000-4000-8000-000000000002", leadId: "5035999002", email: "rd2@example.com", mobilePhone: "+55 (11) 98888-7702", celular: "+55 (11) 98888-7702" });
     const first = await POST(jsonReq(TOKEN_RDSTATION, payload), reqCtx(TOKEN_RDSTATION));
     const firstId = ((await first.json()) as { data: { lead_id: string } }).data.lead_id;
 
@@ -1289,7 +1292,7 @@ describe("POST /api/v1/webhooks/in/[token] — RD Station (envelope leads[])", (
   });
 
   it("rd 3 — sem event_uuid: usa rdstation:lead:<id> como chave de idempotência", async () => {
-    const payload = rdStationEnvelope({ eventUuid: null, leadId: "5035999003" });
+    const payload = rdStationEnvelope({ eventUuid: null, leadId: "5035999003", email: "rd3@example.com", mobilePhone: "+55 (11) 98888-7703", celular: "+55 (11) 98888-7703" });
     const res = await POST(jsonReq(TOKEN_RDSTATION, payload), reqCtx(TOKEN_RDSTATION));
     expect(res.status).toBe(200);
     const leadId = ((await res.json()) as { data: { lead_id: string } }).data.lead_id;
@@ -1360,5 +1363,88 @@ describe("POST /api/v1/webhooks/in/[token] — RD Station (envelope leads[])", (
     const lead = rows(`select external_id, title from public.crm_leads where id = '${leadId}'`)[0]!;
     expect(lead.title).toBe("Flat No RD Source");
     expect(lead.external_id).toBeNull(); // genérico sem external_id de topo
+  });
+
+  it("reenvio do formulário horas depois entra no negócio aberto, mesmo com a opção de repetir desligada", async () => {
+    const telefone = "55 15988880121";
+    const res1 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-aberto-a", telefone, "reuso.aberto.a@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    expect(res1.status).toBe(200);
+    const lead1 = ((await res1.json()) as { data: { lead_id: string } }).data.lead_id;
+    sql(`update public.crm_leads set created_at = now() - interval '3 hours' where id = '${lead1}'`);
+
+    const res2 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-aberto-b", telefone, "reuso.aberto.b@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    expect(res2.status).toBe(200);
+    const lead2 = ((await res2.json()) as { data: { lead_id: string } }).data.lead_id;
+    expect(lead2).toBe(lead1);
+
+    const n = rows(
+      `select count(*)::int as n from public.crm_leads where contact_id = (select contact_id from public.crm_leads where id = '${lead1}')`,
+    )[0]!;
+    expect(n.n).toBe(1);
+    const capturas = rows(
+      `select outcome from public.webhook_lead_captures where lead_id = '${lead1}' order by received_at`,
+    );
+    expect(capturas.map((c) => c.outcome)).toEqual(["criado", "duplicado"]);
+  });
+
+  it("formulário depois de o negócio ser ganho abre outro card", async () => {
+    const telefone = "55 15988880122";
+    const res1 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-ganho-a", telefone, "reuso.ganho.a@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    const lead1 = ((await res1.json()) as { data: { lead_id: string } }).data.lead_id;
+    sql(`update public.crm_leads set status = 'won', closed_at = now() where id = '${lead1}'`);
+
+    const res2 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-ganho-b", telefone, "reuso.ganho.b@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    expect(res2.status).toBe(200);
+    const lead2 = ((await res2.json()) as { data: { lead_id: string } }).data.lead_id;
+    expect(lead2).not.toBe(lead1);
+    const abertos = rows(
+      `select count(*)::int as n from public.crm_leads
+        where contact_id = (select contact_id from public.crm_leads where id = '${lead2}')
+          and status = 'open'`,
+    )[0]!;
+    expect(abertos.n).toBe(1);
+  });
+
+  it("negócio aberto em outro funil não absorve o formulário deste funil", async () => {
+    const telefone = "55 15988880123";
+    const res1 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-funil-a", telefone, "reuso.funil.a@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    const lead1 = ((await res1.json()) as { data: { lead_id: string } }).data.lead_id;
+    const outroFunil = "dddddddd-5555-4000-8000-000000000191";
+    const outraEtapa = "dddddddd-5555-4000-8000-000000000192";
+    sql(`
+      insert into public.crm_pipelines (id, organization_id, name, slug, is_default)
+      values ('${outroFunil}', '${GOV_ORG}', 'Funil paralelo da captação', 'funil-paralelo-whin', false)
+      on conflict do nothing;
+      insert into public.crm_stages (id, organization_id, pipeline_id, name, slug, position)
+      values ('${outraEtapa}', '${GOV_ORG}', '${outroFunil}', 'Entrada paralela', 'entrada-paralela-whin', 1000)
+      on conflict do nothing;
+      update public.crm_leads set pipeline_id = '${outroFunil}', stage_id = '${outraEtapa}' where id = '${lead1}';
+    `);
+
+    const res2 = await POST(
+      jsonReq(TOKEN_RESPONDI, respondiPayload("resp-reuso-funil-b", telefone, "reuso.funil.b@example.com")),
+      reqCtx(TOKEN_RESPONDI),
+    );
+    expect(res2.status).toBe(200);
+    const lead2 = ((await res2.json()) as { data: { lead_id: string } }).data.lead_id;
+    expect(lead2).not.toBe(lead1);
+    const novo = rows(`select pipeline_id, status from public.crm_leads where id = '${lead2}'`)[0]!;
+    expect(novo.pipeline_id).toBe(GOV_PIPELINE);
+    expect(novo.status).toBe("open");
   });
 });

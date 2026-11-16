@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 /**
  * GET /api/v1/admin/incidents (S-11.11)
  *
@@ -42,7 +44,8 @@ function encodeCursor(payload: CursorPayload): string {
 function decodeCursor(cursor: string): CursorPayload | null {
   try {
     return JSON.parse(Buffer.from(cursor, "base64url").toString("utf-8")) as CursorPayload;
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return null;
   }
 }
@@ -51,13 +54,14 @@ function decodeCursor(cursor: string): CursorPayload | null {
 // GET /api/v1/admin/incidents
 // ---------------------------------------------------------------------------
 
-export async function GET(req: NextRequest) {
+async function GETComAuth(req: NextRequest) {
   const requestId = randomUUID();
 
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
@@ -148,3 +152,5 @@ export async function GET(req: NextRequest) {
     meta: { has_more, cursor: nextCursor },
   });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

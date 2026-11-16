@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
@@ -16,9 +18,10 @@ function numeric(value: unknown): number {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
-export async function GET(request: NextRequest): Promise<Response> {
+async function GETComAuth(request: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  try { await requirePlatformAdmin(); } catch {
+  try { await requirePlatformAdmin(); } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
   const parsed = querySchema.safeParse({ account_id: new URL(request.url).searchParams.get("account_id") });
@@ -39,7 +42,10 @@ export async function GET(request: NextRequest): Promise<Response> {
         .sort((a, b) => b.total - a.total),
     }, { requestId });
   } catch (error) {
+    if (error instanceof AuthTemporariamenteIndisponivel) throw error;
     const message = error instanceof Error ? error.message : "Falha ao detectar conversões.";
     return fail("upstream_unavailable", message.slice(0, 300), 503, { requestId });
   }
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 /**
  * GET/POST /api/v1/admin/tenants/[id]/template — aplicar um template de nicho.
  *
@@ -50,7 +52,7 @@ function explicarRecusa(motivo: string | undefined, quantos: number | undefined)
   }
 }
 
-export async function GET(
+async function GETComAuth(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -59,7 +61,8 @@ export async function GET(
 
   try {
     await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
@@ -92,7 +95,7 @@ export async function GET(
   );
 }
 
-export async function POST(
+async function POSTComAuth(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -106,7 +109,8 @@ export async function POST(
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
@@ -122,7 +126,8 @@ export async function POST(
   let body: z.infer<typeof bodySchema>;
   try {
     body = bodySchema.parse(await req.json());
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("validation_failed", "Invalid request body", 400, { requestId });
   }
 
@@ -235,3 +240,6 @@ export async function POST(
     { requestId },
   );
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const POST = comAuthDisponivel(POSTComAuth);

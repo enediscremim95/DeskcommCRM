@@ -1,3 +1,4 @@
+import { getUserPublico } from "@/lib/auth/get-user-com-backoff";
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -35,7 +36,7 @@ export default async function GetStartedPage() {
   const supabase = await createClient();
   const {
     data: { user: authUser },
-  } = await supabase.auth.getUser();
+  } = await getUserPublico(() => supabase.auth.getUser());
   const nomeSugerido = (authUser?.user_metadata?.org_name as string | undefined) ?? undefined;
 
   // Fora da árvore de `app/app/layout.tsx`, como as telas públicas: o idioma

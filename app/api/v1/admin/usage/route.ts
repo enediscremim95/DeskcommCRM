@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
@@ -61,13 +63,14 @@ export interface UsageData {
 // GET /api/v1/admin/usage
 // ---------------------------------------------------------------------------
 
-export async function GET(req: NextRequest) {
+async function GETComAuth(req: NextRequest) {
   const requestId = randomUUID();
 
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
@@ -292,3 +295,5 @@ export async function GET(req: NextRequest) {
 
   return ok<UsageData>({ range, tenants, series }, { requestId });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

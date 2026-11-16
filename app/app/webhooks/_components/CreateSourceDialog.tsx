@@ -223,11 +223,11 @@ export function CreateSourceDialog({ open, onOpenChange, onCreated }: Props) {
               <div className="flex items-start justify-between gap-4 rounded-sm border border-border p-3">
                 <div className="space-y-1">
                   <Label htmlFor="src-merge-repeated">
-                    {t("Esta origem pode repetir o mesmo envio")}
+                    {t("Segurar envios que chegam juntos")}
                   </Label>
                   <p className="text-xs text-muted-foreground">
                     {t(
-                      "Ative se a ferramenta às vezes manda a mesma pessoa mais de uma vez. Os envios próximos ficam no mesmo card.",
+                      "Dois envios da mesma pessoa no mesmo instante ficam num card só. Um negócio já aberto neste funil recebe o novo envio mesmo com esta opção desligada.",
                     )}
                   </p>
                 </div>
