@@ -43,6 +43,7 @@ const AGORA = new Date("2026-08-26T12:00:00.000Z");
 
 /** As atualizações que a rodada mandou ao banco, por id de conexão. */
 let atualizacoes: Array<{ id: string; campos: Record<string, unknown> }> = [];
+let avisos: Array<Record<string, unknown>> = [];
 let linhas: Array<Record<string, unknown>> = [];
 /** Vínculos de `user_organizations`: por padrão a pessoa é membro ATIVO. */
 let vinculos: Record<string, unknown>[] = [{ organization_id: "org-1", user_id: "user-1", revoked_at: null }];
@@ -67,12 +68,21 @@ function admin() {
         lte: () => consulta,
         order: () => consulta,
         limit: async () => ({ data: linhas, error: null }),
-        update: (campos: Record<string, unknown>) => ({
-          eq: async (_coluna: string, id: string) => {
-            atualizacoes.push({ id, campos });
-            return { error: null };
-          },
-        }),
+        update: (campos: Record<string, unknown>) => {
+          const filtros: Record<string, string> = {};
+          const escrita = {
+            eq: (coluna: string, valor: string) => { filtros[coluna] = valor; return escrita; },
+            then: (resolve: (value: unknown) => unknown) => {
+              atualizacoes.push({ id: filtros.id ?? "", campos });
+              return Promise.resolve(resolve({ error: null }));
+            },
+          };
+          return escrita;
+        },
+        insert: async (linha: Record<string, unknown>) => {
+          avisos.push(linha);
+          return { error: null };
+        },
       };
       return consulta;
     },
@@ -100,6 +110,7 @@ function respostaHttp(corpo: unknown, status = 200): Response {
 
 beforeEach(() => {
   atualizacoes = [];
+  avisos = [];
   linhas = [];
   vinculos = [{ organization_id: "org-1", user_id: "user-1", revoked_at: null }];
   vi.stubGlobal("fetch", vi.fn());

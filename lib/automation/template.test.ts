@@ -10,6 +10,23 @@ describe("renderTemplate", () => {
     expect(renderTemplate("Use {{lead.custom_fields.cupom}}", ctx)).toBe("Use BF10"));
   it("alias {{nome}} resolve contact.name", () =>
     expect(renderTemplate("Oi {{nome}}", ctx)).toBe("Oi Ana"));
+  it.each([
+    ["Bianca Bueno", "Bianca"],
+    ["ana luiza", "Ana"],
+    ["JÁCQUELINE", "Jácqueline"],
+    ["Andressa de Liz Buss", "Andressa"],
+    ["", ""],
+  ])("resolve o primeiro nome de %j", (name, expected) => {
+    expect(renderTemplate("{{primeiro_nome}}", { contact: { name } })).toBe(expected);
+  });
+  it("remove somente a vírgula ligada ao primeiro nome vazio", () => {
+    expect(
+      renderTemplate("Vou te enviar os modelos e valores detalhados, {{primeiro_nome}}", {
+        contact: {},
+      }),
+    ).toBe("Vou te enviar os modelos e valores detalhados");
+    expect(renderTemplate("Olá, {{nome}}", { contact: {} })).toBe("Olá, ");
+  });
   it("variável ausente vira vazio, não '{{...}}' cru", () =>
     expect(renderTemplate("X{{lead.ghost}}Y", ctx)).toBe("XY"));
   it("espaços dentro das chaves tolerados", () =>

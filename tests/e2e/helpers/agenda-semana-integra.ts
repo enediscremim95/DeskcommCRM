@@ -64,14 +64,16 @@ const DIAS_POR_SEMANA = 7;
  * busca quando o recorte muda, e medir no meio da troca lê a semana velha.
  */
 export async function irParaASemanaSeguinte(page: Page): Promise<string[]> {
-  const colunas = page.locator('[data-testid^="coluna-dia-"]');
+  const colunas = page.locator('[data-testid^="coluna-dia-"]').filter({ visible: true });
   await expect(
     colunas.first(),
     "a grade não desenhou dia nenhum — a tela da agenda não chegou a montar",
   ).toBeAttached({ timeout: 25_000 });
   const antes = await diasDesenhados(page);
 
-  await page.getByTestId("periodo-seguinte").click();
+  // O Next conserva rotas ocultas; só a agenda visível determina o período.
+  // Duas opções visíveis continuam sendo erro de unicidade.
+  await page.getByTestId("periodo-seguinte").filter({ visible: true }).click();
 
   await expect
     .poll(async () => (await diasDesenhados(page))[0] ?? "", {
@@ -113,7 +115,7 @@ export async function irParaASemanaDoCompromisso(page: Page, instanteISO: string
   }, instanteISO);
 
   await expect(
-    page.locator('[data-testid^="coluna-dia-"]').first(),
+    page.locator('[data-testid^="coluna-dia-"]').filter({ visible: true }).first(),
     "a grade não desenhou dia nenhum — a tela da agenda não chegou a montar",
   ).toBeAttached({ timeout: 25_000 });
 
@@ -138,6 +140,7 @@ export async function diasDesenhados(page: Page): Promise<string[]> {
   return (
     await page
       .locator('[data-testid^="coluna-dia-"]')
+      .filter({ visible: true })
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!.replace("coluna-dia-", "")))
   ).sort();
 }

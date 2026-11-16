@@ -1,3 +1,5 @@
+import { getUserComBackoff, AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { fail } from "@/lib/api/wrappers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { NextResponse, type NextRequest } from "next/server";
@@ -33,6 +35,7 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
+  const pendentes: { name: string; value: string; options: CookieOptions }[] = [];
   const supabase = createServerClient(
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -42,10 +45,7 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value);
-            response.cookies.set(name, value, options);
-          });
+          pendentes.push(...cookiesToSet);
         },
       },
       cookieOptions: {
@@ -59,9 +59,30 @@ export async function proxy(request: NextRequest) {
   );
 
   // Validate JWT server-side (NEVER use getSession on backend per CLAUDE.md).
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user;
+  try {
+    const resultado = await getUserComBackoff(() => {
+      pendentes.length = 0;
+      return supabase.auth.getUser();
+    });
+    user = resultado.error ? null : resultado.data.user;
+  } catch (error) {
+    if (!(error instanceof AuthTemporariamenteIndisponivel)) throw error;
+    // Não emite cookies acumulados pelo SDK enquanto a validação estava incerta.
+    if (pathname.startsWith("/api/")) {
+      return fail("service_unavailable", error.message, 503, {
+        requestId, headers: { "Retry-After": "1" },
+      });
+    }
+    return new NextResponse(error.message, {
+      status: 503,
+      headers: { "content-type": "text/plain; charset=utf-8", "Retry-After": "1", "x-request-id": requestId },
+    });
+  }
+  pendentes.forEach(({ name, value, options }) => {
+    request.cookies.set(name, value);
+    response.cookies.set(name, value, options);
+  });
 
   if (!user) {
     // API routes must respond with JSON envelope (contract: {error:{code,message}})

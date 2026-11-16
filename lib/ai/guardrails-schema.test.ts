@@ -44,6 +44,43 @@ describe('agentPatchSchema, handoff_automatico_na_promessa', () => {
   });
 });
 
+describe('agentPatchSchema, escalação silenciosa', () => {
+  it.each([true, false])('aceita escalacao_silenciosa booleana: %p', (value) => {
+    expect(
+      agentPatchSchema.safeParse({ config: { escalacao_silenciosa: value } }).success,
+    ).toBe(true);
+  });
+
+  it.each(['true', 1, null])('rejeita escalacao_silenciosa inválida: %p', (value) => {
+    expect(
+      agentPatchSchema.safeParse({ config: { escalacao_silenciosa: value } }).success,
+    ).toBe(false);
+  });
+
+  it('aceita até 40 termos curtos e aplica lista vazia por padrão', () => {
+    const parsed = agentPatchSchema.safeParse({ config: {} });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.config?.termos_proibidos_ao_cliente).toEqual([]);
+
+    expect(
+      agentPatchSchema.safeParse({
+        config: {
+          termos_proibidos_ao_cliente: Array.from({ length: 40 }, (_, i) => `termo ${i}`),
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    { termos_proibidos_ao_cliente: 'atendente' },
+    { termos_proibidos_ao_cliente: [''] },
+    { termos_proibidos_ao_cliente: ['linha 1\nlinha 2'] },
+    { termos_proibidos_ao_cliente: Array.from({ length: 41 }, (_, i) => `termo ${i}`) },
+  ])('rejeita lista de termos inválida: %p', (config) => {
+    expect(agentPatchSchema.safeParse({ config }).success).toBe(false);
+  });
+});
+
 describe('agentPatchSchema, max_sends_per_turn', () => {
   it.each([1, 6, 12])('aceita inteiro dentro da faixa: %i', (value) => {
     const parsed = agentPatchSchema.safeParse({ config: { max_sends_per_turn: value } });

@@ -41,6 +41,8 @@ const AGENT: PublishedAgentConfig = {
   splitMaxChars: 400,
   splitPorParagrafo: false,
   handoffAutomaticoNaPromessa: false,
+  escalacaoSilenciosa: false,
+  termosProibidosAoCliente: [],
       maxSendsPerTurn: null,
       vitrines: {},
   multimodalInput: false,

@@ -69,6 +69,8 @@ export interface AvisoDeEscalacaoIds {
 
 export interface AvisoDeEscalacaoOpts {
   motivo: MotivoDoAviso;
+  /** Opt-in do agente: a passagem continua, mas nenhum aviso automático é enviado. */
+  silencioso?: boolean;
   channel: ChannelAdapter;
   /** `contacts.is_blocked` lido no contexto deste turno (fonte confiável). */
   optedOutThisTurn: boolean;
@@ -90,6 +92,11 @@ export async function avisarLeadDaEscalacao(
   ids: AvisoDeEscalacaoIds,
   opts: AvisoDeEscalacaoOpts,
 ): Promise<DesfechoDoAviso> {
+  if (opts.silencioso === true) {
+    opts.log.info('aviso de escalação desligado pela configuração do agente');
+    return { avisado: false, porque: 'aviso_desligado_pelo_agente' };
+  }
+
   let body: string;
   try {
     const { quem } = await expectativaDeAtendimento(pool, ids.tenantId, opts.now);

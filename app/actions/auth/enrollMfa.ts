@@ -1,5 +1,7 @@
 "use server";
 
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
+
 import QRCode from "qrcode";
 import { redirect } from "next/navigation";
 
@@ -22,7 +24,7 @@ export async function enrollMfa(): Promise<EnrollMfaResult> {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (!user) redirect("/login");
 
   // Drop any stale unverified TOTP factors (idempotent re-enroll).

@@ -3,10 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CHANNEL_CAPABILITIES, type ProviderDeMensagem } from "@/lib/channels";
 import {
   carregarPoliticaEsperaFila,
+  copiarAtivoDaFilaParaConversa,
   haConversaHumanaEmAndamentoNoCanal,
   motivoParaDescartarFila,
   politicaEsperaFilaPorCanal,
   processarItemFilaPrimeiraMensagem,
+  renderizarBolhaDaFila,
   type PoliticaEsperaFila,
   type RuntimeFilaPrimeiraMensagem,
   type SnapshotGuardaFila,
@@ -16,6 +18,7 @@ import {
   acaoUsaFilaPrimeiraMensagem,
   idDaBolhaFilaPrimeiraMensagem,
   pausaEntreBolhasSegundos,
+  pausaEntreImagensSegundos,
   resultadoDaFila,
   type ItemFilaPrimeiraMensagem,
 } from "./fila-primeira-mensagem";
@@ -98,8 +101,12 @@ function runtime(
     snapshot: vi.fn(async () => snapshot()),
     descartar: vi.fn(async (_item, reason) => void calls.push(`discard:${reason}`)),
     prepararPartes: vi.fn(async (queueItem) => queueItem),
-    enviarBolha: vi.fn(async (_queueItem, body, index) => {
-      calls.push(`send:${index}:${body}`);
+    enviarBolha: vi.fn(async (_queueItem, bolha, index) => {
+      calls.push(
+        typeof bolha === "string"
+          ? `send:${index}:${bolha}`
+          : `send:${index}:image:${bolha.arquivo}`,
+      );
       return {
         type: "send_whatsapp_message",
         status: "success" as const,
@@ -146,6 +153,25 @@ describe("fila da primeira mensagem", () => {
 
   it("usa pausa padrão de três segundos entre bolhas", () => {
     expect(pausaEntreBolhasSegundos(item())).toBe(3);
+    expect(pausaEntreImagensSegundos(item())).toBe(2);
+  });
+
+  it("renderiza variáveis na legenda sem alterar o arquivo da imagem", () => {
+    expect(
+      renderizarBolhaDaFila(
+        {
+          tipo: "imagem",
+          arquivo: "natal/01.jpg",
+          legenda: "Modelo para {{primeiro_nome}}",
+        },
+        { contact: { name: "BIANCA BUENO" } },
+        { now: NOW, timezone: "America/Sao_Paulo" },
+      ),
+    ).toEqual({
+      tipo: "imagem",
+      arquivo: "natal/01.jpg",
+      legenda: "Modelo para Bianca",
+    });
   });
 
   it("expõe o desfecho parcial sem esconder as bolhas já enviadas", () => {
@@ -380,6 +406,162 @@ describe("fila da primeira mensagem", () => {
       "wake",
     ]);
   });
+
+  it("envia o roteiro completo de textos e oito imagens na ordem, uma vez cada", async () => {
+    const queued = item();
+    queued.message_parts = [
+      "Ótimo dia! Sou a Lorenza da Sublimando! Como vai? 🌷",
+      "Vou te enviar os modelos e valores detalhados, Bianca",
+      ...Array.from({ length: 8 }, (_, index) => ({
+        tipo: "imagem" as const,
+        arquivo: `natal/${String(index + 1).padStart(2, "0")}.jpg`,
+        legenda: "",
+      })),
+      "Se for acima de 5 unidades, temos valores especiais 🎄",
+      "Seria para empresa? Ou presente pessoal?",
+    ];
+    queued.action_config = {
+      fila: "primeira_mensagem",
+      pausa_entre_bolhas_segundos: 4,
+      pausa_entre_imagens_segundos: 2,
+    };
+    const r = runtime([turno("ready"), turno("claimed")]);
+
+    await expect(processarItemFilaPrimeiraMensagem(r, queued)).resolves.toMatchObject({
+      status: "ok",
+      detail: "success",
+    });
+
+    expect(r.enviarBolha).toHaveBeenCalledTimes(12);
+    expect(vi.mocked(r.enviarBolha).mock.calls.map(([, parte]) => parte)).toEqual(
+      queued.message_parts,
+    );
+    expect(r.calls.filter((call) => call === "pause:2000")).toHaveLength(7);
+    expect(r.calls.filter((call) => call === "pause:4000")).toHaveLength(4);
+  });
+
+  it("falha na quinta imagem e o retry continua nela sem reenviar as anteriores", async () => {
+    const processing = item();
+    processing.status = "processing";
+    processing.message_parts = Array.from({ length: 8 }, (_, index) => ({
+      tipo: "imagem" as const,
+      arquivo: `natal/${String(index + 1).padStart(2, "0")}.jpg`,
+    }));
+    const r = runtime([]);
+    const original = vi.mocked(r.enviarBolha).getMockImplementation()!;
+    let falhou = false;
+    vi.mocked(r.enviarBolha).mockImplementation(async (queueItem, parte, index) => {
+      if (index === 4 && !falhou) {
+        falhou = true;
+        throw new Error("first_message_queue_image_copy_failed:timeout");
+      }
+      return original(queueItem, parte, index);
+    });
+
+    await expect(processarItemFilaPrimeiraMensagem(r, processing)).rejects.toThrow(
+      "first_message_queue_image_copy_failed:timeout",
+    );
+    expect(processing.sent_part_count).toBe(4);
+
+    await expect(processarItemFilaPrimeiraMensagem(r, processing)).resolves.toMatchObject({
+      status: "ok",
+      detail: "success",
+    });
+    const indices = vi.mocked(r.enviarBolha).mock.calls.map(([, , index]) => index);
+    expect(indices.filter((index) => index === 0)).toHaveLength(1);
+    expect(indices.filter((index) => index === 1)).toHaveLength(1);
+    expect(indices.filter((index) => index === 2)).toHaveLength(1);
+    expect(indices.filter((index) => index === 3)).toHaveLength(1);
+    expect(indices.filter((index) => index === 4)).toHaveLength(2);
+  });
+
+  it("copia o ativo para um caminho determinístico pertencente à conversa", async () => {
+    const copy = vi.fn(async () => ({ data: { path: "ok" }, error: null }));
+    const admin = {
+      storage: {
+        from: vi.fn((bucket: string) => {
+          expect(bucket).toBe("whatsapp-media");
+          return { copy };
+        }),
+      },
+    };
+    const queued = item();
+
+    const primeira = await copiarAtivoDaFilaParaConversa(
+      admin as never,
+      queued,
+      { tipo: "imagem", arquivo: "natal/05.webp" },
+      6,
+    );
+    const segunda = await copiarAtivoDaFilaParaConversa(
+      admin as never,
+      queued,
+      { tipo: "imagem", arquivo: "natal/05.webp" },
+      6,
+    );
+
+    expect(primeira).toEqual(segunda);
+    expect(primeira.mime).toBe("image/webp");
+    expect(copy).toHaveBeenNthCalledWith(
+      1,
+      "org-1/ativos/natal/05.webp",
+      `org-1/conversa-1/first-message-${idDaBolhaFilaPrimeiraMensagem("fila-1", 6)}.webp`,
+    );
+    expect(copy).toHaveBeenNthCalledWith(2, ...copy.mock.calls[0]!);
+  });
+
+  it("para entre a terceira e a quarta imagem quando um humano responde", async () => {
+    const queued = item();
+    queued.message_parts = [
+      "Primeiro texto",
+      "Segundo texto",
+      ...Array.from({ length: 8 }, (_, index) => ({
+        tipo: "imagem" as const,
+        arquivo: `natal/${String(index + 1).padStart(2, "0")}.jpg`,
+      })),
+      "Penúltimo texto",
+      "Último texto",
+    ];
+    const r = runtime([turno("ready"), turno("claimed")]);
+    vi.mocked(r.snapshot).mockImplementation(async () =>
+      snapshot({
+        humanRepliedAfterQueue: vi.mocked(r.enviarBolha).mock.calls.length >= 5,
+      }),
+    );
+
+    await expect(processarItemFilaPrimeiraMensagem(r, queued)).resolves.toMatchObject({
+      status: "ok",
+      detail: "parcial:humano_respondeu",
+    });
+    expect(r.enviarBolha).toHaveBeenCalledTimes(5);
+    expect(r.calls).toContain("send:4:image:natal/03.jpg");
+    expect(r.calls).not.toContain("send:5:image:natal/04.jpg");
+  });
+
+  it.each(["../x.jpg", "a//b.jpg", "/etc/x.png", "x.exe"])(
+    "recusa %s antes de enviar qualquer bolha",
+    async (arquivo) => {
+      const queued = item();
+      queued.message_parts = [
+        "Texto que não pode sair",
+        { tipo: "imagem", arquivo },
+      ] as never;
+      const r = runtime([turno("ready"), turno("claimed")]);
+
+      await expect(processarItemFilaPrimeiraMensagem(r, queued)).resolves.toMatchObject({
+        status: "ok",
+        detail: `first_message_queue_invalid_image_path:${arquivo}`,
+      });
+      expect(r.enviarBolha).not.toHaveBeenCalled();
+      expect(r.finalizar).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "fila-1" }),
+        expect.objectContaining({
+          status: "failed",
+          error: `first_message_queue_invalid_image_path:${arquivo}`,
+        }),
+      );
+    },
+  );
 
   it("para antes da segunda bolha quando um humano responde no meio", async () => {
     const queued = item();

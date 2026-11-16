@@ -8,7 +8,7 @@ import { FileText, ImageSquare, Plus, Storefront, UserCircle } from "@/lib/ui/ic
 
 interface Props {
   disabled?: boolean;
-  onPick: (file: File) => void;
+  onPick: (files: File[]) => void;
   onPickContact?: () => void;
   onPickCatalog?: () => void;
 }
@@ -20,8 +20,8 @@ export function AttachMenu({ disabled, onPick, onPickContact, onPickCatalog }: P
   const docRef = useRef<HTMLInputElement | null>(null);
 
   const handle = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) onPick(file);
+    const files = Array.from(e.target.files ?? []);
+    if (files.length > 0) onPick(files);
     e.target.value = ""; // permite re-selecionar o mesmo arquivo
   };
 
@@ -87,6 +87,7 @@ export function AttachMenu({ disabled, onPick, onPickContact, onPickCatalog }: P
         ref={mediaRef}
         type="file"
         accept="image/*,video/*"
+        multiple
         className="hidden"
         onChange={handle}
       />
@@ -94,6 +95,7 @@ export function AttachMenu({ disabled, onPick, onPickContact, onPickCatalog }: P
         ref={docRef}
         type="file"
         accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+        multiple
         className="hidden"
         onChange={handle}
       />

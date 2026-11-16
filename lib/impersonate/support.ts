@@ -1,3 +1,4 @@
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { fail } from "@/lib/api/wrappers";
@@ -51,7 +52,7 @@ export async function supportCallbackWriteAllowed(organizationId: string, actorI
 }
 export async function authenticatedSessionId(): Promise<string> {
   const db = await createClient();
-  const { data: { user } } = await db.auth.getUser();
+  const { data: { user } } = await getUserComBackoff(() => db.auth.getUser());
   if (!user) throw new Error("Sessão ausente.");
   const { data } = await db.auth.getClaims();
   return z.string().uuid().parse(data?.claims.session_id);

@@ -213,6 +213,21 @@ export async function GET(request: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "reports" });
   if (!authz.ok) return authz.response;
+  // O cookie é compartilhado entre abas; o título da aba pode estar na org anterior.
+  // O header é só uma precondição, nunca uma fonte de autorização ou de escopo.
+  const expectedOrg = request.headers.get("x-report-organization");
+  if (expectedOrg && expectedOrg !== authz.org.orgId) {
+    return fail(
+      "state_conflict",
+      "A organização ativa mudou em outra aba. Atualize a página.",
+      409,
+      {
+        requestId,
+        details: { reason: "active_organization_changed" },
+      },
+    );
+  }
+
   const params = new URL(request.url).searchParams;
   const parsed = querySchema.safeParse({ from: params.get("from"), to: params.get("to") });
   if (!parsed.success) {

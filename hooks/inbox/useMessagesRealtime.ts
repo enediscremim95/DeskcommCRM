@@ -1,6 +1,6 @@
 "use client";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { apiClient } from "@/lib/api/client";
@@ -14,7 +14,7 @@ interface MessagesResponse {
 
 export function useMessagesRealtime(conversationId: string | null) {
   const qc = useQueryClient();
-  const queryKey = ["messages", conversationId] as const;
+  const queryKey = useMemo(() => ["messages", conversationId] as const, [conversationId]);
 
   const query = useInfiniteQuery({
     queryKey,
@@ -94,5 +94,32 @@ export function useMessagesRealtime(conversationId: string | null) {
     enabled: !!conversationId,
   });
 
-  return { ...query, realtimeStatus, seguranca };
+  const loadAroundMessage = useCallback(
+    async (messageId: string) => {
+      if (!conversationId) return;
+      const qs = new URLSearchParams({ around_message_id: messageId, limit: "50" });
+      const window = await apiClient.get<MessagesResponse>(
+        `/api/v1/conversations/${conversationId}/messages?${qs.toString()}`,
+      );
+      qc.setQueryData<InfiniteData<MessagesResponse>>(queryKey, (current) => {
+        if (!current || current.pages.length === 0) return current;
+        const first = current.pages[0]!;
+        const byId = new Map<string, Message>();
+        for (const page of current.pages) {
+          for (const message of page.data) byId.set(message.id, message);
+        }
+        for (const message of window.data) byId.set(message.id, message);
+        const merged = [...byId.values()].sort(
+          (a, b) => Date.parse(a.sent_at) - Date.parse(b.sent_at) || a.id.localeCompare(b.id),
+        );
+        return {
+          ...current,
+          pages: [{ ...first, data: merged }, ...current.pages.slice(1).map((page) => ({ ...page, data: [] }))],
+        };
+      });
+    },
+    [conversationId, qc, queryKey],
+  );
+
+  return { ...query, realtimeStatus, seguranca, loadAroundMessage };
 }

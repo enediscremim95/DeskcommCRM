@@ -126,6 +126,8 @@ export const agentConfigSchema = z.object({
   sem_saudacao_repetida: z.boolean().default(false),
   vitrine_por_gatilho: z.boolean().default(false),
   handoff_automatico_na_promessa: z.boolean().default(false),
+  escalacao_silenciosa: z.boolean().default(false),
+  termos_proibidos_ao_cliente: z.array(textoCurtoSemQuebra(80)).max(40).default([]),
   max_sends_per_turn: z.number().int().min(1).max(12).nullable().optional(),
   vitrines: vitrinesConfigSchema.optional(),
 });
@@ -142,6 +144,8 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   sem_saudacao_repetida: false,
   vitrine_por_gatilho: false,
   handoff_automatico_na_promessa: false,
+  escalacao_silenciosa: false,
+  termos_proibidos_ao_cliente: [],
 };
 
 // ---------------------------------------------------------------------------

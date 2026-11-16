@@ -47,6 +47,7 @@ ser fonte sem ninguém decidir isso.
 | `agente-envia-produto.architecture.json` | item avulso e vitrine determinística do catálogo, na mesma fila FIFO, com título fixo, dedupe de texto, orçamento físico e sandbox sem efeitos |
 | `agente-cota-frete.architecture.json` | cotação opt-in por organização, peso e medidas do catálogo, origem fixa, fila FIFO e sandbox determinístico sem rede |
 | `catalogo-e-atalhos-midia.architecture.json` | painel como fonte do catálogo, importação segura de fotos, campos comerciais somente para leitura, lote de produtos e janela de 24 horas revalidada na porta central de envio |
+| `inbox-whatsapp-fase-1a.architecture.json` | rascunho por conversa, fila sequencial de anexos, busca e salto no histórico, cópia e ficha responsiva sem migration |
 
 > **Esta tabela já apodreceu uma vez:** ela listava 8 mapas quando o disco tinha 9 — faltava
 > `indice-de-atrito`. Nenhum teste lê este README (o gate lê os `.json`), então mapa novo que

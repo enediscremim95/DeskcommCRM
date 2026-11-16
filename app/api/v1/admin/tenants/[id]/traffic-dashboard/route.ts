@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
@@ -24,9 +26,10 @@ const inputSchema = z.object({
   })).min(1).max(100),
 });
 
-export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function GETComAuth(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const requestId = randomUUID();
-  try { await requirePlatformAdmin(); } catch {
+  try { await requirePlatformAdmin(); } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
   const { id } = await context.params;
@@ -43,12 +46,13 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
   return ok({ config, accounts: accounts ?? [] }, { requestId });
 }
 
-export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function PUTComAuth(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
   let adminContext: Awaited<ReturnType<typeof requirePlatformAdmin>>;
-  try { adminContext = await requirePlatformAdmin(); } catch {
+  try { adminContext = await requirePlatformAdmin(); } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
   const { id } = await context.params;
@@ -86,3 +90,6 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
   });
   return ok({ saved: true }, { requestId });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const PUT = comAuthDisponivel(PUTComAuth);

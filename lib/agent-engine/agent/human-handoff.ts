@@ -233,6 +233,9 @@ export async function performHumanHandoff(
 function linhaDoAviso(aviso: { avisado: boolean; porque?: string } | undefined): string {
   if (aviso === undefined) return '';
   if (aviso.avisado) return 'O cliente JÁ FOI avisado de que uma pessoa vai assumir. ';
+  if (aviso.porque === 'aviso_desligado_pelo_agente') {
+    return 'O agente não avisou a cliente (modo silencioso): ela está esperando a resposta de uma pessoa. ';
+  }
   return `⚠️ O cliente NÃO foi avisado (${aviso.porque ?? 'motivo desconhecido'}) — ele está esperando sem saber. `;
 }
 
@@ -297,6 +300,8 @@ export async function applyRequestHumanHandoff(
   const jaAvisado =
     opts.avisoAoLead === undefined || opts.avisoAoLead.avisado
       ? 'O lead JÁ foi avisado de que uma pessoa vai assumir.'
+      : opts.avisoAoLead.porque === 'aviso_desligado_pelo_agente'
+        ? 'O aviso ao lead está desligado neste agente; a equipe recebeu a conversa em modo silencioso.'
       : 'ATENÇÃO: não foi possível avisar o lead (o canal recusou a mensagem); a equipe foi alertada disso.';
 
   return {

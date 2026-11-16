@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { jitsiVideoUrl } from "@/lib/agenda/jitsi";
 import { assertCurrentServiceBoundary, parseServiceBoundary, type ServiceBoundary, type CurrentServiceBoundary } from "@/lib/atendimento/fronteira";
 
 export const meetingStateSchema = z.enum([
@@ -46,6 +47,11 @@ export function meetVideoUrl(value: unknown): string | null {
   } catch {
     return null;
   }
+}
+
+/** URL de vídeo que o painel, o agente e a entrega podem expor como pronta. */
+export function meetingVideoUrl(value: unknown): string | null {
+  return meetVideoUrl(value) ?? jitsiVideoUrl(value);
 }
 export type MeetingObservation = {
   state: "pending" | "ready" | "failed";

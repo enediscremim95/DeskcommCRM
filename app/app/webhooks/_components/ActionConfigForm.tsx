@@ -21,6 +21,7 @@ import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSes
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { apiClient } from "@/lib/api/client";
 import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
+import type { BolhaDeMensagem } from "@/lib/automation/bolha-de-mensagem";
 
 export type ActionItem =
   | { type: "create_or_move_lead"; config: { pipeline_id: string; stage_id: string } }
@@ -28,7 +29,8 @@ export type ActionItem =
       type: "send_whatsapp_message";
       config: {
         channel_session_id: string;
-        template: string;
+        template?: string;
+        templates?: BolhaDeMensagem[];
         fila?: "primeira_mensagem";
       };
     }
@@ -129,6 +131,7 @@ function CreateOrMoveLeadForm({
 const TEMPLATE_VARS = [
   { token: "{{saudacao}}", label: "Saudação por horário" },
   { token: "{{nome}}", label: "Nome" },
+  { token: "{{primeiro_nome}}", label: "Primeiro nome" },
   { token: "{{telefone}}", label: "Telefone" },
   { token: "{{lead.title}}", label: "Título do lead" },
 ];
@@ -138,7 +141,8 @@ function SendWhatsappForm({
   onChange,
 }: FormProps<{
   channel_session_id: string;
-  template: string;
+  template?: string;
+  templates?: BolhaDeMensagem[];
   fila?: "primeira_mensagem";
 }>) {
   const t = useT();
@@ -147,7 +151,7 @@ function SendWhatsappForm({
 
   const insertVar = (token: string) => {
     const el = textareaRef.current;
-    const current = config.template;
+    const current = config.template ?? "";
     const start = el?.selectionStart ?? current.length;
     const end = el?.selectionEnd ?? current.length;
     const next = current.slice(0, start) + token + current.slice(end);
@@ -194,14 +198,14 @@ function SendWhatsappForm({
               size="sm"
               onClick={() => insertVar(v.token)}
             >
-              {v.label}
+              {t(v.label)}
             </Button>
           ))}
         </div>
         <Textarea
           ref={textareaRef}
           rows={4}
-          value={config.template}
+          value={config.template ?? ""}
           onChange={(e) => onChange({ ...config, template: e.target.value })}
           placeholder="Oi {{nome}}, tudo bem?"
         />
