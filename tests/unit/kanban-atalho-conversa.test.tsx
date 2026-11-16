@@ -116,10 +116,13 @@ describe("o elo que some sem barulho", () => {
     // chega. Mesma classe do filtro por `tag`: o defeito mora no arquivo que
     // ninguém testou.
     const fonte = readFileSync("app/api/v1/pipelines/[id]/board/route.ts", "utf8");
-    expect(fonte, "falta withConversas").toContain("withConversas");
-    expect(fonte, "withConversas não foi chamada").toMatch(
-      /leadsComConversa\s*=\s*await withConversas/,
+    expect(fonte, "falta o enriquecimento").toContain('import { enrichLeads } from "./enrich-leads"');
+    expect(fonte, "o enriquecimento não foi chamado").toMatch(
+      /leadsComConversa\s*=\s*await enrichLeads/,
     );
+    const enriquecimento = readFileSync("app/api/v1/pipelines/[id]/board/enrich-leads.ts", "utf8");
+    expect(enriquecimento).toContain("withConversas(supabase, organizationId, leads)");
+    expect(enriquecimento).toContain("merged.conversa = c.conversa");
     // Chamar e não USAR o resultado é o defeito de verdade: a função roda, o
     // custo se paga, e a resposta sai sem a conversa. A primeira versão deste
     // caso só olhava a chamada e o sabote passou.
@@ -129,7 +132,7 @@ describe("o elo que some sem barulho", () => {
   });
 
   it("a mais RECENTE por contato — não a primeira que o banco devolver", () => {
-    const fonte = readFileSync("app/api/v1/pipelines/[id]/board/route.ts", "utf8");
+    const fonte = readFileSync("app/api/v1/pipelines/[id]/board/enrich-leads.ts", "utf8");
     expect(fonte).toMatch(/order\("last_message_at",\s*\{\s*ascending:\s*false/);
   });
 

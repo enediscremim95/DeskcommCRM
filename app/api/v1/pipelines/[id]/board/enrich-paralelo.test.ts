@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { enrichLeads } from "./route";
+import { enrichLeads } from "./enrich-leads";
 
 /**
  * Regressão: os enriquecimentos do quadro rodavam em série e o quadro levava
