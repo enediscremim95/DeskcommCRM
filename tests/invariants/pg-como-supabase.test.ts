@@ -349,3 +349,11 @@ describe("o que NÃO está implementado estoura", () => {
     expect(() => db.from("crm_pipelines").select("id").neq("id", "x")).toThrow(/não está implementado/);
   });
 });
+
+
+it("in restringe o conjunto e aceita conjunto vazio", async () => {
+ const subset=await db.from("crm_pipelines").select("slug").eq("organization_id",ORG).in("slug",["alfa","zulu"]);
+ expect(subset.error).toBeNull(); expect(subset.data?.map((r: { slug: string }) => r.slug).sort()).toEqual(["alfa","zulu"]);
+ const empty=await db.from("crm_pipelines").select("id").eq("organization_id",ORG).in("id",[]);
+ expect(empty.error).toBeNull(); expect(empty.data).toEqual([]);
+});

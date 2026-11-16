@@ -442,3 +442,41 @@ describe("relatório de tráfego", () => {
     );
   });
 });
+
+describe("relatório de tráfego: leads e alcance são inteiros", () => {
+  // Regressão Sublimando PR/SC: "1.951,95 leads", "94,93 leads", alcance 535.025,46.
+  const accounts = [
+    { account_id: "meta", account_name: "Meta", platform: "meta_ads" as const, currency: "BRL" },
+  ];
+  const facts = [
+    fact({ occurred_on: "2026-09-17", conversions: { actions_lead: 1000.45 }, reach: 300000.2 }),
+    fact({ occurred_on: "2026-09-18", conversions: { actions_lead: 951.5 }, reach: 235025.26 }),
+  ];
+
+  it("arredonda leads, conversões e alcance em resumo, plataforma, campanha, conjunto e anúncio", () => {
+    const [group] = buildTrafficReport({
+      model: "leads",
+      conversionFields: ["actions_lead"],
+      accounts,
+      facts,
+      accountReach: new Map([["meta", 535025.46]]),
+      campaignReach: new Map(),
+    } as never);
+    const niveis = [
+      group!.summary,
+      group!.platforms[0]!,
+      group!.campaigns[0]!,
+      group!.campaigns[0]!.adsets[0]!,
+      group!.campaigns[0]!.adsets[0]!.ads[0]!,
+    ] as Array<{ leads: number; conversions: number; reach: number | null }>;
+    for (const nivel of niveis) {
+      expect(Number.isInteger(nivel.leads)).toBe(true);
+      expect(Number.isInteger(nivel.conversions)).toBe(true);
+      if (nivel.reach != null) expect(Number.isInteger(nivel.reach)).toBe(true);
+    }
+    expect(group!.summary.leads).toBe(1952);
+    expect(group!.summary.reach).toBe(535025);
+    expect(group!.summary.cost_per_lead).toBeCloseTo(200 / 1952, 6);
+    for (const dia of group!.daily) expect(Number.isInteger(dia.conversions)).toBe(true);
+  });
+});

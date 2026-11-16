@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSupabaseSilenceSweepDb } from "@/lib/followup/silence-sweep";
 import { createSupabaseAdminClient } from "@/lib/followup/engine";
@@ -47,7 +47,19 @@ function supabaseComConversas(data: unknown[]) {
       },
     },
   );
-  return { from: () => chain } as never;
+  const attempts: Record<string, unknown> = new Proxy({}, {
+    get: (_target, prop) => prop === "then"
+      ? (resolve: (value: unknown) => unknown) => resolve({ count: 0, error: null })
+      : () => attempts,
+  });
+  return { from: (table: string) => {
+    if (table === "organizations") return {
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({
+        data: { settings: { proactive_followup: { enabled: true } } }, error: null,
+      }) }) }),
+    };
+    return table === "followup_enrollments" ? attempts : chain;
+  } } as never;
 }
 
 const metadata = { ai_gate: "open" };
@@ -86,6 +98,12 @@ function conversaLegada(contactId: string, comCarimbo: boolean) {
 }
 
 describe("fronteira exige procedência; o legado é do backfill", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Opt-in e janela válidos: estes casos isolam a exigência do carimbo.
+    vi.setSystemTime(new Date("2026-09-01T15:00:00.000Z"));
+  });
+  afterEach(() => vi.useRealTimers());
   it("varredura de silêncio NÃO enxerga a conversa sem carimbo — grupo e entrega fora de ordem moram aqui", async () => {
     const db = createSupabaseSilenceSweepDb(
       supabaseComConversas([conversaLegada("c-sem-carimbo", false)]),

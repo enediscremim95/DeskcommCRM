@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted((): {
   nativeEnabled: boolean;
@@ -49,6 +50,7 @@ import RelatorioPage from "@/app/app/relatorio/page";
 import { RelatorioClient } from "@/app/app/relatorio/_client";
 
 describe("acesso ao Relatório", () => {
+  afterEach(() => cleanup());
   beforeEach(() => {
     state.nativeEnabled = true;
     state.reportUrl = "https://relatorio.exemplo/inexistente";
@@ -81,14 +83,17 @@ describe("acesso ao Relatório", () => {
     expect(html).toContain("Seu relatório ainda não foi configurado.");
   });
 
-  it("não exibe report_url externo quando o relatório nativo está ligado", () => {
-    const html = renderToStaticMarkup(
+  it("não exibe report_url externo quando o relatório nativo está ligado", async () => {
+    const view = render(
       <RelatorioClient
         reportUrl="https://relatorio.exemplo/inexistente"
         nativeConfigured
       />,
     );
 
+    // O painel agora é carregado sob demanda; HTML estático precede o import.
+    await screen.findByText("dashboard nativo");
+    const html = view.container.innerHTML;
     expect(html).toContain("dashboard nativo");
     expect(html).not.toContain("relatorio.exemplo");
     expect(html).not.toContain("Abrir em nova aba");

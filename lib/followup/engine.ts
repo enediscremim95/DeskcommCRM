@@ -73,6 +73,7 @@ export interface FollowupJobRequest {
   contact_id: string;
   payload: {
     service_boundary?: ServiceBoundary | null;
+    automatic_silence?: boolean;
     followup_enrollment_id: string;
     node_id: string;
     source_step_key?: string;
@@ -439,6 +440,7 @@ async function applyResult(
           contact_id: enrollment.contact_id,
           payload: {
             service_boundary: enrollment.service_boundary ?? null,
+            ...(enrollment.automatic_silence ? { automatic_silence: true } : {}),
             followup_enrollment_id: enrollment.id,
             node_id: node.id,
             source_step_key: idemKey,

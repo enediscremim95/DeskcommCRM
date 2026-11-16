@@ -9,6 +9,8 @@ export type RequestOpts = {
   schema?: ZodSchema<unknown>;
   idempotencyKey?: string;
   timeoutMs?: number;
+  /** Estouro de prazo não repete a chamada (consulta pesada: repetir só empilha). */
+  noRetryOnTimeout?: boolean;
   headers?: Record<string, string>;
   signal?: AbortSignal;
 };
@@ -288,6 +290,7 @@ async function request<T>(
       }
       // Network error / timeout — retry
       lastError = err;
+      if (opts.noRetryOnTimeout && (err as { name?: string })?.name === "TimeoutError") throw err;
       if (attempt < MAX_ATTEMPTS) {
         await sleep(backoffMs(attempt), opts.signal);
         continue;

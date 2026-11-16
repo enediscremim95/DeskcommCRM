@@ -1,3 +1,4 @@
+import { boardDateRange, boardDatesToParams, type BoardDateFilter } from "@/lib/kanban/date-range";
 import type { Lead } from "@/lib/types/leads";
 
 /**
@@ -16,7 +17,7 @@ export function parseAgentOwnerFilter(value: string | undefined): string | null 
   return value.slice(AGENT_OWNER_PREFIX.length) || null;
 }
 
-export interface LeadFilters {
+export interface LeadFilters extends BoardDateFilter {
   /** userId | `agent:<uuid>` | "any" | "unassigned" */
   owner?: string | "any" | "unassigned";
   status?: "all" | "open" | "won" | "lost";
@@ -63,6 +64,9 @@ export function filtersFromParams(
   const tag = sp.get("tag");
   const search = sp.get("q");
   return {
+    dateField: sp.get("date_field") === "last_activity_at" ? "last_activity_at" : "created_at",
+    dateFrom: sp.get("date_from") || undefined,
+    dateUntil: sp.get("date_until") || undefined,
     owner: owner ?? undefined,
     status:
       status === "open" || status === "won" || status === "lost" || status === "all"
@@ -75,7 +79,7 @@ export function filtersFromParams(
 }
 
 export function filtersToParams(f: LeadFilters): string {
-  const p = new URLSearchParams();
+  const p = new URLSearchParams(boardDatesToParams(f));
   if (f.owner && f.owner !== "any") p.set("owner", f.owner);
   if (f.status && f.status !== "all") p.set("status", f.status);
   if (f.tag) p.set("tag", f.tag);
@@ -88,7 +92,16 @@ export function applyFilters(leads: Lead[], f: LeadFilters): Lead[] {
   const today = new Date().toISOString().slice(0, 10);
   const search = f.search?.trim().toLowerCase() ?? "";
 
+  let range;
+  try { range = boardDateRange(f); } catch { return []; }
   return leads.filter((l) => {
+    if (range.from || range.before) {
+      const raw = l[range.field];
+      if (!raw) return false;
+      const stamp = Date.parse(raw);
+      if (!Number.isFinite(stamp) || (range.from && stamp < Date.parse(range.from)) ||
+          (range.before && stamp >= Date.parse(range.before))) return false;
+    }
     // "Sem responsável" é sem dono NENHUM — lead de dono agente tem dono.
     if (
       f.owner === "unassigned" &&

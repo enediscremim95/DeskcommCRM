@@ -15,6 +15,7 @@ ser fonte sem ninguém decidir isso.
 ## Mapas
 
 | arquivo | escopo |
+| `capture-proactivity.architecture.json` | primeiro contato do formulário opt-in por organização, retomada durável, alternativas e atenção humana |
 |---|---|
 | `extensao-whatsapp.architecture.json` | painel humano no WhatsApp Web, pareamento efêmero dependente da sessão do CRM, isolamento do tenant e voz privada em OGG/Opus |
 | `crm-cliente-uma-tela.architecture.json` | criação administrativa pronta, perfil editável e entrega de acesso recuperável |

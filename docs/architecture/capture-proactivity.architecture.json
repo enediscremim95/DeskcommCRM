@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Primeiro contato do formulário",
+    "subtitle": "Opt-in por organização, tentativas persistentes e revisão humana",
+    "output": "capture-proactivity.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "input",
+      "label": "Entrada e configuração"
+    },
+    {
+      "id": "runtime",
+      "label": "Sequência durável"
+    },
+    {
+      "id": "output",
+      "label": "Efeito e retorno"
+    }
+  ],
+  "mainPath": [
+    "lead",
+    "consumer",
+    "channel",
+    "timeline"
+  ],
+  "nodes": [
+    {
+      "id": "lead",
+      "lane": "input",
+      "type": "database",
+      "label": "lead.created",
+      "sublabel": "Captação de formulário, com tenant e contato"
+    },
+    {
+      "id": "config",
+      "lane": "input",
+      "type": "frontend",
+      "label": "Distribuição de atendimento",
+      "sublabel": "capture_proactivity desligado por padrão"
+    },
+    {
+      "id": "consumer",
+      "lane": "runtime",
+      "type": "service",
+      "label": "captureProactivityHandler",
+      "sublabel": "Checa resposta, opt-out, expediente e limite"
+    },
+    {
+      "id": "progress",
+      "lane": "runtime",
+      "type": "database",
+      "label": "event_log.metadata.capture_proactivity",
+      "sublabel": "Progresso por evento; claim do drain"
+    },
+    {
+      "id": "channel",
+      "lane": "output",
+      "type": "service",
+      "label": "WhatsApp e e-mail exclusivo da organização",
+      "sublabel": "IDs determinísticos; resultado incerto exige revisão"
+    },
+    {
+      "id": "timeline",
+      "lane": "output",
+      "type": "frontend",
+      "label": "Timeline e tag vermelha no Kanban",
+      "sublabel": "Tentativa registrada; humano corrige cadastro e retoma"
+    }
+  ],
+  "edges": [
+    {
+      "from": "lead",
+      "to": "consumer",
+      "label": "evento"
+    },
+    {
+      "from": "config",
+      "to": "consumer",
+      "label": "opt-in e textos"
+    },
+    {
+      "from": "consumer",
+      "to": "progress",
+      "label": "reserva e progresso"
+    },
+    {
+      "from": "progress",
+      "to": "consumer",
+      "label": "retomada"
+    },
+    {
+      "from": "consumer",
+      "to": "channel",
+      "label": "uma tentativa"
+    },
+    {
+      "from": "channel",
+      "to": "consumer",
+      "label": "resultado"
+    },
+    {
+      "from": "consumer",
+      "to": "timeline",
+      "label": "atividade e atenção"
+    },
+    {
+      "from": "timeline",
+      "to": "config",
+      "label": "humano revê contato/política"
+    }
+  ]
+}

@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createSupabaseSilenceSweepDb } from "./silence-sweep";
 
-function supabaseComConversas(data: unknown[]) {
+function supabaseComConversas(data: unknown[], settings: unknown = { proactive_followup: { enabled: true } }) {
   const chain: Record<string, unknown> = new Proxy(
     {},
     {
@@ -14,7 +14,8 @@ function supabaseComConversas(data: unknown[]) {
       },
     },
   );
-  return { from: () => chain } as never;
+  const enrollment: Record<string, unknown> = new Proxy({}, { get: (_, prop) => prop === "then" ? (resolve: (v: unknown) => unknown) => resolve({ count: 0, error: null }) : () => enrollment });
+  return { from: (table: string) => table === "organizations" ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { settings }, error: null }) }) }) } : table === "followup_enrollments" ? new Proxy({}, { get: (_, prop) => prop === "then" ? (resolve: (v: unknown) => unknown) => resolve({ count: 0, error: null }) : () => enrollment }) : chain } as never;
 }
 
 const metadata = {
@@ -54,8 +55,12 @@ function conversa(contactId: string, phoneNumber: string) {
   };
 }
 
+afterEach(() => vi.useRealTimers());
+
 describe("sweep de silêncio no pré-go-live", () => {
   it("só cria candidato para o número de teste do canal", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-01T15:00:00.000Z"));
     const db = createSupabaseSilenceSweepDb(
       supabaseComConversas([
         conversa("tester", "+5585987654321"),
@@ -64,7 +69,21 @@ describe("sweep de silêncio no pré-go-live", () => {
     );
 
     await expect(
-      db.loadSilentContactIds("org", "2026-09-02T10:00:00.000Z", []),
+      db.loadSilentContactIds("org", "2026-09-01T14:00:00.000Z", []),
     ).resolves.toEqual(["tester"]);
   });
+
+  it.each([{}, null, { proactive_followup: { enabled: false } }, { proactive_followup: { enabled: "true" } }])(
+    "organização sem opt-in (%j) não gera nenhum candidato de silêncio",
+    async (settings) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-01T15:00:00.000Z"));
+      const db = createSupabaseSilenceSweepDb(
+        supabaseComConversas([conversa("tester", "+5585987654321")], settings),
+      );
+      await expect(
+        db.loadSilentContactIds("org", "2026-09-01T14:00:00.000Z", []),
+      ).resolves.toEqual([]);
+    },
+  );
 });
