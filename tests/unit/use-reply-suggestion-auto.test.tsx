@@ -31,6 +31,17 @@ describe("geração automática da sugestão", () => {
     });
   });
 
+  it("somente leitura não busca nem gera rascunho, mesmo com mensagem nova", async () => {
+    const { rerender } = renderHook(({ context }) => useReplySuggestion({
+      conversationId: "conv-readonly", autoEligible: true, autoContextKey: context,
+      composerEmpty: true, delayMs: 0, enabled: false,
+    }), { wrapper, initialProps: { context: "primeira" } });
+    rerender({ context: "nova" });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+    expect(api.get).not.toHaveBeenCalled();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
   it("prepara após o atraso sem chamar nenhum caminho de envio", async () => {
     renderHook(
       () =>

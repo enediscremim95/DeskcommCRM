@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/conversations/[id]/media — upload outbound (multipart).
@@ -23,7 +24,7 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+async function POSTComAuth(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -110,3 +111,5 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     { requestId },
   );
 }
+
+export const POST = comAuthDisponivel(POSTComAuth);

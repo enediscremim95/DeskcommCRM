@@ -46,12 +46,17 @@ export async function enviarTextoFixoPendente(
   admin: SupabaseClient,
   somenteContactIds?: string[],
 ): Promise<number> {
-  const { data: jobs, error } = await admin
+  if (somenteContactIds?.length === 0) return 0;
+  let pendentes = admin
     .from("job_queue")
     .select("id, organization_id, contact_id, payload, attempts, max_attempts")
     .eq("kind", "followup_turn")
     .eq("status", "pending")
-    .lte("run_after",new Date().toISOString())
+    .lte("run_after",new Date().toISOString());
+  // O lote é do contato solicitado, não dos cinco primeiros da instalação.
+  // Filtrar só depois do LIMIT deixa um retry aceito invisível atrás de outros tenants.
+  if (somenteContactIds) pendentes = pendentes.in("contact_id", somenteContactIds);
+  const { data: jobs, error } = await pendentes
     .order("created_at", { ascending: true })
     .limit(5);
   if (error) throw new Error(error.message);

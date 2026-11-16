@@ -7,8 +7,10 @@
  * com testemunha opcional. Esta rota é o que faz o estado acontecer sozinho.
  *
  * Para cada organização com negócio aberto, compara o bucket ATUAL com o
- * GRAVADO. Só escreve quando muda, e a travessia que conta para um humano vira
- * linha na timeline (`lead_cooled` / `lead_reactivated`).
+ * GRAVADO. O estado só é reescrito quando o bucket muda. "Negócio esfriou"
+ * entra uma vez por episódio de parada; enquanto o negócio segue parado, a
+ * passada seguinte não grava outra linha. `lead_reactivated` continua marcando
+ * a volta.
  *
  * ⚠️ NÃO TOCA `crm_leads` — nem direto, nem pelo trigger: os tipos que ele emite
  * estão fora da lista positiva da 0079. É isso que impede o produtor de apagar o
@@ -47,6 +49,34 @@ export const dynamic = "force-dynamic";
 /** Teto de orgs por invocação — a próxima passada pega o resto. */
 const ORG_LIMIT = 50;
 
+/**
+ * Trava do processo. O `curl -m 60` do agendador desiste, mas esta função
+ * continua no servidor; uma chamada manual faz o mesmo. Sem a trava as duas
+ * leem o estado antigo e as duas gravam a frase. Vale só neste processo: o
+ * app roda num container só. Mais de uma réplica precisaria da trava no banco.
+ * O teto solta uma trava que ficou presa (a passada não voltou ao `finally`).
+ */
+const TETO_DA_TRAVA_MS = 30 * 60 * 1000;
+let trava: { id: number; desde: number } | null = null;
+let proximoId = 0;
+
+function adquirirTrava(agora = Date.now()): number | null {
+  if (trava && agora - trava.desde < TETO_DA_TRAVA_MS) return null;
+  if (trava) {
+    logger.warn("[risk-watcher] trava passou do teto e foi solta", {
+      desde: new Date(trava.desde).toISOString(),
+      teto_ms: TETO_DA_TRAVA_MS,
+    });
+  }
+  proximoId += 1;
+  trava = { id: proximoId, desde: agora };
+  return proximoId;
+}
+
+function soltarTrava(id: number): void {
+  if (trava?.id === id) trava = null;
+}
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
@@ -57,6 +87,22 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
+  const travaId = adquirirTrava();
+  if (travaId === null) {
+    logger.warn("[risk-watcher] passada já em andamento; esta chamada não processa", {
+      requestId,
+    });
+    return ok({ skipped: "em_andamento" }, { status: 202, requestId });
+  }
+
+  try {
+    return await executar(requestId);
+  } finally {
+    soltarTrava(travaId);
+  }
+}
+
+async function executar(requestId: string): Promise<Response> {
   const admin = createAdminClient();
 
   const { data: rows, error } = await admin
@@ -77,6 +123,7 @@ async function handle(req: NextRequest): Promise<Response> {
   let reativaram = 0;
   let falhas = 0;
   let propostas = 0;
+  let jaRegistrados = 0;
   let vencidas = 0;
   let tarefasUrgentesEnfileiradas = 0;
   const comErro: string[] = [];
@@ -89,6 +136,7 @@ async function handle(req: NextRequest): Promise<Response> {
       reativaram += r.reativaram;
       falhas += r.falhasDeAtividade;
       propostas += r.propostas;
+      jaRegistrados += r.esfriamentosJaRegistrados;
 
       // O VENCIMENTO RODA NO MESMO TICK, depois da travessia. Se morasse num
       // cron separado, a proposta poderia vencer em silêncio até o outro rodar
@@ -123,6 +171,7 @@ async function handle(req: NextRequest): Promise<Response> {
       esfriaram,
       reativaram,
       propostas_criadas: propostas,
+      esfriamentos_ja_registrados: jaRegistrados,
       propostas_vencidas: vencidas,
       tarefas_urgentes_enfileiradas: tarefasUrgentesEnfileiradas,
       atividades_falhas: falhas,

@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { type NextRequest } from "next/server";
 import { normalizarModoDeOrcamento } from "@/lib/agent-engine/edge/llm/orcamento";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
@@ -34,10 +36,11 @@ export interface DashboardKPIs {
 // GET /api/v1/admin/dashboard/kpis
 // Requires platform admin gate (MFA-enforced).
 // Uses service-role client intentionally — cross-tenant read for super-admin.
-export async function GET(_req: NextRequest) {
+async function GETComAuth(_req: NextRequest) {
   try {
     await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     // requirePlatformAdmin redirects; if it throws, it's unexpected
     return fail("forbidden", "Platform admin required", 403);
   }
@@ -323,3 +326,5 @@ export async function GET(_req: NextRequest) {
 
   return ok(kpis);
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

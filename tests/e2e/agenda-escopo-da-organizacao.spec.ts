@@ -202,7 +202,9 @@ async function trocarPara(page: PlaywrightTestTypes.Page, orgId: string, nome: s
   if ((await seletor.getByText(nome, { exact: true }).count()) > 0) return;
 
   await seletor.click();
+  const navigation = page.waitForURL(url => url.pathname.startsWith("/app/pipelines/"), { waitUntil: "load" });
   await page.getByTestId(`tenant-switcher-item-${orgId}`).click({ noWaitAfter: true });
+  await navigation;
   await expect
     .poll(
       async () =>

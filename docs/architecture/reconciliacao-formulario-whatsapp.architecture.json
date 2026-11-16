@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Reconciliação entre formulário e WhatsApp",
-    "subtitle": "o número real prevalece, a ambiguidade pede revisão e a automação pode ser desfeita",
+    "subtitle": "o número real prevalece, a mensagem pronta reconhece outro número e a ambiguidade pede revisão",
     "output": "reconciliacao-formulario-whatsapp.html",
     "quality_profile": "standard"
   },
@@ -13,97 +13,32 @@
     { "id": "registro", "label": "Rastro e revisão" },
     { "id": "humano", "label": "O que a equipe vê" }
   ],
-  "mainPath": ["formulario", "whatsapp", "rpc", "contato-real", "conversa"],
+  "mainPath": ["formulario", "whatsapp", "mensagem", "rpc", "contato-real"],
   "nodes": [
-    {
-      "id": "formulario",
-      "lane": "entrada",
-      "col": 0,
-      "type": "database",
-      "label": "Contato do formulário",
-      "sublabel": "source=webhook, até 7 dias, sem conversa"
-    },
-    {
-      "id": "whatsapp",
-      "lane": "entrada",
-      "col": 1,
-      "type": "service",
-      "label": "Primeira mensagem do WhatsApp",
-      "sublabel": "contato novo marcado pela fn_upsert_wa_contact"
-    },
-    {
-      "id": "rpc",
-      "lane": "decisao",
-      "col": 2,
-      "type": "service",
-      "label": "fn_reconciliar_contato_whatsapp_formulario",
-      "sublabel": "mesma organização, últimos 8 dígitos, nome compatível"
-    },
-    {
-      "id": "contato-real",
-      "lane": "decisao",
-      "col": 3,
-      "type": "database",
-      "label": "Contato do WhatsApp",
-      "sublabel": "número real e dados do card"
-    },
-    {
-      "id": "conversa",
-      "lane": "decisao",
-      "col": 4,
-      "type": "database",
-      "label": "Conversa e mensagens",
-      "sublabel": "nascem depois da reconciliação"
-    },
-    {
-      "id": "fila",
-      "lane": "registro",
-      "col": 2,
-      "type": "database",
-      "label": "merge_queue",
-      "sublabel": "sugestão ou snapshot reversível"
-    },
-    {
-      "id": "timeline",
-      "lane": "registro",
-      "col": 3,
-      "type": "database",
-      "label": "crm_lead_activities",
-      "sublabel": "junção e desfazer visíveis na timeline"
-    },
-    {
-      "id": "tela",
-      "lane": "humano",
-      "col": 3,
-      "type": "frontend",
-      "label": "Contatos duplicados",
-      "sublabel": "revisar ambiguidade e desfazer junção automática"
-    },
-    {
-      "id": "undo",
-      "lane": "decisao",
-      "col": 4,
-      "type": "service",
-      "label": "fn_desfazer_mesclagem_automatica_whatsapp",
-      "sublabel": "devolve apenas os IDs originalmente repontados"
-    }
+    { "id": "formulario", "lane": "entrada", "col": 0, "type": "database", "label": "Contato do formulário", "sublabel": "source=webhook, sem conversa, 7 dias pelo número ou 60 min pelo nome" },
+    { "id": "whatsapp", "lane": "entrada", "col": 1, "type": "service", "label": "Primeira entrada do WhatsApp", "sublabel": "contato novo marcado pela fn_upsert_wa_contact" },
+    { "id": "mensagem", "lane": "entrada", "col": 2, "type": "database", "label": "Primeira mensagem inbound", "sublabel": "persistida antes da reconciliação; reentrega recupera a chamada" },
+    { "id": "rpc", "lane": "decisao", "col": 3, "type": "service", "label": "fn_reconciliar_contato_whatsapp_formulario", "sublabel": "8 dígitos primeiro; depois Me chamo <nome> e quero" },
+    { "id": "contato-real", "lane": "decisao", "col": 4, "type": "database", "label": "Contato do WhatsApp", "sublabel": "sobrevive com número real e telefone informado no histórico" },
+    { "id": "lote", "lane": "decisao", "col": 2, "type": "service", "label": "fn_juntar_mesma_pessoa_da_organizacao", "sublabel": "reprocessa primeiras mensagens de um tenant; simulação não escreve" },
+    { "id": "fila", "lane": "registro", "col": 3, "type": "database", "label": "merge_queue", "sublabel": "sugestão ou snapshot reversível com a regra aplicada" },
+    { "id": "timeline", "lane": "registro", "col": 4, "type": "database", "label": "crm_lead_activities", "sublabel": "junção e desfazer visíveis na timeline" },
+    { "id": "tela", "lane": "humano", "col": 4, "type": "frontend", "label": "Contatos duplicados", "sublabel": "manager revisa primeiro nome, nomes repetidos e aproximações" },
+    { "id": "undo", "lane": "decisao", "col": 4, "type": "service", "label": "fn_desfazer_mesclagem_automatica_whatsapp", "sublabel": "devolve apenas os IDs originalmente repontados" }
   ],
   "edges": [
-    { "id": "e1", "from": "formulario", "to": "rpc", "label": "candidato recente e sem conversa" },
-    { "id": "e2", "from": "whatsapp", "to": "rpc", "label": "número e nome reais" },
-    { "id": "e3", "from": "rpc", "to": "contato-real", "label": "único e compatível, junta" },
-    {
-      "id": "e4",
-      "from": "contato-real",
-      "to": "conversa",
-      "label": "a conversa nasce no contato real"
-    },
-    { "id": "e5", "from": "rpc", "to": "fila", "label": "ambíguo ou incompatível, sugere" },
+    { "id": "e1", "from": "formulario", "to": "rpc", "label": "candidato tenant-aware e sem conversa" },
+    { "id": "e2", "from": "whatsapp", "to": "mensagem", "label": "grava a primeira inbound" },
+    { "id": "e3", "from": "mensagem", "to": "rpc", "label": "external_id, corpo e instante" },
+    { "id": "e4", "from": "rpc", "to": "contato-real", "label": "único, exato e com 2+ palavras, junta" },
+    { "id": "e5", "from": "rpc", "to": "fila", "label": "ambíguo, curto ou parecido, sugere" },
     { "id": "e6", "from": "rpc", "to": "timeline", "label": "registra a junção" },
-    { "id": "e7", "from": "fila", "to": "tela", "label": "lista existente de duplicados" },
+    { "id": "e7", "from": "fila", "to": "tela", "label": "fila humana já existente" },
     { "id": "e8", "from": "tela", "to": "undo", "label": "pessoa confirma o desfazer" },
     { "id": "e9", "from": "undo", "to": "formulario", "label": "card e histórico original voltam" },
-    { "id": "e10", "from": "undo", "to": "timeline", "label": "registra o desfazer" }
+    { "id": "e10", "from": "undo", "to": "timeline", "label": "registra o desfazer" },
+    { "id": "e11", "from": "lote", "to": "rpc", "label": "reaplica a regra A aos históricos" },
+    { "id": "e12", "from": "mensagem", "to": "lote", "label": "primeiras inbound já gravadas" }
   ],
   "cards": [
     {
@@ -111,7 +46,8 @@
       "title": "Travas",
       "items": [
         "Nenhuma comparação cruza organization_id",
-        "Qualquer conversa no candidato elimina a automação",
+        "A regra dos 8 dígitos continua primeiro",
+        "Nome automático exige igualdade exata, candidato único e duas palavras",
         "A mesma mensagem reutiliza o mesmo registro",
         "O desfazer falha inteiro se o histórico mudou"
       ]

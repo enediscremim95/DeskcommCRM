@@ -9,6 +9,11 @@ export interface SendArgs {
   fromName?: string;
   /** Chave estável para retry quando o provedor oferece idempotência. */
   idempotencyKey?: string;
+  attachments?: Array<{
+    filename: string;
+    content: string;
+    contentType: string;
+  }>;
 }
 
 export interface SendResult {

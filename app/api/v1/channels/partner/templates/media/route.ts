@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * A imagem do cabeçalho de uma definição — subir do computador, sem colar URL.
@@ -47,7 +48,7 @@ const VALIDADE_SEGUNDOS = 7 * 24 * 60 * 60;
 const TIPOS = new Set(["image/jpeg", "image/png"]);
 const TAMANHO_MAX = 5 * 1024 * 1024;
 
-export async function POST(req: NextRequest): Promise<Response> {
+async function POSTComAuth(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -103,3 +104,5 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   return ok({ url: assinada.signedUrl, path: caminho }, { requestId });
 }
+
+export const POST = comAuthDisponivel(POSTComAuth);

@@ -68,6 +68,7 @@ export function AgendaClient({
   fusoDeApresentacao,
   googleConfigurado,
   contaConectada,
+  conexaoGoogleExpirada,
   enderecoDeRetorno,
   faltaNoGoogle,
   linkDeConfiguracaoDoGoogle,
@@ -77,6 +78,7 @@ export function AgendaClient({
   fusoDeApresentacao: string | null;
   googleConfigurado: boolean;
   contaConectada?: string | null;
+  conexaoGoogleExpirada?: boolean;
   enderecoDeRetorno?: string;
   faltaNoGoogle: string[];
   /** Preenchido só para quem administra a instalação — ver `page.tsx`. */
@@ -300,6 +302,7 @@ export function AgendaClient({
         falta={faltaNoGoogle}
         linkDeConfiguracao={linkDeConfiguracaoDoGoogle}
         contaConectada={contaConectada}
+        conexaoExpirada={conexaoGoogleExpirada}
         enderecoDeRetorno={enderecoDeRetorno}
       />
 
@@ -583,7 +586,9 @@ export function AgendaClient({
                 // ninguém em tela o lia. Chutar São Paulo para quem atende em
                 // Manaus é uma hora de diferença no horário oferecido ao cliente.
                 local={rotuloDoLocal(tipo.localKind, tipo.localDetalhes)}
-                fuso={horarios?.fuso_da_regra}
+                // A grade usa hora local do navegador; confirmar no fuso da
+                // regra mudava 12:00 para 09:00 sem mudar o instante escolhido.
+                fuso={Intl.DateTimeFormat().resolvedOptions().timeZone}
                 horariosPorDia={horariosPorDia}
                 publicouHorarios={horarios?.publicou_horarios ?? true}
                 erroAoCarregar={horariosFalharam}

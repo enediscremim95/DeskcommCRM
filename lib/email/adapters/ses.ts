@@ -16,6 +16,46 @@ function hmac(key: Buffer | string, value: string): Buffer {
 }
 
 function corpo(args: SendArgs, from: string): string {
+  if (args.attachments?.length) {
+    const boundary = `crm-${createHash("sha256").update(args.idempotencyKey ?? args.subject).digest("hex").slice(0, 24)}`;
+    const encodedSubject = Buffer.from(args.subject, "utf8").toString("base64");
+    const recipients = (Array.isArray(args.to) ? args.to : [args.to]).join(", ");
+    const parts = [
+      `From: ${remetenteSes(from)}`,
+      `To: ${recipients}`,
+      `Subject: =?UTF-8?B?${encodedSubject}?=`,
+      "MIME-Version: 1.0",
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      'Content-Type: multipart/alternative; boundary="alternative"',
+      "",
+      "--alternative",
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from(args.text ?? args.html.replace(/<[^>]+>/g, " "), "utf8").toString("base64"),
+      "--alternative",
+      'Content-Type: text/html; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from(args.html, "utf8").toString("base64"),
+      "--alternative--",
+    ];
+    for (const attachment of args.attachments) {
+      const filename = attachment.filename.replace(/[^A-Za-z0-9._-]/g, "_");
+      parts.push(
+        `--${boundary}`,
+        `Content-Type: ${attachment.contentType}; name="${filename}"`,
+        "Content-Transfer-Encoding: base64",
+        `Content-Disposition: attachment; filename="${filename}"`,
+        "",
+        Buffer.from(attachment.content, "utf8").toString("base64"),
+      );
+    }
+    parts.push(`--${boundary}--`, "");
+    return JSON.stringify({ Content: { Raw: { Data: Buffer.from(parts.join("\r\n"), "utf8").toString("base64") } } });
+  }
   const body: Record<string, unknown> = {
     FromEmailAddress: remetenteSes(from),
     Destination: {
