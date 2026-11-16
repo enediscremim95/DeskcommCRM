@@ -821,7 +821,9 @@ test("receiver reconcilia inline/daemon, barra claim antigo e protege agenda alÃ
       "update job_queue set status='pending',locked_by=null,locked_at=null,run_after=now() where id=$1",
       [reverse.job],
     );
-    expect(await enviarTextoFixoPendente(db, [p.contact])).toBe(1);
+    const reconciliados = await enviarTextoFixoPendente(db, [p.contact]);
+    const estadoDoRetry = await pool.query("select status,run_after,attempts,last_error from job_queue where id=$1", [reverse.job]);
+    expect(reconciliados, `retry apÃ³s aceite do canal: ${JSON.stringify(estadoDoRetry.rows)}`).toBe(1);
     expect(hits.filter((url) => url.includes("sendText"))).toHaveLength(2);
     expect(
       (
