@@ -289,7 +289,12 @@ export function KanbanCard({
               />
             </div>
             {card.tags.includes(ATENCAO_CONTATO) && (
-              <span className="rounded bg-red-100 px-1 text-xs font-semibold text-red-800" role="status">{ATENCAO_CONTATO}</span>
+              <span
+                className="rounded-md bg-red-100 px-1 text-xs font-semibold text-red-800"
+                role="status"
+              >
+                {t("Atenção: contato não realizado")}
+              </span>
             )}
             {card.canonicalTag && (
               <span

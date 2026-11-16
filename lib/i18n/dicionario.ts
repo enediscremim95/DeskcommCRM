@@ -37,6 +37,25 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Primeiro contato de formulário": { es: "Primer contacto de formulario" },
+  "Ativar primeiro contato": { es: "Activar primer contacto" },
+  "Canal de WhatsApp": { es: "Canal de WhatsApp" },
+  "Limite total de tentativas (1 a 3)": { es: "Límite total de intentos (1 a 3)" },
+  "Início do expediente (hora no fuso da organização)": {
+    es: "Inicio del horario laboral (hora en la zona de la organización)",
+  },
+  "Fim do expediente": { es: "Fin del horario laboral" },
+  "Dias úteis: segunda a sexta.": { es: "Días laborables: de lunes a viernes." },
+  "Mensagem de WhatsApp": { es: "Mensaje de WhatsApp" },
+  "Assunto do e-mail": { es: "Asunto del correo" },
+  "Mensagem de e-mail": { es: "Mensaje de correo" },
+  "Desligado por padrão. WhatsApp, nova tentativa com número validado e e-mail. Somente novos formulários após ligar; para ao receber resposta.":
+    {
+      es: "Desactivado por defecto. WhatsApp, nuevo intento con número validado y correo. Solo formularios nuevos después de activar; se detiene al recibir respuesta.",
+    },
+  "Atenção: contato não realizado": { es: "Atención: contacto no realizado" },
+
+
   "Busca inválida.": { es: "Búsqueda no válida." },
   "Mensagem não encontrada.": { es: "Mensaje no encontrado." },
   "Erro ao buscar mensagens.": { es: "No se pudieron buscar los mensajes." },

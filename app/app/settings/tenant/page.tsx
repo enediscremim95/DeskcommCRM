@@ -1,4 +1,5 @@
 import { lerProatividade } from "@/lib/proatividade/config";
+import { listSelectableChannels } from "@/lib/channels/selectable";
 import { redirect } from "next/navigation";
 
 import { userHasPermission } from "@/lib/auth/permissions";
@@ -45,11 +46,7 @@ export default async function TenantSettingsPage() {
     .eq("id", activeOrg.orgId)
     .maybeSingle();
 
-  const { data: channels } = await supabase
-    .from("channel_sessions")
-    .select("id,display_name")
-    .eq("organization_id", activeOrg.orgId)
-    .order("display_name");
+  const channels = await listSelectableChannels(supabase, activeOrg.orgId);
   const row = (data ?? null) as OrgRow | null;
   const lostReasonsExtra = (
     row?.settings &&
@@ -69,9 +66,9 @@ export default async function TenantSettingsPage() {
       </header>
       {row && (
         <TenantForm
-          channels={(channels ?? []).map((channel, index) => ({
+          channels={(channels ?? []).map((channel) => ({
             id: channel.id,
-            name: channel.display_name || `Canal ${index + 1}`,
+            name: channel.display_name,
           }))}
           initial={{
             form_proactivity: lerProatividade(row.settings),

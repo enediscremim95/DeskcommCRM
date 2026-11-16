@@ -70,11 +70,12 @@ export function TenantForm({ initial, channels = [] }: Props) {
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl">
       <Card className="space-y-4 p-6">
-        <fieldset className="space-y-3 rounded border p-4">
-          <legend>Primeiro contato de formulário</legend>
+        <fieldset className="space-y-3 rounded-md border p-4">
+          <legend>{t("Primeiro contato de formulário")}</legend>
           <p className="text-sm text-muted-foreground">
-            Desligado por padrão. WhatsApp, nova tentativa com número validado e e-mail. Somente
-            novos formulários após ligar; para ao receber resposta.
+            {t(
+              "Desligado por padrão. WhatsApp, nova tentativa com número validado e e-mail. Somente novos formulários após ligar; para ao receber resposta.",
+            )}
           </p>
           <Label>
             <input
@@ -82,25 +83,25 @@ export function TenantForm({ initial, channels = [] }: Props) {
               checked={proactive.enabled}
               onChange={(e) => set("form_proactivity", { ...proactive, enabled: e.target.checked })}
             />{" "}
-            Ativar primeiro contato
+            {t("Ativar primeiro contato")}
           </Label>
-          <Label htmlFor="proactive-channel">Canal de WhatsApp</Label>
+          <Label htmlFor="proactive-channel">{t("Canal de WhatsApp")}</Label>
           <select
             id="proactive-channel"
-            className="w-full rounded border bg-background p-2"
+            className="w-full rounded-md border bg-background p-2"
             value={proactive.channel_session_id ?? ""}
             onChange={(e) =>
               set("form_proactivity", { ...proactive, channel_session_id: e.target.value || null })
             }
           >
-            <option value="">Escolha um canal</option>
+            <option value="">{t("Escolha um canal")}</option>
             {channels.map((channel) => (
               <option key={channel.id} value={channel.id}>
                 {channel.name}
               </option>
             ))}
           </select>
-          <Label htmlFor="proactive-attempts">Limite total de tentativas (1 a 3)</Label>
+          <Label htmlFor="proactive-attempts">{t("Limite total de tentativas (1 a 3)")}</Label>
           <Input
             id="proactive-attempts"
             type="number"
@@ -112,7 +113,7 @@ export function TenantForm({ initial, channels = [] }: Props) {
             }
           />
           <Label htmlFor="proactive-start">
-            Início do expediente (hora no fuso da organização)
+            {t("Início do expediente (hora no fuso da organização)")}
           </Label>
           <Input
             id="proactive-start"
@@ -124,7 +125,7 @@ export function TenantForm({ initial, channels = [] }: Props) {
               set("form_proactivity", { ...proactive, start_hour: Number(e.target.value) })
             }
           />
-          <Label htmlFor="proactive-end">Fim do expediente</Label>
+          <Label htmlFor="proactive-end">{t("Fim do expediente")}</Label>
           <Input
             id="proactive-end"
             type="number"
@@ -135,8 +136,8 @@ export function TenantForm({ initial, channels = [] }: Props) {
               set("form_proactivity", { ...proactive, end_hour: Number(e.target.value) })
             }
           />
-          <p className="text-sm">Dias úteis: segunda a sexta.</p>
-          <Label htmlFor="proactive-whatsapp">Mensagem de WhatsApp</Label>
+          <p className="text-sm">{t("Dias úteis: segunda a sexta.")}</p>
+          <Label htmlFor="proactive-whatsapp">{t("Mensagem de WhatsApp")}</Label>
           <Textarea
             id="proactive-whatsapp"
             value={proactive.whatsapp_text}
@@ -144,7 +145,7 @@ export function TenantForm({ initial, channels = [] }: Props) {
               set("form_proactivity", { ...proactive, whatsapp_text: e.target.value })
             }
           />
-          <Label htmlFor="proactive-subject">Assunto do e-mail</Label>
+          <Label htmlFor="proactive-subject">{t("Assunto do e-mail")}</Label>
           <Input
             id="proactive-subject"
             value={proactive.email_subject}
@@ -152,7 +153,7 @@ export function TenantForm({ initial, channels = [] }: Props) {
               set("form_proactivity", { ...proactive, email_subject: e.target.value })
             }
           />
-          <Label htmlFor="proactive-email">Mensagem de e-mail</Label>
+          <Label htmlFor="proactive-email">{t("Mensagem de e-mail")}</Label>
           <Textarea
             id="proactive-email"
             value={proactive.email_text}
@@ -301,7 +302,9 @@ export function TenantForm({ initial, channels = [] }: Props) {
         </fieldset>
 
         <div className="space-y-2">
-          <Label htmlFor="lead_reentry_window_minutes">{t("Tempo para segurar envios que chegam juntos (minutos)")}</Label>
+          <Label htmlFor="lead_reentry_window_minutes">
+            {t("Tempo para segurar envios que chegam juntos (minutos)")}
+          </Label>
           <Input
             id="lead_reentry_window_minutes"
             type="number"
@@ -311,7 +314,9 @@ export function TenantForm({ initial, channels = [] }: Props) {
             onChange={(e) => set("lead_reentry_window_minutes", Number(e.target.value))}
           />
           <p className="text-xs text-muted-foreground">
-            {t("Um negócio já aberto no mesmo funil recebe o WhatsApp e o formulário, sem este prazo. O prazo só evita dois cards quando as duas entradas nascem juntas.")}
+            {t(
+              "Um negócio já aberto no mesmo funil recebe o WhatsApp e o formulário, sem este prazo. O prazo só evita dois cards quando as duas entradas nascem juntas.",
+            )}
           </p>
         </div>
 

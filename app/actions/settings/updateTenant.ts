@@ -1,4 +1,5 @@
 "use server";
+import { listSelectableChannels } from "@/lib/channels/selectable";
 
 import { supportWriteError } from "@/lib/impersonate/support";
 import { headers } from "next/headers";
@@ -61,13 +62,9 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
   if (readErr) return { ok: false, error: readErr.message };
 
   if (parsed.data.form_proactivity?.channel_session_id) {
-    const { data: channel, error: channelError } = await supabase
-      .from("channel_sessions")
-      .select("id")
-      .eq("organization_id", activeOrg.orgId)
-      .eq("id", parsed.data.form_proactivity.channel_session_id)
-      .maybeSingle();
-    if (channelError || !channel) return { ok: false, error: "invalid_channel" };
+    const channels = await listSelectableChannels(supabase, activeOrg.orgId);
+    if (!channels.some((channel) => channel.id === parsed.data.form_proactivity?.channel_session_id))
+      return { ok: false, error: "invalid_channel" };
   }
   const currentSettings = (orgRow?.settings as Record<string, unknown> | null) ?? {};
   const nextSettings = {
