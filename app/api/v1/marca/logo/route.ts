@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * O logo da marca — subir do computador, sem colar URL.
@@ -355,7 +356,7 @@ async function registrarAuditoria(
   });
 }
 
-export async function POST(req: NextRequest): Promise<Response> {
+async function POSTComAuth(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -456,7 +457,7 @@ export async function POST(req: NextRequest): Promise<Response> {
  * depois. Se a remoção do arquivo falhar, sobra um órfão; se fosse ao contrário,
  * a tela apontaria para um objeto que não existe mais.
  */
-export async function DELETE(req: NextRequest): Promise<Response> {
+async function DELETEComAuth(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -494,3 +495,6 @@ export async function DELETE(req: NextRequest): Promise<Response> {
 
   return ok({ logo_path: null, logo_url: null }, { requestId });
 }
+
+export const POST = comAuthDisponivel(POSTComAuth);
+export const DELETE = comAuthDisponivel(DELETEComAuth);

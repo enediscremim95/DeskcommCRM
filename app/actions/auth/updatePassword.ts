@@ -1,5 +1,7 @@
 "use server";
 
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
+
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -39,7 +41,7 @@ export async function updatePassword(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (!user) return { ok: false, error: "session_expired" };
 
   const hdrs = await headers();

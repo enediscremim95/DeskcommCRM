@@ -8,6 +8,8 @@
  */
 
 export const ApiErrorCodes = {
+  // 503 — identidade não pôde ser validada; preservar sessão para nova tentativa.
+  service_unavailable: "service_unavailable",
   // 400 — body / params
   invalid_request: "invalid_request",
   validation_failed: "validation_failed", // Zod retornou erros de schema (422 também aceita)

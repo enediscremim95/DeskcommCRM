@@ -1,3 +1,4 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 /**
  * GET /api/v1/contacts/duplicates — quem é a MESMA pessoa cadastrada duas vezes.
  *
@@ -48,7 +49,7 @@ interface FilaDeMesclagem {
   created_at: string;
 }
 
-export async function GET(): Promise<Response> {
+async function GETComAuth(): Promise<Response> {
   const requestId = randomUUID();
 
   const user = await loadAuthUser();
@@ -214,3 +215,5 @@ export async function GET(): Promise<Response> {
     },
   );
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

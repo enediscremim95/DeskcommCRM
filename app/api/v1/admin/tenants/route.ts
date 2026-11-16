@@ -1,3 +1,5 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createTenantSchema } from "@/lib/schemas/tenant-creation";
 import { provisionOwnerAccess } from "@/lib/auth/provision-owner-access";
@@ -38,7 +40,8 @@ function encodeCursor(payload: CursorPayload): string {
 function decodeCursor(cursor: string): CursorPayload | null {
   try {
     return JSON.parse(Buffer.from(cursor, "base64url").toString("utf-8")) as CursorPayload;
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return null;
   }
 }
@@ -47,13 +50,14 @@ function decodeCursor(cursor: string): CursorPayload | null {
 // GET /api/v1/admin/tenants
 // ---------------------------------------------------------------------------
 
-export async function GET(req: NextRequest) {
+async function GETComAuth(req: NextRequest) {
   const requestId = randomUUID();
 
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
@@ -152,7 +156,7 @@ export async function GET(req: NextRequest) {
 // POST /api/v1/admin/tenants
 // ---------------------------------------------------------------------------
 
-export async function POST(req: NextRequest) {
+async function POSTComAuth(req: NextRequest) {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -161,7 +165,8 @@ export async function POST(req: NextRequest) {
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
@@ -180,7 +185,8 @@ export async function POST(req: NextRequest) {
   let body: unknown;
   try {
     body = await req.json();
-  } catch {
+  } catch (erroDeAuth) {
+    if (erroDeAuth instanceof AuthTemporariamenteIndisponivel) throw erroDeAuth;
     return fail("validation_error", "Invalid JSON body", 400, { requestId });
   }
 
@@ -262,3 +268,6 @@ export async function POST(req: NextRequest) {
     { status: 201, requestId },
   );
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const POST = comAuthDisponivel(POSTComAuth);

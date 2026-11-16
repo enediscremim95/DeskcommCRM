@@ -92,10 +92,15 @@ function agenteDeTeste(): string {
   return id;
 }
 
+/** A cópia acessível da configuração; o Next pode preservar rotas ocultas. */
+function configuracaoDoAgente() {
+  return pagina.getByRole("tabpanel", { name: "Configuração", exact: true });
+}
+
 /** Abre o agente semeado e vai para a aba do papel que organiza o sistema. */
 async function abrirAbaDoOperador(): Promise<void> {
   await pagina.goto(`/app/ai/agents/${agenteDeTeste()}`);
-  await pagina.getByTestId("papel-operacao").click();
+  await configuracaoDoAgente().getByTestId("papel-operacao").click();
 }
 
 test.describe("A aba do papel que organiza o sistema", () => {
@@ -105,18 +110,18 @@ test.describe("A aba do papel que organiza o sistema", () => {
     // Os rótulos são o contrato com quem configura. "Conversador"/"Operador" é
     // vocabulário nosso; quem tem uma clínica pensa em quem fala com o cliente
     // e em quem mantém a casa em ordem.
-    await expect(pagina.getByTestId("papel-conversa")).toHaveText(/conversa com o cliente/i);
-    await expect(pagina.getByTestId("papel-operacao")).toHaveText(/organiza o sistema/i);
+    await expect(configuracaoDoAgente().getByTestId("papel-conversa")).toHaveText(/conversa com o cliente/i);
+    await expect(configuracaoDoAgente().getByTestId("papel-operacao")).toHaveText(/organiza o sistema/i);
     // O TERCEIRO. O épico se chama "os três papéis" e foi entregue com dois na
     // tela — a cadeia de conferências rodava e ninguém que configura sabia.
-    await expect(pagina.getByTestId("papel-seguranca")).toHaveText(/confere antes de enviar/i);
+    await expect(configuracaoDoAgente().getByTestId("papel-seguranca")).toHaveText(/confere antes de enviar/i);
   });
 
   test("o papel que confere mostra a lista inteira, aberta, e sem interruptor decorativo", async () => {
     await pagina.goto(`/app/ai/agents/${agenteDeTeste()}`);
-    await pagina.getByTestId("papel-seguranca").click();
+    await configuracaoDoAgente().getByTestId("papel-seguranca").click();
 
-    const painel = pagina.getByTestId("painel-de-seguranca");
+    const painel = configuracaoDoAgente().getByTestId("painel-de-seguranca");
     await expect(painel).toBeVisible();
 
     // MEDIDA POR FERRAMENTA, não a olho: o defeito que este painel substitui era
@@ -155,7 +160,7 @@ test.describe("A aba do papel que organiza o sistema", () => {
   test("desligado, a tela diz o que CONTINUA acontecendo — não só o que para", async () => {
     await abrirAbaDoOperador();
 
-    const aviso = pagina.getByTestId("operador-consequencia");
+    const aviso = configuracaoDoAgente().getByTestId("operador-consequencia");
     await expect(aviso).toBeVisible();
     // Sem a primeira metade, o usuário conclui que desligar deixa o sistema
     // cego, e liga por medo em vez de escolha. A decisão da spec 16 §2.1 é que
@@ -169,20 +174,20 @@ test.describe("A aba do papel que organiza o sistema", () => {
     await abrirAbaDoOperador();
     // Convidar alguém a escolher capacidades de um papel desligado produz a
     // conclusão de que o produto quebrou quando nada acontece.
-    await expect(pagina.getByTestId("operador-capacidades")).toBeHidden();
+    await expect(configuracaoDoAgente().getByTestId("operador-capacidades")).toBeHidden();
   });
 
   test("ligar revela as escolhas do papel, e elas são SÓ dele", async () => {
     await abrirAbaDoOperador();
-    await pagina.getByTestId("operador-liga").click();
+    await configuracaoDoAgente().getByTestId("operador-liga").click();
 
-    await expect(pagina.getByTestId("operador-capacidades")).toBeVisible();
+    await expect(configuracaoDoAgente().getByTestId("operador-capacidades")).toBeVisible();
     // A frase que impede o modelo mental errado: esta lista não é a mesma da
     // aba de conversa.
-    await expect(pagina.getByText(/só deste papel/i)).toBeVisible();
+    await expect(configuracaoDoAgente().getByText(/só deste papel/i)).toBeVisible();
     // Sem nada marcado, o papel ainda tem função — e a tela diz qual, senão o
     // usuário liga, não marca nada e conclui que quebrou.
-    await expect(pagina.getByTestId("operador-sem-capacidade")).toContainText(/prometer algo/i);
+    await expect(configuracaoDoAgente().getByTestId("operador-sem-capacidade")).toContainText(/prometer algo/i);
   });
 
   test("a escolha SOBREVIVE ao recarregar — o caso que pega o campo perdido no meio do caminho", async () => {
@@ -190,56 +195,56 @@ test.describe("A aba do papel que organiza o sistema", () => {
 
     // Estado inicial: desligado (default do banco — migration não liga sozinha
     // um papel que gasta modelo na chave do self-hoster).
-    await expect(pagina.getByTestId("operador-consequencia")).toBeVisible();
+    await expect(configuracaoDoAgente().getByTestId("operador-consequencia")).toBeVisible();
 
-    await pagina.getByTestId("operador-liga").click();
-    await expect(pagina.getByTestId("operador-capacidades")).toBeVisible();
+    await configuracaoDoAgente().getByTestId("operador-liga").click();
+    await expect(configuracaoDoAgente().getByTestId("operador-capacidades")).toBeVisible();
 
-    await pagina.getByRole("button", { name: /salvar rascunho/i }).click();
-    await expect(pagina.getByText(/rascunho v\d+ salvo/i)).toBeVisible({ timeout: 20_000 });
+    await configuracaoDoAgente().getByRole("button", { name: /salvar rascunho/i }).click();
+    await expect(pagina.getByText(/rascunho v\d+ salvo/i).filter({ visible: true })).toBeVisible({ timeout: 20_000 });
 
     // O RECARREGAMENTO é o teste. Tudo até aqui vive em estado de React; só
     // depois desta linha a resposta vem do banco, atravessando a server action,
     // o Zod, o VERSION_COLUMNS e o SELECT que relê. É onde um campo que ninguém
     // propagou some em silêncio.
     await pagina.reload();
-    await pagina.getByTestId("papel-operacao").click();
+    await configuracaoDoAgente().getByTestId("papel-operacao").click();
 
     await expect(
-      pagina.getByTestId("operador-capacidades"),
+      configuracaoDoAgente().getByTestId("operador-capacidades"),
       "o papel voltou desligado depois do refresh — algum ponto do caminho não " +
         "carrega operator_enabled (ver agent-version-columns-drift.test.ts)",
     ).toBeVisible();
-    await expect(pagina.getByTestId("operador-consequencia")).toBeHidden();
+    await expect(configuracaoDoAgente().getByTestId("operador-consequencia")).toBeHidden();
   });
 
   test("o modelo do papel volta a herdar, e isso também sobrevive ao refresh", async () => {
     await abrirAbaDoOperador();
-    await pagina.getByTestId("operador-liga").click();
+    await configuracaoDoAgente().getByTestId("operador-liga").click();
 
     // Com o papel recém-ligado e sem modelo escolhido, o caminho de volta não
     // faz sentido — não há para onde voltar.
-    await expect(pagina.getByTestId("operador-modelo-herdar")).toBeHidden();
+    await expect(configuracaoDoAgente().getByTestId("operador-modelo-herdar")).toBeHidden();
 
-    await pagina.getByRole("button", { name: /salvar rascunho/i }).click();
-    await expect(pagina.getByText(/rascunho v\d+ salvo/i)).toBeVisible({ timeout: 20_000 });
+    await configuracaoDoAgente().getByRole("button", { name: /salvar rascunho/i }).click();
+    await expect(pagina.getByText(/rascunho v\d+ salvo/i).filter({ visible: true })).toBeVisible({ timeout: 20_000 });
 
     await pagina.reload();
-    await pagina.getByTestId("papel-operacao").click();
+    await configuracaoDoAgente().getByTestId("papel-operacao").click();
     // `operator_model` NULL = herda o do Conversador. Se o refresh trouxesse
     // uma string vazia virando "modelo escolhido", o botão apareceria — e o
     // usuário veria uma escolha que ele não fez.
-    await expect(pagina.getByTestId("operador-modelo-herdar")).toBeHidden();
+    await expect(configuracaoDoAgente().getByTestId("operador-modelo-herdar")).toBeHidden();
   });
 
   test("a tela do papel não fala a NOSSA língua", async () => {
     await abrirAbaDoOperador();
-    await pagina.getByTestId("operador-liga").click();
+    await configuracaoDoAgente().getByTestId("operador-liga").click();
 
     // O mesmo defeito que a spec 16 existe para matar, um nível acima: se o
     // vocabulário interno vaza para quem CONFIGURA, ele vaza de novo para quem
     // é atendido — o dono do negócio copia o que lê.
-    const corpo = (await pagina.locator("main").innerText()).toLowerCase();
+    const corpo = (await pagina.locator("main").filter({ visible: true }).innerText()).toLowerCase();
     for (const jargao of ["operator_", "tool_ids", "mcp", "payload", "job_queue"]) {
       expect(corpo, `vocabulário interno na tela: ${jargao}`).not.toContain(jargao);
     }
