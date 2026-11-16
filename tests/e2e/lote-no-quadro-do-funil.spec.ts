@@ -201,8 +201,21 @@ test.describe("Quadro do funil — agir em vários cards de uma vez", () => {
       position_in_stage: 5000,
       source: "manual",
     });
-    const { error: erroLeads } = await admin.from("crm_leads").insert(linhas);
-    if (erroLeads) throw new Error(`leads: ${erroLeads.message}`);
+    // A fixture inclui um card fora da entrada: exige a mesma identidade
+    // humana que poderá movê-lo pela tela, sem exceção à trava de serviço.
+    const gestor = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { error: erroLogin } = await gestor.auth.signInWithPassword({
+      email: creds.users.manager!.email, password: creds.password,
+    });
+    if (erroLogin) throw new Error(`gestor da fixture: ${erroLogin.message}`);
+    try {
+      const { error: erroLeads } = await gestor.from("crm_leads").insert(linhas);
+      if (erroLeads) throw new Error(`leads: ${erroLeads.message}`);
+    } finally {
+      await gestor.auth.signOut();
+    }
   });
 
   test.afterAll(async () => {

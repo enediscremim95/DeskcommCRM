@@ -29,6 +29,7 @@ import * as path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { habilitarProatividadeNoTeste } from "./utils/proatividade-de-teste";
 
 const APP_URL = `http://localhost:${process.env.E2E_PORT ?? "3001"}`;
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
@@ -147,9 +148,11 @@ test.describe("J20.12 — o follow-up automático respeita o gate", () => {
     let agentId = "";
     let autorizadoId = "";
     let semAutorizacaoId = "";
+    let restaurarProatividade: (() => Promise<void>) | undefined;
 
     try {
       await login(page, creds.users.manager!.email);
+      restaurarProatividade = await habilitarProatividadeNoTeste(creds.org_id);
 
       // (1) Fluxo de silêncio publicado (API real) + agente publicado que o ARMA.
       // O agente é SETUP via helper (o `POST /api/v1/ai/agents` exige role
@@ -205,6 +208,7 @@ test.describe("J20.12 — o follow-up automático respeita o gate", () => {
           console.error("[cleanup] archive-agent falhou:", e);
         }
       }
+      await restaurarProatividade?.();
     }
   });
 });

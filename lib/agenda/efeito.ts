@@ -1,3 +1,4 @@
+import { proactiveDecision, proactivePolicy } from "@/lib/proactivity/policy";
 import type { JobClaim } from "@/lib/agent-engine/queue/claim";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Queryable } from "@/lib/agent-engine/queue/queue";
@@ -7,6 +8,7 @@ import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 
 /** Somente contexto interno: não é aceito pelo schema de mensagens/tools. */
 export interface ProactiveContext {
+  automaticSilence?: boolean;
   organizationId: string;
   contactId: string;
   enrollmentId?: string;
@@ -37,6 +39,16 @@ export async function assertAgendaEffectPg(db: Queryable, c: ProactiveContext): 
       [c.organizationId, c.enrollmentId, c.nodeId ?? null],
     );
     if (!rows[0]?.current) throw new StaleServiceBoundaryError();
+  }
+  if (c.automaticSilence) {
+    const { rows } = await db.query<{ settings: unknown; last_inbound_at: string | null; attempts: string }>(
+      `select o.settings, max(cv.last_inbound_at)::text as last_inbound_at,
+        (select count(*)::text from messages m where m.organization_id=$1 and m.contact_id=$2
+         and m.direction='outbound' and m.sent_at > (select max(last_inbound_at) from conversations where organization_id=$1 and contact_id=$2)) as attempts
+       from organizations o join conversations cv on cv.organization_id=o.id and cv.contact_id=$2
+       where o.id=$1 group by o.id`, [c.organizationId, c.contactId]);
+    const row = rows[0];
+    if (!row || proactiveDecision(proactivePolicy(row.settings), { now: new Date(), lastInbound: row.last_inbound_at, attempts: Number(row.attempts) })) throw new StaleServiceBoundaryError();
   }
   const p = await protecaoAgendaPg(db, c.organizationId, c.contactId);
   if (p.adiar) throw new AgendaDeferredError(p);
@@ -74,6 +86,15 @@ export async function assertAgendaEffectSupabase(
     });
     if (error) throw error;
     if (!data) throw new StaleServiceBoundaryError();
+  }
+  if (c.automaticSilence) {
+    const org = await db.from("organizations").select("settings").eq("id", c.organizationId).maybeSingle();
+    const conversation = await db.from("conversations").select("last_inbound_at").eq("organization_id", c.organizationId).eq("contact_id", c.contactId).not("last_inbound_at", "is", null).order("last_inbound_at", { ascending: false }).limit(1).maybeSingle();
+    if (org.error || conversation.error) throw new Error("proactivity_policy_read_failed");
+    const lastInbound = conversation.data?.last_inbound_at ?? null;
+    const attempts = lastInbound ? await db.from("messages").select("id", { count: "exact", head: true }).eq("organization_id", c.organizationId).eq("contact_id", c.contactId).eq("direction", "outbound").gt("sent_at", lastInbound) : null;
+    if (attempts?.error) throw new Error("proactivity_attempt_read_failed");
+    if (proactiveDecision(proactivePolicy(org.data?.settings), { now: new Date(), lastInbound, attempts: attempts?.count ?? 0 })) throw new StaleServiceBoundaryError();
   }
   const p = (await protecaoAgendaSupabase(db, c.organizationId, [c.contactId])).get(c.contactId)!;
   if (p.adiar) throw new AgendaDeferredError(p);
