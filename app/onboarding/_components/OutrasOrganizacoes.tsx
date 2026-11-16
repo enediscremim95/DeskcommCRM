@@ -1,5 +1,6 @@
 "use client";
 
+import { POUSO_PADRAO } from "@/lib/navigation/pouso";
 import { toast } from "sonner";
 import { flushSync } from "react-dom";
 import { useOrganizationTransition } from "@/components/shell/OrganizationTransitionProvider";
@@ -60,7 +61,7 @@ export function OutrasOrganizacoes({
       try {
         const r = await setActiveOrg(id);
         if (!r.ok) throw new Error(r.error);
-        window.location.assign("/app/kanban");
+        window.location.assign(POUSO_PADRAO);
       } catch {
         transition.cancel();
         toast.error(t("Não foi possível trocar de organização. Tente novamente."));

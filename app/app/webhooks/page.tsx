@@ -1,3 +1,4 @@
+import { POUSO_PADRAO } from "@/lib/navigation/pouso";
 import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -10,7 +11,7 @@ export default async function WebhooksPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   const canManage = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
-  if (!canManage) redirect("/app/kanban");
+  if (!canManage) redirect(POUSO_PADRAO);
   const idioma = user.idioma;
 
   return (

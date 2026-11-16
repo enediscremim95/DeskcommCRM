@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { NAV_CATALOG } from "@/lib/navigation/catalogo";
 import { homeDaInterface } from "@/lib/navigation/interface";
+import { POUSO_PADRAO } from "@/lib/navigation/pouso";
 
 describe("navegação do Inbox na fase 1B", () => {
   it("/app/inbox sem id renderiza a lista em vez de redirecionar", () => {
@@ -30,8 +31,12 @@ describe("navegação do Inbox na fase 1B", () => {
     for (const arquivo of pousos) {
       const source = readFileSync(resolve(process.cwd(), arquivo), "utf8");
       expect(source, arquivo).not.toMatch(/(redirect|assign)\("\/app\/inbox"\)/);
-      expect(source, arquivo).toContain('"/app/kanban"');
+      expect(source, arquivo).toContain("POUSO_PADRAO");
     }
+  });
+
+  it("o pouso padrão é o mesmo destino de homeDaInterface", () => {
+    expect(POUSO_PADRAO).toBe(homeDaInterface(null, false, "agent"));
   });
 
   it("mantém Funis como pouso do login", () => {

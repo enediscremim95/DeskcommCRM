@@ -1,3 +1,4 @@
+import { POUSO_PADRAO } from "@/lib/navigation/pouso";
 import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { loadOnboardingState } from "@/app/actions/onboarding/_shared";
@@ -21,7 +22,7 @@ export default async function OnboardingIndex() {
   if (!activeOrg) redirect("/get-started");
 
   const { state, onboardedAt } = await loadOnboardingState(activeOrg.orgId);
-  if (onboardedAt) redirect("/app/kanban");
+  if (onboardedAt) redirect(POUSO_PADRAO);
 
   const passo = proximoPasso(state, { lojaLigada: env.NUVEMSHOP_ENABLED });
   redirect(passo ? `/onboarding/${passo.segmento}` : "/onboarding/done");

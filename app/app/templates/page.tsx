@@ -1,3 +1,4 @@
+import { POUSO_PADRAO } from "@/lib/navigation/pouso";
 import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function TemplatesPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
-  if (!activeOrg) redirect("/app/kanban");
+  if (!activeOrg) redirect(POUSO_PADRAO);
   const canShare = ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
   // `t` local em vez do hook: esta página é componente de SERVIDOR, e lá o
   // idioma vem resolvido em `user.idioma` (a cadeia pessoa → organização →

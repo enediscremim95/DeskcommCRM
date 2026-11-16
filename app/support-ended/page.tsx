@@ -1,3 +1,4 @@
+import { POUSO_PADRAO } from "@/lib/navigation/pouso";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { redirect } from "next/navigation";
 import { loadAuthUser } from "@/lib/auth/server";
@@ -6,7 +7,7 @@ export default async function SupportEndedPage() {
   const user = await loadAuthUser();
   if (!user) redirect("/login");
   const t = (text: string) => traduzir(text, user.idioma);
-  if (!user.support) redirect("/app/kanban");
+  if (!user.support) redirect(POUSO_PADRAO);
   return <main className="min-h-screen bg-background">
     <ImpersonateBanner ended impersonating={{tenantId: user.support.organization_id,
       tenantName: user.support.name, expiresAt: user.support.expires_at}} />
