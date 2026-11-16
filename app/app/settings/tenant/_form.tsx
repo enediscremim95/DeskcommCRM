@@ -1,4 +1,5 @@
 "use client";
+import { lerProatividade } from "@/lib/proatividade/config";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -22,6 +23,7 @@ import { tenantSchema, type Locale, type TenantInput } from "@/lib/schemas/setti
 
 interface Props {
   initial: TenantInput;
+  channels?: Array<{ id: string; name: string }>;
 }
 
 const TIMEZONES = [
@@ -33,18 +35,17 @@ const TIMEZONES = [
   "UTC",
 ];
 
-export function TenantForm({ initial }: Props) {
+export function TenantForm({ initial, channels = [] }: Props) {
   const t = useT();
   const [form, setForm] = useState<TenantInput>(initial);
-  const [reasonsText, setReasonsText] = useState(
-    (initial.lost_reasons_extra ?? []).join(", "),
-  );
+  const [reasonsText, setReasonsText] = useState((initial.lost_reasons_extra ?? []).join(", "));
   const [isPending, startTransition] = useTransition();
 
   function set<K extends keyof TenantInput>(key: K, value: TenantInput[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  const proactive = form.form_proactivity ?? lerProatividade(null);
   const businessProfile = form.business_profile ?? businessProfileSchema.parse({});
 
   function handleSubmit(e: React.FormEvent) {
@@ -69,6 +70,95 @@ export function TenantForm({ initial }: Props) {
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl">
       <Card className="space-y-4 p-6">
+        <fieldset className="space-y-3 rounded border p-4">
+          <legend>Primeiro contato de formulário</legend>
+          <p className="text-sm text-muted-foreground">
+            Desligado por padrão. WhatsApp, nova tentativa com número validado e e-mail. Somente
+            novos formulários após ligar; para ao receber resposta.
+          </p>
+          <Label>
+            <input
+              type="checkbox"
+              checked={proactive.enabled}
+              onChange={(e) => set("form_proactivity", { ...proactive, enabled: e.target.checked })}
+            />{" "}
+            Ativar primeiro contato
+          </Label>
+          <Label htmlFor="proactive-channel">Canal de WhatsApp</Label>
+          <select
+            id="proactive-channel"
+            className="w-full rounded border bg-background p-2"
+            value={proactive.channel_session_id ?? ""}
+            onChange={(e) =>
+              set("form_proactivity", { ...proactive, channel_session_id: e.target.value || null })
+            }
+          >
+            <option value="">Escolha um canal</option>
+            {channels.map((channel) => (
+              <option key={channel.id} value={channel.id}>
+                {channel.name}
+              </option>
+            ))}
+          </select>
+          <Label htmlFor="proactive-attempts">Limite total de tentativas (1 a 3)</Label>
+          <Input
+            id="proactive-attempts"
+            type="number"
+            min={1}
+            max={3}
+            value={proactive.max_attempts}
+            onChange={(e) =>
+              set("form_proactivity", { ...proactive, max_attempts: Number(e.target.value) })
+            }
+          />
+          <Label htmlFor="proactive-start">
+            Início do expediente (hora no fuso da organização)
+          </Label>
+          <Input
+            id="proactive-start"
+            type="number"
+            min={0}
+            max={23}
+            value={proactive.start_hour}
+            onChange={(e) =>
+              set("form_proactivity", { ...proactive, start_hour: Number(e.target.value) })
+            }
+          />
+          <Label htmlFor="proactive-end">Fim do expediente</Label>
+          <Input
+            id="proactive-end"
+            type="number"
+            min={1}
+            max={24}
+            value={proactive.end_hour}
+            onChange={(e) =>
+              set("form_proactivity", { ...proactive, end_hour: Number(e.target.value) })
+            }
+          />
+          <p className="text-sm">Dias úteis: segunda a sexta.</p>
+          <Label htmlFor="proactive-whatsapp">Mensagem de WhatsApp</Label>
+          <Textarea
+            id="proactive-whatsapp"
+            value={proactive.whatsapp_text}
+            onChange={(e) =>
+              set("form_proactivity", { ...proactive, whatsapp_text: e.target.value })
+            }
+          />
+          <Label htmlFor="proactive-subject">Assunto do e-mail</Label>
+          <Input
+            id="proactive-subject"
+            value={proactive.email_subject}
+            onChange={(e) =>
+              set("form_proactivity", { ...proactive, email_subject: e.target.value })
+            }
+          />
+          <Label htmlFor="proactive-email">Mensagem de e-mail</Label>
+          <Textarea
+            id="proactive-email"
+            value={proactive.email_text}
+            onChange={(e) => set("form_proactivity", { ...proactive, email_text: e.target.value })}
+          />
+        </fieldset>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="display_name">{t("Nome de exibição")}</Label>
@@ -122,10 +212,7 @@ export function TenantForm({ initial }: Props) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="locale">{t("Idioma")}</Label>
-            <Select
-              value={form.locale}
-              onValueChange={(v) => set("locale", v as Locale)}
-            >
+            <Select value={form.locale} onValueChange={(v) => set("locale", v as Locale)}>
               <SelectTrigger id="locale">
                 <SelectValue />
               </SelectTrigger>
@@ -137,10 +224,7 @@ export function TenantForm({ initial }: Props) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="currency">{t("Moeda")}</Label>
-            <Select
-              value={form.currency}
-              onValueChange={(v) => set("currency", v as MoedaServida)}
-            >
+            <Select value={form.currency} onValueChange={(v) => set("currency", v as MoedaServida)}>
               <SelectTrigger id="currency">
                 <SelectValue />
               </SelectTrigger>
@@ -153,7 +237,9 @@ export function TenantForm({ initial }: Props) {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              {t("Vale para todo preço do catálogo. Produto já cadastrado guarda a moeda com que nasceu.")}
+              {t(
+                "Vale para todo preço do catálogo. Produto já cadastrado guarda a moeda com que nasceu.",
+              )}
             </p>
           </div>
           <div className="space-y-2">
@@ -182,27 +268,42 @@ export function TenantForm({ initial }: Props) {
           <legend className="font-medium">{t("Dados do negócio")}</legend>
           <div className="space-y-2">
             <Label htmlFor="business_description">{t("O que a empresa faz")}</Label>
-            <Textarea id="business_description" value={businessProfile.description}
-              onChange={(e) => set("business_profile", { ...businessProfile, description: e.target.value })} />
+            <Textarea
+              id="business_description"
+              value={businessProfile.description}
+              onChange={(e) =>
+                set("business_profile", { ...businessProfile, description: e.target.value })
+              }
+            />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {([
-              ["website", t("Site"), "url"],
-              ["phone", t("Telefone"), "tel"],
-              ["address", t("Endereço"), "text"],
-              ["business_hours", t("Horário de atendimento"), "text"],
-            ] as const).map(([key, label, type]) => (
+            {(
+              [
+                ["website", t("Site"), "url"],
+                ["phone", t("Telefone"), "tel"],
+                ["address", t("Endereço"), "text"],
+                ["business_hours", t("Horário de atendimento"), "text"],
+              ] as const
+            ).map(([key, label, type]) => (
               <div key={key} className="space-y-2">
                 <Label htmlFor={`business_${key}`}>{label}</Label>
-                <Input id={`business_${key}`} type={type} value={businessProfile[key]}
-                  onChange={(e) => set("business_profile", { ...businessProfile, [key]: e.target.value })} />
+                <Input
+                  id={`business_${key}`}
+                  type={type}
+                  value={businessProfile[key]}
+                  onChange={(e) =>
+                    set("business_profile", { ...businessProfile, [key]: e.target.value })
+                  }
+                />
               </div>
             ))}
           </div>
         </fieldset>
 
         <div className="space-y-2">
-          <Label htmlFor="lead_reentry_window_minutes">{t("Tempo para juntar envios repetidos (minutos)")}</Label>
+          <Label htmlFor="lead_reentry_window_minutes">
+            {t("Tempo para juntar envios repetidos (minutos)")}
+          </Label>
           <Input
             id="lead_reentry_window_minutes"
             type="number"
@@ -212,12 +313,16 @@ export function TenantForm({ initial }: Props) {
             onChange={(e) => set("lead_reentry_window_minutes", Number(e.target.value))}
           />
           <p className="text-xs text-muted-foreground">
-            {t("Vale para o WhatsApp e para as fontes marcadas como capazes de repetir o mesmo envio.")}
+            {t(
+              "Vale para o WhatsApp e para as fontes marcadas como capazes de repetir o mesmo envio.",
+            )}
           </p>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="lost_reasons">{t("Motivos de perda extras (separados por vírgula)")}</Label>
+          <Label htmlFor="lost_reasons">
+            {t("Motivos de perda extras (separados por vírgula)")}
+          </Label>
           <Input
             id="lost_reasons"
             value={reasonsText}
