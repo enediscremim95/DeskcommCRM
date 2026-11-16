@@ -1,1 +1,6 @@
+---
+impacto: nada_mudou
+secao: corrigido
+titulo: A jornada anti-SSRF espera o login completo
+---
 A jornada anti-SSRF espera o destino final explícito do login antes de abrir a integração pelo menu. O teste mantém o receiver HTTP real, a run de falha e a asserção de zero requisições ao host interno.
