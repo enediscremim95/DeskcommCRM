@@ -48,9 +48,13 @@ const ACTION = join(process.cwd(), ".github/actions/preparar-node/action.yml");
  * quem o sobe tem de dizer por que o trabalho real (não o preâmbulo) cresceu.
  */
 const TETOS: Record<string, { minutos: number; razao: string }> = {
+  "ci.yml::unitarios": {
+    minutos: 15,
+    razao: "cada metade da suíte completa conserva o teto original; sem remover testes",
+  },
   "ci.yml::verify": {
     minutos: 15,
-    razao: "trabalho real medido: p90 594s, máximo 609s em 51 verdes — folga de ~4m45",
+    razao: "typecheck/lint/shell e gate da matriz; unitários em duas partes após 707s medidos no run 43798384617",
   },
   "ci.yml::invariants": {
     minutos: 20,
@@ -144,7 +148,7 @@ describe("o preâmbulo do CI não come o orçamento dos testes", () => {
       if (teto) achados[`ci.yml::${m[1]!}`] = Number(teto[1]);
     }
 
-    // Controle positivo: o regex tem de achar os dois jobs de ci.yml.
+    // Controle positivo: o regex tem de achar os três jobs de ci.yml.
     expect(Object.keys(achados).sort(), "jobs de ci.yml com teto declarado").toEqual(
       Object.keys(TETOS).sort(),
     );

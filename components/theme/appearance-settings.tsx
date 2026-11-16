@@ -85,8 +85,8 @@ export function AppearanceSettings() {
           </p>
           <p>{t("Sua escolha fica salva neste navegador e acompanha você em todas as telas.")}</p>
         </div>
-        <Link href="/app/inbox" className={styles.openInbox}>
-          {t("Ver nas conversas")}
+        <Link href="/app" className={styles.openInbox}>
+          {t("Voltar ao aplicativo")}
           <ArrowRight size={17} aria-hidden />
         </Link>
       </div>

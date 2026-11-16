@@ -817,8 +817,16 @@ test("receiver reconcilia inline/daemon, barra claim antigo e protege agenda al�
     ).rejects.toThrow("callback unavailable before commit");
     await releaseChannelDeliveryLease(pool, { tenantId: f.org, jobId: reverse.job });
     // Falha antes do callback deixa ledger aceito; outro executor assume o retry.
+    // Primeiro prove que um retry futuro não é antecipado. Depois deixe-o
+    // inequivocamente vencido: now() tem microssegundos, Date do JS só milissegundos.
     await pool.query(
-      "update job_queue set status='pending',locked_by=null,locked_at=null,run_after=now() where id=$1",
+      "update job_queue set status='pending',locked_by=null,locked_at=null,run_after=clock_timestamp()+interval '10 minutes' where id=$1",
+      [reverse.job],
+    );
+    expect(await enviarTextoFixoPendente(db, [p.contact])).toBe(0);
+    expect((await pool.query("select attempts from job_queue where id=$1", [reverse.job])).rows[0].attempts).toBe(2);
+    await pool.query(
+      "update job_queue set run_after=clock_timestamp()-interval '1 second' where id=$1",
       [reverse.job],
     );
     const reconciliados = await enviarTextoFixoPendente(db, [p.contact]);
