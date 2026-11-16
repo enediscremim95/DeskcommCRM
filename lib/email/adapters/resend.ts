@@ -33,6 +33,7 @@ export const resendAdapter: EmailAdapter = {
           text: args.text,
           replyTo: args.replyTo,
           tags: args.tags,
+          attachments: args.attachments,
         },
         args.idempotencyKey ? { idempotencyKey: args.idempotencyKey } : undefined,
       );

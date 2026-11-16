@@ -14,7 +14,7 @@ import {
   assertMeetingDeliveryReceiptPg,
   MeetingDeliveryBlockedError,
 } from "@/lib/agenda/meet-delivery";
-import { meetVideoUrl } from "@/lib/agenda/google/meet";
+import { meetingVideoUrl } from "@/lib/agenda/google/meet";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -81,7 +81,7 @@ export function createMeetDeliveryHandler(deps: {
           ],
         );
         const row = rows[0];
-        const url = meetVideoUrl(row?.meeting_url);
+        const url = meetingVideoUrl(row?.meeting_url);
         if (!row || !url || row.archived_at) {
           await settle("blocked:channel");
           return;
@@ -176,5 +176,6 @@ export function meetingDeliveryBody(
     timeStyle: "short",
     timeZone,
   }).format(new Date(startsAt));
-  return `${traduzir("Sua reunião está marcada para", idioma)} ${when} (${timeZone}). ${traduzir("Link do Google Meet:", idioma)} ${url}`;
+  const label = url.startsWith("https://meet.google.com/") ? "Link do Google Meet:" : "Link da reunião:";
+  return `${traduzir("Sua reunião está marcada para", idioma)} ${when} (${timeZone}). ${traduzir(label, idioma)} ${url}`;
 }

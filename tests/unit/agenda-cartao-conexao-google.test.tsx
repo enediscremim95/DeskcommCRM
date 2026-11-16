@@ -108,3 +108,33 @@ describe("cartão da conexão do Google", () => {
     expect(screen.queryByTestId("desconectar-google")).toBeNull();
   });
 });
+
+it("mostra alerta vermelho e reconexão para Google desconectado", () => {
+  render(
+    <CartaoDaConexaoGoogle
+      configurado
+      falta={[]}
+      contaConectada="test@example.invalid"
+      conexaoExpirada
+    />,
+  );
+  expect(screen.getByRole("alert")).toHaveTextContent("Google desconectado");
+  expect(screen.getByRole("alert").className).toContain("border-red-500");
+  expect(screen.getByRole("link", { name: "Reconectar" })).toHaveAttribute(
+    "href",
+    "/api/v1/agenda/google/connect",
+  );
+  expect(screen.queryByTestId("google-conectado")).not.toBeInTheDocument();
+});
+
+it("conexão quebrada aparece mesmo sem app OAuth configurado", () => {
+  render(
+    <CartaoDaConexaoGoogle
+      configurado={false}
+      falta={[]}
+      contaConectada="test@example.invalid"
+      conexaoExpirada
+    />,
+  );
+  expect(screen.getByRole("alert")).toHaveTextContent("Google desconectado");
+});
