@@ -355,7 +355,7 @@ describe("mesma pessoa por outro número", () => {
 });
 
 describe("junção contextual dos negócios da mesma pessoa", () => {
-  it("preserva contexto, usa a etapa mais avançada e desfaz todo o estado combinado", async () => {
+  it("bloqueia avanço por serviço; manutenção administrativa preserva contexto e desfaz o estado combinado", async () => {
     const contato = await contatoFormulario({ nome: "Negócio Contextual", telefone: "+5511988881001" });
     const survivor = await negocio({
       contato,
@@ -386,7 +386,23 @@ describe("junção contextual dos negócios da mesma pessoa", () => {
       [task, ORG, absorbed],
     );
 
-    const merged = await comoServico(
+    const antes = await pool.query(
+      "select id,stage_id,custom_fields,tags from crm_leads where id=any($1::uuid[]) order by id",
+      [[survivor, absorbed]],
+    );
+    await expect(comoServico(
+      "select fn_juntar_negocios_mesma_pessoa($1,$2,$3) result",
+      [ORG, survivor, absorbed],
+    )).rejects.toThrow("human_kanban_required");
+    expect((await pool.query(
+      "select id,stage_id,custom_fields,tags from crm_leads where id=any($1::uuid[]) order by id",
+      [[survivor, absorbed]],
+    )).rows).toEqual(antes.rows);
+    expect((await pool.query("select lead_id from crm_tasks where id=$1", [task])).rows[0]!.lead_id).toBe(absorbed);
+    expect((await pool.query("select lead_id from crm_lead_activities where id=$1", [activity])).rows[0]!.lead_id).toBe(absorbed);
+
+    // Conexão administrativa direta, sem JWT de serviço: manutenção explícita.
+    const merged = await pool.query(
       "select fn_juntar_negocios_mesma_pessoa($1,$2,$3) result",
       [ORG, survivor, absorbed],
     );
