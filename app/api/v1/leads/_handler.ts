@@ -243,7 +243,11 @@ export async function createLeadHandler(
     source_metadata?: Record<string, unknown>;
     /** Interno (webhook inbound) — idempotência via uniq_crm_leads_org_source_external. */
     external_id?: string;
-    /** Interno: trava apenas a janela curta de reenvio, nunca todos os cards abertos. */
+    /**
+     * Interno: trava da corrida do primeiro card. Não impede um segundo negócio
+     * aberto. Quem não quer duplicar uma entrada automática olha o negócio
+     * aberto no funil antes de chamar este handler.
+     */
     reentry_guard_until?: string;
     /** Escopo da trava: canal inbound ou a fonte de webhook que declarou reenvio. */
     reentry_guard_key?: string;
