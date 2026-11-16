@@ -1,0 +1,141 @@
+{
+  "repository": "https://github.com/google/fonts",
+  "commit": "cc39c4c2c304bc368c9b7c311ea2bcc6013299fe",
+  "files": [
+    {
+      "path": "app/fonts/atkinsonhyperlegible/AtkinsonHyperlegible-Bold.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/atkinsonhyperlegible/AtkinsonHyperlegible-Bold.ttf",
+      "bytes": 23808,
+      "source_sha256": "5a3b0c8cc8ca545155150b4512a1fa248298df121c50d6557e651e61fbdab92f",
+      "sha256": "9057c7d0c509cb367c977d977fd5342b3da98a0052cf649a9432892b48842efe"
+    },
+    {
+      "path": "app/fonts/atkinsonhyperlegible/AtkinsonHyperlegible-Regular.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/atkinsonhyperlegible/AtkinsonHyperlegible-Regular.ttf",
+      "bytes": 23232,
+      "source_sha256": "7fb917c89019896d0b52ee84b7cbb3304c18cb90b19a62f5e32712bd23e97669",
+      "sha256": "b12c85bf7f138ee6e1c9c56d69443a11374121de429a0aa65200fe51248dee47"
+    },
+    {
+      "path": "app/fonts/atkinsonhyperlegible/OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/atkinsonhyperlegible/OFL.txt",
+      "bytes": 4352
+    },
+    {
+      "path": "app/fonts/ibmplexmono/IBMPlexMono-Medium.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/ibmplexmono/IBMPlexMono-Medium.ttf",
+      "bytes": 40172,
+      "source_sha256": "a9b4c49bb299e05b5f6c481e7fb5e78943d2793249a0c8874ab574a2d1ea6755",
+      "sha256": "fad6f3f744c58870131aaef7f75b2e9b47b4cadd627ffab51243185929156672"
+    },
+    {
+      "path": "app/fonts/ibmplexmono/IBMPlexMono-Regular.woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/ibmplexmono/IBMPlexMono-Regular.ttf",
+      "bytes": 39120,
+      "source_sha256": "6a3412f058c7d8dfd9170c41e85ade48e5156ecb89356110ca57a0a27734af46",
+      "sha256": "fa3f80342dc2e02e9627cab325e1a244a4fddfab6c3389ce9a28edfdfecd0bb5"
+    },
+    {
+      "path": "app/fonts/ibmplexmono/OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/ibmplexmono/OFL.txt",
+      "bytes": 4456
+    },
+    {
+      "path": "app/fonts/sora/Sora[wght].woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/sora/Sora%5Bwght%5D.ttf",
+      "bytes": 49384,
+      "source_sha256": "84ff7096ae3ec6c8be47d906d1a0ba4de7f2ce78c615275c77301964a316e16c",
+      "sha256": "b3b503b5f06237099e2cf00f4d748ef209b0b0fe2352f2b73536c2b235721cf8"
+    },
+    {
+      "path": "app/fonts/sora/OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/sora/OFL.txt",
+      "bytes": 4385
+    },
+    {
+      "path": "app/fonts/bricolagegrotesque/BricolageGrotesque[opsz,wdth,wght].woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/bricolagegrotesque/BricolageGrotesque%5Bopsz%2Cwdth%2Cwght%5D.ttf",
+      "bytes": 205068,
+      "source_sha256": "413e7357809ddd12fd80a96a8a396de0e401638d4acd3cb3e37532f0472ac682",
+      "sha256": "c72e9dac5248f3452104be30e1989d802de76ec6dd38f11cce5bc539413155c3"
+    },
+    {
+      "path": "app/fonts/bricolagegrotesque/OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/bricolagegrotesque/OFL.txt",
+      "bytes": 4403
+    },
+    {
+      "path": "app/fonts/plusjakartasans/PlusJakartaSans[wght].woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/plusjakartasans/PlusJakartaSans%5Bwght%5D.ttf",
+      "bytes": 60556,
+      "source_sha256": "89b3fb38aa0d275d7a731d0d817a4f1622b316b4d7fbdedcf02ee9099ff68bc8",
+      "sha256": "abcf13abe77a71a18459f2771c209cac0e9b54dc8ca98dd32936594c1d562aa2"
+    },
+    {
+      "path": "app/fonts/plusjakartasans/OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/plusjakartasans/OFL.txt",
+      "bytes": 4402
+    },
+    {
+      "path": "app/fonts/fraunces/Fraunces[SOFT,WONK,opsz,wght].woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/fraunces/Fraunces%5BSOFT%2CWONK%2Copsz%2Cwght%5D.ttf",
+      "bytes": 194608,
+      "source_sha256": "177ff6c0f14e5550a3c624247cd1189611d4eb65d000b14944c63d967958abbb",
+      "sha256": "7d79cf34031ee379004543d53e836ed6a9cbddd152349945478c1f79256407f3"
+    },
+    {
+      "path": "app/fonts/fraunces/OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/fraunces/OFL.txt",
+      "bytes": 4391
+    },
+    {
+      "path": "app/fonts/manrope/Manrope[wght].woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/manrope/Manrope%5Bwght%5D.ttf",
+      "bytes": 53776,
+      "source_sha256": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+      "sha256": "35620c7e28b9c10eb3a24b50e4023d658be529c5ec85a312da362306cce21654"
+    },
+    {
+      "path": "app/fonts/manrope/OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/manrope/OFL.txt",
+      "bytes": 4387
+    },
+    {
+      "path": "app/fonts/sourceserif4/SourceSerif4[opsz,wght].woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/sourceserif4/SourceSerif4%5Bopsz%2Cwght%5D.ttf",
+      "bytes": 427448,
+      "source_sha256": "97b2d4da6e3cb494b5a1e66ae176914d852ccabef49e0c02c0df25f3e39aca0b",
+      "sha256": "20c31836d66c3b4e7e10802154c20558b7aee1191709ed34a41f80174c2bb7d0"
+    },
+    {
+      "path": "app/fonts/sourceserif4/OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/sourceserif4/OFL.txt",
+      "bytes": 4400
+    },
+    {
+      "path": "app/fonts/ibmplexsans/IBMPlexSans[wdth,wght].woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/ibmplexsans/IBMPlexSans%5Bwdth%2Cwght%5D.ttf",
+      "bytes": 230472,
+      "source_sha256": "3b031aa4216174205bd8471f88a49b91f093169e9e87bd5262242bc5967fe2e3",
+      "sha256": "cab02523af0de6ada1e74992cac98980ce088104f257eabf43b7d845fe1cf573"
+    },
+    {
+      "path": "app/fonts/ibmplexsans/OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/ibmplexsans/OFL.txt",
+      "bytes": 4456
+    },
+    {
+      "path": "app/fonts/jetbrainsmono/JetBrainsMono[wght].woff2",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf",
+      "bytes": 71564,
+      "source_sha256": "48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda",
+      "sha256": "9a45e1d0cd7855c5d400121bbbb48dcd69a744a59d399d7b16b38fbd5fba3cc8"
+    },
+    {
+      "path": "app/fonts/jetbrainsmono/OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/jetbrainsmono/OFL.txt",
+      "bytes": 4399
+    }
+  ],
+  "conversion": "fonttools TTFont: flavor=woff2 (sem altera\u00e7\u00e3o de glifos ou eixos); OFL preservadas"
+}
