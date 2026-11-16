@@ -3,7 +3,8 @@
  *
  * ─── Por que ela é DIFERENTE da poda do arquivo forense ─────────────────────
  *
- * `webhook_events_log` é esvaziado em 7 dias e apagado em 90, porque lá o
+ * `webhook_events_log` perde o corpo em 7 dias e a linha arquivada é expurgada
+ * pelo `data-retention`, porque lá o
  * corpo cru é 97% do peso e ninguém o lê depois de uma semana. Aqui é o
  * oposto: a linha É o produto — o dono do negócio abre a aba "Leads recebidos"
  * para responder "quem chegou, com que dados, de onde", e a resposta que
