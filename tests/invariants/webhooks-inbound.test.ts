@@ -1059,11 +1059,13 @@ describe("POST /api/v1/webhooks/in/[token] — classificação inicial (2026-08-
     expect(disqualified.length).toBe(0);
   });
 
-  it("caso 11 — segundo envio com o MESMO telefone mas nome diferente do contato existente: revisão humana, lead ainda criado", async () => {
+  it("caso 11 — mesmo telefone com outro nome: reaproveita o lead e registra a revisão desta captação", async () => {
     const telefone = "55 15988880011";
     const primeiro = respondiPayload("resp-int-rev-a-0011", telefone, "maria.exemplo+0011a@example.com");
     const res1 = await POST(jsonReq(TOKEN_RESPONDI, primeiro), reqCtx(TOKEN_RESPONDI));
     expect(res1.status).toBe(200);
+    const primeiroId = ((await res1.json()) as { data: { lead_id: string } }).data.lead_id;
+    const revisoesAntes = rows(`select id from public.crm_lead_activities where lead_id = '${primeiroId}' and type = 'lead_needs_review'`).length;
 
     const segundo = respondiPayload("resp-int-rev-b-0011", telefone, "maria.exemplo+0011b@example.com", (p) => {
       const respondent = p.respondent as Record<string, unknown>;
@@ -1084,7 +1086,8 @@ describe("POST /api/v1/webhooks/in/[token] — classificação inicial (2026-08-
     const reviewRows = rows(
       `select id from public.crm_lead_activities where lead_id = '${leadId2}' and type = 'lead_needs_review'`,
     );
-    expect(reviewRows.length).toBe(1);
+    expect(leadId2).toBe(primeiroId);
+    expect(reviewRows.length).toBe(revisoesAntes + 1);
   });
 
   it("caso 12 — sem respondi_score no envio: lead válido classifica como nao_avaliado, nunca uma classe adivinhada", async () => {
@@ -1273,7 +1276,7 @@ describe("POST /api/v1/webhooks/in/[token] — RD Station (envelope leads[])", (
   });
 
   it("rd 2 — MESMO event_uuid reenviado NÃO duplica: 200 com o lead existente", async () => {
-    const payload = rdStationEnvelope({ eventUuid: "aaaa0002-0000-4000-8000-000000000002", leadId: "5035999002" });
+    const payload = rdStationEnvelope({ eventUuid: "aaaa0002-0000-4000-8000-000000000002", leadId: "5035999002", email: "rd2@example.com", mobilePhone: "+55 (11) 98888-7702", celular: "+55 (11) 98888-7702" });
     const first = await POST(jsonReq(TOKEN_RDSTATION, payload), reqCtx(TOKEN_RDSTATION));
     const firstId = ((await first.json()) as { data: { lead_id: string } }).data.lead_id;
 
@@ -1289,7 +1292,7 @@ describe("POST /api/v1/webhooks/in/[token] — RD Station (envelope leads[])", (
   });
 
   it("rd 3 — sem event_uuid: usa rdstation:lead:<id> como chave de idempotência", async () => {
-    const payload = rdStationEnvelope({ eventUuid: null, leadId: "5035999003" });
+    const payload = rdStationEnvelope({ eventUuid: null, leadId: "5035999003", email: "rd3@example.com", mobilePhone: "+55 (11) 98888-7703", celular: "+55 (11) 98888-7703" });
     const res = await POST(jsonReq(TOKEN_RDSTATION, payload), reqCtx(TOKEN_RDSTATION));
     expect(res.status).toBe(200);
     const leadId = ((await res.json()) as { data: { lead_id: string } }).data.lead_id;
