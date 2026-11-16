@@ -92,9 +92,11 @@ test.describe("distribuição de atendimento — a tela que liga o rodízio e a 
 
     // 3. Liga o rodízio — e só então os knobs aparecem (config de retentativa
     //    não faz sentido no modo manual, em que ninguém retenta).
-    await expect(page.locator("#max_retries")).toHaveCount(0);
+    // O Next preserva cópias ocultas de rotas: valide o campo acessível da tela atual.
+    const tentativas = page.getByRole("spinbutton", { name: "Tentativas antes de desistir" });
+    await expect(tentativas).toHaveCount(0);
     await page.getByTestId("opcao-modo-round_robin").click();
-    await expect(page.locator("#max_retries")).toBeVisible();
+    await expect(tentativas).toBeVisible();
 
     // 4. Restringe a visibilidade ao próprio atendente.
     await page.getByTestId("opcao-visibilidade-own").click();
@@ -108,7 +110,7 @@ test.describe("distribuição de atendimento — a tela que liga o rodízio e a 
     await page.reload();
     expect(await marcada(page, "modo", "round_robin")).toBe(true);
     expect(await marcada(page, "visibilidade", "own")).toBe(true);
-    await expect(page.locator("#max_retries")).toBeVisible();
+    await expect(tentativas).toBeVisible();
 
     // 6. E a API concorda com a tela — se divergissem, uma das duas estaria
     //    mentindo e o operador não teria como saber qual.
