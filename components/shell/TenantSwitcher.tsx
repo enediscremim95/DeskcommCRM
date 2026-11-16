@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { gravarOrgDaAba } from "@/lib/auth/org-da-aba";
 import { setActiveOrg } from "@/app/actions/shell/setActiveOrg";
 
 /**
@@ -23,6 +24,25 @@ import { setActiveOrg } from "@/app/actions/shell/setActiveOrg";
  */
 const MINIMO_PARA_BUSCAR = 6;
 
+/** Direto no quadro do funil padrão quando o servidor já o informou. */
+export function destinoAposTroca(pipelineId?: string): string {
+  return pipelineId && /^[0-9a-f-]{36}$/i.test(pipelineId) ? `/app/pipelines/${pipelineId}` : "/app/kanban";
+}
+
+/** Teto da troca: acima disto a sobreposição "Carregando…" vira erro com saída. */
+export const PRAZO_DA_TROCA_MS = 20_000;
+
+/** Rejeita se `promessa` não resolver em `ms` — a Server Action não é abortável. */
+export function comPrazo<T>(promessa: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("troca_excedeu_o_prazo")), ms);
+    promessa.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e: unknown) => { clearTimeout(timer); reject(e instanceof Error ? e : new Error(String(e))); },
+    );
+  });
+}
+
 export function TenantSwitcher() {
   const t = useT();
   const user = useUser();
@@ -30,15 +50,23 @@ export function TenantSwitcher() {
   const transition = useOrganizationTransition();
   const [isPending, setPending] = useState(false);
   const [busca, setBusca] = useState("");
+  // Trava SÍNCRONA: o estado `isPending` só vale no próximo render, e dois
+  // eventos do mesmo toque (select + click) passavam os dois.
+  const emTroca = useRef(false);
   const switchTo = async (orgId: string) => {
-    if (orgId === active?.orgId) return;
+    if (orgId === active?.orgId || isPending || emTroca.current) return;
+    emTroca.current = true;
     flushSync(() => { setPending(true); transition.begin(t("Carregando organização…")); });
     try {
-      const result = await setActiveOrg(orgId);
+      const result = await comPrazo(setActiveOrg(orgId), PRAZO_DA_TROCA_MS);
       if (!result.ok) throw new Error(result.error);
+      // A org é POR ABA: grava antes de navegar, senão o recarregamento desta
+      // aba voltaria à org que outra aba escolheu por último (cookie compartilhado).
+      gravarOrgDaAba(orgId);
       // Novo documento elimina QueryClient, subscriptions e respostas em voo.
-      window.location.assign("/app/kanban");
+      window.location.assign(destinoAposTroca(result.pipelineId));
     } catch {
+      emTroca.current = false;
       transition.cancel();
       setPending(false);
       toast.error(t("Não foi possível trocar de organização. Seu acesso pode ter mudado. Tente novamente."));
@@ -88,7 +116,10 @@ export function TenantSwitcher() {
           <DropdownMenuItem
             key={org.organization_id}
             data-testid={`tenant-switcher-item-${org.organization_id}`}
-            onClick={() => { void switchTo(org.organization_id); }}
+            // onSelect (e não onClick): é o evento do Radix para ponteiro, toque e
+            // Enter/Espaço. onClick perdia o toque quando o item era re-renderizado
+            // entre o pressionar e o soltar.
+            onSelect={() => { void switchTo(org.organization_id); }}
             className="flex items-center justify-between"
           >
             <span className="truncate">{org.organization_name}</span>

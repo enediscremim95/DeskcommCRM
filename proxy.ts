@@ -13,7 +13,7 @@ import {
 const COOKIE_NAME = "sb-deskcomm-auth";
 
 export async function proxy(request: NextRequest) {
-  const response = NextResponse.next({ request: { headers: request.headers } });
+  let response = NextResponse.next({ request: { headers: request.headers } });
 
   // Inject X-Request-Id for downstream correlation (audit log, error wrappers).
   const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
@@ -79,10 +79,16 @@ export async function proxy(request: NextRequest) {
       headers: { "content-type": "text/plain; charset=utf-8", "Retry-After": "1", "x-request-id": requestId },
     });
   }
-  pendentes.forEach(({ name, value, options }) => {
-    request.cookies.set(name, value);
-    response.cookies.set(name, value, options);
-  });
+  // Só propaga os cookies depois da validação, preservando a sessão em falhas.
+  pendentes.forEach(({ name, value }) => request.cookies.set(name, value));
+  if (pendentes.length) {
+    const anterior = response;
+    response = NextResponse.next({ request: { headers: request.headers } });
+    anterior.headers.forEach((valor, chave) => {
+      if (chave !== "set-cookie" && !chave.startsWith("x-middleware-")) response.headers.set(chave, valor);
+    });
+    pendentes.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+  }
 
   if (!user) {
     // API routes must respond with JSON envelope (contract: {error:{code,message}})

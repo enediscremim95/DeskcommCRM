@@ -5,6 +5,7 @@ import { flushSync } from "react-dom";
 import { useOrganizationTransition } from "@/components/shell/OrganizationTransitionProvider";
 import { useTransition } from "react";
 
+import { gravarOrgDaAba } from "@/lib/auth/org-da-aba";
 import { setActiveOrg } from "@/app/actions/shell/setActiveOrg";
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,7 @@ export function OutrasOrganizacoes({
       try {
         const r = await setActiveOrg(id);
         if (!r.ok) throw new Error(r.error);
+        gravarOrgDaAba(id);
         window.location.assign("/app/inbox");
       } catch {
         transition.cancel();

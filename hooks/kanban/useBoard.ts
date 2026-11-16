@@ -5,6 +5,7 @@ import { ehEcoLocal } from "@/lib/kanban/local-echo";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import type { BoardData, BoardStageChunk } from "@/lib/kanban/types";
 import { boardDatesToParams, type BoardDateFilter } from "@/lib/kanban/date-range";
 import type { Lead } from "@/lib/types/leads";
@@ -17,8 +18,10 @@ import type { Lead } from "@/lib/types/leads";
  * and PostgREST returns PGRST116. Routing through /api/v1/pipelines/[id]/board
  * uses the server-side cookie reader, identical to every other authed query.
  */
+const BOARD_OPTS = { timeoutMs: 25_000, noRetryOnTimeout: true } as const;
+
 async function fetchBoard(pipelineId: string, dates: string): Promise<BoardData> {
-  const res = await apiClient.get<{ data: BoardData }>(`/api/v1/pipelines/${pipelineId}/board${dates ? `?${dates}` : ""}`);
+  const res = await apiClient.get<{ data: BoardData }>(`/api/v1/pipelines/${pipelineId}/board${dates ? `?${dates}` : ""}`, BOARD_OPTS);
   // apiClient unwraps { data, meta } envelope already in some helpers;
   // ours returns the parsed JSON literally. Handle both shapes safely.
   if (res && typeof res === "object" && "data" in res) {
@@ -38,6 +41,7 @@ async function fetchStagePage(
   query.set("cursor", cursor);
   const res = await apiClient.get<{ data: BoardStageChunk }>(
     `/api/v1/pipelines/${pipelineId}/board?${query.toString()}`,
+    BOARD_OPTS,
   );
   if (res && typeof res === "object" && "data" in res) {
     return (res as { data: BoardStageChunk }).data;
@@ -190,6 +194,10 @@ export function useBoard(pipelineId: string | null, filters: BoardDateFilter = {
     queryKey,
     queryFn: () => fetchBoard(pipelineId as string, dates),
     enabled: !!pipelineId,
+    // Teto de espera: no máximo UMA repetição da rodada (o cliente HTTP já
+    // repete 503 internamente). O padrão (2) somava 9 tentativas de até 8 s.
+    retry: (count, err) =>
+      err instanceof ApiError && [429, 503].includes(err.status) ? count < 1 : false,
   });
 
   const loadMoreStage = useCallback(
