@@ -13,6 +13,11 @@ export interface MessageTemplate {
   audio_mime_type: string | null;
   audio_file_name: string | null;
   audio_size_bytes: number | null;
+  media_storage_path: string | null;
+  media_mime_type: string | null;
+  media_file_name: string | null;
+  media_size_bytes: number | null;
+  media_kind: "image" | "video" | null;
 }
 
 /** Onda 5: templates de script (pessoais + compartilhados) para o slash-menu do composer. */

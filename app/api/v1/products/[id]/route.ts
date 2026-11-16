@@ -13,11 +13,15 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { caminhoDaImagemDoCatalogo } from "@/lib/catalogo/caminho-da-imagem";
 import { COLUNAS_DO_PRODUTO, produtoPatchSchema } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
+
+const mensagemGerenciado = "Este produto vem do painel de produtos. Mude lá.";
 
 export async function PATCH(
   req: NextRequest,
@@ -44,6 +48,19 @@ export async function PATCH(
   }
 
   const supabase = await createClient();
+  const { data: existente } = await supabase
+    .from("catalog_products")
+    .select("id, origem")
+    .eq("organization_id", authz.org.orgId)
+    .eq("id", id)
+    .maybeSingle();
+  if (!existente) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
+  if (
+    existente.origem === "painel" &&
+    Object.keys(parsed.data).some((campo) => campo !== "legenda_atendimento")
+  ) {
+    return fail("gerenciado_pelo_painel", t(mensagemGerenciado), 409, { requestId });
+  }
   const { data, error } = await supabase
     .from("catalog_products")
     .update(parsed.data)
@@ -88,6 +105,16 @@ export async function DELETE(
   const { id } = await params;
 
   const supabase = await createClient();
+  const { data: existente } = await supabase
+    .from("catalog_products")
+    .select("id, imagem_url, origem")
+    .eq("organization_id", authz.org.orgId)
+    .eq("id", id)
+    .maybeSingle();
+  if (!existente) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
+  if (existente.origem === "painel") {
+    return fail("gerenciado_pelo_painel", t(mensagemGerenciado), 409, { requestId });
+  }
   const { data, error } = await supabase
     .from("catalog_products")
     .delete()
@@ -98,6 +125,10 @@ export async function DELETE(
 
   if (error) return fail("internal_error", "Erro ao remover o produto.", 500, { requestId });
   if (!data) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
+  const imagem = caminhoDaImagemDoCatalogo(existente.imagem_url, authz.org.orgId, id);
+  if (imagem) {
+    await createAdminClient().storage.from("catalog-media").remove([imagem]);
+  }
 
   await audit({
     organizationId: authz.org.orgId,

@@ -1,4 +1,6 @@
 "use server";
+
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * Server Action: accept a team invite token.
  *
@@ -33,7 +35,7 @@ export async function acceptInviteAction(token: string): Promise<AcceptInviteRes
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (!user) return { ok: false, error: "not_authenticated" };
 
   if (await readSupportContext(supabase))

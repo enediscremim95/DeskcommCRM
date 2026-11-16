@@ -28,6 +28,40 @@ export const TOOLS_COMERCIO = declararTools([
     pacotes: ["vender", "atender"],
   },
   {
+    name: "crm_send_catalog_item",
+    category: "write",
+    rotulo: "Enviar produto com fotos",
+    explicacao:
+      "Envia ao cliente as fotos e o preço atual de um produto cadastrado, sem permitir que o assistente invente valor, legenda ou endereço de imagem.",
+    oQueToca: "Catálogo e conversa",
+    // Mesmo precedente de `crm_send_whatsapp_message`: fala com o cliente, então é risco crítico e NUNCA entra
+    // nas capacidades padrão de um agente novo; só quem escolhe a ferramenta de propósito a recebe.
+    risco: "critico",
+    pacotes: ["atender"],
+  },
+  {
+    name: "crm_send_vitrine",
+    category: "write",
+    rotulo: "Mostrar vitrine de produtos",
+    explicacao:
+      "Envia uma sequência pronta de produtos com fotos, títulos e valores cadastrados, na ordem definida pela loja e sem deixar o assistente trocar versões ou repetir preços.",
+    oQueToca: "Catálogo e conversa",
+    risco: "critico",
+    pacotes: ["atender"],
+  },
+  {
+    name: "crm_quote_shipping",
+    category: "write",
+    rotulo: "Calcular o frete do pedido",
+    explicacao:
+      "Calcula valor e prazo de transporte com o CEP e os itens cadastrados, sem aceitar preço, peso ou serviço inventado pelo assistente.",
+    oQueToca: "Frete e catálogo",
+    // Como o envio de produto, só entra por escolha individual. A configuração
+    // da organização continua desligada e nenhum pacote a ativa sozinho.
+    risco: "critico",
+    pacotes: ["atender"],
+  },
+  {
     name: "crm_list_privacy_requests",
     category: "read",
     rotulo: "Ver pedidos de privacidade",

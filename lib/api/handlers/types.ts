@@ -39,6 +39,12 @@ export interface HandlerCtx {
   approvedReply?: ApprovedReplyContext;
   meetingBooking?: MeetingBookingContext;
   internalMessageId?: string;
+  /**
+   * Quando o id interno deterministico ja existe, devolve a linha existente
+   * sem repetir o efeito externo. Usado por operacoes cujo retry deve preferir
+   * uma mensagem possivelmente pendente a uma duplicata entregue ao contato.
+   */
+  deduplicateInternalMessage?: boolean;
   proactiveContext?: ProactiveContext;
   /** Trusted origin captured by the runtime, never request-body metadata. */
   serviceBoundary?: ServiceBoundary | null;

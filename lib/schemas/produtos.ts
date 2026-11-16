@@ -11,7 +11,7 @@ import { z } from "zod";
  */
 
 /** Como o produto entrou no catálogo. Vocabulário ABERTO, sem CHECK no banco. */
-export const ORIGENS_DO_PRODUTO = ["manual", "planilha", "nuvemshop"] as const;
+export const ORIGENS_DO_PRODUTO = ["manual", "planilha", "nuvemshop", "painel"] as const;
 export type OrigemDoProduto = (typeof ORIGENS_DO_PRODUTO)[number];
 
 /**
@@ -116,10 +116,19 @@ export const produtoCreateSchema = z.object({
   quantidade: z.number().int().min(0).default(0),
   ativo: z.boolean().default(true),
   imagem_url: z.string().trim().url().max(2000).optional(),
+  legenda_atendimento: z.string().trim().max(4000).nullable().optional(),
 });
 
-/** Tudo opcional: o PATCH muda o que veio e não encosta no resto. */
-export const produtoPatchSchema = produtoCreateSchema.partial();
+/**
+ * Tudo opcional e sem defaults: o PATCH muda somente o que veio.
+ * `.partial()` sozinho preserva os defaults internos do Zod e injetaria
+ * `ativo=true`, `quantidade=0` e `controla_estoque=true` numa edição de legenda.
+ */
+export const produtoPatchSchema = produtoCreateSchema.partial().extend({
+  controla_estoque: z.boolean().optional(),
+  quantidade: z.number().int().min(0).optional(),
+  ativo: z.boolean().optional(),
+});
 
 export type ProdutoCreate = z.infer<typeof produtoCreateSchema>;
 export type ProdutoPatch = z.infer<typeof produtoPatchSchema>;
@@ -139,10 +148,13 @@ export interface Produto {
   ativo: boolean;
   origem: string;
   imagem_url: string | null;
+  imagem_origem_url: string | null;
+  legenda_atendimento: string | null;
   updated_at: string;
 }
 
 /** As colunas que a tela e a rota leem — uma lista, não duas. */
 export const COLUNAS_DO_PRODUTO =
   "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, custo_cents, " +
-  "controla_estoque, quantidade, ativo, origem, imagem_url, updated_at";
+  "controla_estoque, quantidade, ativo, origem, imagem_url, imagem_origem_url, " +
+  "legenda_atendimento, updated_at";

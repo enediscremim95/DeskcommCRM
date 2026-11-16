@@ -8,6 +8,10 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Escalação silenciosa por agente** Agentes que representam a própria dona da operação podem entregar a conversa para a Central sem avisar ao cliente que uma pessoa vai assumir. O modo nasce desligado e não altera outras organizações. Uma lista opcional de termos proibidos barra a fala do modelo sem diferença de acento ou maiúscula; se a reescrita falhar duas vezes, a mensagem não sai e a conversa vai silenciosamente para a Central.
+
 ## [1.18.1] — 2026-09-11
 
 ### Corrigido

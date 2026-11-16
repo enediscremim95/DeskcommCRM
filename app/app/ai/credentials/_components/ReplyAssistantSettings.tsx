@@ -18,11 +18,15 @@ import { Switch } from "@/components/ui/switch";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
+import {
+  PROVEDORES_DO_ASSISTENTE,
+  type ProvedorDoAssistente,
+} from "@/lib/ai/assistente-de-resposta/config";
 
 interface EstadoDoAssistente {
   enabled: boolean;
   state: "off" | "ready" | "credential_error" | "setup_error";
-  provider: "anthropic" | "openai";
+  provider: ProvedorDoAssistente;
   credential_id: string | null;
   credential_last4: string | null;
   validation_error: string | null;
@@ -41,10 +45,22 @@ const STATUS: Record<EstadoDoAssistente["state"], string> = {
   setup_error: "Configuração incompleta",
 };
 
+const ROTULO_DO_PROVEDOR: Record<ProvedorDoAssistente, string> = {
+  anthropic: "Claude",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+};
+
+const PLACEHOLDER_DA_CHAVE: Record<ProvedorDoAssistente, string> = {
+  anthropic: "Cole a chave da Anthropic",
+  openai: "Cole a chave da OpenAI",
+  openrouter: "Cole a chave da OpenRouter",
+};
+
 export function ReplyAssistantSettings({ canWrite }: { canWrite: boolean }) {
   const t = useT();
   const [state, setState] = useState<EstadoDoAssistente | null>(null);
-  const [provider, setProvider] = useState<"anthropic" | "openai">("anthropic");
+  const [provider, setProvider] = useState<ProvedorDoAssistente>("anthropic");
   const [apiKey, setApiKey] = useState("");
   const [teamStyle, setTeamStyle] = useState("");
   const [historyMessages, setHistoryMessages] = useState(20);
@@ -184,15 +200,18 @@ export function ReplyAssistantSettings({ canWrite }: { canWrite: boolean }) {
           <Label htmlFor="reply-assistant-provider">{t("Provedor")}</Label>
           <Select
             value={provider}
-            onValueChange={(value) => setProvider(value as "anthropic" | "openai")}
+            onValueChange={(value) => setProvider(value as ProvedorDoAssistente)}
             disabled={!canWrite || busy}
           >
             <SelectTrigger id="reply-assistant-provider">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="anthropic">Claude</SelectItem>
-              <SelectItem value="openai">OpenAI</SelectItem>
+              {PROVEDORES_DO_ASSISTENTE.map((id) => (
+                <SelectItem key={id} value={id}>
+                  {ROTULO_DO_PROVEDOR[id]}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -206,11 +225,7 @@ export function ReplyAssistantSettings({ canWrite }: { canWrite: boolean }) {
             autoComplete="off"
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
-            placeholder={
-              provider === "anthropic"
-                ? t("Cole a chave da Anthropic")
-                : t("Cole a chave da OpenAI")
-            }
+            placeholder={t(PLACEHOLDER_DA_CHAVE[provider])}
             disabled={!canWrite || busy}
           />
         </div>

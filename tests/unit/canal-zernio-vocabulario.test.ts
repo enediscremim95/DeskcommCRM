@@ -20,6 +20,11 @@ import {
 import { getAdapter } from "@/lib/channels";
 import type { OutboundEnvelope } from "@/lib/channels";
 import { CHANNEL_SESSION_REF_COLUMNS, resolveSessionRef } from "@/lib/channels/session-ref";
+import {
+  motivoParaDescartarFila,
+  politicaEsperaFilaPorCanal,
+  type SnapshotGuardaFila,
+} from "@/lib/automation/fila-primeira-mensagem.handler";
 
 const ZERNIO = CHANNEL_PROVIDER_ZERNIO;
 
@@ -54,6 +59,41 @@ describe("capabilities do canal intermediado", () => {
     expect(capabilitiesOf(ZERNIO).requiresTemplates).toBe(true);
   });
 
+  it("mantém a margem de 23 horas na fila: 22h59 libera e 23h01 descarta", () => {
+    const now = new Date("2026-11-06T15:00:00.000Z");
+    const snapshot = (latestInboundAt: string): SnapshotGuardaFila => ({
+      ruleActive: true,
+      tags: [],
+      isBlocked: false,
+      forceHuman: false,
+      latestInboundBody: "Olá",
+      latestInboundAt,
+      humanRepliedAfterQueue: false,
+      conversation: {
+        status: "open",
+        assignedToUserId: null,
+        assigneeKind: null,
+        botSilencedUntil: null,
+      },
+    });
+    const politica = politicaEsperaFilaPorCanal(ZERNIO, 168);
+
+    expect(
+      motivoParaDescartarFila(
+        snapshot(new Date(now.getTime() - (22 * 60 + 59) * 60_000).toISOString()),
+        now,
+        politica,
+      ),
+    ).toBeNull();
+    expect(
+      motivoParaDescartarFila(
+        snapshot(new Date(now.getTime() - (23 * 60 + 1) * 60_000).toISOString()),
+        now,
+        politica,
+      ),
+    ).toBe("janela_24h_expirada");
+  });
+
   it("voiceNote é opus-only: o provider tem a flag mas NÃO converte", () => {
     // Ler o booleano do provider como "ele resolve para mim" é o erro que manda
     // mp3 e entrega anexo de música em vez de bolha de voz.
@@ -74,9 +114,7 @@ describe("identificador da sessão", () => {
 
   it("cada canal resolve pela SUA coluna — nenhum cai na do outro", () => {
     expect(resolveSessionRef({ provider: "waha", waha_session_name: "s1" })).toBe("s1");
-    expect(
-      resolveSessionRef({ provider: "meta_cloud", meta_phone_number_id: "pn1" }),
-    ).toBe("pn1");
+    expect(resolveSessionRef({ provider: "meta_cloud", meta_phone_number_id: "pn1" })).toBe("pn1");
   });
 });
 

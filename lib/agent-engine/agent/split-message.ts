@@ -1,12 +1,31 @@
+export interface SplitIntoBubblesOptions {
+  /** Cada parágrafo vira uma mensagem física. Ausente/false preserva o legado. */
+  splitPorParagrafo?: boolean;
+}
+
 /**
- * Quebra o texto da resposta em "bolhas" curtas (Onda 4) — parágrafo → sentença
- * → palavra, juntando pedaços adjacentes que caibam em maxChars. Puro. Usado no
- * send do agente quando split_messages está on; o pacing anti-ban espaça cada
- * bolha. Nunca devolve bolha vazia nem (salvo palavra atômica gigante) > maxChars.
+ * Quebra o texto da resposta em "bolhas" curtas (Onda 4).
+ *
+ * O modo legado junta unidades adjacentes até o teto. O modo opt-in por
+ * parágrafo mantém cada bloco separado e só corta um bloco que excede o teto,
+ * preferindo pontuação de frase, depois vírgula e só então palavra.
  */
-export function splitIntoBubbles(text: string, maxChars: number): string[] {
+export function splitIntoBubbles(
+  text: string,
+  maxChars: number,
+  options: SplitIntoBubblesOptions = {},
+): string[] {
   const trimmed = (text ?? "").trim();
   if (trimmed === "") return [];
+  if (options.splitPorParagrafo === true) {
+    return splitPreservandoParagrafos(trimmed, maxChars);
+  }
+
+  return splitLegado(trimmed, maxChars);
+}
+
+/** Mantido isolado para o opt-in não alterar nenhuma organização por acidente. */
+function splitLegado(trimmed: string, maxChars: number): string[] {
   if (trimmed.length <= maxChars) return [trimmed];
 
   // Unidades atômicas: parágrafos → sentenças. Cada unidade que ainda estoura é
@@ -39,6 +58,79 @@ export function splitIntoBubbles(text: string, maxChars: number): string[] {
   }
   if (cur !== "") bubbles.push(cur);
   return bubbles;
+}
+
+function splitPreservandoParagrafos(text: string, maxChars: number): string[] {
+  const bubbles: string[] = [];
+  for (const raw of text.split(/\n\s*\n+/)) {
+    const paragrafo = raw.trim();
+    if (paragrafo === "") continue;
+    bubbles.push(...splitParagrafoLongo(paragrafo, maxChars));
+  }
+  return bubbles;
+}
+
+/**
+ * Corta um único parágrafo sem remontar pedaços depois. Assim, um corte por
+ * palavra nunca é juntado à frase seguinte sem a pontuação que o texto tinha.
+ */
+function splitParagrafoLongo(paragrafo: string, maxChars: number): string[] {
+  if (paragrafo.length <= maxChars) return [paragrafo];
+
+  const out: string[] = [];
+  let restante = paragrafo;
+  while (restante.length > maxChars) {
+    const corte = melhorCorte(restante, maxChars);
+    if (corte === null) {
+      // Palavra atômica maior que o teto: preserva inteira, como no legado.
+      const primeiroEspaco = restante.search(/\s/);
+      if (primeiroEspaco === -1) {
+        out.push(restante);
+        restante = "";
+        break;
+      }
+      out.push(restante.slice(0, primeiroEspaco).trim());
+      restante = restante.slice(primeiroEspaco).trimStart();
+      continue;
+    }
+
+    const pedaco = restante.slice(0, corte).trim();
+    if (pedaco !== "") out.push(pedaco);
+    restante = restante.slice(corte).trimStart();
+  }
+  if (restante.trim() !== "") out.push(restante.trim());
+  return out;
+}
+
+/** Retorna o índice exclusivo do melhor limite dentro do teto. */
+function melhorCorte(texto: string, maxChars: number): number | null {
+  const limite = Math.min(maxChars, texto.length);
+  let frase: number | null = null;
+  let virgula: number | null = null;
+
+  for (let i = 0; i < limite; i++) {
+    const atual = texto[i]!;
+    const anterior = texto[i - 1];
+    const seguinte = texto[i + 1];
+    const entreDigitos =
+      anterior !== undefined &&
+      seguinte !== undefined &&
+      /\d/.test(anterior) &&
+      /\d/.test(seguinte);
+
+    if ((atual === "." || atual === "!" || atual === "?" || atual === "…") && !entreDigitos) {
+      frase = i + 1;
+    } else if (atual === "," && !entreDigitos) {
+      virgula = i + 1;
+    }
+  }
+
+  if (frase !== null) return frase;
+  if (virgula !== null) return virgula;
+
+  const janela = texto.slice(0, limite + 1);
+  const ultimoEspaco = Math.max(janela.lastIndexOf(" "), janela.lastIndexOf("\n"), janela.lastIndexOf("\t"));
+  return ultimoEspaco > 0 ? ultimoEspaco : null;
 }
 
 /**
@@ -107,6 +199,8 @@ export interface BubbleOutcome {
 export interface SendInBubblesOpts<T extends BubbleOutcome = BubbleOutcome> {
   enabled: boolean;
   maxChars: number;
+  /** Opt-in: não junta parágrafos distintos na mesma mensagem física. */
+  splitPorParagrafo?: boolean;
   send: (body: string) => Promise<T>;
   sleep: (ms: number) => Promise<void>;
   /** ms de jitter humano entre bolhas (só entre, não antes da 1ª). */
@@ -153,7 +247,11 @@ export async function sendInBubbles<T extends BubbleOutcome>(
   body: string,
   opts: SendInBubblesOpts<T>,
 ): Promise<T> {
-  const bubbles = opts.enabled ? splitIntoBubbles(body, opts.maxChars) : [body];
+  const bubbles = opts.enabled
+    ? splitIntoBubbles(body, opts.maxChars, {
+        splitPorParagrafo: opts.splitPorParagrafo ?? false,
+      })
+    : [body];
   if (bubbles.length === 0) return opts.send(body); // corpo vazio: deixa o canal decidir
   let last: T | undefined;
   for (let i = 0; i < bubbles.length; i++) {

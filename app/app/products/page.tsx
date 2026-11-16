@@ -51,7 +51,7 @@ export default async function ProdutosPage() {
       textos={{
         titulo: t("Produtos"),
         subtitulo: t(
-          "O catálogo da loja. É daqui que o atendente de IA tira o preço quando alguém pergunta.",
+          "O catálogo da loja. Produtos do painel mantêm nome, preço e foto sincronizados; o CRM acrescenta a legenda do atendimento.",
         ),
         vazio: t("Nenhum produto cadastrado ainda"),
         vazioDica: t(

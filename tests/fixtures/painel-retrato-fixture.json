@@ -1,0 +1,54 @@
+{
+  "gerado_em": "2026-11-04T12:00:00Z",
+  "produtos": [
+    {
+      "sku": "PAI-FRETE-1",
+      "nome": "Kit para cotação",
+      "grupo": "Presentes",
+      "tipo": "kit",
+      "situacao": "A",
+      "descricao": "Fixture sintético sem URL assinada.",
+      "acompanha": ["1 caixa"],
+      "precos": [129.9],
+      "opcoes": {
+        "Versão": ["Completa"],
+        "Cor": ["Azul", "Rosa"]
+      },
+      "opcoes_precos": {
+        "Versão": { "muda_preco": true, "valores": [] },
+        "Cor": { "muda_preco": false, "valores": [] }
+      },
+      "variacoes": [
+        {
+          "codigo": "KIT-COMPLETO-AZUL",
+          "atributos": { "Versão": "Completa", "Cor": "Azul" },
+          "preco": 129.9
+        },
+        {
+          "codigo": "KIT-COMPLETO-ROSA",
+          "atributos": { "Versão": "Completa", "Cor": "Rosa" },
+          "preco": 129.9
+        }
+      ],
+      "peso_medidas": {
+        "opcoes": [
+          {
+            "sku": "KIT-COMPLETO-AZUL",
+            "peso_kg": 1.2,
+            "altura_cm": 10,
+            "largura_cm": 20,
+            "comprimento_cm": 30
+          },
+          {
+            "sku": "KIT-COMPLETO-ROSA",
+            "peso_kg": 1.8,
+            "altura_cm": 12,
+            "largura_cm": 22,
+            "comprimento_cm": 32
+          }
+        ]
+      },
+      "fotos": []
+    }
+  ]
+}

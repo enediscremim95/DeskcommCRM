@@ -127,9 +127,13 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
   // --- os outros checks obrigatórios ------------------------------------------
   // Mesmo mecanismo, mesmo desfecho: `skipped` conta como check satisfeito.
   // Desligar qualquer um destes faz o PR entrar sem ter sido testado.
-  "ci.yml::verify": {
+  "ci.yml::unitarios": {
     condicao: null,
-    efeito: "Este é o check obrigatório `verify` (typecheck + lint + test:unit).",
+    efeito: "As duas partes nativas executam toda a suíte unitária, sem filtro por pasta; verify exige sucesso de ambas.",
+  },
+  "ci.yml::verify": {
+    condicao: "always()",
+    efeito: "Check obrigatório: typecheck, lint, shell e sucesso de TODAS as partes unitárias. Always impede skip quando a matriz falha.",
   },
   "ci.yml::invariants": {
     condicao: null,

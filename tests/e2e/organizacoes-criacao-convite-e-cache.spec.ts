@@ -120,7 +120,10 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
     expect(pronta.error).toBeNull();
     expect(pronta.data?.onboarded_at).toBeTruthy();
     const conversationB = await conversation(orgB, `Cliente B ${suffix}`);
-    await page.getByRole("link", { name: "Voltar ao aplicativo" }).click();
+    await Promise.all([
+      page.waitForURL(url => url.pathname.startsWith("/app/pipelines/")),
+      page.getByRole("link", { name: "Voltar ao aplicativo" }).click(),
+    ]);
     // A conversa sem dono pode estar sob comando do automático. `Fila` não é
     // sinônimo de todas as conversas; a aba Todas é a superfície que mede o
     // isolamento entre organizações sem depender de quem está atendendo.
@@ -152,7 +155,7 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
         await route.continue();
       });
       await page.getByTestId("tenant-switcher").click();
-      const navigation = page.waitForNavigation({ waitUntil: "load" });
+      const navigation = page.waitForURL(url => url.pathname.startsWith("/app/pipelines/"), { waitUntil: "load" });
       await page.getByTestId(`tenant-switcher-item-${target}`).click({ noWaitAfter: true });
       try {
         const guard = page.getByTestId("organization-transition");
@@ -165,8 +168,18 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
         await page.screenshot({ path: `.superpowers/evidence/comunidade-360/transicao-para-${own}.png` });
       } finally { release(); }
       await navigation;
-      await page.goto(`/app/inbox?filter=all&conversation=${selected}`);
+      // Encerre a interceptação da transição antes de iniciar as requisições
+      // da próxima tela, evitando mudar a interceptação com o fetch em voo.
       await page.unroute("**/app/**");
+      const inboxResponse = page.waitForResponse(response =>
+        new URL(response.url()).pathname === "/api/v1/conversations" && response.request().method() === "GET",
+      );
+      await page.goto(`/app/inbox?filter=all&conversation=${selected}`);
+      const inbox = await inboxResponse;
+      expect(inbox.status()).toBe(200);
+      const lista = (await inbox.json()).data as Array<{ id: string }>;
+      expect(lista.map(item => item.id)).toContain(selected);
+      expect(lista.map(item => item.id)).not.toContain(own === "A" ? conversationB : conversationA);
       await expect(page.getByTestId("tenant-switcher")).toContainText(`Empresa ${own} ${suffix}`);
       expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).__oldDocument)).toBeUndefined();
       await expect(page.locator("[data-conversation-id]").getByText(`Cliente ${own} ${suffix}`, { exact: true })).toBeVisible();

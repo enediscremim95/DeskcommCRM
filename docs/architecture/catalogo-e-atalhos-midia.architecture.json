@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Catálogo e atalhos com mídia na conversa",
+    "subtitle": "painel como fonte, rascunho humano obrigatório na conversa e mídia protegida por tenant",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "tela", "label": "Equipe" },
+    { "id": "api", "label": "API e regras" },
+    { "id": "dados", "label": "Banco e Storage" },
+    { "id": "canal", "label": "Saída" }
+  ],
+  "mainPath": ["painel", "importacao", "produtos", "seletor", "rotarascunho", "preview", "envio"],
+  "nodes": [
+    { "id": "painel", "lane": "tela", "label": "JSON exportado do painel" },
+    { "id": "telaprodutos", "lane": "tela", "label": "Produtos: selo e campos bloqueados" },
+    { "id": "atalho", "lane": "tela", "label": "Atalho /texto com anexo" },
+    { "id": "seletor", "lane": "tela", "label": "Seletor de produtos da conversa" },
+    { "id": "preview", "lane": "tela", "label": "Prévia editável, um produto por vez" },
+    { "id": "importacao", "lane": "api", "label": "POST import-painel, manager" },
+    { "id": "guardafoto", "lane": "api", "label": "Allowlist, DNS, 5 MB e bytes mágicos" },
+    { "id": "rotarascunho", "lane": "api", "label": "POST catalog-items/draft, sem efeito" },
+    { "id": "proxyfoto", "lane": "api", "label": "GET catalog-items/photo, autenticado" },
+    { "id": "rotalote", "lane": "api", "label": "POST catalog-items, agente e integrações" },
+    { "id": "janela", "lane": "api", "label": "estadoDaJanela" },
+    { "id": "envio", "lane": "api", "label": "sendMessageHandler" },
+    { "id": "templates", "lane": "dados", "label": "message_templates e whatsapp-media" },
+    { "id": "produtos", "lane": "dados", "label": "catalog_products, origem e legenda" },
+    { "id": "midia", "lane": "dados", "label": "catalog-media sob o prefixo do tenant" },
+    { "id": "adapter", "lane": "canal", "label": "Adapter do canal" }
+  ],
+  "edges": [
+    {
+      "id": "e0a",
+      "from": "painel",
+      "to": "importacao",
+      "label": "retrato JSON, sem segredo do painel"
+    },
+    {
+      "id": "e0b",
+      "from": "importacao",
+      "to": "produtos",
+      "label": "upsert por organização e código; ausentes ficam inativos"
+    },
+    {
+      "id": "e0c",
+      "from": "importacao",
+      "to": "guardafoto",
+      "label": "baixa apenas quando a URL muda"
+    },
+    {
+      "id": "e0d",
+      "from": "guardafoto",
+      "to": "midia",
+      "label": "JPEG ou PNG no namespace da organização"
+    },
+    {
+      "id": "e0e",
+      "from": "produtos",
+      "to": "telaprodutos",
+      "label": "origem painel bloqueia campos comerciais; legenda segue editável"
+    },
+    { "id": "e1", "from": "templates", "to": "atalho", "label": "carrega o anexo privado" },
+    { "id": "e2", "from": "atalho", "to": "envio", "label": "preview, legenda e envio" },
+    {
+      "id": "e3",
+      "from": "produtos",
+      "to": "seletor",
+      "label": "lista ativa e isolada por organização"
+    },
+    { "id": "e4", "from": "seletor", "to": "rotarascunho", "label": "até 10 ids, sem criar mensagem" },
+    {
+      "id": "e5",
+      "from": "rotarascunho",
+      "to": "produtos",
+      "label": "releitura confiável por organização e legenda completa"
+    },
+    { "id": "e6", "from": "rotalote", "to": "janela", "label": "recusa lote fora da janela" },
+    { "id": "e7", "from": "janela", "to": "envio", "label": "a porta central também revalida" },
+    { "id": "e8", "from": "envio", "to": "adapter", "label": "um recibo por produto" },
+    {
+      "id": "e9",
+      "from": "produtos",
+      "to": "rotalote",
+      "label": "foto persistente vira cópia transitória da conversa"
+    },
+    {
+      "id": "e10",
+      "from": "templates",
+      "to": "envio",
+      "label": "anexo usa o mesmo caminho storage-first"
+    },
+    {
+      "id": "e11",
+      "from": "rotarascunho",
+      "to": "preview",
+      "label": "nome, preço, descrição inteira e indicador de excesso"
+    },
+    {
+      "id": "e12",
+      "from": "preview",
+      "to": "proxyfoto",
+      "label": "busca bytes pela id do produto, nunca por caminho livre"
+    },
+    {
+      "id": "e13",
+      "from": "proxyfoto",
+      "to": "midia",
+      "label": "download somente no prefixo da organização"
+    },
+    {
+      "id": "e14",
+      "from": "preview",
+      "to": "envio",
+      "label": "confirmação manual depois da edição"
+    },
+    {
+      "id": "e15",
+      "from": "produtos",
+      "to": "rotalote",
+      "label": "rota direta preservada fora da tela"
+    }
+  ]
+}

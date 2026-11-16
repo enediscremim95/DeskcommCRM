@@ -18,17 +18,21 @@
   "nodes": [
     { "id": "toggle", "lane": "config", "col": 1, "type": "frontend", "label": "TenantOverview", "sublabel": "platform admin liga ou desliga por organização" },
     { "id": "patch", "lane": "config", "col": 2, "type": "api", "label": "PATCH /admin/tenants/[id]", "sublabel": "Zod, merge de settings e auditoria" },
+    { "id": "mediaOpenrouterOrgs", "lane": "config", "col": 3, "type": "config", "label": "MEDIA_OPENROUTER_ORG_IDS", "sublabel": "UUIDs autorizados; vazio desliga o fallback para todas as organizações" },
     { "id": "settings", "lane": "dados", "col": 2, "type": "database", "label": "organizations.settings", "sublabel": "whatsapp_media_storage_enabled; somente false desliga" },
     { "id": "ingest", "lane": "entrada", "col": 1, "type": "service", "label": "ingestão dos canais", "sublabel": "grava legenda, tipo, MIME, nome e ponteiro temporário" },
     { "id": "event", "lane": "entrada", "col": 2, "type": "messagebus", "label": "media.persist_requested", "sublabel": "uma mensagem, uma decisão de retenção" },
     { "id": "persist", "lane": "processa", "col": 2, "type": "service", "label": "media-persist-worker", "sublabel": "grava por padrão; erro repete e não vira done" },
     { "id": "storage", "lane": "dados", "col": 3, "type": "cloud", "label": "whatsapp-media", "sublabel": "cópia por 21 dias; teto global 3,15 GB" },
     { "id": "retention", "lane": "processa", "col": 4, "type": "service", "label": "media-retention", "sublabel": "apaga só o binário vencido; preserva mensagem e texto" },
-    { "id": "derive", "lane": "processa", "col": 3, "type": "service", "label": "media-derive-worker", "sublabel": "Storage ou download transitório pelo adapter" },
+    { "id": "derive", "lane": "processa", "col": 3, "type": "service", "label": "media-derive-worker", "sublabel": "limites, PDF textual e opt-in OpenRouter por organization_id" },
+    { "id": "openrouter", "lane": "processa", "col": 4, "type": "service", "label": "OpenRouter multimodal", "sublabel": "somente organizações autorizadas; áudio, visão e PDF escaneado" },
+    { "id": "llmcalls", "lane": "dados", "col": 5, "type": "database", "label": "llm_calls", "sublabel": "uso, custo, latência e falha sem conteúdo pessoal" },
     { "id": "messages", "lane": "dados", "col": 4, "type": "database", "label": "messages", "sublabel": "media_derived_text + metadata.media_status; ponteiro transitório limpo" },
     { "id": "mediaRoute", "lane": "tela", "col": 4, "type": "api", "label": "GET messages/[id]/media", "sublabel": "not_stored nunca alcança fallback do provider" },
     { "id": "bubble", "lane": "tela", "col": 5, "type": "frontend", "label": "MessageBubble", "sublabel": "caption + aviso claro + nome, sem miniatura quebrada" },
-    { "id": "agent", "lane": "tela", "col": 5, "type": "service", "label": "contexto do agente", "sublabel": "lê media_derived_text depois da derivação" },
+    { "id": "agent", "lane": "tela", "col": 5, "type": "service", "label": "contexto do agente", "sublabel": "formatador único marca mídia como dado não confiável" },
+    { "id": "sandbox", "lane": "tela", "col": 4, "type": "service", "label": "sandbox do agente", "sublabel": "mídia sintética determinística, sem provedor nem rede" },
     { "id": "audit", "lane": "dados", "col": 3, "type": "database", "label": "api_audit_log", "sublabel": "tenant_whatsapp_media_storage_updated" },
     { "id": "central", "lane": "tela", "col": 5, "type": "frontend", "label": "Central de avisos", "sublabel": "falha definitiva abre event_dead ligado à conversa" }
   ],
@@ -48,7 +52,11 @@
     { "id": "e13", "from": "messages", "to": "agent", "label": "texto derivado alimenta o turno" },
     { "id": "e14", "from": "persist", "to": "central", "label": "5 falhas: aviso crítico com conversa" },
     { "id": "e15", "from": "storage", "to": "retention", "label": "arquivo com mais de 21 dias" },
-    { "id": "e16", "from": "retention", "to": "messages", "label": "not_stored + retention_expired" }
+    { "id": "e16", "from": "retention", "to": "messages", "label": "not_stored + retention_expired" },
+    { "id": "e17", "from": "derive", "to": "openrouter", "label": "organization_id consta na lista de opt-in" },
+    { "id": "e18", "from": "openrouter", "to": "llmcalls", "label": "telemetria sem conteúdo" },
+    { "id": "e19", "from": "sandbox", "to": "agent", "label": "mesmo formatador do turno real" },
+    { "id": "e20", "from": "mediaOpenrouterOrgs", "to": "derive", "label": "autoriza por UUID; inválido é ignorado" }
   ],
   "cards": [
     {
@@ -57,7 +65,8 @@
       "items": [
         "entrada: webhooks de canal e toggle do platform admin",
         "saída: MessageBubble e contexto textual do agente",
-        "registro: metadata.media_status e auditoria da configuração",
+        "registro: metadata.media_status, auditoria da configuração e llm_calls",
+        "configuração: MEDIA_OPENROUTER_ORG_IDS vazia mantém o fallback desligado",
         "porta: Visão Geral do tenant no painel administrativo",
         "anti-morte: o drain repete a persistência, marca failed e abre aviso no limite",
         "laço de retorno: a Central leva à conversa; corrigir transporte/Storage muda a próxima tentativa"

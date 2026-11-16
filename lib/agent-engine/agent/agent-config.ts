@@ -15,7 +15,60 @@
  */
 import type pg from 'pg';
 
+import {
+  vitrineSchema,
+  type VitrineConfig,
+  type VitrinesConfig,
+} from '@/lib/ai/guardrails-schema';
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
+
+const ASSUNTO_DE_VITRINE = /^[a-z0-9_]{1,40}$/;
+const MAX_TERMOS_PROIBIDOS = 40;
+const MAX_CARACTERES_TERMO_PROIBIDO = 80;
+
+/**
+ * Leitura defensiva do jsonb livre. Uma vitrine inválida some sozinha; as
+ * vizinhas válidas continuam disponíveis e nenhuma forma inesperada lança.
+ */
+export function lerVitrines(valor: unknown): VitrinesConfig {
+  if (valor === null || typeof valor !== 'object' || Array.isArray(valor)) return {};
+
+  const vitrines: Record<string, VitrineConfig> = {};
+  for (const [assunto, candidata] of Object.entries(valor)) {
+    if (Object.keys(vitrines).length >= 12) break;
+    if (!ASSUNTO_DE_VITRINE.test(assunto)) continue;
+    const parsed = vitrineSchema.safeParse(candidata);
+    if (!parsed.success) continue;
+    vitrines[assunto] = parsed.data;
+  }
+  return vitrines;
+}
+
+/**
+ * Leitura defensiva do jsonb livre. O PATCH já valida a forma, mas SQL e clones
+ * antigos podem escrever direto no banco. Só strings curtas e não vazias chegam
+ * ao gate; duplicatas sem diferença de caixa/acento são descartadas.
+ */
+export function lerTermosProibidosAoCliente(valor: unknown): string[] {
+  if (!Array.isArray(valor)) return [];
+
+  const vistos = new Set<string>();
+  const termos: string[] = [];
+  for (const candidato of valor) {
+    if (termos.length >= MAX_TERMOS_PROIBIDOS) break;
+    if (typeof candidato !== 'string' || /[\r\n]/u.test(candidato)) continue;
+    const termo = candidato.trim();
+    if (termo === '' || termo.length > MAX_CARACTERES_TERMO_PROIBIDO) continue;
+    const chave = termo
+      .toLocaleLowerCase('pt-BR')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/gu, '');
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    termos.push(termo);
+  }
+  return termos;
+}
 
 export interface PublishedAgentConfig {
   operationMode?: 'automatic' | 'assisted';
@@ -35,6 +88,22 @@ export interface PublishedAgentConfig {
   handoffToolEnabled: boolean;
   splitMessages: boolean;
   splitMaxChars: number;
+  /** Opt-in em ai_agents.config.split_por_paragrafo; ausente = false. */
+  splitPorParagrafo: boolean;
+  /** Opt-in em ai_agents.config.sem_saudacao_repetida; ausente = false. */
+  semSaudacaoRepetida?: boolean;
+  /** Opt-in em ai_agents.config.vitrine_por_gatilho; ausente = false. */
+  vitrinePorGatilho?: boolean;
+  /** Opt-in em ai_agents.config.handoff_automatico_na_promessa; ausente = false. */
+  handoffAutomaticoNaPromessa: boolean;
+  /** Opt-in: handoff continua por dentro, sem aviso automático ao cliente. */
+  escalacaoSilenciosa: boolean;
+  /** Expressões que uma resposta do modelo nunca pode mostrar ao cliente. */
+  termosProibidosAoCliente: string[];
+  /** Opt-in em ai_agents.config.max_sends_per_turn; null = teto global da instalação. */
+  maxSendsPerTurn: number | null;
+  /** Vitrines determinísticas por assunto; mapa vazio = ferramenta ausente. */
+  vitrines: VitrinesConfig;
   /** input multimodal (imagem/áudio/pdf) habilitado no turno (Onda 3). */
   multimodalInput: boolean;
   /** tools open_human_case/provide_case_update habilitadas no turno (spec 15). */
@@ -158,7 +227,18 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
 /** Mapeamento Row (snake_case do banco) → PublishedAgentConfig, compartilhado
  * pelas duas variantes de loader (por channel_session e por agent id). */
 function mapAgentConfigRow(r: Row): PublishedAgentConfig {
-  const cfg = (r.config ?? {}) as { rag_top_k?: unknown; rag_similarity_threshold?: unknown };
+  const cfg = (r.config ?? {}) as {
+    rag_top_k?: unknown;
+    rag_similarity_threshold?: unknown;
+    split_por_paragrafo?: unknown;
+    sem_saudacao_repetida?: unknown;
+    vitrine_por_gatilho?: unknown;
+    handoff_automatico_na_promessa?: unknown;
+    escalacao_silenciosa?: unknown;
+    termos_proibidos_ao_cliente?: unknown;
+    max_sends_per_turn?: unknown;
+    vitrines?: unknown;
+  };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
     Number.isInteger(cfg.rag_top_k) &&
@@ -196,6 +276,20 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     handoffToolEnabled: r.handoff_tool_enabled,
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,
+    splitPorParagrafo: cfg.split_por_paragrafo === true,
+    semSaudacaoRepetida: cfg.sem_saudacao_repetida === true,
+    vitrinePorGatilho: cfg.vitrine_por_gatilho === true,
+    handoffAutomaticoNaPromessa: cfg.handoff_automatico_na_promessa === true,
+    escalacaoSilenciosa: cfg.escalacao_silenciosa === true,
+    termosProibidosAoCliente: lerTermosProibidosAoCliente(cfg.termos_proibidos_ao_cliente),
+    maxSendsPerTurn:
+      typeof cfg.max_sends_per_turn === 'number' &&
+      Number.isInteger(cfg.max_sends_per_turn) &&
+      cfg.max_sends_per_turn >= 1 &&
+      cfg.max_sends_per_turn <= 12
+        ? cfg.max_sends_per_turn
+        : null,
+    vitrines: lerVitrines(cfg.vitrines),
     multimodalInput: r.multimodal_input,
     casesEnabled: r.cases_enabled,
     toolIds: r.tool_ids ?? [],

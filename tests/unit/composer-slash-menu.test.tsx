@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendMock = vi.fn();
 const apiGetMock = vi.fn();
@@ -65,7 +65,18 @@ function renderComposer() {
 }
 
 describe("Composer + barra de modelos", () => {
+  // O áudio salvo agora aparece com player na prévia, e o jsdom não tem
+  // URL.createObjectURL. Os originais voltam no fim de cada caso.
+  const criarUrl = URL.createObjectURL;
+  const revogarUrl = URL.revokeObjectURL;
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    URL.createObjectURL = criarUrl;
+    URL.revokeObjectURL = revogarUrl;
+  });
   beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => "blob:teste");
+    URL.revokeObjectURL = vi.fn();
     sendMock.mockClear();
     apiGetMock.mockReset();
     apiGetMock.mockResolvedValue({ data: { drafts: [] } });
@@ -85,7 +96,16 @@ describe("Composer + barra de modelos", () => {
     expect(screen.queryByRole("listbox", { name: /modelos de mensagem/i })).not.toBeInTheDocument();
   });
 
-  it("usa setas e Enter para preencher, interpolar e não enviar", () => {
+  it("usa setas e Enter para abrir o áudio salvo com a legenda interpolada", async () => {
+    vi.stubGlobal(
+      "fetch",
+      // Objeto simples de propósito: `new Response(new Blob(...))` quebra no Node 22
+      // (o Blob do jsdom não tem `.stream`, que o undici exige).
+      vi.fn(async () => ({
+        ok: true,
+        blob: async () => new Blob(["audio"], { type: "audio/ogg" }),
+      })),
+    );
     renderComposer();
     const campo = screen.getByLabelText("Mensagem");
 
@@ -98,7 +118,8 @@ describe("Composer + barra de modelos", () => {
 
     fireEvent.keyDown(campo, { key: "Enter" });
 
-    expect(campo).toHaveValue("Obrigado, Maria da Silva.");
+    expect(await screen.findByRole("heading", { name: "Enviar anexo" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Legenda")).toHaveValue("Obrigado, Maria da Silva.");
     expect(sendMock).not.toHaveBeenCalled();
     expect(screen.queryByRole("listbox", { name: /modelos de mensagem/i })).not.toBeInTheDocument();
   });

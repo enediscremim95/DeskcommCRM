@@ -37,6 +37,62 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Busca inválida.": { es: "Búsqueda no válida." },
+  "Mensagem não encontrada.": { es: "Mensaje no encontrado." },
+  "Erro ao buscar mensagens.": { es: "No se pudieron buscar los mensajes." },
+  "Não foi possível buscar nesta conversa.": { es: "No se pudo buscar en esta conversación." },
+  "Buscar nesta conversa": { es: "Buscar en esta conversación" },
+  "Buscando…": { es: "Buscando…" },
+  "Resultado anterior": { es: "Resultado anterior" },
+  "Próximo resultado": { es: "Siguiente resultado" },
+  "Fechar busca": { es: "Cerrar búsqueda" },
+  "Nenhuma mensagem encontrada.": { es: "No se encontró ningún mensaje." },
+  "Copiar mensagem": { es: "Copiar mensaje" },
+  "Ir para a mensagem citada": { es: "Ir al mensaje citado" },
+  "Mensagem citada": { es: "Mensaje citado" },
+  "Carregar mensagem original": { es: "Cargar mensaje original" },
+  "Mensagem copiada.": { es: "Mensaje copiado." },
+  "Não foi possível copiar a mensagem.": { es: "No se pudo copiar el mensaje." },
+  "{total} anexos na fila": { es: "{total} archivos en la cola" },
+  "Anexos selecionados": { es: "Archivos seleccionados" },
+  "Selecionar anexo {numero}": { es: "Seleccionar archivo {numero}" },
+  "Pulado": { es: "Omitido" },
+  "Cancelar restantes": { es: "Cancelar restantes" },
+  "Enviar {total} anexos": { es: "Enviar {total} archivos" },
+  "Abrir ficha": { es: "Abrir ficha" },
+  "Recolher ficha": { es: "Ocultar ficha" },
+  "Solte os arquivos para anexar": { es: "Suelta los archivos para adjuntarlos" },
+  "Buscar na conversa": { es: "Buscar en la conversación" },
+  "Vem do painel": { es: "Viene del panel" },
+  "Nome, descrição, preço, foto e situação são alterados no painel de produtos.": {
+    es: "El nombre, la descripción, el precio, la foto y el estado se cambian en el panel de productos.",
+  },
+  "Legenda complementar do atendimento": { es: "Texto complementario de la atención" },
+  "Vai ao final da legenda enviada e é cortada no limite aceito pelo canal.": {
+    es: "Va al final del texto enviado y se recorta según el límite aceptado por el canal.",
+  },
+  "A foto deste produto é atualizada pelo painel.": {
+    es: "La foto de este producto se actualiza desde el panel.",
+  },
+  "Imagem externa: no envio, este produto sai como texto.": {
+    es: "Imagen externa: al enviarlo, este producto sale como texto.",
+  },
+  "O catálogo da loja. Produtos do painel mantêm nome, preço e foto sincronizados; o CRM acrescenta a legenda do atendimento.": {
+    es: "El catálogo de la tienda. Los productos del panel mantienen nombre, precio y foto sincronizados; el CRM agrega el texto de atención.",
+  },
+  "Legenda personalizada do atendimento": { es: "Texto personalizado de la atención" },
+  "Quando preenchida, substitui a descrição na mensagem enviada. Nome e preço permanecem.": {
+    es: "Cuando se completa, reemplaza la descripción en el mensaje enviado. El nombre y el precio se mantienen.",
+  },
+  "Alguns produtos foram enviados sem foto. O texto foi mantido.": {
+    es: "Algunos productos se enviaron sin foto. Se mantuvo el texto.",
+  },
+  "Hora de fim no sábado": { es: "Hora de cierre el sábado" },
+  "Hora de fim da janela no sábado": { es: "Hora de cierre de la ventana el sábado" },
+  "Em branco, o sábado usa o mesmo fim dos outros dias. Se o fim for menor ou igual à abertura, o sábado fica fechado.": {
+    es: "En blanco, el sábado usa la misma hora de cierre que los demás días. Si el cierre es menor o igual que la apertura, el sábado queda cerrado.",
+  },
+  "sábado até": { es: "sábado hasta" },
   "Erro ao remover o áudio.": { es: "No se pudo eliminar el audio." },
   "Áudio é permitido apenas em resposta compartilhada.": { es: "El audio solo se permite en una respuesta compartida." },
   "O áudio precisa ter até 16 MB.": { es: "El audio debe tener hasta 16 MB." },
@@ -46,6 +102,7 @@ export const DICIONARIO: Traducoes = {
   "Erro ao vincular o áudio.": { es: "No se pudo vincular el audio." },
   "Áudio não encontrado.": { es: "Audio no encontrado." },
   "O texto foi salvo, mas o áudio não.": { es: "El texto se guardó, pero el audio no." },
+  "O texto foi salvo, mas o anexo não.": { es: "El texto se guardó, pero el archivo no." },
   "Áudio da equipe (opcional)": { es: "Audio del equipo (opcional)" },
   "O servidor converte para OGG/Opus para chegar como mensagem de voz.": { es: "El servidor convierte a OGG/Opus para que llegue como mensaje de voz." },
   "Remover áudio": { es: "Eliminar audio" },
@@ -750,7 +807,6 @@ export const DICIONARIO: Traducoes = {
   Liberar: { es: "Liberar" },
   Transferir: { es: "Transferir" },
   Lembrar: { es: "Recordar" },
-  Fechar: { es: "Cerrar" },
   "Devolver ao automático": { es: "Devolver al automático" },
   Aberta: { es: "Abierta" },
   Fechada: { es: "Cerrada" },
@@ -914,11 +970,11 @@ export const DICIONARIO: Traducoes = {
   "DPO email": { es: "Email del DPO" },
   "Retenção de mídia (dias)": { es: "Retención de medios (días)" },
   "URL política de privacidade": { es: "URL de la política de privacidad" },
-  "Tempo para juntar envios repetidos (minutos)": {
-    es: "Tiempo para unir envíos repetidos (minutos)",
+  "Tempo para segurar envios que chegam juntos (minutos)": {
+    es: "Tiempo para sostener envíos que llegan juntos (minutos)",
   },
-  "Vale para o WhatsApp e para as fontes marcadas como capazes de repetir o mesmo envio.": {
-    es: "Se aplica a WhatsApp y a las fuentes marcadas como capaces de repetir el mismo envío.",
+  "Um negócio já aberto no mesmo funil recebe o WhatsApp e o formulário, sem este prazo. O prazo só evita dois cards quando as duas entradas nascem juntas.": {
+    es: "Un negocio ya abierto en el mismo embudo recibe WhatsApp y el formulario, sin este plazo. El plazo solo evita dos tarjetas cuando las dos entradas nacen juntas.",
   },
   "Motivos de perda extras (separados por vírgula)": {
     es: "Motivos de pérdida adicionales (separados por coma)",
@@ -3933,17 +3989,17 @@ export const DICIONARIO: Traducoes = {
   "Pausada, ela para de aceitar novos envios.": { es: "Pausada, deja de aceptar nuevos envíos." },
   "Fonte ativada.": { es: "Fuente activada." },
   "Fonte pausada.": { es: "Fuente pausada." },
-  "Esta origem pode repetir o mesmo envio": {
-    es: "Esta fuente puede repetir el mismo envío",
+  "Segurar envios que chegam juntos": {
+    es: "Sostener envíos que llegan juntos",
   },
-  "Ative se a ferramenta às vezes manda a mesma pessoa mais de uma vez. Os envios próximos ficam no mesmo card.": {
-    es: "Actívalo si la herramienta a veces envía a la misma persona más de una vez. Los envíos cercanos quedan en la misma tarjeta.",
+  "Dois envios da mesma pessoa no mesmo instante ficam num card só. Um negócio já aberto neste funil recebe o novo envio mesmo com esta opção desligada.": {
+    es: "Dos envíos de la misma persona en el mismo instante quedan en una sola tarjeta. Un negocio ya abierto en este embudo recibe el nuevo envío aunque esta opción esté apagada.",
   },
-  "Envios repetidos serão mantidos no mesmo card.": {
-    es: "Los envíos repetidos se mantendrán en la misma tarjeta.",
+  "Envios no mesmo instante ficam no mesmo card.": {
+    es: "Los envíos en el mismo instante quedan en la misma tarjeta.",
   },
-  "Cada novo envio voltará a criar um card.": {
-    es: "Cada nuevo envío volverá a crear una tarjeta.",
+  "Dois envios no mesmo instante podem abrir dois cards. Um negócio já aberto continua recebendo o novo envio.": {
+    es: "Dos envíos en el mismo instante pueden abrir dos tarjetas. Un negocio ya abierto sigue recibiendo el nuevo envío.",
   },
   "Excluir fonte": { es: "Eliminar fuente" },
   "Excluir esta fonte?": { es: "¿Eliminar esta fuente?" },
@@ -5157,6 +5213,33 @@ export const DICIONARIO: Traducoes = {
   Entregue: { es: "Entregado" },
   Enviada: { es: "Enviado" },
   "Responder a esta mensagem": { es: "Responder a este mensaje" },
+  "Encaminhar esta mensagem": { es: "Reenviar este mensaje" },
+  "Selecionar esta mensagem": { es: "Seleccionar este mensaje" },
+  Encaminhada: { es: "Reenviado" },
+  Enviado: { es: "Enviado" },
+  Encaminhar: { es: "Reenviar" },
+  "Encaminhar para": { es: "Reenviar a" },
+  selecionadas: { es: "seleccionadas" },
+  "Escolha até 5 contatos. Cada destino recebe as mensagens na ordem da conversa.": {
+    es: "Elige hasta 5 contactos. Cada destino recibe los mensajes en el orden de la conversación.",
+  },
+  "Você pode escolher até 5 destinos.": { es: "Puedes elegir hasta 5 destinos." },
+  "Você pode selecionar até 10 mensagens.": { es: "Puedes seleccionar hasta 10 mensajes." },
+  "Encaminhando…": { es: "Reenviando…" },
+  "Não foi possível encaminhar.": { es: "No fue posible reenviar." },
+  "Falha ao encaminhar.": { es: "Error al reenviar." },
+  "Mensagem apagada não pode ser encaminhada.": { es: "Un mensaje eliminado no se puede reenviar." },
+  "Nota interna não pode ser encaminhada.": { es: "Una nota interna no se puede reenviar." },
+  "Evento de sistema não pode ser encaminhado.": { es: "Un evento del sistema no se puede reenviar." },
+  "Mensagem com falha não pode ser encaminhada.": { es: "Un mensaje fallido no se puede reenviar." },
+  "Este tipo de mensagem não pode ser encaminhado.": { es: "Este tipo de mensaje no se puede reenviar." },
+  "Mensagem sem conteúdo não pode ser encaminhada.": { es: "Un mensaje sin contenido no se puede reenviar." },
+  "O arquivo de mídia não está disponível.": { es: "El archivo multimedia no está disponible." },
+  "Não foi possível copiar o arquivo de mídia.": { es: "No fue posible copiar el archivo multimedia." },
+  "Não foi possível conferir se a mensagem já havia sido encaminhada.": {
+    es: "No fue posible comprobar si el mensaje ya había sido reenviado.",
+  },
+  Fechar: { es: "Cerrar" },
   "Esta mensagem foi apagada": { es: "Este mensaje fue eliminado" },
   editada: { es: "editado" },
   "O autor editou esta mensagem": { es: "El autor editó este mensaje" },
@@ -5210,6 +5293,7 @@ export const DICIONARIO: Traducoes = {
   "Adicionar tag ao contato": { es: "Agregar etiqueta al contacto" },
   "Remover tag": { es: "Quitar etiqueta" },
   "Saudação por horário": { es: "Saludo según la hora" },
+  "Primeiro nome": { es: "Primer nombre" },
   "Tags da conversa": { es: "Etiquetas de la conversación" },
 
   // ─── Inbox: janela de 24h fechada / seletor de modelo aprovado ───
@@ -8074,6 +8158,60 @@ export const DICIONARIO: Traducoes = {
   "Salvar produto": { es: "Guardar producto" },
   "em estoque": { es: "en stock" },
   "sem controle de estoque": { es: "sin control de stock" },
+  "Imagem do produto": { es: "Imagen del producto" },
+  "JPEG ou PNG até 5 MB.": { es: "JPEG o PNG de hasta 5 MB." },
+  "Produto ativo": { es: "Producto activo" },
+  "Produto atualizado": { es: "Producto actualizado" },
+  "Enviar produtos do catálogo": { es: "Enviar productos del catálogo" },
+  "Adicionar produtos ao rascunho": { es: "Agregar productos al borrador" },
+  "Adicionar ao rascunho": { es: "Agregar al borrador" },
+  "Escolha até 10 produtos. Você poderá revisar e editar cada legenda antes de enviar.": {
+    es: "Elige hasta 10 productos. Podrás revisar y editar cada texto antes de enviarlo.",
+  },
+  "Não consegui preparar os rascunhos.": { es: "No pude preparar los borradores." },
+  "Não consegui carregar a foto. A legenda ficou no rascunho.": {
+    es: "No pude cargar la foto. El texto quedó en el borrador.",
+  },
+  "A legenda passou de 1024 caracteres. Reduza o texto para enviar.": {
+    es: "El texto superó los 1024 caracteres. Redúcelo para poder enviarlo.",
+  },
+  "Produto {atual} de {total}": { es: "Producto {atual} de {total}" },
+  "Escolha de 1 a 10 produtos.": { es: "Elige entre 1 y 10 productos." },
+  "Erro ao ler as fotos do catálogo.": { es: "No se pudieron leer las fotos del catálogo." },
+  "Produto inválido.": { es: "Producto no válido." },
+  "Foto do produto não encontrada.": { es: "No se encontró la foto del producto." },
+  "Escolha até 10 produtos. Cada item será enviado com foto, nome, preço e descrição.": {
+    es: "Elija hasta 10 productos. Cada artículo se enviará con foto, nombre, precio y descripción.",
+  },
+  "Buscar produtos": { es: "Buscar productos" },
+  "Carregando catálogo…": { es: "Cargando catálogo…" },
+  "Nenhum produto ativo encontrado.": { es: "No se encontró ningún producto activo." },
+  "Produtos enviados.": { es: "Productos enviados." },
+  "Imagem ou vídeo da equipe (opcional)": { es: "Imagen o video del equipo (opcional)" },
+  "Remover mídia": { es: "Quitar archivo" },
+  "A mídia será removida ao salvar.": { es: "El archivo se quitará al guardar." },
+  "Não consegui carregar o catálogo.": { es: "No pude cargar el catálogo." },
+  "Não consegui carregar a mídia deste atalho.": {
+    es: "No pude cargar el archivo de este atajo.",
+  },
+  "O produto foi salvo, mas a imagem não.": {
+    es: "El producto se guardó, pero la imagen no.",
+  },
+  "Erro ao remover a mídia.": { es: "Error al quitar el archivo." },
+  "JPEG ou PNG até 5 MB. MP4 ou 3GPP até 16 MB.": {
+    es: "JPEG o PNG de hasta 5 MB. MP4 o 3GPP de hasta 16 MB.",
+  },
+  "Imagem do atalho": { es: "Imagen del atajo" },
+  "Escolha no máximo 10 produtos por envio.": {
+    es: "Elija como máximo 10 productos por envío.",
+  },
+  "Não consegui enviar os produtos.": { es: "No pude enviar los productos." },
+  "Alguns produtos não foram enviados. Confira a conversa.": {
+    es: "Algunos productos no se enviaron. Revise la conversación.",
+  },
+  "Os produtos aguardam a conexão do canal.": {
+    es: "Los productos esperan la conexión del canal.",
+  },
 
   // Chamada de voz WhatsApp (WaCalls, spec 18)
   // "Chamar", não "Ligar" — a chave já existe com outro sentido (ativar/toggle,
@@ -9144,6 +9282,11 @@ export const DICIONARIO: Traducoes = {
   "Link ainda não solicitado": { es: "Enlace aún no solicitado" },
   "Criando link do Google Meet": { es: "Creando enlace de Google Meet" },
   "Link do Google Meet pronto": { es: "Enlace de Google Meet listo" },
+  "Link da reunião pronto": { es: "Enlace de la reunión listo" },
+  "Reunião por vídeo": { es: "Reunión por vídeo" },
+  "Google desconectado": { es: "Google desconectado" },
+  "Não foi possível validar a conexão. Os agendamentos continuam com link próprio.": { es: "No se pudo validar la conexión. Las citas continúan con un enlace propio." },
+  "A conexão com o Google expirou. Reconecte a agenda.": { es: "La conexión con Google caducó. Vuelve a conectar la agenda." },
   "Não foi possível confirmar o link": { es: "No se pudo confirmar el enlace" },
   "Solicitação de link cancelada": { es: "Solicitud de enlace cancelada" },
   "O envio do link ainda não foi autorizado.": { es: "El envío del enlace aún no ha sido autorizado." },
@@ -9177,6 +9320,7 @@ export const DICIONARIO: Traducoes = {
   "Uma regra de envio impediu a mensagem. Confira o aviso na Central antes de tentar novamente.": { es: "Una regla de envío bloqueó el mensaje. Revisa el aviso en la Central antes de intentarlo de nuevo." },
   "Sua reunião está marcada para": { es: "Tu reunión está programada para" },
   "Link do Google Meet:": { es: "Enlace de Google Meet:" },
+  "Link da reunião:": { es: "Enlace de la reunión:" },
 
   // Dashboard nativo de tráfego e configuração Windsor.
   "A atualização mais recente falhou.": { es: "La actualización más reciente falló." },

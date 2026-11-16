@@ -24,7 +24,14 @@ describe("loadEnv — vazio é ausente (contrato BYOK do README)", () => {
     const env = loadEnv({ ...REQUIRED, AGENT_MAX_STEPS: "" });
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.AGENT_MAX_STEPS).toBe(8); // default, não NaN de coerce('')
+    expect(env.MAX_SENDS_PER_TURN).toBe(3);
     expect(env.AGENT_DISPATCH_CONSUMER).toBe("engine");
+  });
+
+  it("MAX_SENDS_PER_TURN configurado continua sendo o fallback global", () => {
+    const env = loadEnv({ ...REQUIRED, MAX_SENDS_PER_TURN: "5" });
+
+    expect(env.MAX_SENDS_PER_TURN).toBe(5);
   });
 
   it("obrigatória VAZIA = erro claro nomeando a var (fail-fast preservado)", () => {
@@ -82,6 +89,13 @@ describe("loadEnv — a chave da OpenRouter existe no contrato do worker", () =>
   it("vazia continua sendo ausente — mesmo contrato BYOK das demais", () => {
     const env = loadEnv({ ...REQUIRED, OPENROUTER_API_KEY: "" });
     expect(env.OPENROUTER_API_KEY).toBeUndefined();
+  });
+
+  it("preserva a lista de organizações autorizadas para mídia", () => {
+    const orgId = "7f99071c-43a9-4766-83cb-39d99bc4a80b";
+    const env = loadEnv({ ...REQUIRED, MEDIA_OPENROUTER_ORG_IDS: orgId });
+
+    expect(env.MEDIA_OPENROUTER_ORG_IDS).toBe(orgId);
   });
 
   /**

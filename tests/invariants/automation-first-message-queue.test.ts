@@ -116,7 +116,7 @@ function claim(queueId: string, now: string, shouldClaim: boolean): ClaimResult 
   ) as ClaimResult;
 }
 
-describe("migrations 0293 a 0296, fila da primeira mensagem", () => {
+describe("migrations 0293 a 0296, 0302 e 0304, fila da primeira mensagem", () => {
   beforeAll(() => {
     seedGov();
     sql(`
@@ -155,6 +155,156 @@ describe("migrations 0293 a 0296, fila da primeira mensagem", () => {
     expect(columnExists("channel_knobs", "first_message_queue_paused")).toBe(true);
     expect(columnExists("channel_knobs", "first_message_queue_daily_limit")).toBe(true);
     expect(columnExists("channel_knobs", "first_message_queue_next_at")).toBe(true);
+    expect(columnExists("channel_knobs", "first_message_queue_busy_minutes")).toBe(true);
+    expect(columnExists("channel_knobs", "first_message_queue_max_wait_hours")).toBe(true);
+  });
+
+  it("limita a espera por conversa em andamento entre zero e sessenta minutos", () => {
+    sql(`
+      insert into public.channel_knobs (organization_id, channel_session_id)
+      values ('${GOV_ORG}', '${GOV_SESSION}')
+      on conflict (organization_id, channel_session_id) do nothing;
+    `);
+    for (const value of ["null", "0", "60"]) {
+      expect(() =>
+        sql(`
+          update public.channel_knobs
+          set first_message_queue_busy_minutes = ${value}
+          where organization_id = '${GOV_ORG}'
+            and channel_session_id = '${GOV_SESSION}';
+        `),
+      ).not.toThrow();
+    }
+    for (const value of [-1, 61]) {
+      expect(() =>
+        sql(`
+          update public.channel_knobs
+          set first_message_queue_busy_minutes = ${value}
+          where organization_id = '${GOV_ORG}'
+            and channel_session_id = '${GOV_SESSION}';
+        `),
+      ).toThrow();
+    }
+    sql(`
+      update public.channel_knobs
+      set first_message_queue_busy_minutes = null
+      where organization_id = '${GOV_ORG}'
+        and channel_session_id = '${GOV_SESSION}';
+    `);
+  });
+
+  it("a coluna nova preserva RLS e os privilégios atuais de channel_knobs", () => {
+    const security = JSON.parse(
+      sql(`
+        select json_build_object(
+          'rls_enabled', c.relrowsecurity,
+          'anon_select', has_column_privilege(
+            'anon', 'public.channel_knobs', 'first_message_queue_busy_minutes', 'select'
+          ),
+          'anon_update', has_column_privilege(
+            'anon', 'public.channel_knobs', 'first_message_queue_busy_minutes', 'update'
+          ),
+          'authenticated_select', has_column_privilege(
+            'authenticated', 'public.channel_knobs', 'first_message_queue_busy_minutes', 'select'
+          ),
+          'authenticated_update', has_column_privilege(
+            'authenticated', 'public.channel_knobs', 'first_message_queue_busy_minutes', 'update'
+          ),
+          'tenant_policy', exists (
+            select 1 from pg_policies
+            where schemaname = 'public'
+              and tablename = 'channel_knobs'
+              and policyname = 'tenant_isolation_channel_knobs_all'
+              and cmd = 'ALL'
+          )
+        )
+        from pg_class c
+        where c.oid = 'public.channel_knobs'::regclass;
+      `),
+    ) as Record<string, boolean>;
+
+    expect(security).toEqual({
+      rls_enabled: true,
+      anon_select: false,
+      anon_update: false,
+      authenticated_select: true,
+      authenticated_update: true,
+      tenant_policy: true,
+    });
+  });
+
+  it("limita a espera máxima do canal entre uma hora e sete dias", () => {
+    sql(`
+      insert into public.channel_knobs (organization_id, channel_session_id)
+      values ('${GOV_ORG}', '${GOV_SESSION}')
+      on conflict (organization_id, channel_session_id) do nothing;
+    `);
+    for (const value of ["null", "1", "168"]) {
+      expect(() =>
+        sql(`
+          update public.channel_knobs
+          set first_message_queue_max_wait_hours = ${value}
+          where organization_id = '${GOV_ORG}'
+            and channel_session_id = '${GOV_SESSION}';
+        `),
+      ).not.toThrow();
+    }
+    for (const value of [0, 169]) {
+      expect(() =>
+        sql(`
+          update public.channel_knobs
+          set first_message_queue_max_wait_hours = ${value}
+          where organization_id = '${GOV_ORG}'
+            and channel_session_id = '${GOV_SESSION}';
+        `),
+      ).toThrow();
+    }
+    sql(`
+      update public.channel_knobs
+      set first_message_queue_max_wait_hours = null
+      where organization_id = '${GOV_ORG}'
+        and channel_session_id = '${GOV_SESSION}';
+    `);
+  });
+
+  it("a espera máxima herda RLS e privilégios sem abrir acesso novo", () => {
+    const security = JSON.parse(
+      sql(`
+        select json_build_object(
+          'rls_enabled', c.relrowsecurity,
+          'anon_select', has_column_privilege(
+            'anon', 'public.channel_knobs', 'first_message_queue_max_wait_hours', 'select'
+          ),
+          'anon_update', has_column_privilege(
+            'anon', 'public.channel_knobs', 'first_message_queue_max_wait_hours', 'update'
+          ),
+          'authenticated_select', has_column_privilege(
+            'authenticated', 'public.channel_knobs', 'first_message_queue_max_wait_hours', 'select'
+          ),
+          'authenticated_update', has_column_privilege(
+            'authenticated', 'public.channel_knobs', 'first_message_queue_max_wait_hours', 'update'
+          ),
+          'tenant_policy', exists (
+            select 1 from pg_policies
+            where schemaname = 'public'
+              and tablename = 'channel_knobs'
+              and policyname = 'tenant_isolation_channel_knobs_all'
+              and cmd = 'ALL'
+          )
+        )
+        from pg_class c
+        where c.oid = 'public.channel_knobs'::regclass;
+      `),
+    ) as Record<string, boolean>;
+
+    expect(security).toEqual({
+      rls_enabled: true,
+      anon_select: false,
+      anon_update: false,
+      authenticated_select: true,
+      authenticated_update: true,
+      tenant_policy: true,
+    });
   });
 
   it("preserva item legado e valida o estado persistido das bolhas", () => {
@@ -178,8 +328,19 @@ describe("migrations 0293 a 0296, fila da primeira mensagem", () => {
 
     sql(`
       update public.automation_first_message_queue
-      set message_parts = '["Primeira", "Segunda", "Terceira"]'::jsonb,
-          sent_part_count = 1,
+      set message_parts = '[
+            "Primeira", "Segunda",
+            {"tipo":"imagem","arquivo":"natal/01.jpg"},
+            {"tipo":"imagem","arquivo":"natal/02.jpg"},
+            {"tipo":"imagem","arquivo":"natal/03.jpg"},
+            {"tipo":"imagem","arquivo":"natal/04.jpg"},
+            {"tipo":"imagem","arquivo":"natal/05.jpg"},
+            {"tipo":"imagem","arquivo":"natal/06.jpg"},
+            {"tipo":"imagem","arquivo":"natal/07.jpg"},
+            {"tipo":"imagem","arquivo":"natal/08.jpg"},
+            "Décima primeira", "Décima segunda", "Décima terceira"
+          ]'::jsonb,
+          sent_part_count = 12,
           outbound_message_ids = array['${randomUUID()}'::uuid]
       where id = '${QUEUE}';
     `);
@@ -193,7 +354,7 @@ describe("migrations 0293 a 0296, fila da primeira mensagem", () => {
     expect(() =>
       sql(`
         update public.automation_first_message_queue
-        set sent_part_count = 5
+        set sent_part_count = 14
         where id = '${QUEUE}';
       `),
     ).toThrow();
@@ -458,6 +619,54 @@ describe("migrations 0293 a 0296, fila da primeira mensagem", () => {
     expect(duringInterval.decision).toBe("interval");
     expect(new Date(duringInterval.retry_at!).toISOString()).toBe("2026-10-29T15:01:30.000Z");
     expect(claim(second.queue_id, "2026-10-29T15:01:31.000Z", true).decision).toBe("claimed");
+  });
+
+  it("não deixa o segundo passar quando a cabeça foi reagendada por canal ocupado", () => {
+    const fixture = createQueueFixture(2);
+    const [firstItem, secondItem] = fixture.items as [QueueFixtureItem, QueueFixtureItem];
+    const first = enqueue({
+      organizationId: GOV_ORG,
+      channelId: fixture.channelId,
+      eventId: firstItem.eventId,
+      ruleId: fixture.ruleId,
+      contactId: firstItem.contactId,
+      conversationId: firstItem.conversationId,
+      enqueuedAt: "2026-10-29T16:00:00.000Z",
+    });
+    const second = enqueue({
+      organizationId: GOV_ORG,
+      channelId: fixture.channelId,
+      eventId: secondItem.eventId,
+      ruleId: fixture.ruleId,
+      contactId: secondItem.contactId,
+      conversationId: secondItem.conversationId,
+      enqueuedAt: "2026-10-29T16:00:01.000Z",
+    });
+    sql(`
+      update public.automation_first_message_queue
+      set not_before_at = '2026-10-29T15:59:00.000Z',
+          next_attempt_at = case
+            when id = '${first.queue_id}' then '2026-10-29T16:01:25.000Z'::timestamptz
+            else '2026-10-29T15:59:00.000Z'::timestamptz
+          end
+      where id in ('${first.queue_id}', '${second.queue_id}');
+      update public.channel_knobs
+      set first_message_queue_next_at = null
+      where organization_id = '${GOV_ORG}'
+        and channel_session_id = '${fixture.channelId}';
+    `);
+
+    expect(claim(second.queue_id, "2026-10-29T16:01:05.000Z", true).decision).toBe("not_head");
+    expect(
+      JSON.parse(
+        sql(`
+          select json_build_object(
+            'first_status', (select status from public.automation_first_message_queue where id = '${first.queue_id}'),
+            'second_status', (select status from public.automation_first_message_queue where id = '${second.queue_id}')
+          );
+        `),
+      ),
+    ).toEqual({ first_status: "queued", second_status: "queued" });
   });
 
   it("mantém uma única primeira mensagem viva por contato e canal", () => {

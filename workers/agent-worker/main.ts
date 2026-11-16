@@ -113,6 +113,7 @@ import {
   type JobKind,
   type JobRow,
 } from "@/lib/agent-engine/queue/queue";
+import { rescheduleStaleAgentOperation } from "@/lib/agent-engine/queue/stale-agent-operation";
 import { releaseChannelDeliveryLease } from "@/lib/agent-engine/edge/crm/channel-delivery-lease";
 
 export interface JobHandlerContext {
@@ -358,7 +359,8 @@ export async function startWorker(
           log,
           loopsAbort.signal,
         )
-      : (log.info('ponte WaCalls OFF — WACALLS_API_BASE_URL ausente no env', {}), Promise.resolve());
+      : (log.info("ponte WaCalls OFF — WACALLS_API_BASE_URL ausente no env", {}),
+        Promise.resolve());
 
   // Circuito de saúde do número (block/response rate → hold).
   const healthLoop = runHealthLoop(
@@ -446,6 +448,30 @@ export async function startWorker(
             claimOfJob(job)?.acquired_at ?? null,
           ],
         );
+        return;
+      }
+      try {
+        const operationChange = await rescheduleStaleAgentOperation(
+          pool,
+          job,
+          workerId,
+          err,
+          claimOfJob(job)?.acquired_at,
+        );
+        if (operationChange) {
+          log.warn("job reprogramado após mudança operacional do agente", {
+            job_id: job.id,
+            kind: job.kind,
+            reason: operationChange.reason,
+            rescheduled: operationChange.rescheduled,
+          });
+          return;
+        }
+      } catch (rescheduleErr) {
+        log.error("reprogramação do job indisponível, lease expira via reaper", {
+          job_id: job.id,
+          error: errMsg(rescheduleErr),
+        });
         return;
       }
       const terminal = err instanceof StaleServiceBoundaryError || ehVetoPermanenteDeNegocio(err);

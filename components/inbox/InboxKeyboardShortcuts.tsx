@@ -10,6 +10,7 @@ interface Props {
   onFocusReply: () => void;
   onClaim: () => void;
   onClose: () => void;
+  onSearch: () => void;
   onToggleHelp: () => void;
   enabled?: boolean;
 }
@@ -21,6 +22,7 @@ export function InboxKeyboardShortcuts({
   onFocusReply,
   onClaim,
   onClose,
+  onSearch,
   onToggleHelp,
   enabled = true,
 }: Props) {
@@ -54,6 +56,12 @@ export function InboxKeyboardShortcuts({
     { enabled, preventDefault: true },
   );
   useHotkeys("shift+/", () => onToggleHelp(), { enabled, preventDefault: true });
+  useHotkeys(
+    "mod+f",
+    () => onSearch(),
+    { enabled: enabled && selectedId !== null, preventDefault: true, enableOnFormTags: false },
+    [selectedId, onSearch],
+  );
 
   return null;
 }

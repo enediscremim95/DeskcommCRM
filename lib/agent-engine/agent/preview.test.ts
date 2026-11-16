@@ -2,10 +2,18 @@ import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels';
 import { describe, it, expect, vi } from 'vitest';
 import { tool } from '../edge/llm/run-model-call';
 import { z } from 'zod';
-import { applyPreviewPolicy, newPreviewResult, scenarioContext, type TurnPreview } from './preview';
+import {
+  applyPreviewPolicy,
+  newPreviewResult,
+  scenarioContext,
+  withPreviewToolTrace,
+  type TurnPreview,
+} from './preview';
 import { evaluateBeforeSend, type GateContext } from '../guardrails/before-send';
 import { PACING_DEFAULTS } from '../pacing/defaults';
 import { SPINNING_DEFAULTS } from '../spinning/defaults';
+import { criarGuardaAnuncioSemVitrine } from './anuncio-sem-vitrine';
+import { ORIGEM_INTERNA_DA_MENSAGEM } from '../edge/crm/get-lead-context';
 const gate = (): GateContext => ({
   now: new Date('2026-09-07T15:00:00Z'),
   body: 'Olá, posso ajudar?',
@@ -46,6 +54,128 @@ async function execute(t: ReturnType<typeof applyPreviewPolicy>, name: string, a
   return t[name]!.execute!(args, { toolCallId: 'test', messages: [], context: undefined });
 }
 describe('preview policy shares gates and contains side effects', () => {
+  it('barra um anúncio no sandbox sem consumir o teto e libera a segunda tentativa', async () => {
+    const p = preview();
+    const contador = { valor: 0 };
+    const tools = applyPreviewPolicy(
+      { send_message: definition(vi.fn()) },
+      p,
+      gate(),
+      () => [],
+      undefined,
+      undefined,
+      { enviadas: new Set(), log: { warn: vi.fn() }, limite: 1, contador },
+      criarGuardaAnuncioSemVitrine(true),
+    );
+
+    const recusada = await execute(tools, 'send_message', {
+      body: 'Já te mostro os modelos.',
+    });
+    expect(recusada).toMatchObject({
+      ok: false,
+      error: { code: 'anuncio_sem_vitrine' },
+    });
+    expect(contador.valor).toBe(0);
+    expect(p.result.candidates).toHaveLength(0);
+
+    const liberada = await execute(tools, 'send_message', {
+      body: 'Vou te enviar as fotos.',
+    });
+    expect(liberada).toMatchObject({ ok: true, status: 'simulated' });
+    expect(contador.valor).toBe(1);
+    expect(p.result.candidates).toHaveLength(1);
+  });
+
+  it('mantém no sandbox a mesma precedência do turno real: dedupe antes da guarda', async () => {
+    const p = preview();
+    const enviadas = new Set(['já te mostro os modelos.']);
+    const guarda = criarGuardaAnuncioSemVitrine(true);
+    const tools = applyPreviewPolicy(
+      { send_message: definition(vi.fn()) },
+      p,
+      gate(),
+      () => [],
+      undefined,
+      undefined,
+      { enviadas, log: { warn: vi.fn() } },
+      guarda,
+    );
+
+    const duplicada = await execute(tools, 'send_message', {
+      body: 'Já te mostro os modelos.',
+    });
+    expect(duplicada).toEqual({ ok: true, status: 'duplicate_skipped' });
+
+    const recusada = await execute(tools, 'send_message', {
+      body: 'Vou te enviar as fotos.',
+    });
+    expect(recusada).toMatchObject({
+      ok: false,
+      error: { code: 'anuncio_sem_vitrine' },
+    });
+  });
+
+  it('envia só a parte útil do anúncio parcial e consome uma única vaga da fila', async () => {
+    const p = preview();
+    const contador = { valor: 0 };
+    const tools = applyPreviewPolicy(
+      { send_message: definition(vi.fn()) },
+      p,
+      gate(),
+      () => [],
+      undefined,
+      undefined,
+      { enviadas: new Set(), log: { warn: vi.fn() }, limite: 1, contador },
+      criarGuardaAnuncioSemVitrine(true),
+    );
+
+    expect(
+      await execute(tools, 'send_message', {
+        body: 'O prazo é de cinco dias.\n\nEssas são as canecas personalizadas que temos com nome.',
+      }),
+    ).toEqual({
+      ok: true,
+      status: 'enviado_sem_anuncio',
+      paragrafos_de_anuncio_removidos: 1,
+      instrucao: 'chame crm_send_vitrine se for mostrar produtos',
+    });
+    expect(p.result.candidates.map((c) => c.body)).toEqual(['O prazo é de cinco dias.']);
+    expect(contador.valor).toBe(1);
+    expect(await execute(tools, 'send_message', { body: 'Outra resposta útil.' })).toMatchObject({
+      ok: false,
+      error: { code: 'max_sends_per_turn' },
+    });
+  });
+
+  it('aplica no sandbox a saudação opt-in usando apenas histórico recente da IA', async () => {
+    const p = preview();
+    p.agent.semSaudacaoRepetida = true;
+    p.context.context.messages = [
+      {
+        direction: 'outbound',
+        body: 'Resposta anterior',
+        sent_at: '2026-09-07T14:30:00.000Z',
+        [ORIGEM_INTERNA_DA_MENSAGEM]: 'ai',
+      },
+    ];
+    const tools = applyPreviewPolicy(
+      { send_message: definition(vi.fn()) },
+      p,
+      gate(),
+      () => [],
+      undefined,
+      undefined,
+      { enviadas: new Set(), log: { warn: vi.fn() }, contador: { valor: 0 } },
+    );
+
+    expect(
+      await execute(tools, 'send_message', {
+        body: 'Ótima tarde, Bruna! Pode mandar o comprovante por aqui 🌷\n\nEu confiro assim que chegar.',
+      }),
+    ).toMatchObject({ ok: true, status: 'simulated' });
+    expect(p.result.candidates.map((c) => c.body)).toEqual(['Eu confiro assim que chegar.']);
+  });
+
   it('registers text and mutation proposals without calling either operational executor', async () => {
     const send = vi.fn(),
       write = vi.fn(),
@@ -90,6 +220,17 @@ describe('preview policy shares gates and contains side effects', () => {
     expect(read).toHaveBeenCalledOnce();
     expect(p.result.candidates).toHaveLength(1);
   });
+  it.each(['crm_search_products', 'crm_search_knowledge', 'crm_get_lead'])(
+    'executes the organization-scoped read %s even without a scenario contact',
+    async (name) => {
+      const read = vi.fn(async () => ({ ok: true }));
+      const p = preview();
+      const tools = applyPreviewPolicy({ [name]: definition(read) }, p, gate(), () => []);
+      await execute(tools, name, { termo: 'kit' });
+      expect(read).toHaveBeenCalledOnce();
+      expect(p.result.impediments).toEqual([]);
+    },
+  );
   it('fails closed for unknown capability and never invokes it', async () => {
     const p = preview(),
       spy = vi.fn();
@@ -112,6 +253,35 @@ describe('preview policy shares gates and contains side effects', () => {
     expect(ctx).toEqual(before);
     expect(result.trace.length).toBeGreaterThan(1);
   });
+});
+
+it('traces every simulated tool result without PII, ids or message bodies', async () => {
+  const p = preview();
+  const tools = withPreviewToolTrace(
+    {
+      ok_tool: definition(() => ({ ok: true, produtos: [{ nome: 'Kit' }] })),
+      failed_tool: definition(() => ({ ok: false, error: { code: 'product_not_found' } })),
+      throwing_tool: definition(() => {
+        throw new Error('database unavailable');
+      }),
+    },
+    p,
+  );
+  await execute(tools, 'ok_tool', {
+      termo: 'kit',
+      lead_id: '99999999-9999-4999-8999-999999999999',
+      body: 'telefone 41999999999',
+      observacao: 'falar com cliente@example.com ou +55 (41) 99999-9999',
+  });
+  await execute(tools, 'failed_tool');
+  await expect(execute(tools, 'throwing_tool')).rejects.toThrow('database unavailable');
+  expect(p.result.toolTrace).toHaveLength(3);
+  expect(p.result.toolTrace.map((entry) => entry.ok)).toEqual([true, false, false]);
+  expect(JSON.stringify(p.result.toolTrace)).not.toContain('41999999999');
+  expect(JSON.stringify(p.result.toolTrace)).not.toContain('99999999-9999-4999-8999-999999999999');
+  expect(JSON.stringify(p.result.toolTrace)).not.toContain('cliente@example.com');
+  expect(JSON.stringify(p.result.toolTrace)).not.toContain('99999-9999');
+  expect(p.result.toolTrace[1]?.resultado).toBe('erro:product_not_found');
 });
 
 it('refreshes agenda read state for each candidate while writes stay proposals', async () => {
@@ -143,4 +313,87 @@ it('uses only supplied in-memory sample contact in sandbox', () => {
   const context = scenarioContext([], { name: 'Maria Cenário', phone: '+5511999999999' });
   expect(context.context.contact.name).toBe('Maria Cenário');
   expect(context.context.contact.phone).toBe('+5511999999999');
+});
+it('preserves the complete inbound and outbound history supplied by the caller', () => {
+  const messages = [
+    { direction: 'inbound' as const, body: 'Quero um kit', sent_at: '2026-11-05T12:00:00.000Z' },
+    { direction: 'outbound' as const, body: 'Qual modelo?', sent_at: '2026-11-05T12:00:01.000Z' },
+    { direction: 'inbound' as const, body: 'O azul', sent_at: '2026-11-05T12:00:02.000Z' },
+  ];
+  expect(scenarioContext(messages).context.messages).toEqual(messages);
+});
+
+it('sandbox pula duplicata antes do teto, não consome envio e deixa texto diferente passar', async () => {
+  const p = preview();
+  const contador = { valor: 0 };
+  const log = { warn: vi.fn() };
+  const tools = applyPreviewPolicy(
+    { send_message: definition(vi.fn()) },
+    p,
+    gate(),
+    () => [],
+    undefined,
+    undefined,
+    { enviadas: new Set(), log, limite: 2, contador },
+  );
+
+  expect(await execute(tools, 'send_message', { body: 'Olá, posso ajudar? 🥰' })).toMatchObject({
+    ok: true,
+    status: 'simulated',
+  });
+  expect(await execute(tools, 'send_message', { body: '  OLÁ,   posso ajudar? 😊' })).toEqual({
+    ok: true,
+    status: 'duplicate_skipped',
+  });
+  expect(await execute(tools, 'send_message', { body: 'Posso mostrar os modelos?' })).toMatchObject({
+    ok: true,
+    status: 'simulated',
+  });
+  expect(contador.valor).toBe(2);
+  expect(p.result.candidates.map((c) => c.body)).toEqual([
+    'Olá, posso ajudar? 🥰',
+    'Posso mostrar os modelos?',
+  ]);
+  expect(log.warn).toHaveBeenCalledOnce();
+});
+
+it('sandbox envia só os parágrafos novos e removidos não consomem seq nem teto', async () => {
+  const p = preview();
+  const contador = { valor: 0 };
+  const log = { warn: vi.fn() };
+  const tools = applyPreviewPolicy(
+    { send_message: definition(vi.fn()) },
+    p,
+    gate(),
+    () => [],
+    undefined,
+    undefined,
+    { enviadas: new Set(), log, limite: 2, contador },
+  );
+
+  expect(
+    await execute(tools, 'send_message', {
+      body: 'Cumprimento inicial.\n\nPergunta já feita?',
+    }),
+  ).toMatchObject({ ok: true, status: 'simulated' });
+  expect(
+    await execute(tools, 'send_message', {
+      body: 'Pergunta já feita? 😊\n\nPergunta realmente nova?',
+    }),
+  ).toEqual({
+    ok: true,
+    status: 'enviado_sem_repeticao',
+    paragrafos_repetidos_removidos: 1,
+  });
+  expect(
+    await execute(tools, 'send_message', {
+      body: 'Cumprimento inicial.\n\nPergunta já feita?',
+    }),
+  ).toEqual({ ok: true, status: 'duplicate_skipped' });
+  expect(contador.valor).toBe(2);
+  expect(p.result.candidates.map((c) => c.body)).toEqual([
+    'Cumprimento inicial.\n\nPergunta já feita?',
+    'Pergunta realmente nova?',
+  ]);
+  expect(log.warn).toHaveBeenCalledTimes(2);
 });

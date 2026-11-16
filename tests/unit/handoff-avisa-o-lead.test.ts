@@ -6,7 +6,7 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 /**
- * NENHUMA PASSAGEM PARA HUMANO SAI CALADA.
+ * TODA PASSAGEM RESOLVE O DESFECHO DO AVISO ANTES DE SILENCIAR.
  *
  * ─── O defeito, medido em produção (2026-08-26) ─────────────────────────────
  *
@@ -41,8 +41,8 @@ import { describe, expect, it } from "vitest";
  *
  * Que o aviso CHEGA. Isso é comportamento sobre banco e canal, e mora em
  * `tests/invariants/handoff-avisa-o-lead.test.ts`. Aqui se prova só que nenhum
- * sítio de passagem existe sem um emissor de aviso ao lado — o que é
- * exatamente a classe que o conserto por instância deixa escapar.
+ * sítio de passagem existe sem resolver o aviso ao lado. O emissor pode
+ * devolver `aviso_desligado_pelo_agente`, mas a Central recebe esse desfecho.
  */
 
 const RAIZ = join(__dirname, "..", "..");
@@ -167,7 +167,7 @@ function ler(rel: string): string {
   return readFileSync(join(RAIZ, rel), "utf8");
 }
 
-describe("toda passagem para humano avisa o lead antes", () => {
+describe("toda passagem para humano resolve o aviso antes", () => {
   for (const rel of FONTES) {
     it(`${rel}: nenhuma passagem sem aviso`, () => {
       expect(passagensSemAviso(ler(rel), rel)).toEqual([]);

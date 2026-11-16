@@ -24,4 +24,23 @@ describe("apiTranscriptionProvider", () => {
     const provider = apiTranscriptionProvider({ apiKey: "bad" }, fetchMock);
     await expect(provider.transcribe(Buffer.from([1]), "audio/ogg")).rejects.toThrow(/transcription_401/);
   });
+
+  it("repete uma vez somente em falha transitória", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("down", { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ text: "agora foi" }), { status: 200 }));
+    const provider = apiTranscriptionProvider(
+      { apiKey: "teste", maxNetworkRetries: 1, timeoutMs: 1000 },
+      fetchMock,
+    );
+    await expect(provider.transcribe(Buffer.from([1]), "audio/mpeg")).resolves.toBe("agora foi");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("não repete erro permanente", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("bad", { status: 401 }));
+    const provider = apiTranscriptionProvider({ apiKey: "teste", maxNetworkRetries: 1 }, fetchMock);
+    await expect(provider.transcribe(Buffer.from([1]), "audio/mpeg")).rejects.toThrow("transcription_401");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

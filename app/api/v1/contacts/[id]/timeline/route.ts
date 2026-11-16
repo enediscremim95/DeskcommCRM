@@ -1,3 +1,5 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * GET /api/v1/contacts/[id]/timeline
  *
@@ -35,7 +37,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
+async function GETComAuth(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -46,7 +48,7 @@ export async function GET(
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
@@ -157,3 +159,5 @@ export async function GET(
     meta: { cursor: nextCursor, has_more: hasMore },
   });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

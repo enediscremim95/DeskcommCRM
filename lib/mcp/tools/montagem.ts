@@ -402,6 +402,7 @@ const channelConfigSchema = z
     jitter_max_ms: z.number().int().min(0).max(60000).optional(),
     window_start_hour: z.number().int().min(0).max(23).optional(),
     window_end_hour: z.number().int().min(1).max(24).optional(),
+    window_saturday_end_hour: z.number().int().min(0).max(24).optional(),
     allow_sunday: z.boolean().optional(),
     timezone: z.string().trim().min(1).max(80).optional(),
     max_concurrent_ai_conversations: z.number().int().min(1).max(20).optional(),

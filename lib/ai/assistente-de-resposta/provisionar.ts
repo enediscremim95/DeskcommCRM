@@ -7,6 +7,7 @@ import {
   montarPromptDoAssistente,
   patchSeguroDoAgenteInterno,
   type ConfiguracaoDoAssistente,
+  type ProvedorDoAssistente,
 } from "./config";
 
 interface AgenteInterno {
@@ -21,7 +22,7 @@ export interface EstadoDoAssistente {
   agent_id: string | null;
   enabled: boolean;
   state: "off" | "ready" | "credential_error" | "setup_error";
-  provider: "anthropic" | "openai";
+  provider: ProvedorDoAssistente;
   credential_id: string | null;
   credential_last4: string | null;
   validation_error: string | null;

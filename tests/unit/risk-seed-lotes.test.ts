@@ -26,10 +26,16 @@ describe("seed de risco em organizações grandes", () => {
     const admin = {
       from: (tabela: string) => {
         let idsIn: string[] = [];
+        let faixa: { de: number; ate: number } | null = null;
         const q = {
           select: () => q,
           eq: () => q,
           gt: () => q,
+          order: () => q,
+          range: (de: number, ate: number) => {
+            faixa = { de, ate };
+            return q;
+          },
           in: (coluna: string, ids: string[]) => {
             idsIn = ids;
             lotes.push({ tabela, coluna, ids: [...ids] });
@@ -37,7 +43,10 @@ describe("seed de risco em organizações grandes", () => {
           },
           then: (resolve: (value: unknown) => unknown) => {
             if (tabela === "crm_leads") {
-              return Promise.resolve({ data: leads, error: null }).then(resolve);
+              // Sem range o PostgREST devolve no máximo 1000. O teste só passa
+              // se a coleta pedir as páginas seguintes.
+              const pagina = faixa ? leads.slice(faixa.de, faixa.ate + 1) : leads.slice(0, 1000);
+              return Promise.resolve({ data: pagina, error: null }).then(resolve);
             }
             if (tabela === "crm_stages") {
               return Promise.resolve({
@@ -74,6 +83,54 @@ describe("seed de risco em organizações grandes", () => {
     expect(agenda.protecaoAgendaSupabase).not.toHaveBeenCalled();
   });
 
+  it("classifica os negócios abertos que passam do teto de 1000 do PostgREST", async () => {
+    const leads = Array.from({ length: 2_500 }, (_, index) => ({
+      id: `lead-${String(index).padStart(4, "0")}`,
+      stage_id: "stage-1",
+      contact_id: null,
+      last_activity_at: "2026-09-01T00:00:00.000Z",
+      created_at: "2026-09-01T00:00:00.000Z",
+    }));
+    const admin = {
+      from: (tabela: string) => {
+        let faixa: { de: number; ate: number } | null = null;
+        const q = {
+          select: () => q,
+          eq: () => q,
+          gt: () => q,
+          order: () => q,
+          range: (de: number, ate: number) => {
+            faixa = { de, ate };
+            return q;
+          },
+          in: () => q,
+          then: (resolve: (value: unknown) => unknown) => {
+            if (tabela === "crm_leads") {
+              const pagina = faixa ? leads.slice(faixa.de, faixa.ate + 1) : leads.slice(0, 1000);
+              return Promise.resolve({ data: pagina, error: null }).then(resolve);
+            }
+            if (tabela === "crm_stages") {
+              return Promise.resolve({
+                data: [{ id: "stage-1", expected_duration_hours: 24 }],
+                error: null,
+              }).then(resolve);
+            }
+            return Promise.resolve({ data: [], error: null }).then(resolve);
+          },
+        };
+        return q;
+      },
+    };
+
+    const estados = await calculaBucketsAtuais(
+      admin as never,
+      "org",
+      new Date("2026-10-11T12:00:00.000Z"),
+    );
+    expect(estados).toHaveLength(2_500);
+    expect(estados.at(-1)?.leadId).toBe("lead-2499");
+  });
+
   it("limita à detecção o `since` que a agenda faria nascer no futuro", async () => {
     const now = new Date("2026-10-14T12:00:00.000Z");
     agenda.protecaoAgendaSupabase.mockResolvedValueOnce(
@@ -95,6 +152,8 @@ describe("seed de risco em organizações grandes", () => {
           select: () => q,
           eq: () => q,
           gt: () => q,
+          order: () => q,
+          range: () => q,
           in: () => q,
           then: (resolve: (value: unknown) => unknown) => {
             if (tabela === "crm_leads") {

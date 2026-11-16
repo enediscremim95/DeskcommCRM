@@ -17,7 +17,7 @@ export const AUTOMATION_CATALOG = {
     { id: "contact.tag_added", faz: "Dispara quando uma tag é adicionada ao contato." },
   ],
   actions: [
-    { id: "send_whatsapp_message", faz: "Envia uma mensagem editável pelo número escolhido; aceita {{saudacao}} conforme o horário local do número." },
+    { id: "send_whatsapp_message", faz: "Envia uma mensagem editável pelo número escolhido; aceita {{saudacao}}, {{nome}} e {{primeiro_nome}}. A fila da primeira mensagem também aceita imagens privadas da pasta de ativos da organização." },
     { id: "send_ai_message", faz: "Pede a um agente publicado para escrever e enviar a mensagem." },
     { id: "create_or_move_lead", faz: "Cria o lead ou move o lead existente para uma etapa do mesmo funil." },
     { id: "add_tag", faz: "Adiciona uma ou mais tags ao lead ou contato." },

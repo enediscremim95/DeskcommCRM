@@ -15,6 +15,7 @@ import type { Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
 import { deriveLgpdFromContact, type LgpdInput } from '../../guardrails/lgpd/legal-basis';
 import { isoLocalComOffset } from '@/lib/tempo/agora';
+import { formatMediaForTurn } from '@/lib/messaging/media/turn-text';
 
 /**
  * Heurística conservadora de contagem: ~3,5 chars/token para pt-br (BPE real fica
@@ -33,6 +34,12 @@ export interface LeadContextKnobs {
   /** Teto do payload serializado, contado por countPayloadTokens (default 1000). */
   maxTokens: number;
 }
+
+/**
+ * Origem operacional usada só pelo runtime. Symbol não entra em JSON, portanto
+ * não expõe `sent_via` ao prompt nem altera o orçamento do contexto.
+ */
+export const ORIGEM_INTERNA_DA_MENSAGEM = Symbol('origem-interna-da-mensagem');
 
 /** Uma mensagem do histórico, já curada. */
 export interface LeadContextMessage {
@@ -53,6 +60,7 @@ export interface LeadContextMessage {
   type?: string;
   media_storage_path?: string | null;
   media_mime?: string | null;
+  [ORIGEM_INTERNA_DA_MENSAGEM]?: string;
 }
 
 /**
@@ -172,7 +180,9 @@ interface HistoryRow {
   media_storage_path: string | null;
   media_mime: string | null;
   media_derived_text: string | null;
+  media_derived_status?: string | null;
   sent_at: Date;
+  sent_via?: string;
 }
 
 export async function getLeadContext(
@@ -230,7 +240,7 @@ export async function getLeadContext(
     ? (
         await db.query<HistoryRow>(
           `select direction, type, body, media_url, media_storage_path, media_mime,
-                  media_derived_text, sent_at
+                  media_derived_text, media_derived_status, sent_at, sent_via
            from messages
            where organization_id = $1 and conversation_id = $2
              and direction in ('inbound', 'outbound')
@@ -313,13 +323,16 @@ function fitToBudget(
     // "não consigo ver mídia" mesmo tendo o conteúdo. Sem derivado, marcador [tipo].
     const body = derived
       ? frameMediaBody(m.type, m.body, derived)
-      : (m.body ?? (hasMedia ? `[${m.type}]` : ''));
+      : hasMedia
+        ? formatMediaForTurn({ type: m.type, caption: m.body, failed: m.media_derived_status === 'failed' })
+        : (m.body ?? '');
     return {
       direction: m.direction,
       body,
       // Hora de PAREDE do tenant, não UTC cru — ver o comentário de `sent_at` na
       // interface acima e o cabeçalho de `isoLocalComOffset`.
       sent_at: isoLocalComOffset(m.sent_at, fuso),
+      ...(m.sent_via ? { [ORIGEM_INTERNA_DA_MENSAGEM]: m.sent_via } : {}),
       ...(hasMedia ? { type: m.type, media_storage_path: m.media_storage_path, media_mime: m.media_mime } : {}),
     };
   });
@@ -336,15 +349,6 @@ function fitToBudget(
   return build(messages);
 }
 
-/** Substantivo pt-br por tipo de mídia (p/ o enquadramento do derivado). */
-const MEDIA_NOUN: Record<string, string> = {
-  image: 'uma imagem',
-  video: 'um vídeo',
-  audio: 'um áudio',
-  document: 'um documento (PDF)',
-  sticker: 'uma figurinha',
-};
-
 /**
  * Enquadra o derivado de mídia como PERCEPÇÃO do agente (Onda 3, ajuste pós-prova).
  * Sem isto, o modelo via a transcrição/descrição mas respondia "não consigo ver
@@ -353,15 +357,7 @@ const MEDIA_NOUN: Record<string, string> = {
  * cliente (se houver) e conteúdo derivado coexistem. @internal exposto p/ teste.
  */
 export function frameMediaBody(type: string, caption: string | null, derived: string): string {
-  const noun = MEDIA_NOUN[type] ?? 'uma mídia';
-  const parts = [
-    `[Mídia do cliente: ele enviou ${noun} e o sistema já processou o conteúdo pra você. ` +
-      `Trate o texto abaixo como se você mesma tivesse visto/ouvido — NUNCA responda que não ` +
-      `consegue ver/ouvir mídia. Comente ou use o conteúdo naturalmente.]`,
-  ];
-  if (caption && caption.trim() !== '') parts.push(`Legenda do cliente: ${caption.trim()}`);
-  parts.push(`Conteúdo: ${derived}`);
-  return parts.join('\n');
+  return formatMediaForTurn({ type, caption, derived });
 }
 
 /** @internal exposto p/ teste — não usar fora de testes. */

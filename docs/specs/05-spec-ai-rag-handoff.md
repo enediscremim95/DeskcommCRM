@@ -173,6 +173,17 @@ create trigger trg_ai_agents_audit
 - Mudanças de `system_prompt`, `guardrails`, `is_active`, `config` auditadas via `trg_ai_agents_audit` (regra IA-cross com Sub-PRD 01 §3.5).
 - `model` pode ser sobrescrito (ex: tenant rodando experimento com Sonnet 4.7) sem mudar código.
 
+**Chaves opt-in atuais em `ai_agents.config`** (a ausência preserva o comportamento legado):
+
+| Chave | Default | Efeito |
+|---|---:|---|
+| `vitrine_por_gatilho` | `false` | Completa o turno com a vitrine configurada quando a cliente nomeia o assunto e o agente não a mostra. |
+| `handoff_automatico_na_promessa` | `false` | Passa a conversa para uma pessoa quando o agente promete conferir algo com a equipe e não solicita a passagem. |
+| `escalacao_silenciosa` | `false` | Mantém a passagem interna, o silêncio do agente e o item na Central, mas não envia ao cliente o aviso automático de escalação. |
+| `termos_proibidos_ao_cliente` | `[]` | Lista de até 40 palavras ou expressões. A comparação ignora acento e caixa e exige palavra ou expressão inteira. O primeiro veto ensina a reescrever; no segundo, a mensagem não sai e a conversa vai silenciosamente para a Central. |
+
+O modo silencioso continua registrando no item da Central que o cliente não recebeu aviso e está esperando uma pessoa. Ele não desliga `force_human`, a devolução à fila, o cancelamento dos follow-ups nem o resumo de handoff.
+
 ### 3.2 `ai_knowledge_sources`
 
 ```sql
@@ -1567,4 +1578,3 @@ Quando algum tenant ultrapassar 100k chunks: criar índice hnsw paralelo, valida
 - `docs/specs/04-spec-pipeline-attendance.md` — conversations.status, stages.requires_human, fila humana
 - `docs/business-rules/00-business-rules-catalog.md` — IA-01 a IA-11, B-02
 - `docs/research/reference-synthesis.md` — doutrina arquitetural herdada
-

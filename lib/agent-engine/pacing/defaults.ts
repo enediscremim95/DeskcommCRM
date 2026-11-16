@@ -24,6 +24,8 @@ export interface PacingKnobs {
   /** Janela horária de envio [start, end) na hora local do tenant. */
   windowStartHour: number;
   windowEndHour: number;
+  /** Fim exclusivo do sábado; null = herda `windowEndHour`. */
+  windowSaturdayEndHour: number | null;
   /**
    * Enviar aos domingos. **Ligado por default** — a janela horária cala à noite,
    * e o domingo inteiro mudo era cortesia demais: num CRM de atendimento, quem
@@ -59,6 +61,7 @@ export const PACING_DEFAULTS: PacingKnobs = {
   jitterMaxMs: 800,
   windowStartHour: 7, // janela 7h-22h
   windowEndHour: 22,
+  windowSaturdayEndHour: null,
   allowSunday: true,
   timezone: 'America/Sao_Paulo',
   // Número sem linha em channel_knobs é tratado como idade 0 (o degrau mais

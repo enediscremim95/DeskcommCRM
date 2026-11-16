@@ -590,6 +590,7 @@ jobs:
         aparencias.spec.ts
         atendimento-fluxo-real.spec.ts
         autonomia-assistida.spec.ts
+        catalogo-e-atalhos-midia.spec.ts
         roteamento-por-canal.spec.ts
         central-avisos-destino.spec.ts
         agenda-presenca-recuperacao.spec.ts

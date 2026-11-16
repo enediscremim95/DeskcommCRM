@@ -1,3 +1,5 @@
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 /**
  * GET /api/v1/leads/[id]/timeline
  *
@@ -53,7 +55,7 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+async function GETComAuth(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
@@ -61,7 +63,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
@@ -127,3 +129,5 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     },
   });
 }
+
+export const GET = comAuthDisponivel(GETComAuth);

@@ -40,6 +40,7 @@ import { classificarErroDoGoogle, estadoDaConexaoApos } from "@/lib/agenda/googl
 import { fundirTokens, precisaRenovar, type TokenDoGoogle } from "@/lib/agenda/google/oauth";
 import { renovarToken } from "@/lib/agenda/google/token";
 import { env } from "@/lib/env";
+import { GOOGLE_EXPIRED_MESSAGE, openGoogleExpiredNotice } from "@/lib/agenda/google/fallback";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +117,7 @@ export async function renovarAgendasDoGoogle(
     if (!linha.oauth_refresh_token_encrypted) {
       // Conexão sem chave de renovação não se recupera sozinha. Desde a rota de
       // callback isso não nasce mais; linhas antigas podem existir.
-      await marcarConexao(admin, linha, "token_expired", "sem chave de renovação guardada");
+      await marcarConexao(admin, linha, "token_expired", GOOGLE_EXPIRED_MESSAGE);
       resumo.reautenticar += 1;
       continue;
     }
@@ -135,7 +136,7 @@ export async function renovarAgendasDoGoogle(
       const classificacao = classificarErroDoGoogle({ error: leitura.detalhe }, "token");
       const novoEstado = estadoDaConexaoApos(classificacao.desfecho);
       if (novoEstado && novoEstado !== "healthy") {
-        await marcarConexao(admin, linha, novoEstado, classificacao.mensagem);
+        await marcarConexao(admin, linha, novoEstado, novoEstado === "token_expired" ? GOOGLE_EXPIRED_MESSAGE : classificacao.mensagem);
         if (novoEstado === "token_expired") resumo.reautenticar += 1;
         else resumo.falhas += 1;
       } else {
@@ -200,7 +201,11 @@ async function marcarConexao(
   await admin
     .from("calendar_connections")
     .update({ status: situacao, last_sync_error: motivo })
-    .eq("id", linha.id);
+    .eq("id", linha.id)
+    .eq("organization_id", linha.organization_id);
+  if (situacao === "token_expired") {
+    await openGoogleExpiredNotice(admin, linha.organization_id, linha.id);
+  }
 }
 
 function autorizado(req: NextRequest): boolean {

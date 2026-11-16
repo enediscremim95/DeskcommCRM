@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Inbox no estilo do WhatsApp, fase 1A",
+    "subtitle": "Rascunho isolado, anexos sequenciais, busca e ficha responsiva",
+    "output": "inbox-whatsapp-fase-1a.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "operador", "label": "Operador" },
+    { "id": "interface", "label": "Interface" },
+    { "id": "api", "label": "API" },
+    { "id": "dados", "label": "Dados" }
+  ],
+  "mainPath": ["entrada", "fila", "upload", "envio", "mensagens", "thread"],
+  "nodes": [
+    { "id": "entrada", "lane": "operador", "col": 0, "type": "external", "label": "Arquivo ou texto", "sublabel": "input múltiplo, drop central, clipboard ou digitação" },
+    { "id": "fila", "lane": "interface", "col": 1, "type": "frontend", "label": "Composer", "sublabel": "fila em memória, legenda por item e pausa na falha" },
+    { "id": "rascunho", "lane": "dados", "col": 1, "type": "database", "label": "localStorage", "sublabel": "somente texto, chave organização + usuário + conversa" },
+    { "id": "upload", "lane": "api", "col": 2, "type": "backend", "label": "Upload de mídia", "sublabel": "POST /conversations/:id/media, um item por vez" },
+    { "id": "envio", "lane": "api", "col": 3, "type": "backend", "label": "POST /messages", "sublabel": "termina em sendMessageHandler" },
+    { "id": "mensagens", "lane": "dados", "col": 4, "type": "database", "label": "messages", "sublabel": "organization_id explícito e conteúdo revogado fora da busca" },
+    { "id": "busca", "lane": "api", "col": 3, "type": "backend", "label": "Busca paginada", "sublabel": "termo escapado, filtros, cursor e janela ao redor" },
+    { "id": "thread", "lane": "interface", "col": 5, "type": "frontend", "label": "ChatThread", "sublabel": "resultado, citação, DOM estável e destaque" },
+    { "id": "ficha", "lane": "interface", "col": 5, "type": "frontend", "label": "Ficha do contato", "sublabel": "Sheet no tablet e coluna recolhível no desktop" },
+    { "id": "preferencia", "lane": "dados", "col": 4, "type": "database", "label": "Preferência visual", "sublabel": "localStorage somente por usuário" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "entrada", "to": "fila", "label": "preserva ordem e não intercepta texto arrastado" },
+    { "id": "e2", "from": "fila", "to": "rascunho", "label": "persiste apenas texto" },
+    { "id": "e3", "from": "fila", "to": "upload", "label": "aguarda upload do item atual" },
+    { "id": "e4", "from": "upload", "to": "envio", "label": "storage_path validado" },
+    { "id": "e5", "from": "envio", "to": "mensagens", "label": "cadeia central de envio e auditoria" },
+    { "id": "e6", "from": "mensagens", "to": "busca", "label": "leitura tenant-aware sem apagadas ou notas" },
+    { "id": "e7", "from": "busca", "to": "thread", "label": "carrega janela e salta para message_id" },
+    { "id": "e8", "from": "thread", "to": "busca", "label": "citação reutiliza o mesmo salto" },
+    { "id": "e9", "from": "ficha", "to": "preferencia", "label": "recolher ou abrir" },
+    { "id": "e10", "from": "preferencia", "to": "ficha", "label": "restaura no próximo acesso" }
+  ],
+  "cards": [
+    { "dot": "green", "title": "Anti-morte", "items": ["falha pausa a fila com retry, pular ou cancelar", "retry não repete itens enviados", "busca e citação carregam mensagem fora da página"] },
+    { "dot": "amber", "title": "Não entra", "items": ["sem migration", "sem redirecionar /app/inbox", "sem favoritos, fixados, mute, arquivamento ou fila offline"] }
+  ]
+}
+

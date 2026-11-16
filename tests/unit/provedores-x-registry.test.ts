@@ -60,6 +60,16 @@ describe("a OpenRouter entrou de fato", () => {
     expect(PROVEDOR_POR_ID.get("openrouter")?.catalogoSincronizavel).toBe(true);
   });
 
+  it("também alcança o assistente de resposta pelo registry existente", async () => {
+    const { PROVEDORES_DO_ASSISTENTE } = await import(
+      "@/lib/ai/assistente-de-resposta/config"
+    );
+    expect(PROVEDORES_DO_ASSISTENTE).toContain("openrouter");
+    expect(
+      PROVEDORES_DO_ASSISTENTE.filter((provider) => registry[provider] === undefined),
+    ).toEqual([]);
+  });
+
   it("aceita endpoint próprio — é o que prepara o modelo local", () => {
     expect(PROVEDOR_POR_ID.get("openrouter")?.aceitaEndpointProprio).toBe(true);
   });

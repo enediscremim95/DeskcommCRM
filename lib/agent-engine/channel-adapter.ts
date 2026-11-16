@@ -26,6 +26,12 @@ export interface ChannelSendInput {
   /** referência da conversa no canal (conversation_id do CRM na v1) */
   conversationId: string;
   body: string;
+  metadata?: Record<string, unknown>;
+  media?: {
+    storagePath: string;
+    mime: "image/jpeg" | "image/png";
+    sizeBytes: number;
+  };
   /**
    * Presente = este envio é um TEMPLATE aprovado, não texto livre.
    *

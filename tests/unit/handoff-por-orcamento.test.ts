@@ -242,6 +242,27 @@ describe("a escolta do orçamento", () => {
     expect(corpo).toContain("outside_window");
   });
 
+  it("modo silencioso mantém o handoff e explica a espera corretamente na Central", async () => {
+    const { pool, chamadas } = poolFalso();
+    const avisar = vi.fn(async (): Promise<DesfechoDoAviso> => ({
+      avisado: false,
+      porque: "aviso_desligado_pelo_agente",
+    }));
+
+    await expect(
+      comHandoffSeOrcamentoAcabar(contexto(pool, logFalso(), avisar), async () => {
+        throw new LlmBudgetExceededError();
+      }),
+    ).rejects.toThrow();
+
+    expect(avisar).toHaveBeenCalledTimes(1);
+    expect(chamadas.some((c) => c.sql.includes("set force_human = true"))).toBe(true);
+    const inbox = chamadas.find((c) => c.sql.includes("insert into agent_inbox_items"));
+    expect(String(inbox?.params?.[2] ?? "")).toContain(
+      "O agente não avisou a cliente (modo silencioso)",
+    );
+  });
+
   it("aviso que falha NÃO impede a passagem", async () => {
     // A ordem certa não pode virar dependência: se o canal cair, o cliente perde
     // o aviso — mas não pode perder também o atendente.

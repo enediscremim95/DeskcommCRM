@@ -26,6 +26,23 @@ describe("configuração do assistente de resposta", () => {
     expect(pedidoDoAssistenteSchema.safeParse({ enabled: true }).success).toBe(false);
   });
 
+  it("aceita OpenRouter e continua recusando provedor fora do assistente", () => {
+    const base = {
+      enabled: true,
+      provider: "openrouter",
+      credential_id: "11000000-0000-4000-8000-000000000001",
+      team_style: "Fale de forma curta e cordial.",
+      history_message_window: 20,
+      history_token_window: 4_000,
+      hourly_limit: 20,
+      daily_limit: 100,
+    };
+    expect(pedidoDoAssistenteSchema.safeParse(base).success).toBe(true);
+    expect(pedidoDoAssistenteSchema.safeParse({ ...base, provider: "google" }).success).toBe(
+      false,
+    );
+  });
+
   it("liga a sugestão automática por padrão em configuração anterior", () => {
     expect(
       lerConfiguracaoDoAssistente({
@@ -82,6 +99,59 @@ describe("configuração do assistente de resposta", () => {
       "modelo-padrao",
     );
     expect(escolherModeloDoAssistente(catalogo, ["outro"])).toBeNull();
+  });
+
+  it("prioriza Haiku e depois Sonnet entre os ids reais da chave OpenRouter", () => {
+    expect(
+      escolherModeloDoAssistente(
+        [],
+        ["openai/gpt-5-mini", "anthropic/claude-sonnet-5.5", "anthropic/claude-haiku-5.5"],
+        "openrouter",
+      ),
+    ).toBe("anthropic/claude-haiku-5.5");
+    expect(
+      escolherModeloDoAssistente(
+        [],
+        ["openai/gpt-5-mini", "anthropic/claude-sonnet-5.5"],
+        "openrouter",
+      ),
+    ).toBe("anthropic/claude-sonnet-5.5");
+  });
+
+  it("cai no primeiro id declarado quando a chave não oferece os preferidos", () => {
+    expect(
+      escolherModeloDoAssistente([], ["openai/gpt-5-mini", "google/gemini-3-flash"], "openrouter"),
+    ).toBe("openai/gpt-5-mini");
+    expect(escolherModeloDoAssistente([], [], "openrouter")).toBeNull();
+  });
+
+  it("mantém o padrão do catálogo acima das preferências OpenRouter", () => {
+    expect(
+      escolherModeloDoAssistente(
+        [{ model_id: "openai/gpt-5-mini", is_default_for_provider: true }],
+        ["anthropic/claude-haiku-5.5", "openai/gpt-5-mini"],
+        "openrouter",
+      ),
+    ).toBe("openai/gpt-5-mini");
+  });
+
+  it("mantém Anthropic e OpenAI idênticos ao comportamento anterior", () => {
+    expect(escolherModeloDoAssistente([], ["claude-haiku-5.5"], "anthropic")).toBeNull();
+    expect(escolherModeloDoAssistente([], ["gpt-5-mini"], "openai")).toBeNull();
+    expect(
+      escolherModeloDoAssistente(
+        [{ model_id: "claude-haiku-5.5" }],
+        ["claude-haiku-5.5"],
+        "anthropic",
+      ),
+    ).toBe("claude-haiku-5.5");
+    expect(
+      escolherModeloDoAssistente(
+        [{ model_id: "gpt-5-mini" }],
+        ["gpt-5-mini"],
+        "openai",
+      ),
+    ).toBe("gpt-5-mini");
   });
 });
 

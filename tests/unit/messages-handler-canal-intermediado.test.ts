@@ -134,6 +134,7 @@ function projetar(linha: Row, select: string): Row {
 interface Forma {
   providerConversationId?: string | null;
   provider?: string;
+  lastInboundAt?: string | null;
 }
 
 function conversaCompleta(forma: Forma = {}): Row {
@@ -146,6 +147,8 @@ function conversaCompleta(forma: Forma = {}): Row {
     is_group: false,
     group_chat_id: null,
     provider_conversation_id: forma.providerConversationId ?? null,
+    last_inbound_at:
+      forma.lastInboundAt === undefined ? new Date().toISOString() : forma.lastInboundAt,
     contacts: { phone_number: "+595991733685", wa_identity: null, wa_lid: "999888", is_blocked: false },
     channel_sessions: {
       provider,
@@ -412,6 +415,26 @@ describe("a thread do provider atravessa os três elos até o transporte", () =>
 });
 
 describe("nenhum desfecho diz `sent` sem nada ter saído", () => {
+  it("recusa texto livre fora da janela antes de criar a mensagem", async () => {
+    vi.stubEnv("ZERNIO_API_KEY", "k");
+    vi.stubEnv("ZERNIO_ACCOUNT_ID", CONTA);
+    const fetchMock = respostaOk();
+    vi.stubGlobal("fetch", fetchMock);
+    const { supabase, estado } = makeSupabase(
+      conversaCompleta({
+        providerConversationId: THREAD,
+        lastInboundAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+      }),
+    );
+
+    await expect(sendMessageHandler(supabase, ctx, texto())).rejects.toMatchObject({
+      status: 409,
+      code: "window_closed",
+    });
+    expect(estado.message).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("credencial de env INCOMPLETA não pode virar `sent` com zero chamadas de rede", async () => {
     // ⚠️ REPRODUZ O BLOQUEADOR (lib/channels/adapters/zernio.ts:97).
     // `isConfigured()` devolve true só com `ZERNIO_API_KEY`, mas
@@ -466,7 +489,12 @@ describe("nenhum desfecho diz `sent` sem nada ter saído", () => {
     const fetchMock = respostaOk("wamid.TPL");
     vi.stubGlobal("fetch", fetchMock);
 
-    const { supabase } = makeSupabase(conversaCompleta({ providerConversationId: THREAD }));
+    const { supabase } = makeSupabase(
+      conversaCompleta({
+        providerConversationId: THREAD,
+        lastInboundAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+      }),
+    );
     await sendMessageHandler(
       supabase,
       ctx,

@@ -62,7 +62,25 @@ export function resumoDaRegra(
 
   const acoes = rule.actions.map((action) => {
     if (action.type === "send_whatsapp_message") {
-      const texto = String(action.config.template ?? "");
+      const templates = Array.isArray(action.config.templates)
+        ? action.config.templates.map((parte) => {
+            if (
+              parte &&
+              typeof parte === "object" &&
+              "tipo" in parte &&
+              parte.tipo === "imagem" &&
+              "arquivo" in parte
+            ) {
+              return `[${t("Imagem")}: ${String(parte.arquivo)}]`;
+            }
+            const textoDaParte = String(parte);
+            return textoDaParte.length > 24
+              ? `${textoDaParte.slice(0, 21)}…`
+              : textoDaParte;
+          })
+        : [];
+      const texto =
+        templates.length > 0 ? templates.join(" · ") : String(action.config.template ?? "");
       const curto = texto.length > 92 ? `${texto.slice(0, 89)}…` : texto;
       return `${t("mande a mensagem")} “${curto}”`;
     }

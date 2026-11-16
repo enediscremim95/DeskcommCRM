@@ -40,6 +40,18 @@ const envSchema = z.object({
   // Consertar a irmã da OpenAI e deixar esta é o modo de falha desta família:
   // ao mexer aqui, confira as três de uma vez.
   OPENROUTER_API_KEY: z.string().min(1).optional(),
+  MEDIA_OPENROUTER_ORG_IDS: z.string().optional(),
+  MEDIA_OPENROUTER_AUDIO_MODEL: z.string().min(1).optional(),
+  MEDIA_OPENROUTER_VISION_MODEL: z.string().min(1).optional(),
+  MEDIA_AI_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  MEDIA_AUDIO_MAX_BYTES: z.coerce.number().int().positive().optional(),
+  MEDIA_AUDIO_MAX_SECONDS: z.coerce.number().positive().optional(),
+  MEDIA_IMAGE_MAX_BYTES: z.coerce.number().int().positive().optional(),
+  MEDIA_VIDEO_MAX_BYTES: z.coerce.number().int().positive().optional(),
+  MEDIA_VIDEO_MAX_SECONDS: z.coerce.number().positive().optional(),
+  MEDIA_VIDEO_MAX_FRAMES: z.coerce.number().int().positive().max(8).optional(),
+  MEDIA_PDF_MAX_BYTES: z.coerce.number().int().positive().optional(),
+  MEDIA_PDF_MAX_PAGES: z.coerce.number().int().positive().optional(),
   // Modelo default do agente quando a org não define o dela (knob, nunca constante).
   AGENT_DEFAULT_MODEL: z.string().min(1).default('claude-sonnet-4-5'),
   // Teto de conexões por pool do pg. Sem valor = pg decide (default 10).

@@ -35,7 +35,13 @@ import type { PublishedAgentConfig } from '../../agent/agent-config';
  * (spec 16 §3.2) depende desta lista, e uma garantia que nenhum teste consegue
  * ler é uma garantia que ninguém percebe quando some.
  */
-export const BLOCKED_TOOL_IDS = new Set(['crm_send_whatsapp_message', 'crm_request_human_handoff']);
+export const BLOCKED_TOOL_IDS = new Set([
+  'crm_send_whatsapp_message',
+  'crm_request_human_handoff',
+  'crm_send_catalog_item',
+  'crm_send_vitrine',
+  'crm_quote_shipping',
+]);
 
 export interface McpTurnTools {
   tools: Record<string, Tool>;

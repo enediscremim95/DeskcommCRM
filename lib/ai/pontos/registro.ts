@@ -435,7 +435,37 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "workers/media-derive-worker.ts",
     sintomaDeFalha:
       "O cliente manda uma foto do produto ou um comprovante e o agente age como se a imagem não existisse.",
-    registraEm: "nenhum",
+    registraEm: "llm_calls",
+  },
+  {
+    id: "percepcao_de_audio",
+    rotulo: "Ouvir áudio pelo provedor multimodal",
+    oQueFaz: "Transcreve o áudio quando não há uma chave dedicada da OpenAI.",
+    papel: "perceber",
+    exige: { audio: true },
+    emissor: "workers/media-derive-worker.ts",
+    sintomaDeFalha: "O agente pede que a cliente envie por escrito o que estava no áudio.",
+    registraEm: "llm_calls",
+  },
+  {
+    id: "percepcao_de_imagem",
+    rotulo: "Ver imagem pelo provedor multimodal",
+    oQueFaz: "Descreve a imagem usando o canal OpenRouter já configurado.",
+    papel: "perceber",
+    exige: { imagem: true },
+    emissor: "workers/media-derive-worker.ts",
+    sintomaDeFalha: "O agente pede que a cliente descreva a imagem.",
+    registraEm: "llm_calls",
+  },
+  {
+    id: "percepcao_de_documento",
+    rotulo: "Ler documento escaneado",
+    oQueFaz: "Lê por visão um PDF que não contém texto extraível.",
+    papel: "perceber",
+    exige: { imagem: true },
+    emissor: "workers/media-derive-worker.ts",
+    sintomaDeFalha: "O agente pede o conteúdo do documento por escrito ou encaminha para uma pessoa.",
+    registraEm: "llm_calls",
   },
 
   // ────────────────────────── Melhorar e testar ────────────────────────────

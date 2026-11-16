@@ -142,6 +142,7 @@ fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Ga
 | J4.22 | **Mensagem de contato desconhecido chega pelo webhook do WAHA** | card nasce no funil de entrada (`is_default`), na primeira etapa aberta, com o NOME de quem escreveu — nunca `@c.us`/`@lid` (executado 2026-08-06 · `conversa-vira-lead.spec.ts`) |
 | J4.23 | Timeline do card recém-nascido | diz **"Entrou pelo WhatsApp"** — card que aparece sem explicação destrói a confiança no automatismo (executado 2026-08-06) |
 | J4.24 | Segunda mensagem do MESMO contato | **não** abre um segundo card: um lead por demanda, não um por mensagem (executado 2026-08-06) |
+| J4.34 | WhatsApp horas ou dias depois do formulário, com o negócio ainda aberto no mesmo funil | reaproveita o card; um segundo WhatsApp depois disso não abre um terceiro. O reenvio do formulário também entra no card aberto. Negócio encerrado, outro funil, ou criação pela tela/API/agente continuam podendo abrir card novo |
 | J4.31 | **Marcar em que funis o assistente pode mexer** | nasce FECHADO (a tela explica: "conversa normalmente, mas não mexe em negócio"); a marcação sobrevive ao salvar E RECARREGAR — o defeito do campo que "se desmarca sozinho" (`escopo-de-funil-do-agente.spec.ts`, 2026-08-07) |
 | J4.32 | Funil marcado que o assistente não sabe percorrer | a lacuna de tradução aparece AO LADO da marcação, e só no funil marcado — fora do escopo ela não custa nada |
 | J4.33 | Funil de ENTRADA fora da marcação | avisa que as conversas novas viram negócio ali e vão se acumular sem que o assistente possa organizá-los |
@@ -2073,3 +2074,31 @@ gerado em Chromium nas três larguras e mede fluxo, palco e navegação.
 A jornada real no WhatsApp Web depende de uma conta pareada e não é alegada por
 um teste sintético. O recorte automatizado cobre pacote, origem, autenticação,
 RLS, conversão de áudio, estrutura da chamada PTT e a tela controlada no CRM.
+
+## Catálogo e atalhos com mídia na conversa [P1]
+
+| # | Caso | Resultado exigido |
+| --- | --- | --- |
+| CM1 | Gerente cadastra produto com descrição, preço e imagem | O produto aparece na lista com a imagem persistente e continua editável |
+| CM2 | Atendente abre o Catálogo dentro de uma conversa | Vê somente produtos ativos da própria organização e escolhe até dez |
+| CM3 | Atendente confirma vários produtos | Cada item abre, um por vez, como rascunho editável com descrição completa e parágrafos preservados; nada é enviado até a confirmação manual, e legenda acima de 1024 caracteres fica visível e bloqueada para corte humano |
+| CM4 | Gerente acrescenta imagem ou vídeo a um atalho compartilhado | A mídia respeita tipo e tamanho do canal; escolher `/atalho` abre a prévia com legenda antes de enviar |
+| CM5 | Janela de 24 horas fechada | Servidor recusa o envio livre com `window_closed`, mesmo que a tela esteja desatualizada |
+| CM6 | Tenant tenta usar produto ou atalho vizinho | RLS e filtros explícitos por `organization_id` devolvem zero itens e não produzem mensagem |
+| CM7 | Gerente importa o retrato JSON do painel | O CRM faz upsert por código dentro da organização autenticada, sobrescreve os campos comerciais, desativa somente produtos do painel que sumiram e relata cada falha de foto sem perder o produto |
+| CM8 | Gerente abre ou tenta alterar um produto vindo do painel | A tela mostra “Vem do painel”, bloqueia nome, descrição, preço, foto e estado; API recusa alteração ou exclusão com 409, mas a legenda do atendimento continua editável |
+| CM9 | Produto aponta para arquivo de outra organização | O envio trata como produto sem foto e nenhuma rota remove o arquivo fora do prefixo da organização autenticada |
+
+Prova automatizada em `tests/e2e/catalogo-e-atalhos-midia.spec.ts`, incluída no gate
+`SPECS_PARTE_3`. A spec cadastra o produto pela tela, abre o catálogo na conversa,
+confere a legenda completa na prévia e mede no banco que abrir o rascunho não criou
+mensagem. Os contratos de limite, permissão, janela e isolamento também têm cobertura
+unitária; a RLS permanece coberta pelos invariantes de banco.
+
+A segunda rodada acrescenta testes unitários das jornadas CM7 a CM9 e um invariante
+para as colunas da migration `0299`. A prova visual da tela bloqueada ainda depende
+da execução E2E em ambiente local completo.
+
+### Correções compartilhadas de CI — 2026-11-16
+
+Agenda: a confirmação precisa manter o horário oferecido pela grade também em navegador UTC com regra America/Sao_Paulo (`agenda-grade-interativa`). Suporte somente leitura não busca `draft-reply` (`suporte-temporario`). Troca de organização aguarda o destino final `/app/pipelines/`, inclusive após `/app/kanban`, antes de navegar para Inbox/Agenda. Seletores de tela exigem unicidade entre elementos visíveis; rotas ocultas preservadas pelo App Router não são a tela atual. Asserções e cobertura permanecem ativas.

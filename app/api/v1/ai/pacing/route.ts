@@ -29,7 +29,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const KNOB_COLUMNS =
-  "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, allow_sunday, timezone, warmup_daily_caps, number_activated_at";
+  "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, window_saturday_end_hour, allow_sunday, timezone, warmup_daily_caps, number_activated_at";
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
@@ -149,6 +149,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
       jitter_max_ms: null,
       window_start_hour: null,
       window_end_hour: null,
+      window_saturday_end_hour: null,
       allow_sunday: null,
       timezone: null,
       warmup_daily_caps: null,

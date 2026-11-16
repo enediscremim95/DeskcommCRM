@@ -22,6 +22,25 @@ describe("sendInBubbles", () => {
     expect(out.kind).toBe("sent");
   });
 
+  it("encaminha o opt-in por parágrafo até os envios físicos", async () => {
+    const send = vi.fn(async (_body: string) => ({ kind: "sent", messageId: "m" }));
+    const texto = "Primeira ideia sem ponto\n\nSegunda ideia?";
+
+    await sendInBubbles(texto, {
+      enabled: true,
+      maxChars: 100,
+      splitPorParagrafo: true,
+      send,
+      sleep: async () => undefined,
+      jitter: () => 0,
+    });
+
+    expect(send.mock.calls.map(([body]) => body)).toEqual([
+      "Primeira ideia sem ponto",
+      "Segunda ideia?",
+    ]);
+  });
+
   it("chama `antesDaPrimeira` UMA vez, antes do 1º envio, com a 1ª bolha", async () => {
     // O atraso humano é do TURNO, não de cada bolha: entre bolhas já existe o
     // jitter anti-ban. Chamá-lo por bolha somaria duas esperas na mesma pausa.

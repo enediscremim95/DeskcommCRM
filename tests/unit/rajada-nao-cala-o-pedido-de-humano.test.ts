@@ -3,7 +3,11 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { buildOpeningMessage, inboundsNaoRespondidos } from "@/lib/agent-engine/agent/inbound-turn";
+import {
+  agruparMensagensDoTurno,
+  buildOpeningMessage,
+  inboundsNaoRespondidos,
+} from "@/lib/agent-engine/agent/inbound-turn";
 import { detectAmbiguousOptOut, detectHumanHandoffRequest } from "@/lib/agent-engine/agent/human-handoff";
 import type { LeadContext } from "@/lib/agent-engine/edge/crm/get-lead-context";
 
@@ -45,6 +49,13 @@ const contexto: LeadContext = {
 } as unknown as LeadContext;
 
 describe("rajada coalescida: o turno responde à 1ª e OUVE a 2ª", () => {
+  it("o agrupador compartilhado mantém a primeira pinada e todas as pendentes", () => {
+    expect(agruparMensagensDoTurno(contexto.messages, PRIMEIRA)).toEqual({
+      mensagemDoJob: PRIMEIRA,
+      inboundsPendentes: [PRIMEIRA, SEGUNDA],
+    });
+  });
+
   it("o bloco de mensagem atual nomeia a mensagem do job — a PRIMEIRA", () => {
     // `currentInboundText` é o corpo da linha que o job aponta.
     const abertura = buildOpeningMessage(null, null, contexto, "sem notas", false, [], "", PRIMEIRA);
@@ -106,7 +117,12 @@ describe("fiação — as duas perguntas leem de fontes diferentes", () => {
   it("handoff, opt-out e urgência leem os inbounds pendentes, POR MENSAGEM", () => {
     // Presença antes de qualquer coisa: uma asserção que some junto com o código
     // que ela vigia não vigia nada.
-    expect(FONTE).toMatch(/const inboundsPendentes = inboundsNaoRespondidos\(/);
+    expect(FONTE).toMatch(
+      /const \{ mensagemDoJob, inboundsPendentes \} = agruparMensagensDoTurno\(/,
+    );
+    expect(FONTE).toMatch(
+      /inboundsPendentes: inboundsNaoRespondidos\(messages\)/,
+    );
     expect(FONTE).toMatch(/inboundsPendentes\.some\([\s\S]{0,200}?detectHumanHandoffRequest\(/);
     expect(FONTE).toMatch(/inboundsPendentes\.some\(\(texto\) => detectAmbiguousOptOut\(texto\)\)/);
     expect(FONTE).toMatch(/inboundsPendentes\.some\(\(texto\) => detectUrgencySignal\(texto\)\)/);

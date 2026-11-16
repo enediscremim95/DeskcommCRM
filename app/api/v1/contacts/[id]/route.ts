@@ -1,3 +1,6 @@
+import { AuthTemporariamenteIndisponivel } from "@/lib/auth/get-user-com-backoff";
+import { comAuthDisponivel } from "@/lib/auth/api-disponivel";
+import { getUserComBackoff } from "@/lib/auth/get-user-com-backoff";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET    /api/v1/contacts/[id] — fetch single (handler em ../_handler.ts)
@@ -23,7 +26,7 @@ import { deleteContactHandler, getContactHandler, patchContactHandler } from "..
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
+async function GETComAuth(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -34,7 +37,7 @@ export async function GET(
   const {
     data: { user },
     error: authErr,
-  } = await supabase.auth.getUser();
+  } = await getUserComBackoff(() => supabase.auth.getUser());
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
@@ -61,6 +64,7 @@ export async function GET(
     );
     return ok(result, { requestId });
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });
     }
@@ -68,7 +72,7 @@ export async function GET(
   }
 }
 
-export async function PATCH(
+async function PATCHComAuth(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -89,6 +93,7 @@ export async function PATCH(
   try {
     input = await validateRequest(contactPatchSchema, req);
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, {
         details: err.details as Record<string, unknown> | undefined,
@@ -130,6 +135,7 @@ export async function PATCH(
     );
     return ok(contact, { requestId });
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });
     }
@@ -137,7 +143,7 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
+async function DELETEComAuth(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -169,9 +175,14 @@ export async function DELETE(
     );
     return noContent(requestId);
   } catch (err) {
+    if (err instanceof AuthTemporariamenteIndisponivel) throw err;
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });
     }
     throw err;
   }
 }
+
+export const GET = comAuthDisponivel(GETComAuth);
+export const PATCH = comAuthDisponivel(PATCHComAuth);
+export const DELETE = comAuthDisponivel(DELETEComAuth);

@@ -4,6 +4,7 @@ import { retentionCopy, type RetentionContext } from "./retention-copy";
 const ctx: RetentionContext = {
   window_start_hour: 8,
   window_end_hour: 21,
+  window_saturday_end_hour: 14,
   allow_sunday: false,
   timezone: "America/Sao_Paulo",
 };
@@ -13,6 +14,7 @@ describe("retentionCopy — tradução leiga dos vetos before_send", () => {
     const r = retentionCopy("outside_window", ctx);
     expect(r.kind).toBe("protection");
     expect(r.description).toContain("8h–21h");
+    expect(r.description).toContain("sábado até 14h");
     expect(r.description).toContain("sem domingo");
     expect(retentionCopy("mass_identical", ctx).kind).toBe("protection");
   });

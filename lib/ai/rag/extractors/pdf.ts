@@ -65,11 +65,13 @@ interface PdfWorkerResult {
   detail?: string;
 }
 
-export type PdfIsolatedRunner = (buffer: Buffer, maxTextChars: number) => Promise<string>;
+export type PdfIsolatedRunner = (buffer: Buffer, maxTextChars: number, maxPages: number) => Promise<string>;
 
 export interface PdfExtractDependencies {
   runIsolated?: PdfIsolatedRunner;
   maxTextChars?: number;
+  maxBytes?: number;
+  maxPages?: number;
 }
 
 /*
@@ -178,6 +180,7 @@ function isolatedErrorFromWorker(result: PdfWorkerResult): PdfExtractError {
 export function runPdfExtractionIsolated(
   buffer: Buffer,
   maxTextChars = PDF_MAX_TEXT_CHARS,
+  maxPages = PDF_MAX_PAGES,
 ): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const worker = new Worker(PDF_WORKER_SOURCE, {
@@ -241,7 +244,7 @@ export function runPdfExtractionIsolated(
 
     const bytes = transferableBytes(buffer);
     worker.postMessage(
-      { bytes, maxPages: PDF_MAX_PAGES, maxChars: maxTextChars },
+      { bytes, maxPages, maxChars: maxTextChars },
       [bytes],
     );
   });
@@ -252,13 +255,17 @@ export async function extractPdfText(
   buffer: Buffer,
   dependencies: PdfExtractDependencies = {},
 ): Promise<string> {
-  if (buffer.byteLength > PDF_MAX_BYTES) {
+  if (buffer.byteLength > (dependencies.maxBytes ?? PDF_MAX_BYTES)) {
     throw new PdfExtractLimitError("PDF grande demais para extrair texto", "pdf_too_large");
   }
 
   const runIsolated = dependencies.runIsolated ?? runPdfExtractionIsolated;
   try {
-    return await runIsolated(buffer, dependencies.maxTextChars ?? PDF_MAX_TEXT_CHARS);
+    return await runIsolated(
+      buffer,
+      dependencies.maxTextChars ?? PDF_MAX_TEXT_CHARS,
+      dependencies.maxPages ?? PDF_MAX_PAGES,
+    );
   } catch (error) {
     if (error instanceof PdfExtractError) throw error;
     if (error instanceof Error && /DOMMatrix|@napi-rs\/canvas/.test(error.message)) {

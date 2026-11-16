@@ -42,6 +42,7 @@ interface LinhaDeKnobs {
   jitter_max_ms: number | null;
   window_start_hour: number | null;
   window_end_hour: number | null;
+  window_saturday_end_hour: number | null;
   allow_sunday: boolean | null;
   timezone: string | null;
   warmup_daily_caps: unknown;
@@ -61,7 +62,7 @@ export async function knobsDoCanal(
   const { data, error } = await admin
     .from("channel_knobs")
     .select(
-      "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, allow_sunday, timezone, warmup_daily_caps",
+      "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, window_saturday_end_hour, allow_sunday, timezone, warmup_daily_caps",
     )
     .eq("organization_id", organizationId)
     .eq("channel_session_id", channelSessionId)
@@ -86,6 +87,8 @@ export async function knobsDoCanal(
     jitterMaxMs: linha.jitter_max_ms ?? PACING_DEFAULTS.jitterMaxMs,
     windowStartHour: linha.window_start_hour ?? PACING_DEFAULTS.windowStartHour,
     windowEndHour: linha.window_end_hour ?? PACING_DEFAULTS.windowEndHour,
+    windowSaturdayEndHour:
+      linha.window_saturday_end_hour ?? PACING_DEFAULTS.windowSaturdayEndHour,
     allowSunday: linha.allow_sunday ?? PACING_DEFAULTS.allowSunday,
     timezone: linha.timezone ?? PACING_DEFAULTS.timezone,
     warmupDailyCaps: caps ?? PACING_DEFAULTS.warmupDailyCaps,

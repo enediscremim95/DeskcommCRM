@@ -76,12 +76,21 @@ interface Excecao {
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
   {
+    tabela: "organization_shipping_settings",
+    razao:
+      "tests/invariants/frete-configuracao-isolamento.test.ts — RLS ligada sem " +
+      "nenhuma policy; anon e authenticated sem privilégio de SELECT; só a " +
+      "service_role lê as configurações das duas organizações.",
+  },
+  {
     tabela: "organization_template_items",
     razao:
       "tests/invariants/template-de-organizacao-nao-vaza-entre-tenants.test.ts — " +
       "admin A lê sua proveniência e conta 0 na organização B; manager B lê " +
       "somente a própria. JWT authenticated e RLS são exercitados nos dois eixos.",
   },
+  { tabela: "catalog_product_groups", razao: "tests/invariants/catalogo-galeria-e-tool-isolamento.test.ts — dois tenants com o mesmo SKU; o agente de A conta 1 produto-pai e 0 de B por JWT; o gerente de A não insere produto-pai em B" },
+  { tabela: "catalog_product_images", razao: "tests/invariants/catalogo-galeria-e-tool-isolamento.test.ts — dois tenants com o mesmo SKU; o agente de A conta só a foto de A por JWT; o gerente de A não insere foto no pai de B; a função de sincronização não é executável por authenticated" },
   { tabela: "channel_routing_policies", razao: "tests/invariants/channel-routing.test.ts — dois tenants reais, leitura positiva local e negativa cruzada por JWT; FK composta rejeita canal de outra org" },
   { tabela: "channel_routing_responsibles", razao: "tests/invariants/channel-routing.test.ts — JWT do tenant B não lê responsáveis de A; revogação remove vínculo e claim revalida membro ativo" },
   { tabela: "channel_connection_requests", razao: "tests/invariants/channel-routing.test.ts — recibo privado sem SELECT authenticated; reserva admin com MFA e finalização service-only cercada por org e lease" },

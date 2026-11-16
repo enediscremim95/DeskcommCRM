@@ -12,6 +12,8 @@ export async function testAgentVersion(
     runId: string;
     sampleMessage: string;
     sampleContact?: { name?: string; phone?: string };
+    history?: Parameters<typeof scenarioContext>[0];
+    catalogProductCodesAlreadySent?: string[];
     channelId: string | null;
   },
 ) {
@@ -25,6 +27,7 @@ export async function testAgentVersion(
   const result = newPreviewResult();
   const context = scenarioContext(
     [
+      ...(input.history ?? []),
       {
         direction: "inbound",
         body: input.sampleMessage,
@@ -39,6 +42,9 @@ export async function testAgentVersion(
     runId: input.runId,
     agent,
     context,
+    ...(input.catalogProductCodesAlreadySent !== undefined
+      ? { catalogProductCodesAlreadySent: input.catalogProductCodesAlreadySent }
+      : {}),
     contactId: null,
     channelId: input.channelId,
     result,
