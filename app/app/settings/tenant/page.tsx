@@ -47,9 +47,9 @@ export default async function TenantSettingsPage() {
 
   const { data: channels } = await supabase
     .from("channel_sessions")
-    .select("id,name")
+    .select("id,display_name")
     .eq("organization_id", activeOrg.orgId)
-    .order("name");
+    .order("display_name");
   const row = (data ?? null) as OrgRow | null;
   const lostReasonsExtra = (
     row?.settings &&
@@ -69,7 +69,10 @@ export default async function TenantSettingsPage() {
       </header>
       {row && (
         <TenantForm
-          channels={(channels ?? []) as Array<{ id: string; name: string }>}
+          channels={(channels ?? []).map((channel, index) => ({
+            id: channel.id,
+            name: channel.display_name || `Canal ${index + 1}`,
+          }))}
           initial={{
             form_proactivity: lerProatividade(row.settings),
             business_profile: businessProfileSchema

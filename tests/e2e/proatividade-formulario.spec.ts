@@ -9,6 +9,7 @@ const svc = createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
   auth: { persistSession: false },
 });
 const orgId = randomUUID();
+const channelId = randomUUID();
 const email = `proactivity-${orgId}@example.test`;
 const password = "Synthetic-Proactivity-2026!";
 let userId: string;
@@ -16,24 +17,30 @@ test.beforeAll(async () => {
   const { data, error } = await svc.auth.admin.createUser({ email, password, email_confirm: true });
   if (error || !data.user) throw new Error("Falha no seed sintético");
   userId = data.user.id;
-  const org = await svc
-    .from("organizations")
-    .insert({
-      id: orgId,
-      slug: `proactivity-${orgId}`,
-      legal_name: "Proatividade sintética",
-      display_name: "Proatividade sintética",
-    });
+  const org = await svc.from("organizations").insert({
+    id: orgId,
+    slug: `proactivity-${orgId}`,
+    legal_name: "Proatividade sintética",
+    display_name: "Proatividade sintética",
+  });
   if (org.error) throw org.error;
-  const membership = await svc
-    .from("user_organizations")
-    .insert({
-      user_id: userId,
-      organization_id: orgId,
-      role: "admin",
-      accepted_at: new Date().toISOString(),
-    });
+  const membership = await svc.from("user_organizations").insert({
+    user_id: userId,
+    organization_id: orgId,
+    role: "admin",
+    accepted_at: new Date().toISOString(),
+  });
   if (membership.error) throw membership.error;
+  const channel = await svc
+    .from("channel_sessions")
+    .insert({
+      id: channelId,
+      organization_id: orgId,
+      display_name: "Canal sintético",
+      waha_session_name: `lote2-${orgId}`,
+      webhook_secret_encrypted: "\\x00",
+    });
+  if (channel.error) throw channel.error;
 });
 test.afterAll(async () => {
   await svc.from("organizations").delete().eq("id", orgId);
@@ -46,13 +53,13 @@ test("primeiro contato nasce desligado e permite editar textos sem ativar envios
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(password);
   await page.getByRole("button", { name: /entrar/i }).click();
-  await page.waitForURL(/\/app\//);
-  await page.goto("/app/settings/tenant");
+  await page.waitForURL(/\/app\/settings\/tenant(?:\?|$)/);
   const field = page
     .getByRole("group", { name: "Primeiro contato de formulário" })
     .filter({ visible: true });
   await expect(field.getByRole("checkbox")).not.toBeChecked();
   await expect(field.locator("#proactive-attempts")).toHaveValue("3");
+  await field.locator("#proactive-channel").selectOption({ label: "Canal sintético" });
   await field
     .locator("#proactive-whatsapp")
     .fill("Olá! Recebemos seu formulário. Como podemos ajudar?");
@@ -65,6 +72,7 @@ test("primeiro contato nasce desligado e permite editar textos sem ativar envios
     .click();
   await expect(page.getByText("Organização atualizada.", { exact: true })).toBeVisible();
   await page.reload();
+  await expect(field.locator("#proactive-channel")).toHaveValue(channelId);
   await expect(field.getByRole("checkbox")).not.toBeChecked();
   await expect(field.locator("#proactive-whatsapp")).toHaveValue(
     "Olá! Recebemos seu formulário. Como podemos ajudar?",
