@@ -22,6 +22,7 @@ test.beforeAll(async () => {
     slug: `proactivity-${orgId}`,
     legal_name: "Proatividade sintética",
     display_name: "Proatividade sintética",
+    onboarded_at: new Date().toISOString(),
   });
   if (org.error) throw org.error;
   const membership = await svc.from("user_organizations").insert({
@@ -57,7 +58,7 @@ test("primeiro contato nasce desligado e permite editar textos sem ativar envios
   const field = page
     .getByRole("group", { name: "Primeiro contato de formulário" })
     .filter({ visible: true });
-  await field.waitFor({state:"visible"});
+  await field.waitFor({ state: "visible" });
   await expect(field.getByRole("checkbox")).not.toBeChecked();
   await expect(field.locator("#proactive-attempts")).toHaveValue("3");
   await field.locator("#proactive-channel").selectOption({ label: "Canal sintético" });
