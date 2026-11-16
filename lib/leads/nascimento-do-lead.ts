@@ -1,3 +1,4 @@
+import { formularioAbertoDoContato } from "./formulario-existente";
 /**
  * A CONVERSA VIRA LEAD — o elo que faltava (spec 17 §3).
  *
@@ -77,6 +78,7 @@ const ROTULO_DE_ANUNCIO: Record<string, string> = {
  * "não devia nascer" de "falhou ao nascer", e a segunda é a que custa caro.
  */
 export type MotivoSemLead =
+  | "formulario_existente" // conversa vinculada à captação já aberta, independentemente da idade
   | "negocio_aberto" // já havia negócio aberto no mesmo funil; a mensagem entrou nele
   | "janela_reenvio" // a corrida do primeiro card alimentou o que venceu o índice
   | "contato_bloqueado" // pediu para sair; criar oportunidade seria desrespeito registrado
@@ -193,6 +195,21 @@ export async function garantirLeadDaConversa(
     });
     return { criado: false, motivo, leadId, colisao };
   };
+
+  // Formulário → WhatsApp é continuidade da captação, não uma nova demanda.
+  // A busca não depende da idade do card nem da etapa escolhida pelo humano.
+  try {
+    const formLead = await formularioAbertoDoContato(db, organizationId, contactId);
+    if (formLead) {
+      await emitLeadActivity(db, { organizationId, leadId: formLead, contactId,
+        type: "lead_merged", sourceModule: "canal.ingest", sourceId: conversationId,
+        actor: { type: "webhook_source", id: "canal-inbound" },
+        reason: "Conversa recebida vinculada à captação já aberta.", payload: { conversation_id: conversationId } });
+      return { criado: false, motivo: "formulario_existente", leadId: formLead };
+    }
+  } catch (error) {
+    return { criado: false, motivo: "erro", detalhe: error instanceof Error ? error.message : "form_lead_lookup_failed" };
+  }
 
   // 2 · onde a mensagem entraria. Sem funil ou sem etapa não há o que reaproveitar
   // neste caminho: um negócio aberto em outro funil não é o desta entrada.

@@ -744,3 +744,18 @@ describe("a etapa de entrada nunca é uma etapa de fechamento", () => {
     expect(rows[0]!.is_lost).toBe(false);
   });
 });
+
+
+describe("continuidade formulário → WhatsApp", () => {
+ it("reusa captação antiga e preserva a etapa humana", async () => {
+  const contact = await criarContato(ORG_VIVA, "Captação descartável");
+  const destination = await funilDeEntrada(db, ORG_VIVA);
+  if ("erro" in destination) throw new Error(destination.erro);
+  const inserted = await pool.query<{ id: string }>(`insert into crm_leads(organization_id,pipeline_id,stage_id,contact_id,title,source,created_at) values($1,$2,$3,$4,'Captação de teste','webhook',now()-interval '30 days') returning id`,[ORG_VIVA,destination.pipelineId,destination.stageId,contact]);
+  const id = inserted.rows[0]!.id;
+  const result = await garantirLeadDaConversa(db,{ organizationId:ORG_VIVA,contactId:contact,conversationId:CONVERSA,nomeDoContato:null });
+  expect(result).toMatchObject({ criado:false,motivo:"formulario_existente",leadId:id });
+  const after = await pool.query(`select id,stage_id,status from crm_leads where organization_id=$1 and contact_id=$2`,[ORG_VIVA,contact]);
+  expect(after.rows).toEqual([{ id,stage_id:destination.stageId,status:"open" }]);
+ });
+});
