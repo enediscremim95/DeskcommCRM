@@ -18,7 +18,10 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: mocks.send }));
 vi.mock("@/lib/atendimento/origem", () => ({ serviceForEvent: mocks.boundary }));
 vi.mock("@/lib/email/resend", () => ({ sendEmail: mocks.email }));
-vi.mock("@/lib/channels", () => ({ CHANNEL_SESSION_REF_COLUMNS: "provider" }));
+vi.mock("@/lib/channels", () => ({
+  CHANNEL_SESSION_REF_COLUMNS: "provider",
+  getAdapter: () => ({ codes: { notConfigured: "not_configured" } }),
+}));
 vi.mock("@/lib/channels/telefone-formulario", () => ({
   validarTelefoneFormulario: mocks.validate,
 }));
@@ -202,5 +205,27 @@ describe("handler real com transportes mockados", () => {
     await processarFormulario(f.db, { ...event("a"), created_at: "2026-11-15T12:00Z" }, now);
     expect(mocks.send).not.toHaveBeenCalled();
     expect(mocks.email).not.toHaveBeenCalled();
+  });
+  it("canal sem configuração avança até e-mail", async () => {
+    const f = fixture("a");
+    mocks.send.mockResolvedValue({
+      status: "queued",
+      metadata: { queued_reason: "not_configured" },
+    });
+    for (let i = 0; i < 3; i++) await processarFormulario(f.db, event("a"), now);
+    expect(mocks.email).toHaveBeenCalledOnce();
+    expect(f.tables.form_proactivity_attempts!.map((a) => a.outcome)).toEqual([
+      "failed",
+      "failed",
+      "sent",
+    ]);
+  });
+  it("queued incerto pede atenção sem repetir", async () => {
+    const f = fixture("a");
+    mocks.send.mockResolvedValue({ status: "queued", metadata: {} });
+    for (let i = 0; i < 2; i++) await processarFormulario(f.db, event("a"), now);
+    expect(mocks.send).toHaveBeenCalledOnce();
+    expect(mocks.email).not.toHaveBeenCalled();
+    expect(f.rpc).toHaveBeenCalled();
   });
 });

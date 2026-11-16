@@ -6,7 +6,7 @@ import { serviceForEvent } from "@/lib/atendimento/origem";
 import { espacarEnvio } from "@/lib/automation/throttle";
 import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
 import { sendEmail } from "@/lib/email/resend";
-import { CHANNEL_SESSION_REF_COLUMNS, type ChannelSessionRef } from "@/lib/channels";
+import { CHANNEL_SESSION_REF_COLUMNS, getAdapter, type ChannelSessionRef } from "@/lib/channels";
 import { validarTelefoneFormulario } from "@/lib/channels/telefone-formulario";
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
 import { ATENCAO_CONTATO, lerProatividade } from "./config";
@@ -235,8 +235,20 @@ export async function processarFormulario(
             actor: { type: "webhook_source", id: KEY },
             requestId: `form:${lead.id}:${phase}`,
           },
-          { conversation_id: boundary.conversation_id, type: "text", body: config.whatsapp_text },
+          {
+            conversation_id: boundary.conversation_id,
+            type: "text",
+            body: config.whatsapp_text,
+            metadata: { form_proactivity_lead_id: lead.id, form_proactivity_phase: phase },
+          },
         );
+        // queued por falta de configuração significa que não houve transmissão.
+        if (
+          message.status === "queued" &&
+          message.metadata?.queued_reason ===
+            getAdapter((session as unknown as ChannelSessionRef).provider).codes.notConfigured
+        )
+          return "failed";
         if (
           message.status === "failed" &&
           /timeout|timed out|fetch failed|ECONNRESET|abort/i.test(message.error_message ?? "")
