@@ -37,6 +37,10 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Chamar este número": { es: "Llamar a este número" },
+  "IA inicia a conversa": { es: "La IA inicia la conversación" },
+  "Informe o número com DDD. O contato e o lead existente serão reutilizados.": { es: "Indica el número con código de área. Se reutilizarán el contacto y el lead existentes." },
+  "Depende da proatividade da organização e do horário comercial. Contatos bloqueados ou com conversa em andamento não recebem primeiro contato.": { es: "Depende de la proactividad de la organización y del horario comercial. Los contactos bloqueados o con una conversación en curso no reciben el primer contacto." },
   "Primeiro contato salvo.": { es: "Primer contacto guardado." },
   "Não foi possível salvar o primeiro contato.": { es: "No se pudo guardar el primer contacto." },
   "Primeiro contato após formulário": { es: "Primer contacto tras el formulario" },

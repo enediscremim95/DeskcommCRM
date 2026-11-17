@@ -170,13 +170,13 @@ export function NewLeadDialog({
           {!contactId && <div className="space-y-2">
             <Label htmlFor="phone_number">{t("Chamar este número")}</Label>
             <Input id="phone_number" type="tel" placeholder="+55 41 99999-9999" {...form.register("phone_number")} />
-            <p className="text-xs text-muted-foreground">Informe o número com DDD. O contato e o lead existente serão reutilizados.</p>
+            <p className="text-xs text-muted-foreground">{t("Informe o número com DDD. O contato e o lead existente serão reutilizados.")}</p>
           </div>}
           <label className="flex items-center gap-2">
             <input type="checkbox" {...form.register("ai_starts_conversation")} />
             {t("IA inicia a conversa")}
           </label>
-          <p className="text-xs text-muted-foreground">Depende da proatividade da organização e do horário comercial. Contatos bloqueados ou com conversa em andamento não recebem primeiro contato.</p>
+          <p className="text-xs text-muted-foreground">{t("Depende da proatividade da organização e do horário comercial. Contatos bloqueados ou com conversa em andamento não recebem primeiro contato.")}</p>
           <div className="space-y-2">
             <Label htmlFor="description">{t("Descrição")}</Label>
             <Textarea
