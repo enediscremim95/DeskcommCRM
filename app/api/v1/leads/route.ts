@@ -48,7 +48,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     const quickKey = contact ? `quick:${input.pipeline_id}:${contact}` : null;
     const existing = quickKey ? await existingQuickLead(activeOrg.orgId, quickKey, contact!, input.pipeline_id) : null;
     if (existing) {
-      await audit({ action: "lead.quick_reused", actorUserId: authUser.id, organizationId: activeOrg.orgId, resourceType: "crm_lead", resourceId: String(existing.id), requestId });
+      const existingId = String(existing.id);
+      await audit({ action: "lead.quick_reused", actorUserId: authUser.id, organizationId: activeOrg.orgId, resourceType: "crm_lead", resourceId: existingId, requestId });
       return ok(existing, { requestId });
     }
     let lead;
