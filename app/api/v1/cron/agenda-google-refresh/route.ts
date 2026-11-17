@@ -96,7 +96,11 @@ export async function renovarAgendasDoGoogle(
     .select(
       "id, organization_id, user_id, account_email, status, token_expires_at, oauth_access_token_encrypted, oauth_refresh_token_encrypted, scopes",
     )
-    .in("status", ["healthy", "rate_limited"])
+    // `error` entra de propósito: a 6c9f9cd48 (antes da 3cb6f34d3) rebaixava a
+    // conexão inteira por falha de um evento isolado, e o cron de sync só lê
+    // `healthy` — quem foi rebaixado ficava sem sincronizar para sempre. Token
+    // renovado com sucesso devolve a conexão a `healthy`.
+    .in("status", ["healthy", "rate_limited", "error"])
     .not("token_expires_at", "is", null)
     .lte("token_expires_at", limite)
     .order("token_expires_at", { ascending: true })
