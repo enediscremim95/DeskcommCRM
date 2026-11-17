@@ -118,6 +118,7 @@ test.describe("gestão de funis", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("checkbox", { name: "IA inicia a conversa" })).toBeChecked();
     await dialog.getByLabel("Chamar este número").fill("+55 41 99979-9652");
+    await page.screenshot({ path: path.join(EVIDENCIA, "funis-primeiro-contato-opcao.png"), fullPage: true });
     await dialog.getByRole("checkbox", { name: "IA inicia a conversa" }).uncheck();
     const created = page.waitForResponse((r) => r.url().endsWith("/api/v1/leads") && r.request().method() === "POST");
     await dialog.getByRole("button", { name: "Criar lead", exact: true }).click();

@@ -34,11 +34,11 @@ describe.each(Array.from({ length: 8 }, (_, i) => i + 1))("reserva SQL: organiza
  ])("nega antes de qualquer reserva: %s", (patch) => {
    expect(sql(setup + `${patch} where organization_id='${org}'; select ${claim()}; rollback;`.replace("update organizations set settings='{}' where organization_id", "update organizations set settings='{}' where id"))).toBe("f");
  });
- it("conversa ativa e mensagens recentes em alias bloqueiam", () => {
+ it.each(["open", "closed"])("conversa %s com mensagem recente em alias bloqueia", (status) => {
    const alias = id(9);
    const result = sql(setup + `insert into contacts(id,organization_id,phone_number) values('${alias}','${org}','+554190000100');
  insert into channel_sessions(id,organization_id,display_name,waha_session_name,status,webhook_secret_encrypted) values('${channel}','${org}','Teste','claim-${n}','WORKING','\\x00');
- insert into conversations(organization_id,contact_id,channel_session_id,status) values('${org}','${alias}','${channel}','open');
+ insert into conversations(organization_id,contact_id,channel_session_id,status,last_message_at) values('${org}','${alias}','${channel}','${status}',now());
  select public.fn_capture_contact_claim('${org}','${event}','${contact}','${phone}',array['${phone}','+554190000100']); rollback;`);
    expect(result).toBe("f");
  });
