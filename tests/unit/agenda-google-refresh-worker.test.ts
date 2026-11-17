@@ -43,6 +43,7 @@ const AGORA = new Date("2026-08-26T12:00:00.000Z");
 
 /** As atualizações que a rodada mandou ao banco, por id de conexão. */
 let atualizacoes: Array<{ id: string; campos: Record<string, unknown> }> = [];
+let statusConsultados: string[] = [];
 let avisos: Array<Record<string, unknown>> = [];
 let linhas: Array<Record<string, unknown>> = [];
 /** Vínculos de `user_organizations`: por padrão a pessoa é membro ATIVO. */
@@ -63,7 +64,7 @@ function admin() {
       }
       const consulta = {
         select: () => consulta,
-        in: () => consulta,
+        in: (coluna: string, valores: string[]) => { if (coluna === "status") statusConsultados = valores; return consulta; },
         not: () => consulta,
         lte: () => consulta,
         order: () => consulta,
@@ -164,6 +165,18 @@ describe("renovarAgendasDoGoogle", () => {
       token_expires_at: "2026-08-26T12:59:59.000Z",
       status: "healthy",
     });
+  });
+
+  it("recupera conexão rebaixada para `error` por falha antiga de evento (regressão: sync Google parado)", async () => {
+    linhas = [conexao({ status: "error" })];
+    vi.mocked(fetch).mockResolvedValue(respostaHttp({ access_token: "ya29.novo", expires_in: 3599 }));
+
+    const { renovarAgendasDoGoogle } = await carregarWorker();
+    const resumo = await renovarAgendasDoGoogle(admin(), { agora: AGORA });
+
+    expect(statusConsultados).toContain("error");
+    expect(resumo.renovadas).toBe(1);
+    expect(atualizacoes[0]?.campos).toMatchObject({ status: "healthy", last_sync_error: null });
   });
 
   it("NUNCA escreve na coluna do refresh — é ela que faz a conexão sobreviver", async () => {
