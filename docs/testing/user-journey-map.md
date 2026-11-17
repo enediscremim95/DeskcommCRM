@@ -2102,3 +2102,8 @@ da execução E2E em ambiente local completo.
 ### Correções compartilhadas de CI — 2026-11-16
 
 Agenda: a confirmação precisa manter o horário oferecido pela grade também em navegador UTC com regra America/Sao_Paulo (`agenda-grade-interativa`). Suporte somente leitura não busca `draft-reply` (`suporte-temporario`). Troca de organização aguarda o destino final `/app/pipelines/`, inclusive após `/app/kanban`, antes de navegar para Inbox/Agenda. Seletores de tela exigem unicidade entre elementos visíveis; rotas ocultas preservadas pelo App Router não são a tela atual. Asserções e cobertura permanecem ativas.
+
+
+### 17/11/2026 — Primeiro contato manual
+
+P0: `pipelines-gestao.spec.ts` abre Novo Lead, verifica IA marcada por padrão, cria só pelo telefone com IA desmarcada e repete com variante do nono dígito sem duplicar o lead. `manual-capture-claim.test.ts` cobre oito organizações sintéticas, reserva, opt-out, histórico e escopo. Execução e evidência visual exclusivamente no CI.

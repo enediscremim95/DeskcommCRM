@@ -12,6 +12,8 @@ import { createLeadSchema, validateRequest, type CreateLeadInput } from "@/lib/s
 import { createClient } from "@/lib/supabase/server";
 
 import { createLeadHandler } from "./_handler";
+import { quickContact, existingQuickLead } from "@/lib/proactivity/quick-contact";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +44,16 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supabase = await createClient();
 
   try {
-    const lead = await createLeadHandler(
+    const contact = input.phone_number ? await quickContact(activeOrg.orgId, input.phone_number, requestId) : null;
+    const quickKey = contact ? `quick:${input.pipeline_id}:${contact}` : null;
+    const existing = quickKey ? await existingQuickLead(activeOrg.orgId, quickKey) : null;
+    if (existing) {
+      await audit({ action: "lead.quick_reused", actorUserId: authUser.id, organizationId: activeOrg.orgId, resourceType: "crm_lead", resourceId: String(existing.id), requestId });
+      return ok(existing, { requestId });
+    }
+    let lead;
+    try {
+    lead = await createLeadHandler(
       supabase,
       {
         organization_id: activeOrg.orgId,
@@ -50,8 +61,14 @@ export async function POST(req: NextRequest): Promise<Response> {
         requestId,
         idioma: authUser.idioma,
       },
-      input as CreateLeadInput,
+      { ...input as CreateLeadInput, ...(contact ? { source: "manual", contact_id: contact, external_id: quickKey! } : {}) },
     );
+    } catch (err) {
+      // A constraint org/source/external_id arbitra requisições concorrentes.
+      const winner = quickKey ? await existingQuickLead(activeOrg.orgId, quickKey) : null;
+      if (!winner) throw err;
+      lead = winner;
+    }
     return ok(lead, { requestId, status: 201 });
   } catch (err) {
     if (err instanceof ApiError) {

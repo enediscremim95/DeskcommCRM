@@ -1,3 +1,4 @@
+import { claimCapture } from "@/lib/proactivity/capture-claim";
 import { proactiveDecision, proactivePolicy } from "@/lib/proactivity/policy";
 import type { JobClaim } from "@/lib/agent-engine/queue/claim";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -9,6 +10,7 @@ import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 /** Somente contexto interno: não é aceito pelo schema de mensagens/tools. */
 export interface ProactiveContext {
   automaticSilence?: boolean;
+  captureClaim?: import("@/lib/proactivity/capture-claim").CaptureClaim;
   organizationId: string;
   contactId: string;
   enrollmentId?: string;
@@ -18,6 +20,14 @@ export interface ProactiveContext {
 }
 const effects = new AsyncLocalStorage<{ db: Queryable; context: ProactiveContext }>();
 export async function assertAgendaEffectPg(db: Queryable, c: ProactiveContext): Promise<void> {
+  if (c.captureClaim) {
+    const { canonicalPhoneBR, phoneLookupVariants } = await import("@/lib/channels/phone-variants");
+    const { rows } = await db.query<{ allowed: boolean }>(
+      "select public.fn_capture_contact_claim($1,$2,$3,$4,$5) as allowed",
+      [c.organizationId, c.captureClaim.eventId, c.contactId, canonicalPhoneBR(c.captureClaim.phone), phoneLookupVariants(c.captureClaim.phone)],
+    );
+    if (!rows[0]?.allowed) throw new StaleServiceBoundaryError();
+  }
   if (c.jobId) {
     if (!c.jobClaim) throw new StaleServiceBoundaryError();
     const { rows } = await db.query<{ current: boolean }>(
@@ -57,6 +67,7 @@ export async function assertAgendaEffectSupabase(
   db: SupabaseClient,
   c: ProactiveContext,
 ): Promise<void> {
+  if (c.captureClaim && !await claimCapture(db, c.organizationId, c.contactId, c.captureClaim)) throw new StaleServiceBoundaryError();
   if (c.jobId) {
     if (!c.jobClaim) throw new StaleServiceBoundaryError();
     const { data, error } = await db.rpc("fn_followup_claim_current", {

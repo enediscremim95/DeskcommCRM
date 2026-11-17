@@ -78,6 +78,8 @@ export const createLeadSchema = z.object({
     .optional(),
   tags: z.array(z.string()).default([]),
   source: z.string().min(1).default("manual"),
+  ai_starts_conversation: z.boolean().optional(),
+  phone_number: z.string().trim().min(8).max(40).optional(),
 });
 export type CreateLeadInput = z.infer<typeof createLeadSchema>;
 
