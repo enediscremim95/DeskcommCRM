@@ -186,7 +186,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
         deduplicateInternalMessage: !!ctx.internalMessageId,
         organization_id: ctx.organizationId,
         serviceBoundary: boundary,
-        proactiveContext: { organizationId: ctx.organizationId, contactId: contact.id },
+        proactiveContext: { organizationId: ctx.organizationId, contactId: contact.id, captureClaim: ctx.captureClaim },
         actor: { type: "webhook_source", id: ctx.ruleId },
         requestId: ctx.internalMessageId ? ctx.requestId : `rule:${ctx.ruleId}`,
         ...(ctx.internalMessageId ? { internalMessageId: ctx.internalMessageId } : {}),

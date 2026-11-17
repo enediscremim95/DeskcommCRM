@@ -17,6 +17,7 @@
   ],
   "mainPath": ["leadstate", "atividades", "slot", "decisao", "fila", "leads"],
   "nodes": [
+    { "id": "primeirocontato", "lane": "fila", "col": 4, "type": "service", "label": "Primeiro contato manual/formulário", "sublabel": "intenção · reserva org/telefone · expediente · opt-out" },
     { "id": "card", "lane": "humano", "col": 3, "type": "frontend", "label": "Card do Kanban", "sublabel": "5 elementos · altura constante" },
     { "id": "slot", "lane": "humano", "col": 2, "type": "frontend", "label": "O slot (faixa ③)", "sublabel": "aguardando > esfriando > normal" },
     { "id": "dossie", "lane": "humano", "col": 4, "type": "frontend", "label": "Tela do lead", "sublabel": "dados + anotações + timeline única + resposta" },
@@ -57,6 +58,9 @@
     { "id": "inbox", "lane": "fora", "col": 4, "type": "frontend", "label": "agent_inbox_items", "sublabel": "demanda sem dono não mora no Kanban" }
   ],
   "edges": [
+    { "id": "e72", "from": "leads", "to": "primeirocontato", "label": "lead.created canônico" },
+    { "id": "e73", "from": "primeirocontato", "to": "mensagens", "label": "envio protegido e idempotente" },
+    { "id": "e74", "from": "primeirocontato", "to": "atividades", "label": "tentativa na timeline" },
     { "id": "e1", "from": "ritual", "to": "leadstate", "label": "escreve estágio e next_action" },
     { "id": "e2", "from": "ritual", "to": "checkpoints", "label": "grava o turno" },
     { "id": "e3", "from": "ritual", "to": "traces", "label": "registra portões e veto" },

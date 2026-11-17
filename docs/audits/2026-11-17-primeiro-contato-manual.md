@@ -1,0 +1,5 @@
+CONFIRMADO pelo desenho implementado: NewLeadDialog → POST /leads → lead.created → captureProactivityHandler → sendMessageHandler; a timeline recebe emitLeadActivity. A entrada por telefone reutiliza a identidade canônica BR e uma chave única por contato/funil. A opção manual fica em source_metadata, sem backfill para leads antigos.
+
+A reserva SQL por org/telefone impede eventos concorrentes e revalida política, opt-out e histórico antes do transporte. Conserva a proteção existente contra qualquer inbound; conversa ativa ou mensagem dos últimos 72h também bloqueia. A janela de 72h acompanha o teto já existente da captura. Reserva não expira: este fluxo é de primeiro contato, não reativação. Horário segue captureBusinessHours. Falha continua na máquina de captura e na tag de atenção visível no Kanban; atendimento humano interrompe pelo fluxo existente. Configuração permanece em Distribuição de atendimento; a intenção por cadastro pode ser desmarcada. Não altera etapa, Alana ou ponteiros de follow-up.
+
+Validação pendente exclusivamente no GitHub Actions, conforme instrução operacional. Nenhum teste, lint, typecheck, Playwright ou build é executado na VPS.

@@ -369,3 +369,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261116170000` | `0311_silence_origin` | Identifica matrículas automáticas por silêncio para opt-in por organização no envio. |
 | `20261116150000` | `0310_kanban_decisao_humana` | IA/automação só insere na entrada; serviço não muda etapa, pipeline nem desfecho. |
 | `20261116180000` | `0312_kanban_so_avanca` | Troca a trava total da 0310: serviço só muda etapa para a frente (posição maior, mesmo funil, fora de Ganho/Perdido/arquivada); retrocesso levanta `kanban_only_forward`; pipeline/status/fechamento seguem só humanos. Reversível (corpo da 0310 no cabeçalho). |
+
+| `20261117143000` | `0313_manual_capture_claim` | Primeiro contato manual: reserva por organização/telefone e guarda de histórico/opt-out no envio. |

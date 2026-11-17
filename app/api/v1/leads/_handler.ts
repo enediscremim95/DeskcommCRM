@@ -325,7 +325,7 @@ export async function createLeadHandler(
       expected_close_date: input.expected_close_date ?? null,
       tags: input.tags ?? [],
       source: input.source,
-      source_metadata: input.source_metadata ?? {},
+      source_metadata: { ...(input.source_metadata ?? {}), ...(input.source === "manual" ? { ai_starts_conversation: input.ai_starts_conversation !== false } : {}) },
       external_id: input.external_id ?? null,
       reentry_guard_until: input.reentry_guard_until ?? null,
       reentry_guard_key: input.reentry_guard_key ?? null,

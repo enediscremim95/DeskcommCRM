@@ -31,6 +31,8 @@ import { EcoDoValor } from "./EcoDoValor";
 
 interface FormShape {
   title: string;
+  phone_number: string;
+  ai_starts_conversation: boolean;
   description: string;
   stage_id: string;
   valueReais: string;
@@ -69,6 +71,8 @@ export function NewLeadDialog({
   const form = useForm<FormShape>({
     defaultValues: {
       title: "",
+      phone_number: "",
+      ai_starts_conversation: true,
       description: "",
       stage_id: initialStage,
       valueReais: "",
@@ -103,7 +107,9 @@ export function NewLeadDialog({
     const payload: Record<string, unknown> = {
       pipeline_id: pipelineId,
       stage_id: values.stage_id,
-      title: values.title.trim(),
+      title: values.title.trim() || "Contato solicitado",
+      ai_starts_conversation: values.ai_starts_conversation,
+      ...(values.phone_number.trim() && !contactId ? { phone_number: values.phone_number.trim() } : {}),
       currency: "BRL",
       source: "manual",
       tags,
@@ -126,6 +132,8 @@ export function NewLeadDialog({
       onCreated?.();
       form.reset({
         title: "",
+        phone_number: "",
+        ai_starts_conversation: true,
         description: "",
         stage_id: initialStage,
         valueReais: "",
@@ -155,10 +163,20 @@ export function NewLeadDialog({
             <Input
               id="title"
               placeholder="Ex: Pedido Maria — combo presente"
-              {...form.register("title", { required: true, minLength: 2 })}
+              {...form.register("title")}
             />
           </div>
 
+          {!contactId && <div className="space-y-2">
+            <Label htmlFor="phone_number">{t("Chamar este número")}</Label>
+            <Input id="phone_number" type="tel" placeholder="+55 41 99999-9999" {...form.register("phone_number")} />
+            <p className="text-xs text-muted-foreground">{t("Informe o número com DDD. O contato e o lead existente serão reutilizados.")}</p>
+          </div>}
+          <label className="flex items-center gap-2">
+            <input type="checkbox" {...form.register("ai_starts_conversation")} />
+            {t("IA inicia a conversa")}
+          </label>
+          <p className="text-xs text-muted-foreground">{t("Depende da proatividade da organização e do horário comercial. Contatos bloqueados ou com conversa em andamento não recebem primeiro contato.")}</p>
           <div className="space-y-2">
             <Label htmlFor="description">{t("Descrição")}</Label>
             <Textarea
