@@ -41,7 +41,7 @@ export const captureProactivityHandler: EventHandler = {
    if (now.getTime() < readyAt) return { consumer_key: KEY, status: "retry", retry_at: new Date(readyAt).toISOString(), detail: "initial_delay" };
   }
   if (!captureBusinessHours(policy, now)) return { consumer_key: KEY, status: "retry", retry_at: new Date(now.getTime()+15*60_000).toISOString(), detail: "outside_business_hours" };
-  if (!contact.phone_number || !await claimCapture(db, row.organization_id, contact.id, { eventId: row.id, phone: contact.phone_number })) return { consumer_key: KEY, status: "skipped", detail: "contact_ineligible_or_claimed" };
+  if ((!contact.phone_number && lead.source === "manual") || (contact.phone_number && !await claimCapture(db, row.organization_id, contact.id, { eventId: row.id, phone: contact.phone_number }))) return { consumer_key: KEY, status: "skipped", detail: "contact_ineligible_or_claimed" };
   const saved = row.metadata.capture_proactivity as CaptureProgress | undefined;
   let state: CaptureProgress = saved && ["whatsapp","corrected","email","attention","done"].includes(saved.step) ? saved : { step: "whatsapp" };
   if (expired) state = { step: "attention" };
