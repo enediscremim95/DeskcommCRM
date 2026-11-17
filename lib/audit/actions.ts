@@ -44,6 +44,7 @@ export const AUDIT_ACTIONS = [
   "nuvemshop.webhook_received",
   "nuvemshop.webhook_invalid_signature",
   "lead.created",
+  "lead.quick_reused",
   "lead.updated",
   "lead.note_created",
   "lead.note_deleted",
