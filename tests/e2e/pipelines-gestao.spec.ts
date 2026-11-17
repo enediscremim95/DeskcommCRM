@@ -113,6 +113,31 @@ test.describe("gestão de funis", () => {
     }
     await page.screenshot({ path: path.join(EVIDENCIA, "funis-02-quadro-novo.png"), fullPage: true });
 
+    // O primeiro contato manual nasce na porta usada pela equipe.
+    await page.getByRole("button", { name: "Novo Lead", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("checkbox", { name: "IA inicia a conversa" })).toBeChecked();
+    await dialog.getByLabel("Chamar este número").fill("+55 41 99979-9652");
+    await dialog.getByRole("checkbox", { name: "IA inicia a conversa" }).uncheck();
+    const created = page.waitForResponse((r) => r.url().endsWith("/api/v1/leads") && r.request().method() === "POST");
+    await dialog.getByRole("button", { name: "Criar lead", exact: true }).click();
+    const response = await created;
+    expect(response.status()).toBe(201);
+    const firstLead = (await response.json()).data;
+    expect(firstLead.source_metadata.ai_starts_conversation).toBe(false);
+    await expect(dialog).toBeHidden();
+    await page.getByRole("button", { name: "Novo Lead", exact: true }).click();
+    await expect(dialog.getByRole("checkbox", { name: "IA inicia a conversa" })).toBeChecked();
+    await dialog.getByLabel("Chamar este número").fill("554199799652");
+    const reused = page.waitForResponse((r) => r.url().endsWith("/api/v1/leads") && r.request().method() === "POST");
+    await dialog.getByRole("button", { name: "Criar lead", exact: true }).click();
+    const repeated = await reused;
+    expect(repeated.status()).toBe(200);
+    expect((await repeated.json()).data.id).toBe(firstLead.id);
+    await expect(dialog).toBeHidden();
+    await page.screenshot({ path: path.join(EVIDENCIA, "funis-primeiro-contato-manual.png"), fullPage: true });
+
+
     await page.goto("/app/kanban?lista=1");
 
     // ---- renomear ----
