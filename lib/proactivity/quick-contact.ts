@@ -25,8 +25,13 @@ export async function quickContact(org: string, raw: string, requestId: string):
   }
   throw new ApiError(500, "internal_error", undefined, requestId);
 }
-export async function existingQuickLead(org: string, key: string): Promise<Record<string, unknown> | null> {
+export async function existingQuickLead(org: string, key: string, contact?: string, pipeline?: string): Promise<Record<string, unknown> | null> {
   const result = await createAdminClient().from("crm_leads").select("*").eq("organization_id", org).eq("source", "manual").eq("external_id", key).maybeSingle();
   if (result.error) throw new ApiError(500, "internal_error", undefined, "quick-contact");
-  return result.data;
+  if (result.data || !contact || !pipeline) return result.data;
+  const existing = await createAdminClient().from("crm_leads").select("*").eq("organization_id", org)
+    .eq("contact_id", contact).eq("pipeline_id", pipeline).eq("status", "open")
+    .order("created_at").limit(1).maybeSingle();
+  if (existing.error) throw new ApiError(500, "internal_error", undefined, "quick-contact");
+  return existing.data;
 }

@@ -46,7 +46,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     const contact = input.phone_number ? await quickContact(activeOrg.orgId, input.phone_number, requestId) : null;
     const quickKey = contact ? `quick:${input.pipeline_id}:${contact}` : null;
-    const existing = quickKey ? await existingQuickLead(activeOrg.orgId, quickKey) : null;
+    const existing = quickKey ? await existingQuickLead(activeOrg.orgId, quickKey, contact!, input.pipeline_id) : null;
     if (existing) {
       await audit({ action: "lead.quick_reused", actorUserId: authUser.id, organizationId: activeOrg.orgId, resourceType: "crm_lead", resourceId: String(existing.id), requestId });
       return ok(existing, { requestId });
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
     } catch (err) {
       // A constraint org/source/external_id arbitra requisições concorrentes.
-      const winner = quickKey ? await existingQuickLead(activeOrg.orgId, quickKey) : null;
+      const winner = quickKey ? await existingQuickLead(activeOrg.orgId, quickKey, contact!, input.pipeline_id) : null;
       if (!winner) throw err;
       lead = winner;
     }
