@@ -189,7 +189,8 @@ test.describe("histórico de leads captados", () => {
     // (`webhook_events_log`) não tem: lá a policy é org-flat.
     await login(page, creds.users.viewer!.email);
     await page.goto(`${APP_URL}/app/webhooks`);
-    await page.waitForURL(/\/app\/(inbox|403)/);
+    // Sem permissão, a tela devolve ao pouso padrão (Funis); 403 também vale.
+    await page.waitForURL(/\/app\/(kanban|pipelines|inbox|403)/);
     expect(page.url()).not.toMatch(/\/app\/webhooks/);
   });
 });

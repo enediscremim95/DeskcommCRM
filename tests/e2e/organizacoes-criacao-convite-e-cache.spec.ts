@@ -171,9 +171,15 @@ test("compatibilidade convite: org única oferece criação, responsável aceita
       // Encerre a interceptação da transição antes de iniciar as requisições
       // da próxima tela, evitando mudar a interceptação com o fetch em voo.
       await page.unroute("**/app/**");
-      const inboxResponse = page.waitForResponse(response =>
-        new URL(response.url()).pathname === "/api/v1/conversations" && response.request().method() === "GET",
-      );
+      // A lista principal, não a consulta das fixadas (`?pinned=true`) que o
+      // Inbox faz ao lado dela desde a fase 1B: essa volta vazia quando ninguém
+      // fixou nada e não diz nada sobre o isolamento entre organizações.
+      const inboxResponse = page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.pathname === "/api/v1/conversations"
+          && response.request().method() === "GET"
+          && !url.searchParams.has("pinned");
+      });
       await page.goto(`/app/inbox?filter=all&conversation=${selected}`);
       const inbox = await inboxResponse;
       expect(inbox.status()).toBe(200);

@@ -240,15 +240,16 @@ test.describe("navegação agrupada", () => {
 
       const dock = page.getByRole("navigation", { name: "Atalhos principais" });
       await expect(dock).toBeVisible();
-      // Inbox saiu do menu por decisão do dono em 17/09/2026. Ele continua
-      // sendo o pouso do login e o destino do Radar, mas não ocupa o dock.
+      // Inbox voltou ao menu por ordem do dono (06/11/2026), então volta também ao
+      // dock, que é a projeção das telas diárias do atendimento. O pouso do login
+      // continua sendo Funis.
       await expect(dock.getByRole("link")).toHaveText([
+        "Inbox",
         "Radar",
         "Funis",
         "Tarefas",
         "Configurações",
       ]);
-      await expect(dock.getByRole("link", { name: "Inbox" })).toHaveCount(0);
       await expect(dock.getByRole("link", { name: "Configurações" })).toHaveAttribute(
         "aria-current",
         "page",

@@ -193,7 +193,7 @@ describe("InboxFilters — seletor de número e o filtro órfão", () => {
 });
 
 describe("InboxFilters — duas leituras da Fila", () => {
-  it("abre por espera e oferece Recentes sem criar uma sexta aba", () => {
+  it("abre por espera, oferece Recentes e preserva a nova aba Favoritas", () => {
     setOrg("manager", "all");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
 
@@ -203,6 +203,7 @@ describe("InboxFilters — duas leituras da Fila", () => {
       "true",
     );
     expect(screen.getByRole("button", { name: "Recentes" })).toBeInTheDocument();
-    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(screen.getAllByRole("tab")).toHaveLength(6);
+    expect(screen.getByRole("tab", { name: "Favoritas" })).toBeInTheDocument();
   });
 });

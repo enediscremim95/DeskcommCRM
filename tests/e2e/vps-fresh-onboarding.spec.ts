@@ -343,7 +343,7 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await snap(page, "j1.9-done-recap");
 
     await page.getByRole("button", { name: /começar a usar/i }).click();
-    await page.waitForURL(/\/app\/inbox/, { timeout: 30_000 });
+    await page.waitForURL(/\/app\/(kanban|pipelines)/, { timeout: 30_000 });
 
     const org = await orgRow();
     expect(org.onboarded_at).not.toBeNull();
@@ -435,6 +435,6 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await page.waitForURL(/\/app\//, { timeout: 30_000 });
 
     await page.goto("/onboarding");
-    await page.waitForURL(/\/app\/inbox/, { timeout: 15_000 });
+    await page.waitForURL(/\/app\/(kanban|pipelines)/, { timeout: 15_000 });
   });
 });

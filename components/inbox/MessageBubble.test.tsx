@@ -229,3 +229,27 @@ describe("MessageBubble — copiar e saltar na citação", () => {
     expect(onGoToMessage).toHaveBeenCalledWith("message-outside-first-page");
   });
 });
+describe("MessageBubble, estrela pessoal", () => {
+  it("mantém a ação visível para toque e alterna a mensagem", () => {
+    const onToggleStar = vi.fn();
+    render(<MessageBubble message={msg()} onToggleStar={onToggleStar} />);
+    const botao = screen.getByRole("button", { name: "Favoritar mensagem" });
+    expect(botao.className).toContain("opacity-100");
+    fireEvent.click(botao);
+    expect(onToggleStar).toHaveBeenCalledWith(expect.objectContaining({ id: "m1" }));
+  });
+
+  it("mostra o indicador e a ação de remover quando já está favoritada", () => {
+    render(
+      <MessageBubble
+        message={msg({ starred_at: "2026-11-07T10:00:00.000Z" })}
+        onToggleStar={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Remover mensagem das favoritas" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByLabelText("Mensagem favorita")).toBeInTheDocument();
+  });
+});

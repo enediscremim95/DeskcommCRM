@@ -127,9 +127,8 @@ export const NAV_CATALOG = [
     description: "As conversas de WhatsApp, com você e a IA atendendo lado a lado.",
     icon: "Inbox",
     group: "atendimento",
-    // Fora do menu por decisão do dono (17/09/2026). A tela continua existindo
-    // porque é o destino de quem clica no Radar e o pouso de todo login.
-    sidebar: false,
+    // Acesso direto restaurado; o pouso do login continua sendo Funis.
+    sidebar: true,
   },
   {
     href: "/app/radar",

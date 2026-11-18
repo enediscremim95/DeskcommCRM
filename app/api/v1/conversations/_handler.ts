@@ -147,6 +147,29 @@ export async function listConversationsHandler(
   ctx: HandlerCtx,
   q: ListConversationsQuery,
 ): Promise<ListConversationsResult> {
+  let idsDoEstadoPessoal: string[] | null = null;
+  if (q.favorited || q.pinned) {
+    if (ctx.actor.type !== "user") {
+      throw new ApiError(400, "invalid_request", undefined, ctx.requestId, "Filtro pessoal requer usuário.");
+    }
+    let stateQuery = supabase
+      .from("inbox_user_conversation_state" as never)
+      .select("conversation_id")
+      .eq("organization_id", ctx.organization_id)
+      .eq("user_id", ctx.actor.id);
+    if (q.favorited) stateQuery = stateQuery.not("favorited_at", "is", null);
+    if (q.pinned) stateQuery = stateQuery.not("pinned_at", "is", null);
+    const { data: stateRows, error: stateError } = await stateQuery;
+    if (stateError) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, stateError.message);
+    }
+    idsDoEstadoPessoal = ((stateRows ?? []) as unknown as Array<{ conversation_id: string }>).map(
+      (row) => row.conversation_id,
+    );
+    if (idsDoEstadoPessoal.length === 0) {
+      return { conversations: [], cursor: null, has_more: false };
+    }
+  }
   // Fila (assigned_to=unassigned): ordena por TEMPO DE ESPERA — quem espera há
   // mais tempo primeiro. `last_inbound_at` = última mensagem do cliente = "há
   // quanto tempo aguarda resposta" (não `created_at`, que pode ser uma conversa
@@ -172,6 +195,8 @@ export async function listConversationsHandler(
     .order(sortCol, { ascending: asc, nullsFirst: false })
     .order("id", { ascending: asc })
     .limit(q.limit + 1);
+
+  if (idsDoEstadoPessoal) query = query.in("id", idsDoEstadoPessoal);
 
   // `.in` e não `.eq`: o filtro agora chega como LISTA (um valor vira lista de um,
   // e o SQL resultante é equivalente). É o que deixa a aba Fila pedir os dois
