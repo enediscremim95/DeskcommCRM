@@ -40,6 +40,7 @@ describe("família MCP de automação", () => {
     const result = (await crmDescribeAutomationOptions.handler({}, {} as McpContext)) as {
       triggers: unknown[];
       actions: unknown[];
+      conditions: { fields: readonly string[] };
       guards: Record<string, string>;
     };
     expect(result.triggers).toHaveLength(5);
@@ -48,6 +49,7 @@ describe("família MCP de automação", () => {
     expect(result.actions).toContainEqual(
       expect.objectContaining({ id: "send_whatsapp_message", faz: expect.stringContaining("{{saudacao}}") }),
     );
+    expect(result.conditions.fields).toContain("lead.source");
     const texto = `${crmCreateAutomationRule.description} ${Object.values(result.guards).join(" ")}`;
     expect(texto).toMatch(/janela de horário/i);
     expect(texto).toMatch(/limite/i);

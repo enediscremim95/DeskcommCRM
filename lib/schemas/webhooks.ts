@@ -14,9 +14,38 @@ export const TRIGGER_EVENTS = [
   "contact.tag_added",
 ] as const;
 
+/**
+ * Campos conhecidos pelo editor e pelo MCP. Caminhos avançados continuam
+ * aceitos para preservar as regras já existentes com custom_fields.
+ */
+export const AUTOMATION_CONDITION_FIELDS = [
+  "lead.title",
+  "lead.tags",
+  "lead.source",
+  "lead.source_metadata.utm_source",
+  "event.to_stage_id",
+  "event.body_preview",
+  "event.channel_session_id",
+  "event.added_tags",
+  "contact.tags",
+] as const;
+
+export const AUTOMATION_CONDITION_OPERATORS = [
+  "eq",
+  "neq",
+  "contains",
+  "not_contains",
+] as const;
+
 export const conditionSchema = z.object({
-  field: z.string().min(1).max(200),
-  op: z.enum(["eq", "neq", "contains", "not_contains"]),
+  field: z
+    .string()
+    .min(1)
+    .max(200)
+    .describe(
+      `Campo da condição. Vocabulário conhecido: ${AUTOMATION_CONDITION_FIELDS.join(", ")}. Caminhos avançados também são aceitos.`,
+    ),
+  op: z.enum(AUTOMATION_CONDITION_OPERATORS),
   value: z.string().max(500),
 });
 
