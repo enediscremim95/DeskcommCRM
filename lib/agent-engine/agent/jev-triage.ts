@@ -143,7 +143,7 @@ export async function jevTriageHint(input: {
   for (const result of Object.values(parsed.data)) {
     const selectedProbability = result.probabilities[result.choice];
     if (selectedProbability === undefined) return fallback('json_invalido');
-    if (result.confidence < 0.8) return fallback('baixa_confianca');
+    if (result.confidence < 0.8 || selectedProbability < 0.7) return fallback('baixa_confianca');
   }
   const tipo = parsed.data.tipo.choice;
   const prioridade = parsed.data.prioridade.choice;
