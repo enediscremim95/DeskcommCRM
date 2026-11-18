@@ -39,6 +39,7 @@ import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/
  */
 import type pg from 'pg';
 import { z } from 'zod';
+import { jevTriageHint } from './jev-triage';
 import type { embedText } from '@/lib/ai/embed';
 import { auxModelArgs, type AuxModelArgs } from './aux-model-args';
 import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
@@ -4200,10 +4201,22 @@ async function executarTurnoDoAgente(
     // ponto só cobre os três — e alcança de carona a chamada de fechamento, que
     // reusa `openingTextOnly` e é onde nasce o `prazo` ISO da declaração.
     const agoraBlock = renderAgora(clock(), fusoDaOrg);
+    const jevHint = input.inboundMessageId !== undefined || preview?.kind === 'sandbox'
+      ? await jevTriageHint({
+          organizationId: tenantId,
+          channelId: input.channelSessionId,
+          agentId: agentConfig?.agentId,
+          message: preview?.kind === 'sandbox'
+            ? preview.context.context.messages.filter((message) => message.direction === 'inbound').at(-1)?.body ?? null
+            : currentInboundText,
+          log: deps.log,
+        })
+      : '';
     const openingSuffixes = [
       agoraBlock,
       matchedSkillsBlock,
       stageHintBlock,
+      jevHint,
       splitHint,
       caseAwaitingLeadBlock,
       preview?.feedback ? '## Revisão humana deste atendimento\n' + preview.feedback : '',
