@@ -25,6 +25,8 @@ export interface ChannelSendInput {
   seq: number;
   /** referência da conversa no canal (conversation_id do CRM na v1) */
   conversationId: string;
+  /** Último inbound que fazia parte da foto usada para produzir esta resposta. */
+  respondedThroughInboundId?: string;
   body: string;
   metadata?: Record<string, unknown>;
   media?: {
