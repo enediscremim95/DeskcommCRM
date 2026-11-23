@@ -5,6 +5,7 @@ import type { ToolSet } from '../edge/llm/run-model-call';
 import type { LeadContext, LeadContextResult } from '../edge/crm/get-lead-context';
 import type { PublishedAgentConfig } from './agent-config';
 import type { LeadCheckpointRow } from './inbound-turn';
+import type { TurnCompactionState } from './turn-compaction';
 import {
   evaluateBeforeSend,
   type GateContext,
@@ -44,6 +45,8 @@ export interface TurnPreview {
   agent: PublishedAgentConfig;
   context: Extract<LeadContextResult, { ok: true }>;
   previous?: LeadCheckpointRow | null;
+  /** Estado do cenário sintético, devolvido ao chamador para o próximo turno. */
+  compactionState?: TurnCompactionState;
   notes?: Array<{ headline: string; body: string }>;
   feedback?: string;
   /** Produtos já enviados em turnos anteriores deste cenário, nunca lidos de messages. */

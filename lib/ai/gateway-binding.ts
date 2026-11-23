@@ -28,6 +28,7 @@ import type { LanguageModel } from "ai";
 
 import { CredencialPropriaObrigatoriaError } from "@/lib/ai/credenciais/sem-fallback";
 import { env } from "@/lib/env";
+import { providerDoModelo } from "./cost";
 import { decryptKey, byteaToBuffer } from "@/lib/crypto/aes_gcm";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -38,7 +39,18 @@ export interface ModeloResolvido {
   model: LanguageModel;
   /** Para o log: qual modelo e de onde veio a decisão. */
   modelId: string;
+  provider: string;
   origem: "binding" | "credencial_da_organizacao" | "padrao";
+}
+
+function resolverPadrao(padrao: ModelId): ModeloResolvido | null {
+  const model = resolveLanguageModel(padrao);
+  if (model === null) return null;
+  const modelId = String(padrao);
+  const provider = typeof model !== "string" && env.OPENROUTER_API_KEY
+    ? "openrouter"
+    : providerDoModelo(modelId);
+  return { model, modelId, provider, origem: "padrao" };
 }
 
 /**
@@ -68,7 +80,7 @@ export async function resolverModeloDoPonto(
     if (binding.credential_id) {
       const apiKey = await decifrarChave(organizationId, binding.provider, binding.credential_id, estrito);
       const model = apiKey && instanciar(binding.provider, apiKey, binding.model_id, binding.base_url);
-      if (model) return { model, modelId: binding.model_id, origem: "binding" };
+      if (model) return { model, modelId: binding.model_id, provider: binding.provider, origem: "binding" };
     }
     if (!estrito) {
       logger.warn("[gateway-binding] binding sem configuração utilizável — usando o padrão", {
@@ -84,7 +96,7 @@ export async function resolverModeloDoPonto(
     if (idNoProvider !== null) {
       const apiKey = await decifrarChave(organizationId, llm.provider, credentialId, estrito);
       const model = apiKey && instanciar(llm.provider, apiKey, idNoProvider, null);
-      if (model) return { model, modelId, origem: "credencial_da_organizacao" };
+      if (model) return { model, modelId, provider: llm.provider, origem: "credencial_da_organizacao" };
     }
   }
 
@@ -93,8 +105,7 @@ export async function resolverModeloDoPonto(
       purpose, provider: binding?.provider ?? (typeof llm?.provider === "string" ? llm.provider : undefined),
     });
   }
-  const model = resolveLanguageModel(padrao);
-  return model === null ? null : { model, modelId: String(padrao), origem: "padrao" };
+  return resolverPadrao(padrao);
 }
 
 interface LinhaBinding {

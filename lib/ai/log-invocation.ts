@@ -6,8 +6,11 @@
  */
 
 import { normalizarErro } from "@/lib/agent-engine/edge/llm/run-model-call";
+import { providerDoModelo } from "@/lib/ai/cost";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+
+export { providerDoModelo } from "@/lib/ai/cost";
 
 /** Espelha o CHECK de `ai_invocations.invocation_kind` (ver o invariante). */
 export type InvocationKind =
@@ -47,7 +50,8 @@ export interface LogInvocationInput {
   prompt_tokens: number;
   completion_tokens: number;
   latency_ms: number;
-  cost_cents: number;
+  provider?: string;
+  cost_cents: number | null;
   finish_reason?: string | null;
   citations?: Array<Record<string, unknown>>;
   error_payload?: Record<string, unknown> | null;
@@ -77,10 +81,7 @@ export function logInvocation(row: LogInvocationInput): void {
           agent_id:
             row.agent_id === null || row.agent_id.trim() === "" ? null : row.agent_id,
           purpose: row.invocation_kind,
-          // `provider` não existia no shape antigo; deriva-se do id do modelo, e
-          // vira 'desconhecido' quando não dá para saber — chute viraria
-          // estatística, e estatística errada é pior que lacuna declarada.
-          provider: providerDoModelo(row.model),
+          provider: row.provider ?? providerDoModelo(row.model),
           model: row.model,
           input_tokens: row.prompt_tokens,
           output_tokens: row.completion_tokens,
@@ -144,21 +145,4 @@ export function codigoDoErro(payload: Record<string, unknown>): string {
     ...(typeof payload.statusCode === "number" ? { statusCode: payload.statusCode } : {}),
   });
   return normalizarErro(erro).error_code;
-}
-
-/**
- * Deriva o provedor do id do modelo.
- *
- * O shape antigo (`ai_invocations`) não guardava provedor, e a coluna existe em
- * `llm_calls`. Quando o id não diz, o valor é `'desconhecido'` — nunca um
- * palpite: a coluna alimenta a divisão de custo por provedor, e um chute vira
- * estatística que alguém vai usar para decidir onde cortar gasto.
- */
-export function providerDoModelo(model: string): string {
-  const m = model.toLowerCase();
-  if (m.startsWith("anthropic/") || m.startsWith("claude")) return "anthropic";
-  if (m.startsWith("openai/") || m.startsWith("gpt") || m.startsWith("text-embedding")) return "openai";
-  if (m.startsWith("google/") || m.startsWith("gemini")) return "google";
-  if (m.includes("/")) return "openrouter";
-  return "desconhecido";
 }

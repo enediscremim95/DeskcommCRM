@@ -66,6 +66,7 @@ export const DICIONARIO: Traducoes = {
   "Valide uma chave própria e escolha um modelo disponível para ela.": { es: "Valida una clave propia y elige un modelo disponible para ella." },
   "Conecte o canal dos agentes publicados antes de trocar a chave padrão.": { es: "Conecta el canal de los agentes publicados antes de cambiar la clave predeterminada." },
   "Não foi possível consultar ou trocar a chave padrão.": { es: "No se pudo consultar o cambiar la clave predeterminada." },
+  "Resumos de conversas": { es: "Resúmenes de conversaciones" },
   "Chamar este número": { es: "Llamar a este número" },
   "IA inicia a conversa": { es: "La IA inicia la conversación" },
   "Informe o número com DDD. O contato e o lead existente serão reutilizados.": { es: "Indica el número con código de área. Se reutilizarán el contacto y el lead existentes." },

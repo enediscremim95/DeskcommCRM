@@ -126,6 +126,14 @@
       "tag": "runAgentTurn"
     },
     {
+      "id": "compaction",
+      "lane": "worker",
+      "col": 4,
+      "type": "backend",
+      "label": "Resumo incremental do inbound",
+      "sublabel": "opt-in por organização · histórico da demanda → lead_checkpoints.compaction_state · purpose compaction"
+    },
+    {
       "id": "toolbreaker",
       "lane": "guardrails",
       "col": 2,
@@ -340,6 +348,20 @@
       "from": "followup",
       "to": "turn",
       "label": "reentrada",
+      "variant": "dashed"
+    },
+    {
+      "id": "turn-compaction",
+      "from": "turn",
+      "to": "compaction",
+      "label": "prefixo acima da janela publicada",
+      "variant": "dashed"
+    },
+    {
+      "id": "compaction-turn",
+      "from": "compaction",
+      "to": "turn",
+      "label": "resumo reaproveitado + cauda recente",
       "variant": "dashed"
     },
     {

@@ -52,6 +52,15 @@ class ReadQuery {
     this.filters.push(`${field(key)}=any(${this.parameter(values)})`);
     return this;
   }
+  not(key: string, operator: string, value: unknown) {
+    if (operator !== "is" || value !== null) throw Error("filtro negado não suportado");
+    this.filters.push(`${field(key)} is not null`);
+    return this;
+  }
+  overrideTypes() {
+    // No cliente real esta chamada só ajusta o tipo TypeScript do resultado.
+    return this;
+  }
   or(expression: string) {
     this.filters.push(
       `(${expression

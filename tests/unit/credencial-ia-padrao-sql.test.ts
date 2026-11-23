@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const migration = readFileSync("supabase/migrations/20261123155307_0317_credencial_ia_padrao.sql", "utf8");
+const migration = readFileSync("supabase/migrations/20261123160001_0319_credencial_ia_padrao.sql", "utf8");
 const baseline = readFileSync("supabase/baseline.sql", "utf8");
 
 describe("contrato SQL da troca de credencial padrão", () => {

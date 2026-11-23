@@ -1216,7 +1216,7 @@ CREATE TABLE IF NOT EXISTS "public"."ai_provider_credentials" (
 ALTER TABLE "public"."ai_provider_credentials" OWNER TO "postgres";
 
 
--- O apêndice 0314 amplia esta projeção. Na reaplicação, preserve a view
+-- O apêndice 0318 amplia esta projeção. Na reaplicação, preserve a view
 -- existente até o apêndice para evitar tentar remover a coluna adicionada.
 DO $$
 BEGIN
@@ -32205,6 +32205,15 @@ grant execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boo
 
 notify pgrst, 'reload schema';
 
+-- ---- junção operacional só por serviço (migration 0309) ----
+-- As funções de lote são ferramentas operacionais, chamadas por service_role.
+-- Não há consumidor da sessão authenticated; o desfazer segue acessível ao gerente.
+revoke execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid) from public, anon, authenticated;
+revoke execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean) from public, anon, authenticated;
+grant execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid) to service_role;
+grant execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean) to service_role;
+notify pgrst, 'reload schema';
+
 -- ---- decisão humana no Kanban (migrations 0310 + 0312: IA só avança) ----
 -- Serviço só avança a etapa (posição maior, mesmo funil, fora de Ganho/Perdido); nunca muda pipeline/status.
 create or replace function public.fn_guard_kanban_human() returns trigger
@@ -32526,7 +32535,135 @@ $$;
 revoke all on function public.fn_lgpd_cascade_redact_contact(uuid,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.fn_lgpd_cascade_redact_contact(uuid,uuid,uuid) to service_role;
 
--- ---- Escolha da credencial padrão de IA (migration 0317) ----
+-- ---- Preços do catálogo LLM (migration 0314) ----
+-- Completa as tarifas de referência de chamadas novas, em centavos de dólar por milhão.
+-- OpenRouter Models API, consultada em 2026-11-23: https://openrouter.ai/api/v1/models
+-- Para o slug original, prompt = USD 0,00000009 e completion = USD 0,00000018 por token.
+-- Quando o cron já trouxe tarifas, preserva os valores sincronizados.
+insert into public.ai_models
+  (provider, model_id, display_name, context_window, input_price_per_million_cents,
+   output_price_per_million_cents, supports_tools, source)
+values ('openrouter', 'deepseek/deepseek-v4-flash', 'DeepSeek V4 Flash 0423', 1048576, 9, 18, true, 'openrouter')
+on conflict (provider, model_id) do update
+set input_price_per_million_cents = coalesce(ai_models.input_price_per_million_cents, excluded.input_price_per_million_cents),
+    output_price_per_million_cents = coalesce(ai_models.output_price_per_million_cents, excluded.output_price_per_million_cents)
+where ai_models.input_price_per_million_cents is null
+   or ai_models.output_price_per_million_cents is null;
+
+-- OpenAI, preços Standard conferidos em 2026-11-23:
+-- https://developers.openai.com/api/docs/models/gpt-5.4-mini (USD 0,75 / 4,50)
+-- https://developers.openai.com/api/docs/models/gpt-5-mini (USD 0,25 / 2,00)
+insert into public.ai_models
+  (provider, model_id, display_name, context_window, input_price_per_million_cents,
+   output_price_per_million_cents, supports_tools)
+values
+  ('openai', 'gpt-5.4-mini', 'GPT-5.4 Mini', 400000, 75, 450, true),
+  ('openai', 'gpt-5-mini', 'GPT-5 Mini', 400000, 25, 200, true)
+on conflict (provider, model_id) do update
+set input_price_per_million_cents = excluded.input_price_per_million_cents,
+    output_price_per_million_cents = excluded.output_price_per_million_cents
+where (ai_models.input_price_per_million_cents, ai_models.output_price_per_million_cents)
+   is distinct from (excluded.input_price_per_million_cents, excluded.output_price_per_million_cents);
+
+-- ---- estado incremental da compactação (migration 0315) ----
+-- Guarda o resumo e a identidade do prefixo coberto no checkpoint da conversa.
+-- Checkpoints anteriores continuam válidos com NULL e o histórico original permanece no CRM.
+alter table public.lead_checkpoints
+  add column if not exists compaction_state jsonb;
+
+comment on column public.lead_checkpoints.compaction_state is
+  'Estado do resumo incremental do histórico: conversa, prefixo coberto e resumo. NULL sem compactação.';
+
+-- A anonimização explícita já remove os dados identificáveis do contato.
+-- Limpa também o novo derivado, mantendo as linhas e demais campos do checkpoint.
+create or replace function public.fn_redigir_compactacao_do_contato_anonimizado()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  update public.lead_checkpoints
+     set compaction_state = null
+   where organization_id = new.organization_id
+     and contact_id = new.id
+     and compaction_state is not null;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_redigir_compactacao_do_contato_anonimizado() from public, anon, authenticated;
+grant execute on function public.fn_redigir_compactacao_do_contato_anonimizado() to service_role;
+
+drop trigger if exists trg_redigir_compactacao_ao_anonimizar on public.contacts;
+create trigger trg_redigir_compactacao_ao_anonimizar
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized is true and old.is_anonymized is distinct from true)
+  execute function public.fn_redigir_compactacao_do_contato_anonimizado();
+
+-- ---- Alinha a tarifa de orçamento do GPT-5 Mini (migration 0316) ----
+-- A 0314 corrigiu o catálogo, mas a tarifa legada de orçamento ficou em 150/600.
+-- A tarifa Standard oficial em 2026-11-23 é USD 0,25 / 2,00 por milhão de tokens:
+-- https://developers.openai.com/api/docs/models/gpt-5-mini
+-- Usa o valor já validado em ai_models para manter as duas tabelas de acordo.
+insert into public.ai_pricing as p
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+select model_id, input_price_per_million_cents, output_price_per_million_cents, 'catálogo 0314'
+  from public.ai_models
+ where provider = 'openai' and model_id = 'gpt-5-mini'
+on conflict (model) do update
+set prompt_cents_per_million_tokens = excluded.prompt_cents_per_million_tokens,
+    completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
+    notes = excluded.notes
+where (p.prompt_cents_per_million_tokens, p.completion_cents_per_million_tokens)
+   is distinct from (excluded.prompt_cents_per_million_tokens, excluded.completion_cents_per_million_tokens);
+
+-- ---- Origem da credencial de IA (migration 0318) ----
+-- A marca de 17/11 é o critério do backfill, juntamente com o fornecedor.
+-- A classificação não consulta nem decifra o conteúdo das credenciais.
+do $$
+begin
+  if not exists (
+    select 1
+      from information_schema.columns
+     where table_schema = 'public'
+       and table_name = 'ai_provider_credentials'
+       and column_name = 'origem'
+  ) then
+    alter table public.ai_provider_credentials
+      add column origem text not null default 'propria'
+      constraint ai_provider_credentials_origem_check
+      check (origem in ('propria', 'compartilhada'));
+
+    update public.ai_provider_credentials
+       set origem = 'compartilhada'
+     where provider = 'openrouter'
+       and label = 'CRM V4 Flash lock 17-11';
+  end if;
+end;
+$$;
+
+comment on column public.ai_provider_credentials.origem is
+  'Origem de cobrança. O backfill de 17/11 identifica a chave compartilhada pelo par fornecedor e rótulo.';
+
+-- O ponteiro pertence ao mesmo objeto que o fornecedor e o modelo padrão.
+-- Deixá-lo ausente preserva a seleção legada nas organizações já configuradas.
+comment on column public.organizations.settings is
+  'Configurações da organização. llm.credential_id é o UUID opcional da credencial padrão de IA da mesma organização.';
+
+grant select (origem) on public.ai_provider_credentials to authenticated;
+
+create or replace view public.ai_provider_credentials_safe
+with (security_invoker = true) as
+select id, organization_id, provider, label, api_key_last4, validated_at,
+       validation_error, models_available, is_active, created_by, created_at,
+       updated_at, origem
+  from public.ai_provider_credentials;
+
+notify pgrst, 'reload schema';
+
+-- ---- Escolha da credencial padrão de IA (migration 0319) ----
 -- Chaves cadastradas na tela exigem seleção explícita para uso em chat.
 -- O default mantém a seleção histórica e os caminhos de provisionamento.
 alter table public.ai_provider_credentials
@@ -32741,56 +32878,3 @@ begin
     end if;
   end loop;
 end $$;
-
--- ---- junção operacional só por serviço (migration 0309) ----
--- As funções de lote são ferramentas operacionais, chamadas por service_role.
--- Não há consumidor da sessão authenticated; o desfazer segue acessível ao gerente.
-revoke execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid) from public, anon, authenticated;
-revoke execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean) from public, anon, authenticated;
-grant execute on function public.fn_juntar_negocios_mesma_pessoa(uuid, uuid, uuid) to service_role;
-grant execute on function public.fn_juntar_mesma_pessoa_da_organizacao(uuid, boolean) to service_role;
-notify pgrst, 'reload schema';
-
--- ---- Origem da credencial de IA (migration 0314) ----
--- A marca de 17/11 é o critério do backfill, juntamente com o fornecedor.
--- A classificação não consulta nem decifra o conteúdo das credenciais.
-do $$
-begin
-  if not exists (
-    select 1
-      from information_schema.columns
-     where table_schema = 'public'
-       and table_name = 'ai_provider_credentials'
-       and column_name = 'origem'
-  ) then
-    alter table public.ai_provider_credentials
-      add column origem text not null default 'propria'
-      constraint ai_provider_credentials_origem_check
-      check (origem in ('propria', 'compartilhada'));
-
-    update public.ai_provider_credentials
-       set origem = 'compartilhada'
-     where provider = 'openrouter'
-       and label = 'CRM V4 Flash lock 17-11';
-  end if;
-end;
-$$;
-
-comment on column public.ai_provider_credentials.origem is
-  'Origem de cobrança. O backfill de 17/11 identifica a chave compartilhada pelo par fornecedor e rótulo.';
-
--- O ponteiro pertence ao mesmo objeto que o fornecedor e o modelo padrão.
--- Deixá-lo ausente preserva a seleção legada nas organizações já configuradas.
-comment on column public.organizations.settings is
-  'Configurações da organização. llm.credential_id é o UUID opcional da credencial padrão de IA da mesma organização.';
-
-grant select (origem) on public.ai_provider_credentials to authenticated;
-
-create or replace view public.ai_provider_credentials_safe
-with (security_invoker = true) as
-select id, organization_id, provider, label, api_key_last4, validated_at,
-       validation_error, models_available, is_active, created_by, created_at,
-       updated_at, origem
-  from public.ai_provider_credentials;
-
-notify pgrst, 'reload schema';

@@ -251,8 +251,9 @@ export function resolveOrgLlmConfig(
   cfg: LlmEdgeConfig,
   organizationId: string,
   override?: LlmResolveOverride,
+  credentialMode: 'default' | 'metadata_only' | 'organization_only' = 'default',
 ): Promise<OrgLlmConfig> {
-  return resolverConfig(db, cfg, organizationId, override, "chat");
+  return resolverConfig(db, cfg, organizationId, override, "chat", credentialMode);
 }
 
 /** A transcrição conserva a política de credenciais anterior à flag de chat. */
@@ -271,6 +272,7 @@ async function resolverConfig(
   organizationId: string,
   override: LlmResolveOverride | undefined,
   uso: "chat" | "transcricao",
+  credentialMode: 'default' | 'metadata_only' | 'organization_only' = 'default',
 ): Promise<OrgLlmConfig> {
   // ⚠️ O RESOLVEDOR NUNCA LANÇA POR SCHEMA DESATUALIZADO.
   //
@@ -314,6 +316,17 @@ async function resolverConfig(
           limiarPct: Number(linha?.limiar_pct ?? LIMIAR_PADRAO_PCT),
         };
 
+  const metadata = {
+    provider,
+    defaultModel: settings.default_model ?? null,
+    params: settings.params,
+    enabledModels: settings.enabled_models,
+    orcamento,
+    orcamentoIndisponivelPorque,
+  };
+  // O seam usa só os metadados para decidir o ponto antes de resolver a chave.
+  if (credentialMode === 'metadata_only') return { ...metadata, apiKey: '' };
+
   // Credencial: a ESCOLHIDA na versão publicada quando houver (ainda exigindo
   // ativa+validada — publish valida, mas a credencial pode ser revogada depois);
   // senão a mais recente ativa/validada do provider. Sempre escopada pela org.
@@ -321,7 +334,9 @@ async function resolverConfig(
   const credentialId = override?.credentialId ??
     (uso === "chat" && provider === settings.provider ? settings.credential_id : null);
   const apenasImplicita = uso === "chat" ? "and not selecao_explicita" : "";
-  const apenasPropria = estrito ? "and origem = 'propria' and validation_error is null" : "";
+  // Resumos da conversa exigem chave própria mesmo com o fallback do chat liberado.
+  const exigePropria = estrito || credentialMode === 'organization_only';
+  const apenasPropria = exigePropria ? "and origem = 'propria' and validation_error is null" : "";
   const consultaCredencial = credentialId
     ? db.query<{
         api_key_encrypted: unknown;
@@ -366,9 +381,10 @@ async function resolverConfig(
     throw new CredencialPropriaObrigatoriaError(organizationId, "credential_unavailable", { provider });
   }
 
-  if (estrito) {
+  if (exigePropria) {
     const chavesDaInstalacao = [cfg.anthropicApiKey, cfg.openaiApiKey, cfg.openrouterApiKey];
     if (!apiKey || chavesDaInstalacao.includes(apiKey)) {
+      if (!estrito) throw new LlmNotConfiguredError();
       throw new CredencialPropriaObrigatoriaError(organizationId, "credential_unavailable", { provider });
     }
   } else if (!apiKey) {
@@ -378,13 +394,5 @@ async function resolverConfig(
     else throw new LlmNotConfiguredError();
   }
 
-  return {
-    provider,
-    apiKey,
-    defaultModel: settings.default_model ?? null,
-    params: settings.params,
-    enabledModels: settings.enabled_models,
-    orcamento,
-    orcamentoIndisponivelPorque,
-  };
+  return { ...metadata, apiKey };
 }

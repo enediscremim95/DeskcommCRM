@@ -371,5 +371,8 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261116180000` | `0312_kanban_so_avanca` | Troca a trava total da 0310: serviço só muda etapa para a frente (posição maior, mesmo funil, fora de Ganho/Perdido/arquivada); retrocesso levanta `kanban_only_forward`; pipeline/status/fechamento seguem só humanos. Reversível (corpo da 0310 no cabeçalho). |
 
 | `20261117143000` | `0313_manual_capture_claim` | Primeiro contato manual: reserva por organização/telefone e guarda de histórico/opt-out no envio. |
-| `20261123120000` | `0314_origem_credencial_ia` | Identifica a origem da cobrança na view segura. O backfill marca o par OpenRouter e rótulo da trava de 17/11 sem ler a chave. Documenta o ponteiro opcional em `settings.llm.credential_id`. |
-| `20261123155307` | `0317_credencial_ia_padrao` | Prévia e troca transacional da credencial padrão. Cadastro exige seleção explícita, com republicação oficial, vínculos elegíveis e auditoria. |
+| `20261123120000` | `0314_precos_catalogo_llm` | Completa preços de referência do DeepSeek V4 Flash na OpenRouter e confere os dois modelos GPT mini da OpenAI. |
+| `20261123152953` | `0315_estado_compactacao_checkpoint` | Guarda no checkpoint o resumo incremental do histórico e o prefixo já coberto. |
+| `20261123154908` | `0316_alinha_preco_gpt_5_mini` | Alinha a tarifa de orçamento em `ai_pricing` à tarifa oficial do GPT-5 Mini registrada em `ai_models` pela 0314. |
+| `20261123160000` | `0318_origem_credencial_ia` | Identifica a origem da cobrança na view segura. O backfill marca o par OpenRouter e rótulo da trava de 17/11 sem ler a chave. Documenta o ponteiro opcional em `settings.llm.credential_id`. |
+| `20261123160001` | `0319_credencial_ia_padrao` | Prévia e troca transacional da credencial padrão. Cadastro exige seleção explícita, com republicação oficial, vínculos elegíveis e auditoria. |

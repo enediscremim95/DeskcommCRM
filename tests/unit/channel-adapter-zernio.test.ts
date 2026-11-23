@@ -21,6 +21,8 @@ const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+const { lookup } = vi.hoisted(() => ({ lookup: vi.fn() }));
+vi.mock("node:dns/promises", () => ({ lookup, default: { lookup } }));
 
 const credsRef: { current: unknown } = { current: null };
 vi.mock("@/lib/channels/zernio/credentials", () => ({
@@ -367,6 +369,7 @@ describe("fetchInboundMedia não busca onde o payload mandar", () => {
     // Sem este caso, um guard que recusasse TUDO deixaria os de cima verdes e
     // quebraria a feature em silêncio.
     credsRef.current = CREDS;
+    lookup.mockResolvedValueOnce([{ address: "1.1.1.1", family: 4 }]);
     fetchMock.mockClear();
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -380,6 +383,7 @@ describe("fetchInboundMedia não busca onde o payload mandar", () => {
       url: "https://zernio.com/api/v1/media/abc123",
     });
     expect(r.mime).toBe("image/png");
+    expect(lookup).toHaveBeenCalledWith("zernio.com", { all: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
