@@ -243,6 +243,8 @@ export async function createDefaultAgent(formData: FormData): Promise<CreateAgen
   // Emit a domain event for downstream listeners (Spec 01 §7 event log).
   await admin.from("event_log").insert({
     organization_id: ctx.orgId,
+    entity_kind: "ai_agent",
+    entity_id: agent.id,
     event_type: "ai_agent.created",
     payload: { agent_id: agent.id, source: "onboarding", published: publicacao.published },
   });
