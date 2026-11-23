@@ -14,7 +14,8 @@ import { z } from "zod";
 
 import { loadAgentVersionConfig } from "@/lib/agent-engine/agent/agent-config";
 import { runAgentPreview } from "@/lib/agent-engine/agent/inbound-turn";
-import { newPreviewResult, scenarioContext } from "@/lib/agent-engine/agent/preview";
+import { newPreviewResult, scenarioContext, type TurnPreview } from "@/lib/agent-engine/agent/preview";
+import { turnCompactionStateSchema } from "@/lib/agent-engine/agent/turn-compaction";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { formatMediaForTurn } from "@/lib/messaging/media/turn-text";
@@ -34,6 +35,11 @@ const historySchema = z.object({
   nome: z.string().min(1).max(200),
   msgs: z.array(messageSchema),
   catalogProductCodesAlreadySent: z.array(z.string().min(1).max(120)).default([]),
+  compaction: z.object({
+    organizationId: z.uuid(),
+    agentId: z.uuid(),
+    state: turnCompactionStateSchema,
+  }).optional(),
 });
 type History = z.infer<typeof historySchema>;
 
@@ -184,19 +190,31 @@ async function main(): Promise<void> {
   const result = newPreviewResult();
   const startedAt = Date.now();
   let failure: Error | null = null;
+  const preview: TurnPreview = {
+    kind: "sandbox",
+    organizationId: cli.organizationId,
+    runId,
+    agent,
+    context: scenarioContext(history.msgs, { name: history.nome }),
+    currentInboundText: rajada[0],
+    contactId: null,
+    channelId: null,
+    catalogProductCodesAlreadySent: history.catalogProductCodesAlreadySent,
+    result,
+    ...(history.compaction?.organizationId === cli.organizationId &&
+        history.compaction.agentId === cli.agentId
+      ? { compactionState: history.compaction.state }
+      : {}),
+  };
   try {
-    await runAgentPreview(deps, pool, {
-      kind: "sandbox",
-      organizationId: cli.organizationId,
-      runId,
-      agent,
-      context: scenarioContext(history.msgs, { name: history.nome }),
-      currentInboundText: rajada[0],
-      contactId: null,
-      channelId: null,
-      catalogProductCodesAlreadySent: history.catalogProductCodesAlreadySent,
-      result,
-    });
+    await runAgentPreview(deps, pool, preview);
+    if (preview.compactionState) {
+      history.compaction = {
+        organizationId: cli.organizationId,
+        agentId: cli.agentId,
+        state: preview.compactionState,
+      };
+    }
   } catch (error) {
     failure = error instanceof Error ? error : new Error(String(error));
   }
