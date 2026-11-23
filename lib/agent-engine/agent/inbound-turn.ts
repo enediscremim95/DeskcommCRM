@@ -47,6 +47,7 @@ import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
 import { withFields, type Logger } from '../obs/logger';
 import {
   getLeadContext,
+  readHistoryForCompaction,
   type LeadContext,
   type LeadContextMessage,
   type LeadContextResult,
@@ -102,6 +103,13 @@ import {
   trimTranscriptToBudget,
   type CompactionKnobs,
 } from './compaction';
+import {
+  compactTurnHistory,
+  HISTORY_COMPACTION_READ_LIMIT,
+  readTurnCompactionChoice,
+  turnCompactionBlock,
+  type TurnCompactionState,
+} from './turn-compaction';
 import { pruneToolResults, type PruneToolResultsKnobs } from './prune-tool-results';
 import {
   classifyStage,
@@ -568,6 +576,7 @@ export interface LeadCheckpointRow extends Omit<CheckpointContent, 'declaracao'>
   job_id: string | null;
   created_at: Date;
   declaracao: DeclaracaoDoTurno | null;
+  compaction_state?: TurnCompactionState | null;
 }
 
 /**
@@ -1004,11 +1013,13 @@ export async function latestCheckpoint(
   db: Queryable,
   tenantId: string,
   leadId: string,
+  options?: { withCompaction: true },
 ): Promise<LeadCheckpointRow | null> {
   const boundary = currentExecutionBoundary();
   const { rows } = await db.query<LeadCheckpointRow>(
     `select * from lead_checkpoints where organization_id=$1 and contact_id=$2
       ${boundary ? 'and conversation_id=$3 and service_revision=$4 and demanda_id is not distinct from $5::uuid and demanda_revision is not distinct from $6::bigint' : ''}
+      ${options?.withCompaction ? 'and compaction_state is not null' : ''}
       order by seq desc limit 1`,
     boundary
       ? [
@@ -1088,13 +1099,23 @@ export function decidirSeEnfileiraOperador(input: {
 
 async function insertCheckpoint(
   db: Queryable,
-  input: { tenantId: string; leadId: string; jobId: string; content: CheckpointContent },
+  input: {
+    tenantId: string;
+    leadId: string;
+    jobId: string;
+    content: CheckpointContent;
+    compactionState?: TurnCompactionState;
+  },
 ): Promise<void> {
   await guardServiceEffect();
   const boundary = currentExecutionBoundary();
+  const compactionValue = input.compactionState
+    ? `, (select case when is_anonymized then null else $13::jsonb end
+           from public.contacts where organization_id = $1 and id = $2 for share)`
+    : '';
   await db.query(
-    `insert into lead_checkpoints (organization_id, contact_id, job_id, commitments, objections, next_action, rolling_summary, declaracao, conversation_id, service_revision, demanda_id, demanda_revision)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    `insert into lead_checkpoints (organization_id, contact_id, job_id, commitments, objections, next_action, rolling_summary, declaracao, conversation_id, service_revision, demanda_id, demanda_revision${input.compactionState ? ', compaction_state' : ''})
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12${compactionValue})`,
     [
       input.tenantId,
       input.leadId,
@@ -1112,6 +1133,7 @@ async function insertCheckpoint(
       boundary?.service_revision ?? null,
       boundary?.demanda_id ?? null,
       boundary?.demanda_revision ?? null,
+      ...(input.compactionState ? [JSON.stringify(input.compactionState)] : []),
     ],
   );
 }
@@ -2166,14 +2188,72 @@ async function executarTurnoDoAgente(
     return; // bot silencia: a confirmação já saiu, e nada mais sai neste turno
   }
 
-  // F3-07: compaction + flush pré-compaction. Quando o histórico cresce além do limiar,
-  // o FLUSH grava as notas duráveis (lead_notes) e a compaction resume a conversa com o
-  // modelo BARATO; o resumo compactado entra no lugar do rolling summary e o transcript
-  // integral é trocado por uma cauda recente sob orçamento (regra de cache 15). O rolling
-  // summary DURÁVEL segue vindo do checkpoint de fechamento; aqui ele só alimenta o prompt.
+  // F3-07: compaction e flush legado. O inbound que aderiu ao resumo incremental
+  // lê o histórico antes do corte e guarda o prefixo no checkpoint de fechamento.
   let effectivePrevious = previous;
   let effectiveContext = openingContext.context;
-  if (deps.knobs.compaction !== undefined) {
+  let compactionState: TurnCompactionState | undefined;
+  const compactionKnobs = deps.knobs.compaction;
+  const escolhaCompaction = compactionKnobs && agentConfig &&
+    (preview || job?.kind === 'inbound_turn')
+    ? await readTurnCompactionChoice(pool, tenantId, runLog)
+    : null;
+  if (escolhaCompaction === true && compactionKnobs) {
+    if (!lgpd.isAnonymized && !optedOutThisTurn &&
+        turnContextKnobs.historyLimit > 0 && turnContextKnobs.maxTokens > 0 &&
+        (preview?.kind === 'sandbox' || input.conversationId)) {
+      try {
+        const history = preview?.kind === 'sandbox'
+          ? openingContext.context.messages
+          : await readHistoryForCompaction(pool, {
+              tenantId,
+              conversationId: input.conversationId,
+              fuso: fusoDaOrg,
+              limit: HISTORY_COMPACTION_READ_LIMIT,
+            });
+        const state = preview?.kind === 'sandbox'
+          ? preview.compactionState
+          : previous && !previous.compaction_state
+            ? (await latestCheckpoint(pool, tenantId, leadId, { withCompaction: true }))?.compaction_state
+            : previous?.compaction_state;
+        const result = await compactTurnHistory({
+          context: openingContext.context,
+          history,
+          previous: state,
+          limits: turnContextKnobs,
+          tailTokens: compactionKnobs.transcriptMaxTokens,
+          log: runLog,
+          summarize: async (prefix, previousSummary) => {
+            const compacted = await maybeCompact(
+              pool,
+              deps.llmCfg,
+              { tenantId, leadId: leadId || null, jobId: job?.id, agentId: agentConfig?.agentId },
+              {
+                context: prefix,
+                previousSummary,
+                conversationPrefix: true,
+                knobs: { ...compactionKnobs, ...argsAux(compactionKnobs.model), triggerMessages: 1 },
+                notesIndexMaxTokens: deps.knobs.notesIndexMaxTokens,
+              },
+              {
+                registry: deps.registry,
+                log: runLog,
+              },
+            );
+            return compacted?.rolling_summary.trim() ? renderCompactedSummary(compacted) : null;
+          },
+        });
+        if (result) {
+          effectiveContext = result.context;
+          compactionState = result.state;
+        }
+      } catch {
+        // Uma falha auxiliar mantém a abertura anterior. O turno principal
+        // continua responsável pelas verificações de orçamento e atendimento.
+        runLog.warn('compaction: falha auxiliar — usando o contexto de abertura original');
+      }
+    }
+  } else if (escolhaCompaction === null && compactionKnobs) {
     const compacted = await maybeCompact(
       pool,
       deps.llmCfg,
@@ -2185,7 +2265,7 @@ async function executarTurnoDoAgente(
         // três: ela também pedia o modelo do agente ao provider default da org.
         // Mesmo 404, mesma morte de turno — só que num caminho que roda quando a
         // conversa já é longa, ou seja, mais tarde e com menos gente olhando.
-        knobs: { ...deps.knobs.compaction, ...argsAux(deps.knobs.compaction.model) },
+        knobs: { ...compactionKnobs, ...argsAux(compactionKnobs.model) },
         notesIndexMaxTokens: deps.knobs.notesIndexMaxTokens,
       },
       {
@@ -2226,7 +2306,7 @@ async function executarTurnoDoAgente(
         ...openingContext.context,
         messages: trimTranscriptToBudget(
           openingContext.context.messages,
-          deps.knobs.compaction.transcriptMaxTokens,
+          compactionKnobs.transcriptMaxTokens,
         ),
       };
     }
@@ -4218,6 +4298,7 @@ async function executarTurnoDoAgente(
       stageHintBlock,
       jevHint,
       splitHint,
+      turnCompactionBlock(compactionState?.summary),
       caseAwaitingLeadBlock,
       preview?.feedback ? '## Revisão humana deste atendimento\n' + preview.feedback : '',
     ].filter((b) => b !== '');
@@ -4461,6 +4542,7 @@ async function executarTurnoDoAgente(
     );
 
     if (preview) {
+      if (preview.kind === 'sandbox' && compactionState) preview.compactionState = compactionState;
       preview.result.checkpoint = content;
       if (
         preview.result.candidates.length === 0 &&
@@ -4479,7 +4561,13 @@ async function executarTurnoDoAgente(
     // tela com "a IA pensou" e enterraria a única linha que muda o que alguém
     // faria a seguir.
     const checkpointAnterior = await latestCheckpoint(pool, tenantId, leadId);
-    await insertCheckpoint(pool, { tenantId, leadId, jobId: liveJob().id, content });
+    await insertCheckpoint(pool, {
+      tenantId,
+      leadId,
+      jobId: liveJob().id,
+      content,
+      ...(compactionState ? { compactionState } : {}),
+    });
 
     // ── O TURNO DO OPERADOR (spec 16 §3.2) ─────────────────────────────────────
     //

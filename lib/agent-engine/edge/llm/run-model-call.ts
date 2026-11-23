@@ -137,6 +137,8 @@ export interface RunModelCallInput {
    * 2B) — resolvido no seam, nunca no call site. Sem ele, config da org.
    */
   llmOverride?: CredentialsTypes.LlmResolveOverride;
+  /** Seleciona o ponto antes de resolver uma credencial exclusiva da organização. */
+  orgCredentialsOnly?: boolean;
 }
 
 export interface RunModelCallDeps {
@@ -319,7 +321,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
 
   // A config da org é lida ANTES da decisão porque o resolvedor precisa dela
   // como último degrau da precedência (o padrão, quando ninguém mais opinou).
-  const padrao = await resolveOrgLlmConfig(db, cfg, input.tenantId, input.llmOverride);
+  const padrao = input.orgCredentialsOnly
+    ? await resolveOrgLlmConfig(db, cfg, input.tenantId, input.llmOverride, 'metadata_only')
+    : await resolveOrgLlmConfig(db, cfg, input.tenantId, input.llmOverride);
 
   // O painel de provedores entra AQUI, e é o que faz `purpose` deixar de ser
   // só um rótulo de custo e virar decisão. Sem binding configurado, `decisao`
@@ -356,12 +360,12 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     decisao.provider !== padrao.provider ||
     (decisao.credentialId !== null && decisao.credentialId !== credencialJaCarregada);
 
-  const config = precisaOutraCredencial
-    ? await resolveOrgLlmConfig(db, cfg, input.tenantId, {
-        provider: decisao.provider,
-        credentialId: decisao.credentialId,
-      })
-    : padrao;
+  const overrideDaDecisao = { provider: decisao.provider, credentialId: decisao.credentialId };
+  const config = input.orgCredentialsOnly
+    ? await resolveOrgLlmConfig(db, cfg, input.tenantId, overrideDaDecisao, 'organization_only')
+    : precisaOutraCredencial
+      ? await resolveOrgLlmConfig(db, cfg, input.tenantId, overrideDaDecisao)
+      : padrao;
 
   const model = decisao.modelId;
   if (model === null || model === undefined) {

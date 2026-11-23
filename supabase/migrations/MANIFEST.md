@@ -371,3 +371,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261116180000` | `0312_kanban_so_avanca` | Troca a trava total da 0310: serviço só muda etapa para a frente (posição maior, mesmo funil, fora de Ganho/Perdido/arquivada); retrocesso levanta `kanban_only_forward`; pipeline/status/fechamento seguem só humanos. Reversível (corpo da 0310 no cabeçalho). |
 
 | `20261117143000` | `0313_manual_capture_claim` | Primeiro contato manual: reserva por organização/telefone e guarda de histórico/opt-out no envio. |
+| `20261123152953` | `0315_estado_compactacao_checkpoint` | Guarda no checkpoint o resumo incremental do histórico e o prefixo já coberto. |
