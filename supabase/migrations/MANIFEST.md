@@ -371,3 +371,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261116180000` | `0312_kanban_so_avanca` | Troca a trava total da 0310: serviço só muda etapa para a frente (posição maior, mesmo funil, fora de Ganho/Perdido/arquivada); retrocesso levanta `kanban_only_forward`; pipeline/status/fechamento seguem só humanos. Reversível (corpo da 0310 no cabeçalho). |
 
 | `20261117143000` | `0313_manual_capture_claim` | Primeiro contato manual: reserva por organização/telefone e guarda de histórico/opt-out no envio. |
+| `20261123120000` | `0314_origem_credencial_ia` | Identifica a origem da cobrança na view segura. O backfill marca o par OpenRouter e rótulo da trava de 17/11 sem ler a chave. Documenta o ponteiro opcional em `settings.llm.credential_id`. |
