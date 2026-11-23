@@ -90,6 +90,13 @@ export interface ActivityRow {
   performed_at: string;
 }
 
+export interface ConversationSummaryRow {
+  id: string;
+  conversation_id: string | null;
+  created_at: string;
+  summary: string;
+}
+
 /**
  * Compromisso da agenda do titular.
  *
@@ -233,6 +240,7 @@ export interface ExportPayload {
   leads: LeadRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
+  conversation_summaries?: ConversationSummaryRow[];
   appointments: AppointmentRow[];
   tasks: TaskRow[];
   webhook_captures: CaptureRow[];
@@ -553,6 +561,30 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // A migration 0315 limpa o resumo na anonimização. O export entrega apenas
+  // o texto e sua referência, sem os metadados de controle da compactação.
+  let conversation_summaries: ConversationSummaryRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("lead_checkpoints")
+      .select("id, conversation_id, created_at, summary:compaction_state->>summary")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .not("compaction_state->>summary", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(500)
+      // A projeção JSON da migration 0315 ainda não está nos tipos gerados.
+      .overrideTypes<ConversationSummaryRow[], { merge: false }>();
+    if (error) {
+      logger.warn("[lgpd-export-worker] conversation summaries load failed", {
+        request_id: requestId,
+        code: error.code,
+      });
+    } else if (data) {
+      conversation_summaries = data;
+    }
+  }
+
   // Agenda — contact_id direto em calendar_appointments.
   //
   // ⚠️ ESTA METADE FALTAVA, e a outra tinha gate. A migration 0184 declarou esta
@@ -799,6 +831,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     leads,
     orders,
     activities,
+    conversation_summaries,
     appointments,
     tasks,
     webhook_captures,
@@ -831,6 +864,7 @@ function emptyPayload(
     leads: [],
     orders: [],
     activities: [],
+    conversation_summaries: [],
     appointments: [],
     tasks: [],
     webhook_captures: [],
