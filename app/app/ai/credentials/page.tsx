@@ -32,7 +32,7 @@ export default async function CredentialsPage() {
   ]);
 
   const credentials = (data ?? []) as unknown as (CredentialRow & { selecao_explicita: boolean })[];
-  const llm = (org?.settings as { llm?: { provider?: string; credential_id?: string } } | null)?.llm;
+  const llm = (org?.settings as { llm?: { provider?: string; credential_id?: string; sem_fallback_compartilhado?: boolean } } | null)?.llm;
   const padrao = llm?.credential_id
     ? credentials.find((c) => c.id === llm.credential_id && c.provider === llm.provider)
     : credentials.find((c) => c.provider === llm?.provider && c.is_active && c.validated_at && !c.selecao_explicita);
@@ -81,7 +81,7 @@ export default async function CredentialsPage() {
           </p>
         </div>
       </header>
-      {compartilhada && (
+      {compartilhada && llm?.sem_fallback_compartilhado !== true && (
         <p role="status" className="rounded-md border bg-muted/35 px-3 py-2 text-sm">
           {traduzir("Sem chave própria no padrão da organização. A IA usa a chave compartilhada da OpenRouter.", idioma)}
         </p>

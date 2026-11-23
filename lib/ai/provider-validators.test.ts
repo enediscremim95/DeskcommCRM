@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { validateOpenRouterKey } from "@/lib/ai/provider-validators";
+import { validateGoogleKey, validateOpenRouterKey } from "@/lib/ai/provider-validators";
 
 /**
  * POR QUE ESTE ARQUIVO EXISTE
@@ -81,4 +81,16 @@ describe("validateOpenRouterKey", () => {
     await validateOpenRouterKey("sk-or-v1-boa");
     expect(chamadas[0]).toContain("/api/v1/key");
   });
+});
+
+it("valida a chave do Google no cabeçalho e deixa o endereço livre de credenciais", async () => {
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ models: [{ name: "models/modelo-ficticio" }] })));
+  vi.stubGlobal("fetch", fetch);
+  await expect(validateGoogleKey("chave-google-ficticia")).resolves.toEqual({
+    ok: true, models: ["modelo-ficticio"],
+  });
+  expect(fetch).toHaveBeenCalledExactlyOnceWith(
+    "https://generativelanguage.googleapis.com/v1beta/models",
+    expect.objectContaining({ headers: { "x-goog-api-key": "chave-google-ficticia" } }),
+  );
 });

@@ -26,6 +26,8 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 
+import { CredencialPropriaObrigatoriaError } from "@/lib/ai/credenciais/sem-fallback";
+import { env } from "@/lib/env";
 import { decryptKey, byteaToBuffer } from "@/lib/crypto/aes_gcm";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -58,51 +60,41 @@ export async function resolverModeloDoPonto(
   organizationId: string,
   padrao: ModelId,
 ): Promise<ModeloResolvido | null> {
-  const binding = await lerBinding(purpose, organizationId);
+  const llm = await lerConfigDaOrganizacao(organizationId, purpose);
+  const estrito = llm?.sem_fallback_compartilhado === true;
+  const binding = await lerBinding(purpose, organizationId, estrito);
 
-  if (binding === null) {
-    // Antes da chave da instalação vem a credencial da PRÓPRIA organização —
-    // o degrau do meio de `resolveOrgLlmConfig`, que esta pilha pulava.
-    const daOrg = await credencialDaOrganizacao(organizationId);
-    const modelId = daOrg?.defaultModel ?? String(padrao);
-    const idNoProvider = daOrg === null ? null : idParaOProvider(daOrg.provider, modelId);
-    if (daOrg !== null && idNoProvider !== null) {
-      const model = instanciar(daOrg.provider, daOrg.apiKey, idNoProvider, null);
-      if (model !== null) {
-        // `modelId` continua sendo o id CANÔNICO, não o traduzido: é ele que
-        // casa com o catálogo de preço no log de custo.
-        return { model, modelId, origem: "credencial_da_organizacao" };
-      }
+  if (binding) {
+    if (binding.credential_id) {
+      const apiKey = await decifrarChave(organizationId, binding.provider, binding.credential_id, estrito);
+      const model = apiKey && instanciar(binding.provider, apiKey, binding.model_id, binding.base_url);
+      if (model) return { model, modelId: binding.model_id, origem: "binding" };
     }
-    const model = resolveLanguageModel(padrao);
-    return model === null ? null : { model, modelId: String(padrao), origem: "padrao" };
+    if (!estrito) {
+      logger.warn("[gateway-binding] binding sem configuração utilizável — usando o padrão", {
+        organization_id: organizationId, purpose,
+      });
+    }
+  } else if (typeof llm?.provider === "string" && llm.provider) {
+    const credentialId = typeof llm.credential_id === "string" ? llm.credential_id : null;
+    const modelId = (credentialId || estrito) && typeof llm.default_model === "string"
+      ? llm.default_model
+      : String(padrao);
+    const idNoProvider = idParaOProvider(llm.provider, modelId);
+    if (idNoProvider !== null) {
+      const apiKey = await decifrarChave(organizationId, llm.provider, credentialId, estrito);
+      const model = apiKey && instanciar(llm.provider, apiKey, idNoProvider, null);
+      if (model) return { model, modelId, origem: "credencial_da_organizacao" };
+    }
   }
 
-  const apiKey = await decifrarChave(binding.credential_id, organizationId);
-  if (apiKey === null) {
-    // Binding configurado mas sem chave utilizável: cai no padrão em vez de
-    // deixar o ponto morto. O aviso é o que impede isso de virar mais uma
-    // falha muda — foi justamente o que esta frente veio acabar.
-    logger.warn("[gateway-binding] binding sem credencial utilizável — usando o padrão", {
-      organization_id: organizationId,
-      purpose,
+  if (estrito) {
+    throw new CredencialPropriaObrigatoriaError(organizationId, "credential_unavailable", {
+      purpose, provider: binding?.provider ?? (typeof llm?.provider === "string" ? llm.provider : undefined),
     });
-    const model = resolveLanguageModel(padrao);
-    return model === null ? null : { model, modelId: String(padrao), origem: "padrao" };
   }
-
-  const model = instanciar(binding.provider, apiKey, binding.model_id, binding.base_url);
-  if (model === null) {
-    logger.warn("[gateway-binding] provider do binding é desconhecido — usando o padrão", {
-      organization_id: organizationId,
-      purpose,
-      provider: binding.provider,
-    });
-    const fallback = resolveLanguageModel(padrao);
-    return fallback === null ? null : { model: fallback, modelId: String(padrao), origem: "padrao" };
-  }
-
-  return { model, modelId: binding.model_id, origem: "binding" };
+  const model = resolveLanguageModel(padrao);
+  return model === null ? null : { model, modelId: String(padrao), origem: "padrao" };
 }
 
 interface LinhaBinding {
@@ -112,29 +104,40 @@ interface LinhaBinding {
   base_url: string | null;
 }
 
+async function lerConfigDaOrganizacao(
+  organizationId: string,
+  purpose: string,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const { data, error } = await createAdminClient()
+      .from("organizations").select("settings").eq("id", organizationId).maybeSingle();
+    if (error) throw error;
+    return (data?.settings as { llm?: Record<string, unknown> } | null)?.llm ?? null;
+  } catch {
+    // Sem ler a política da org, o fallback pode violar uma proibição ativa.
+    throw new CredencialPropriaObrigatoriaError(organizationId, "settings_unavailable", { purpose });
+  }
+}
+
 async function lerBinding(
   purpose: string,
   organizationId: string,
+  estrito: boolean,
 ): Promise<LinhaBinding | null> {
   try {
-    const admin = createAdminClient();
-    // Admin client bypassa RLS, então o filtro por organização é PROGRAMÁTICO e
-    // obrigatório (CLAUDE.md, anti-pattern 10).
-    const { data } = await admin
+    const { data, error } = await createAdminClient()
       .from("ai_purpose_bindings")
       .select("provider, credential_id, model_id, base_url")
       .eq("organization_id", organizationId)
       .eq("purpose", purpose)
       .eq("is_enabled", true)
       .maybeSingle();
+    if (error) throw error;
     return (data as LinhaBinding | null) ?? null;
-  } catch (err) {
-    // Tabela ausente (clone sem o baseline aplicado) não pode derrubar o
-    // atendimento — mas também não pode passar em silêncio.
+  } catch {
+    if (estrito) throw new CredencialPropriaObrigatoriaError(organizationId, "binding_unavailable", { purpose });
     logger.warn("[gateway-binding] não consegui ler o binding — usando o padrão", {
-      organization_id: organizationId,
-      purpose,
-      motivo: err instanceof Error ? err.message : String(err),
+      organization_id: organizationId, purpose,
     });
     return null;
   }
@@ -160,108 +163,41 @@ function idParaOProvider(provider: string, id: string): string | null {
   return null;
 }
 
-/**
- * A credencial que a organização cadastrou para o SEU provider.
- *
- * É o degrau que faltava a esta pilha. `resolveOrgLlmConfig`
- * (lib/agent-engine/edge/llm/credentials.ts) já ordena assim há muito tempo:
- * credencial escolhida, senão a mais recente ativa/validada do provider da
- * organização, senão a chave da instalação. Aqui só havia o primeiro e o
- * terceiro — e uma organização com chave própria cadastrada e validada ficava
- * refém da chave do `.env`, que não é dela. Medido em produção: `.env` com
- * `OPENROUTER_API_KEY` revogada derrubou `sentiment_classify` com 401
- * `User not found.` enquanto os pontos do agent-engine, no mesmo minuto,
- * respondiam pela credencial da organização.
- *
- * O par aprovado em «Usar como padrão» inclui o modelo. Organizações sem
- * essa escolha mantêm o modelo pedido pelo chamador.
- *
- * Nunca lança: leitura que falha devolve `null` e o chamador segue para a
- * chave da instalação. Um clone sem o baseline aplicado não pode ficar sem
- * atendimento por causa de uma consulta a mais.
- */
-async function credencialDaOrganizacao(
+/** Decifra uma credencial da organização. Plaintext só existe em memória. */
+async function decifrarChave(
   organizationId: string,
-): Promise<{ provider: string; apiKey: string; defaultModel: string | null } | null> {
+  provider: string,
+  credentialId: string | null,
+  estrito: boolean,
+): Promise<string | null> {
   try {
-    const admin = createAdminClient();
-    const { data: org } = await admin
-      .from("organizations")
-      .select("settings")
-      .eq("id", organizationId)
-      .maybeSingle();
-    const llm = (org?.settings as { llm?: Record<string, unknown> } | null)?.llm;
-    const provider = llm?.provider;
-    if (typeof provider !== "string" || provider === "") return null;
-
-    // Admin client bypassa RLS: filtro por organização é PROGRAMÁTICO e
-    // obrigatório (CLAUDE.md, anti-pattern 10).
-    const query = admin
-      .from("ai_provider_credentials")
+    let query = createAdminClient().from("ai_provider_credentials")
       .select("api_key_encrypted, api_key_iv, api_key_tag")
       .eq("organization_id", organizationId)
-      .eq("provider", provider)
       .eq("is_active", true)
       .not("validated_at", "is", null);
-    const credentialId = typeof llm?.credential_id === "string" ? llm.credential_id : null;
-    const { data } = await (credentialId
-      ? query.eq("id", credentialId)
-      : query.eq("selecao_explicita", false).order("created_at", { ascending: false }).limit(1)).maybeSingle();
+    if (credentialId) query = query.eq("id", credentialId);
+    if (estrito || !credentialId) query = query.eq("provider", provider);
+    if (estrito) query = query.eq("origem", "propria").is("validation_error", null);
+    if (!credentialId) query = query.eq("selecao_explicita", false).order("created_at", { ascending: false }).limit(1);
+    const { data, error } = await query.maybeSingle();
+    if (error) throw error;
     if (!data) return null;
 
-    return {
-      provider,
-      defaultModel: credentialId && typeof llm?.default_model === "string" ? llm.default_model : null,
-      apiKey: decryptKey({
-        ciphertext: byteaToBuffer(data.api_key_encrypted),
-        iv: byteaToBuffer(data.api_key_iv),
-        tag: byteaToBuffer(data.api_key_tag),
-      }),
-    };
-  } catch (erro) {
-    // Falha FECHADA na ação (segue para a chave da instalação) e ABERTA na
-    // informação. Sem rastro, uma leitura quebrada — baseline sem a tabela,
-    // chave de decifragem trocada — é indistinguível de "esta organização não
-    // cadastrou credencial", e o operador vê a conta do `.env` sendo debitada
-    // sem nunca saber por quê. Vai só a CLASSE do erro: a mensagem pode
-    // carregar material da credencial, o nome do erro não.
-    logger.warn("credencial da organização não pôde ser lida; seguindo para a chave da instalação", {
-      organizationId,
-      erro: erro instanceof Error ? erro.name : typeof erro,
-    });
-    return null;
-  }
-}
-
-/** Decifra a chave da organização. Plaintext só existe no retorno. */
-async function decifrarChave(
-  credentialId: string | null,
-  organizationId: string,
-): Promise<string | null> {
-  if (credentialId === null) return null;
-  try {
-    const admin = createAdminClient();
-    const { data } = await admin
-      .from("ai_provider_credentials")
-      .select("api_key_encrypted, api_key_iv, api_key_tag")
-      .eq("id", credentialId)
-      .eq("organization_id", organizationId)
-      .eq("is_active", true)
-      .not("validated_at", "is", null)
-      .maybeSingle();
-    if (!data) return null;
-    return decryptKey({
+    const apiKey = decryptKey({
       ciphertext: byteaToBuffer(data.api_key_encrypted),
       iv: byteaToBuffer(data.api_key_iv),
       tag: byteaToBuffer(data.api_key_tag),
     });
-  } catch (erro) {
-    // Mesma regra do catch acima: fecha a ação, abre a informação, e o log leva
-    // só a classe do erro.
-    logger.warn("credencial escolhida no painel não pôde ser decifrada; seguindo para o padrão", {
-      credentialId,
-      erro: erro instanceof Error ? erro.name : typeof erro,
-    });
+    if (estrito && [env.OPENAI_API_KEY, env.ANTHROPIC_API_KEY, env.OPENROUTER_API_KEY,
+      env.AI_GATEWAY_API_KEY].includes(apiKey)) return null;
+    return apiKey;
+  } catch {
+    if (!estrito) {
+      logger.warn("[gateway-binding] credencial da organização indisponível", {
+        organization_id: organizationId, provider,
+      });
+    }
     return null;
   }
 }

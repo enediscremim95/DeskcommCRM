@@ -8,7 +8,7 @@ import type pg from "pg";
 
 import { extractPdfText, PDF_MEDIA_MAX_TEXT_CHARS, PdfExtractError } from "@/lib/ai/rag/extractors/pdf";
 import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
-import { resolveOrgLlmConfig, type LlmEdgeConfig } from "@/lib/agent-engine/edge/llm/credentials";
+import { resolveOrgLlmConfig, resolveOrgLlmConfigParaTranscricao, type LlmEdgeConfig } from "@/lib/agent-engine/edge/llm/credentials";
 import { runModelCall } from "@/lib/agent-engine/edge/llm/run-model-call";
 import { createPool } from "@/lib/agent-engine/db/pool";
 import {
@@ -222,8 +222,11 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       return { consumer_key, status: "ok" };
     }
 
-    // Credencial BYOK da org p/ visão (imagem).
-    let llm = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id);
+    const resolverConfig = msg.type === "audio" || msg.type === "video"
+      ? resolveOrgLlmConfigParaTranscricao
+      : resolveOrgLlmConfig;
+    // A flag de chat não altera a derivação de áudio.
+    let llm = await resolverConfig(derivePool(), llmCfg, row.organization_id);
 
     // ─── O painel de provedores manda AQUI também ────────────────────────────
     //
@@ -238,7 +241,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     const bindingDaVisao = await lerBindingDoPonto(admin, row.organization_id, "visao_de_imagem");
     if (bindingDaVisao) {
       try {
-        const comBinding = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
+        const comBinding = await resolverConfig(derivePool(), llmCfg, row.organization_id, {
           provider: bindingDaVisao.provider,
           credentialId: bindingDaVisao.credential_id,
         });
@@ -265,7 +268,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       openaiKey = llm.apiKey;
     } else {
       try {
-        const oa = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
+        const oa = await resolverConfig(derivePool(), llmCfg, row.organization_id, {
           provider: "openai",
         });
         openaiKey = oa.apiKey;
@@ -277,7 +280,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     let openrouterAvailable = false;
     if (policy.openrouterEnabledForOrganization) {
       try {
-        await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, { provider: "openrouter" });
+        await resolverConfig(derivePool(), llmCfg, row.organization_id, { provider: "openrouter" });
         openrouterAvailable = true;
       } catch {
         openrouterAvailable = false;

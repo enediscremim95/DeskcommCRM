@@ -19,3 +19,12 @@ e rever a prévia. Um conflito de edição também pede uma nova prévia. A troc
 tem efeito nas próximas execuções. O modo de operação do agente é guardado no
 registro do agente e a transação usa a função oficial de publicação para
 atualizar somente o ponteiro da versão publicada.
+
+Com `settings.llm.sem_fallback_compartilhado = true`, os resolvedores de chat
+exigem uma credencial própria e utilizável do fornecedor escolhido. Uma recusa
+emite `llm_own_credential_required` no log estruturado antes da chamada. O
+painel de Provedores mostra a política e sinaliza pontos sem uma credencial
+própria válida. A verificação de uso real da chave continua no runtime, onde
+ela pode ser decifrada e comparada às chaves da instalação. Usuários podem
+corrigir a configuração em Chaves de acesso à IA e voltar ao painel para
+acompanhar o estado.

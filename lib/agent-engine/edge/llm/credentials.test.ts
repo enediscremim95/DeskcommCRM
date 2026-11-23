@@ -8,6 +8,7 @@ vi.mock("@/lib/crypto/aes_gcm", () => ({
 import {
   llmEdgeConfigFromEnv,
   resolveOrgLlmConfig,
+  resolveOrgLlmConfigParaTranscricao,
   LlmNotConfiguredError,
   type LlmEdgeConfig,
 } from "./credentials";
@@ -109,5 +110,50 @@ describe("llmEdgeConfigFromEnv — o que sai do .env chega ao turno", () => {
       "org1",
     );
     expect(out.apiKey).toBe("sk-proj-do-env");
+  });
+});
+
+describe("credencial própria obrigatória", () => {
+  const cfg = { openrouterApiKey: "ficticia-chave-compartilhada" };
+  const settings = { provider: "openrouter", sem_fallback_compartilhado: true };
+  const id = "22222222-2222-4222-8222-222222222222";
+  const linhaCifrada = { api_key_encrypted: "x", api_key_iv: "y", api_key_tag: "z" };
+
+  it("proíbe o ambiente inclusive quando a chave explícita sumiu", async () => {
+    await expect(resolveOrgLlmConfig(poolFake(settings, []), cfg, "org-1", {
+      provider: "openrouter", credentialId: id,
+    })).rejects.toMatchObject({ name: "llm_own_credential_required" });
+  });
+
+  it("exige origem própria e consulta exatamente o ponteiro aprovado e o fornecedor", async () => {
+    const consultas: unknown[][] = [];
+    const pool = {
+      query: async (...args: unknown[]) => {
+        consultas.push(args);
+        return consultas.length === 1
+          ? { rows: [{ llm: { ...settings, credential_id: id } }] }
+          : { rows: [linhaCifrada] };
+      },
+    } as never;
+
+    await expect(resolveOrgLlmConfig(pool, cfg, "org-1")).resolves.toMatchObject({
+      provider: "openrouter", apiKey: "chave-byok-da-org",
+    });
+    expect(consultas[1]).toEqual([
+      expect.stringContaining("origem = 'propria'"),
+      ["org-1", id, "openrouter"],
+    ]);
+  });
+
+  it("recusa o mesmo valor da chave de plataforma mesmo se marcado como próprio", async () => {
+    await expect(resolveOrgLlmConfig(
+      poolFake(settings, [linhaCifrada]), { openrouterApiKey: "chave-byok-da-org" }, "org-1",
+    )).rejects.toMatchObject({ name: "llm_own_credential_required" });
+  });
+
+  it("preserva a política de credenciais para transcrição", async () => {
+    await expect(resolveOrgLlmConfigParaTranscricao(
+      poolFake(settings, []), cfg, "org-1",
+    )).resolves.toMatchObject({ apiKey: cfg.openrouterApiKey });
   });
 });

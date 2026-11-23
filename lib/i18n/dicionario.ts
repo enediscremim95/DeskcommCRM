@@ -37,6 +37,11 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Confirme a troca do fornecedor padrão em Chaves de acesso à IA.": { es: "Confirma el cambio del proveedor predeterminado en Claves de acceso a la IA." },
+  "A chave compartilhada está bloqueada. Valide uma chave própria para este fornecedor.": { es: "La clave compartida está bloqueada. Valida una clave propia para este proveedor." },
+  "Uso da chave compartilhada bloqueado para conversas de IA.": { es: "La clave compartida está bloqueada para las conversaciones con IA." },
+  "O fornecedor padrão está sem uma chave própria válida.": { es: "El proveedor predeterminado carece de una clave propia válida." },
+  "A configuração mudou. Recarregue e tente novamente.": { es: "La configuración cambió. Vuelve a cargar la página e inténtalo de nuevo." },
   "Passa a usar o endereço oficial do fornecedor": { es: "Pasa a usar la dirección oficial del proveedor" },
   "Usar como padrão": { es: "Usar como predeterminada" },
   "Confirmar troca da chave padrão": { es: "Confirmar el cambio de la clave predeterminada" },

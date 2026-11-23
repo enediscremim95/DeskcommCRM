@@ -95,6 +95,8 @@ interface Dados {
   modelos: Modelo[];
   padrao: { provider: string; defaultModel: string | null };
   podeEditar: boolean;
+  sem_fallback_compartilhado: boolean;
+  padrao_sem_chave_propria: boolean;
 }
 
 export function PainelDeProvedores() {
@@ -185,7 +187,21 @@ export function PainelDeProvedores() {
         </p>
       </header>
 
-      {semChave && (
+      {dados.sem_fallback_compartilhado && (
+        <Card className="mb-6 space-y-2 p-4" role="status">
+          <p className="text-sm font-medium">{t("Uso da chave compartilhada bloqueado para conversas de IA.")}</p>
+          {dados.padrao_sem_chave_propria && (
+            <p className="text-sm text-destructive">
+              {t("O fornecedor padrão está sem uma chave própria válida.")}{" "}
+              <Link className="underline underline-offset-4" href="/app/ai/credentials">
+                {t("Cadastrar uma chave")}
+              </Link>
+            </p>
+          )}
+        </Card>
+      )}
+
+      {semChave && !dados.sem_fallback_compartilhado && (
         <Card className="mb-6 border-amber-500/40 bg-amber-500/5 p-4" data-testid="aviso-sem-chave">
           <p className="text-sm">
             {t(

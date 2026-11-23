@@ -8,7 +8,7 @@
  *
  * Timeout 5s, sem retry. Erros 401 são distintos de erros de rede.
  */
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import type { PROVEDORES } from "@/lib/ai/pontos/provedores";
 
 /**
  * Os provedores cuja CHAVE este arquivo sabe validar.
@@ -90,14 +90,12 @@ export async function validateOpenAIKey(apiKey: string): Promise<ValidationResul
 }
 
 export async function validateGoogleKey(apiKey: string): Promise<ValidationResult> {
-  // Google Generative Language API — listModels com api key em query string é o
-  // único endpoint público de discovery. A key permanece server-side, nunca
-  // chega ao browser, e este request não é logado pelo nosso edge.
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(
-      apiKey,
-    )}`;
-    const res = await timedFetch(url, { method: "GET" });
+    const res = await timedFetch("https://generativelanguage.googleapis.com/v1beta/models", {
+      method: "GET",
+      headers: { "x-goog-api-key": apiKey },
+      redirect: "error",
+    });
     if (res.status === 401 || res.status === 403) {
       return { ok: false, error: "auth_failed_401" };
     }
