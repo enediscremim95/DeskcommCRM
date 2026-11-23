@@ -26,6 +26,8 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 
+import { env } from "@/lib/env";
+import { providerDoModelo } from "./cost";
 import { decryptKey, byteaToBuffer } from "@/lib/crypto/aes_gcm";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -36,7 +38,18 @@ export interface ModeloResolvido {
   model: LanguageModel;
   /** Para o log: qual modelo e de onde veio a decisão. */
   modelId: string;
+  provider: string;
   origem: "binding" | "credencial_da_organizacao" | "padrao";
+}
+
+function resolverPadrao(padrao: ModelId): ModeloResolvido | null {
+  const model = resolveLanguageModel(padrao);
+  if (model === null) return null;
+  const modelId = String(padrao);
+  const provider = typeof model !== "string" && env.OPENROUTER_API_KEY
+    ? "openrouter"
+    : providerDoModelo(modelId);
+  return { model, modelId, provider, origem: "padrao" };
 }
 
 /**
@@ -71,11 +84,10 @@ export async function resolverModeloDoPonto(
       if (model !== null) {
         // `modelId` continua sendo o id CANÔNICO, não o traduzido: é ele que
         // casa com o catálogo de preço no log de custo.
-        return { model, modelId: String(padrao), origem: "credencial_da_organizacao" };
+        return { model, modelId: String(padrao), provider: daOrg.provider, origem: "credencial_da_organizacao" };
       }
     }
-    const model = resolveLanguageModel(padrao);
-    return model === null ? null : { model, modelId: String(padrao), origem: "padrao" };
+    return resolverPadrao(padrao);
   }
 
   const apiKey = await decifrarChave(binding.credential_id, organizationId);
@@ -87,8 +99,7 @@ export async function resolverModeloDoPonto(
       organization_id: organizationId,
       purpose,
     });
-    const model = resolveLanguageModel(padrao);
-    return model === null ? null : { model, modelId: String(padrao), origem: "padrao" };
+    return resolverPadrao(padrao);
   }
 
   const model = instanciar(binding.provider, apiKey, binding.model_id, binding.base_url);
@@ -98,11 +109,10 @@ export async function resolverModeloDoPonto(
       purpose,
       provider: binding.provider,
     });
-    const fallback = resolveLanguageModel(padrao);
-    return fallback === null ? null : { model: fallback, modelId: String(padrao), origem: "padrao" };
+    return resolverPadrao(padrao);
   }
 
-  return { model, modelId: binding.model_id, origem: "binding" };
+  return { model, modelId: binding.model_id, provider: binding.provider, origem: "binding" };
 }
 
 interface LinhaBinding {

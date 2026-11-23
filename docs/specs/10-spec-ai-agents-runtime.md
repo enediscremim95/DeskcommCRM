@@ -506,10 +506,9 @@ Resposta:
        where id=$version_id;
      update ai_agents set published_version_id=$version_id, updated_at=now()
        where id=$agent_id;
-     insert into event_log (event_type, payload) values ('ai_agent.published', ...);
    commit;
    ```
-6. Audit log entry `ai_agent.published`
+6. Após a transação, registra `ai_agent.published` no audit log e em `event_log` com `entity_kind = 'ai_agent'` e `entity_id = agent_id`.
 
 ### 4.6 Webhook hook (estende Spec 03 §webhook)
 

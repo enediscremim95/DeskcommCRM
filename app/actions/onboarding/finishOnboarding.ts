@@ -44,6 +44,8 @@ export async function finishOnboarding(): Promise<FinishOnboardingResult> {
 
     await admin.from("event_log").insert({
       organization_id: ctx.orgId,
+      entity_kind: "organization",
+      entity_id: ctx.orgId,
       event_type: "tenant.onboarded",
       payload: { completed_by: ctx.userId },
     });

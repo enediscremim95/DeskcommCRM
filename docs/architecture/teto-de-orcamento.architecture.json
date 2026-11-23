@@ -111,7 +111,7 @@
       "items": [
         "erra para MENOS (bloqueia quem não devia): a conversa vai para a fila humana (e32) e o badge aparece no cabeçalho (e34). Quem afrouxa pela tela fecha os itens no mesmo request (e7) — sem esperar tráfego que, com a IA parada, não vem",
         "erra para MAIS (não bloqueia quem devia): o gasto continua somando em llm_calls (e37), a régua o relê (e38) e a decisão seguinte enxerga o número maior. O laço é a própria realimentação do gasto",
-        "erra porque NÃO SABE MEDIR (modelo sem preço em pricing.ts): cost_cents nasce NULL, e11 conta essas linhas e o card confessa a incompletude ANTES de a pessoa armar a parada",
+        "erra porque NÃO SABE MEDIR (modelo sem tarifa no catálogo nem na contingência do Claude): cost_cents nasce NULL, e11 conta essas linhas e o card confessa a incompletude ANTES de a pessoa armar a parada",
         "erra porque a instalação afrouxou: a faixa do kill switch nomeia AI_BUDGET_ENFORCEMENT na tela — controle que o processo ignora em silêncio é pior que controle nenhum"
       ]
     },

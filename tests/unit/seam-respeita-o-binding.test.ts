@@ -27,7 +27,7 @@ interface LinhaBinding {
 }
 
 /**
- * `pg.Pool` fingido que responde às três consultas do caminho: config da org,
+ * `pg.Pool` fingido que responde às consultas do caminho: config da org,
  * binding do ponto e o insert em `llm_calls`. Distinguir por trecho do SQL é
  * frágil de propósito — se o seam trocar a consulta, o teste quebra alto em vez
  * de silenciosamente devolver `undefined` e voltar ao caminho padrão.
@@ -60,6 +60,14 @@ function poolFalso(opts: {
     }
     if (sql.includes("from ai_provider_credentials")) {
       return { rows: [] }; // sem BYOK → cai na chave de plataforma
+    }
+    if (sql.includes("from public.ai_models")) {
+      return { rows: [{
+        provider: "openai",
+        model_id: "gpt-5-mini",
+        input_price_per_million_cents: 25,
+        output_price_per_million_cents: 200,
+      }] };
     }
     if (sql.includes("insert into llm_calls")) {
       inserts.push({ sql, params });
@@ -256,5 +264,6 @@ describe("o custo é atribuído ao ponto certo", () => {
     expect(params).toContain("flywheel_judge");
     expect(params).toContain("openai");
     expect(params).toContain("gpt-5-mini");
+    expect(params[11]).toBe(0.000225);
   });
 });
