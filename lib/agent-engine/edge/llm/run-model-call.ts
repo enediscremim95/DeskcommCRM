@@ -37,7 +37,7 @@ import {
   SQL_ORCAMENTO,
   type ChaveDeOrcamento,
 } from './orcamento';
-import { costCents } from './pricing';
+import { computeCost } from '@/lib/ai/cost';
 import { createDefaultRegistry, type ProviderRegistry } from './providers';
 import { buildStablePrefix } from './stable-prefix';
 
@@ -480,7 +480,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens ?? 0,
     cacheWriteTokens: result.usage.inputTokenDetails.cacheWriteTokens ?? 0,
   };
-  const cost = costCents(model, usage);
+  const cost = await computeCost({
+    provider: config.provider,
+    model: result.response?.modelId || model,
+    ...usage,
+  }, db);
 
   const { rows } = await db.query<{ id: string }>(
     `insert into llm_calls
