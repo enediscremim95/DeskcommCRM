@@ -38,11 +38,14 @@ import { useT } from "@/hooks/i18n/useT";
 import { PROVEDORES } from "@/lib/ai/pontos/provedores";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 
+import { DefaultCredentialDialog } from "./DefaultCredentialDialog";
+
 interface Props {
   credential: CredentialRow;
   canWrite: boolean;
   canDelete: boolean;
   usageCount: number;
+  isDefault?: boolean;
 }
 
 const STATUS_LABEL: Record<CredentialStatus, string> = {
@@ -61,7 +64,7 @@ const STATUS_VARIANT: Record<CredentialStatus, "default" | "secondary" | "destru
   inactive: "outline",
 };
 
-export function CredentialCard({ credential, canWrite, canDelete, usageCount }: Props) {
+export function CredentialCard({ credential, canWrite, canDelete, usageCount, isDefault }: Props) {
   const t = useT();
   const router = useRouter();
   const qc = useQueryClient();
@@ -121,10 +124,12 @@ export function CredentialCard({ credential, canWrite, canDelete, usageCount }: 
             {credential.label}
           </h3>
           <p className="font-mono text-xs text-muted-foreground">
-            …{last4}
+            {provedor?.rotulo ?? credential.provider} · …{last4}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {isDefault && <Badge variant="outline">{t("Padrão")}</Badge>}
+          <Badge variant="outline">{credential.origem === "compartilhada" ? t("Compartilhada") : t("Própria")}</Badge>
           <Badge variant={STATUS_VARIANT[status]} className="text-xs">
             {t(STATUS_LABEL[status])}
           </Badge>
@@ -170,15 +175,18 @@ export function CredentialCard({ credential, canWrite, canDelete, usageCount }: 
       </dl>
 
       {canWrite && (
-        <div className="flex items-center justify-end gap-1 pt-1">
+        <div className="flex flex-wrap items-center justify-end gap-1 pt-1">
+          {credential.origem === "propria" && status === "validated" && (
+            <DefaultCredentialDialog credential={credential} />
+          )}
           <Button
             variant="ghost"
-            size="icon"
+            size="sm"
             aria-label={t("Revalidar credencial")}
-            disabled={isPending}
+            disabled={isPending || !credential.is_active}
             onClick={onRevalidate}
           >
-            <ArrowsClockwise size={14} aria-hidden />
+            <ArrowsClockwise size={14} aria-hidden /> {t("Validar")}
           </Button>
           {canDelete && (inUse ? (
             <TooltipProvider>

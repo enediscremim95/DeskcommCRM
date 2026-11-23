@@ -165,6 +165,7 @@ const llmSettingsSchema = z
   .object({
     provider: z.string().min(1).catch('anthropic'),
     default_model: z.string().min(1).nullable().catch(null),
+    credential_id: z.uuid().nullish().catch(null),
     params: z.record(z.string(), z.unknown()).catch({}),
     enabled_models: z.array(z.string()).catch([]),
   })
@@ -294,7 +295,9 @@ export async function resolveOrgLlmConfig(
   // Credencial: a ESCOLHIDA na versão publicada quando houver (ainda exigindo
   // ativa+validada — publish valida, mas a credencial pode ser revogada depois);
   // senão a mais recente ativa/validada do provider. Sempre escopada pela org.
-  const { rows: credRows } = override?.credentialId
+  const credentialId = override?.credentialId ??
+    (provider === settings.provider ? settings.credential_id : null);
+  const { rows: credRows } = credentialId
     ? await db.query<{
         api_key_encrypted: unknown;
         api_key_iv: unknown;
@@ -302,10 +305,10 @@ export async function resolveOrgLlmConfig(
       }>(
         `select api_key_encrypted, api_key_iv, api_key_tag
          from ai_provider_credentials
-         where organization_id = $1 and id = $2
+         where organization_id = $1 and id = $2 and provider = $3
            and is_active and validated_at is not null
          limit 1`,
-        [organizationId, override.credentialId],
+        [organizationId, credentialId, provider],
       )
     : await db.query<{
         api_key_encrypted: unknown;
@@ -315,7 +318,7 @@ export async function resolveOrgLlmConfig(
         `select api_key_encrypted, api_key_iv, api_key_tag
          from ai_provider_credentials
          where organization_id = $1 and provider = $2
-           and is_active and validated_at is not null
+           and is_active and validated_at is not null and not selecao_explicita
          order by created_at desc
          limit 1`,
         [organizationId, provider],

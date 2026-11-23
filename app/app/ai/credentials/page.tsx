@@ -13,7 +13,7 @@ import { ReplyAssistantSettings } from "./_components/ReplyAssistantSettings";
 export const dynamic = "force-dynamic";
 
 const SAFE_COLUMNS =
-  "id, organization_id, provider, label, api_key_last4, validated_at, validation_error, models_available, is_active, created_by, created_at, updated_at";
+  "id, organization_id, provider, label, api_key_last4, validated_at, validation_error, models_available, is_active, created_by, created_at, updated_at, origem, selecao_explicita";
 
 export default async function CredentialsPage() {
   const user = await requireAuth();
@@ -25,13 +25,19 @@ export default async function CredentialsPage() {
   }
 
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("ai_provider_credentials_safe")
-    .select(SAFE_COLUMNS)
-    .eq("organization_id", activeOrg.orgId)
-    .order("created_at", { ascending: false });
+  const [{ data }, { data: org }] = await Promise.all([
+    supabase.from("ai_provider_credentials").select(SAFE_COLUMNS)
+      .eq("organization_id", activeOrg.orgId).order("created_at", { ascending: false }),
+    supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle(),
+  ]);
 
-  const credentials = (data ?? []) as unknown as CredentialRow[];
+  const credentials = (data ?? []) as unknown as (CredentialRow & { selecao_explicita: boolean })[];
+  const llm = (org?.settings as { llm?: { provider?: string; credential_id?: string } } | null)?.llm;
+  const padrao = llm?.credential_id
+    ? credentials.find((c) => c.id === llm.credential_id && c.provider === llm.provider)
+    : credentials.find((c) => c.provider === llm?.provider && c.is_active && c.validated_at && !c.selecao_explicita);
+  const compartilhada = padrao?.origem === "compartilhada" ||
+    (llm?.provider === "openrouter" && padrao === undefined);
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
   const canDelete = userHasPermission(user, activeOrg, "ai.credentials.delete");
 
@@ -75,12 +81,18 @@ export default async function CredentialsPage() {
           </p>
         </div>
       </header>
+      {compartilhada && (
+        <p role="status" className="rounded-md border bg-muted/35 px-3 py-2 text-sm">
+          {traduzir("Sem chave própria no padrão da organização. A IA usa a chave compartilhada da OpenRouter.", idioma)}
+        </p>
+      )}
       <ReplyAssistantSettings canWrite={canWrite} />
       <CredentialsList
         initialData={credentials}
         canWrite={canWrite}
         canDelete={canDelete}
         usageMap={usageMap}
+        defaultCredentialId={llm?.credential_id}
       />
     </div>
   );

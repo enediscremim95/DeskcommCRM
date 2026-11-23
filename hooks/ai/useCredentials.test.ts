@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 import { credentialStatus, JANELA_DE_VALIDACAO_MS, type CredentialRow } from "./useCredentials";
 
 const base: CredentialRow = {
-  id: "c1", organization_id: "o1", provider: "anthropic", label: "x",
+  id: "c1", organization_id: "o1", provider: "anthropic",
+  origem: "propria", label: "x",
   api_key_last4: "abcd", validated_at: null, validation_error: null,
   models_available: null, is_active: true, created_by: null,
   created_at: "2026-09-02T12:00:00Z", updated_at: "2026-09-02T12:00:00Z",

@@ -44,6 +44,7 @@ export interface PedidoDeGuardar {
   /** Plaintext. Vive só no escopo desta chamada — nunca persistido nem logado. */
   apiKey: string;
   requestId?: string;
+  selecaoExplicita?: boolean;
 }
 
 export async function guardarCredencial(p: PedidoDeGuardar): Promise<ResultadoDeGuardar> {
@@ -66,6 +67,7 @@ export async function guardarCredencial(p: PedidoDeGuardar): Promise<ResultadoDe
       api_key_tag: bufToBytea(encrypted.tag),
       api_key_last4: encrypted.last4,
       is_active: true,
+      ...(p.selecaoExplicita && { selecao_explicita: true }),
       created_by: p.userId,
     })
     .select("id")

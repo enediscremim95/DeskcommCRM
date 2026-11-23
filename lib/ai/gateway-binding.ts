@@ -64,14 +64,14 @@ export async function resolverModeloDoPonto(
     // Antes da chave da instalação vem a credencial da PRÓPRIA organização —
     // o degrau do meio de `resolveOrgLlmConfig`, que esta pilha pulava.
     const daOrg = await credencialDaOrganizacao(organizationId);
-    const idNoProvider =
-      daOrg === null ? null : idParaOProvider(daOrg.provider, String(padrao));
+    const modelId = daOrg?.defaultModel ?? String(padrao);
+    const idNoProvider = daOrg === null ? null : idParaOProvider(daOrg.provider, modelId);
     if (daOrg !== null && idNoProvider !== null) {
       const model = instanciar(daOrg.provider, daOrg.apiKey, idNoProvider, null);
       if (model !== null) {
         // `modelId` continua sendo o id CANÔNICO, não o traduzido: é ele que
         // casa com o catálogo de preço no log de custo.
-        return { model, modelId: String(padrao), origem: "credencial_da_organizacao" };
+        return { model, modelId, origem: "credencial_da_organizacao" };
       }
     }
     const model = resolveLanguageModel(padrao);
@@ -173,10 +173,8 @@ function idParaOProvider(provider: string, id: string): string | null {
  * `User not found.` enquanto os pontos do agent-engine, no mesmo minuto,
  * respondiam pela credencial da organização.
  *
- * O MODELO não vem daqui — vem de quem chamou. Trocá-lo pelo `default_model`
- * da organização mandaria o modelo de conversa fazer o trabalho do
- * classificador barato, e é a metade errada do par que o PR #151 ensinou a não
- * cruzar: aqui provider e credencial andam juntos, que é o par que importa.
+ * O par aprovado em «Usar como padrão» inclui o modelo. Organizações sem
+ * essa escolha mantêm o modelo pedido pelo chamador.
  *
  * Nunca lança: leitura que falha devolve `null` e o chamador segue para a
  * chave da instalação. Um clone sem o baseline aplicado não pode ficar sem
@@ -184,7 +182,7 @@ function idParaOProvider(provider: string, id: string): string | null {
  */
 async function credencialDaOrganizacao(
   organizationId: string,
-): Promise<{ provider: string; apiKey: string } | null> {
+): Promise<{ provider: string; apiKey: string; defaultModel: string | null } | null> {
   try {
     const admin = createAdminClient();
     const { data: org } = await admin
@@ -192,25 +190,28 @@ async function credencialDaOrganizacao(
       .select("settings")
       .eq("id", organizationId)
       .maybeSingle();
-    const provider = (org?.settings as { llm?: { provider?: string } } | null)?.llm?.provider;
+    const llm = (org?.settings as { llm?: Record<string, unknown> } | null)?.llm;
+    const provider = llm?.provider;
     if (typeof provider !== "string" || provider === "") return null;
 
     // Admin client bypassa RLS: filtro por organização é PROGRAMÁTICO e
     // obrigatório (CLAUDE.md, anti-pattern 10).
-    const { data } = await admin
+    const query = admin
       .from("ai_provider_credentials")
       .select("api_key_encrypted, api_key_iv, api_key_tag")
       .eq("organization_id", organizationId)
       .eq("provider", provider)
       .eq("is_active", true)
-      .not("validated_at", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .not("validated_at", "is", null);
+    const credentialId = typeof llm?.credential_id === "string" ? llm.credential_id : null;
+    const { data } = await (credentialId
+      ? query.eq("id", credentialId)
+      : query.eq("selecao_explicita", false).order("created_at", { ascending: false }).limit(1)).maybeSingle();
     if (!data) return null;
 
     return {
       provider,
+      defaultModel: credentialId && typeof llm?.default_model === "string" ? llm.default_model : null,
       apiKey: decryptKey({
         ciphertext: byteaToBuffer(data.api_key_encrypted),
         iv: byteaToBuffer(data.api_key_iv),

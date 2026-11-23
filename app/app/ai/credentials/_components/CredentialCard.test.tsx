@@ -4,9 +4,10 @@
  * onde deveria haver uma contagem.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CredentialCard } from "./CredentialCard";
+import { apiClient } from "@/lib/api/client";
 import type { CredentialRow } from "@/hooks/ai/useCredentials";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
@@ -17,6 +18,7 @@ export function credencial(extra: Partial<CredentialRow> = {}): CredentialRow {
     id: "c1",
     organization_id: "o1",
     provider: "anthropic",
+    origem: "propria",
     label: "Produção",
     api_key_last4: "abcd",
     validated_at: "2026-09-02T00:00:00Z",
@@ -83,5 +85,54 @@ describe("CredentialCard — autoridade para exclusão", () => {
 
     expect(screen.getByRole("button", { name: "Revalidar credencial" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Excluir credencial" })).toBeNull();
+  });
+});
+
+describe("CredentialCard — confirmação da troca", () => {
+  it("identifica uma chave compartilhada pelo fornecedor, origem e final", () => {
+    montar(credencial({ origem: "compartilhada", provider: "openrouter" }));
+    expect(screen.getByText("OpenRouter · …abcd")).toBeInTheDocument();
+    expect(screen.getByText("Compartilhada")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Usar como padrão" })).toBeNull();
+  });
+
+  it("não oferece a troca para quem só lê", () => {
+    montar(credencial(), { canWrite: false });
+    expect(screen.queryByRole("button", { name: "Usar como padrão" })).toBeNull();
+  });
+
+  it("mostra o impacto e envia a escolha somente após confirmar", async () => {
+    const get = vi.spyOn(apiClient, "get").mockResolvedValue({
+      data: {
+        provider: "anthropic", revision: "revisao-ficticia", current_model: "modelo-anterior",
+        models: [{ id: "modelo-novo", name: "Modelo novo" }],
+        agents: [{ id: "agente-1", name: "Atendimento", provider: "anthropic", model: "modelo-anterior" }],
+        bindings: [{ id: "ponto-1", purpose: "sentiment_classify", provider: "anthropic", model: "modelo-anterior", is_enabled: true }],
+        retained: ["followup_classify"],
+      },
+    });
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: { applied: true } });
+    try {
+      montar(credencial());
+      fireEvent.click(screen.getByRole("button", { name: "Usar como padrão" }));
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText(/Atendimento.*nova versão publicada/)).toBeInTheDocument();
+      expect(screen.getByText(/Medir o clima da conversa/)).toBeInTheDocument();
+      expect(screen.getByText("Ler a resposta ao follow-up")).toBeInTheDocument();
+      expect(screen.getByText(/Follow-ups redigidos pelo agente/)).toBeInTheDocument();
+      const confirmar = screen.getByRole("button", { name: "Confirmar troca" });
+      expect(confirmar).toBeDisabled();
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "modelo-novo" } });
+      expect(post).not.toHaveBeenCalled();
+      fireEvent.click(confirmar);
+      await waitFor(() => expect(post).toHaveBeenCalledWith(
+        "/api/v1/ai/credentials/c1/default",
+        { model_id: "modelo-novo", revision: "revisao-ficticia" },
+        { noRetryOnTimeout: true },
+      ));
+    } finally {
+      get.mockRestore();
+      post.mockRestore();
+    }
   });
 });
