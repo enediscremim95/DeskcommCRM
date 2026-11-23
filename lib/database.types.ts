@@ -1504,6 +1504,7 @@ export type Database = {
           is_active: boolean
           label: string
           models_available: string[] | null
+          origem: string
           organization_id: string
           provider: string
           updated_at: string
@@ -1521,6 +1522,7 @@ export type Database = {
           is_active?: boolean
           label: string
           models_available?: string[] | null
+          origem?: string
           organization_id: string
           provider: string
           updated_at?: string
@@ -1538,6 +1540,7 @@ export type Database = {
           is_active?: boolean
           label?: string
           models_available?: string[] | null
+          origem?: string
           organization_id?: string
           provider?: string
           updated_at?: string
@@ -7591,6 +7594,7 @@ export type Database = {
           is_active: boolean | null
           label: string | null
           models_available: string[] | null
+          origem: string | null
           organization_id: string | null
           provider: string | null
           updated_at: string | null
@@ -7605,6 +7609,7 @@ export type Database = {
           is_active?: boolean | null
           label?: string | null
           models_available?: string[] | null
+          origem?: string | null
           organization_id?: string | null
           provider?: string | null
           updated_at?: string | null
@@ -7619,6 +7624,7 @@ export type Database = {
           is_active?: boolean | null
           label?: string | null
           models_available?: string[] | null
+          origem?: string | null
           organization_id?: string | null
           provider?: string | null
           updated_at?: string | null

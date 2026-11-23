@@ -29,6 +29,7 @@ import {
 } from "@/lib/ai/pontos/resolver";
 import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { PROVEDORES, ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
+import { AVISO_SEM_CREDENCIAL_PROPRIA } from "@/lib/ai/credenciais/sem-fallback";
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -62,7 +63,7 @@ export async function GET(): Promise<Response> {
       .eq("organization_id", org.orgId),
     db
       .from("ai_provider_credentials")
-      .select("id, provider, label, api_key_last4, validated_at, is_active")
+      .select("id, provider, label, api_key_last4, validated_at, is_active, origem, validation_error, selecao_explicita")
       .eq("organization_id", org.orgId)
       .eq("is_active", true),
     db
@@ -91,7 +92,16 @@ export async function GET(): Promise<Response> {
   );
 
   const llm = ((orgRes.data?.settings as { llm?: Record<string, unknown> } | null)?.llm ??
-    {}) as { provider?: string; default_model?: string | null };
+    {}) as {
+    provider?: string; default_model?: string | null; credential_id?: string;
+    sem_fallback_compartilhado?: boolean;
+  };
+  const semFallback = llm.sem_fallback_compartilhado === true;
+  const credenciaisProprias = (credsRes.data ?? []).filter((cred) =>
+    cred.origem === "propria" && cred.validated_at && !cred.validation_error);
+  const temChavePropria = (provider: string, credentialId: string | null | undefined) =>
+    credenciaisProprias.some((cred) =>
+      cred.provider === provider && (credentialId ? cred.id === credentialId : !cred.selecao_explicita));
   const padraoDaOrganizacao = {
     provider: typeof llm.provider === "string" ? llm.provider : "anthropic",
     defaultModel: typeof llm.default_model === "string" ? llm.default_model : null,
@@ -144,6 +154,13 @@ export async function GET(): Promise<Response> {
     });
     const chave = `${decisao.provider}|${decisao.modelId ?? ""}`;
     const capacidade = capacidadePorModelo.get(chave);
+    const credentialId = decisao.credentialId ??
+      (decisao.provider === padraoDaOrganizacao.provider ? llm.credential_id : null);
+    const exigeChavePropria = semFallback && !ponto.exige.audio && !ponto.exige.embeddingDims &&
+      (!ponto.fixo || ponto.id === "teste_de_agente") &&
+      (!temChavePropria(decisao.provider, credentialId) ||
+        (decisao.origem === "binding" && !decisao.credentialId &&
+          (ponto.id === "bot_respond" || ponto.id === "sentiment_classify")));
     return {
       id: ponto.id,
       rotulo: ponto.rotulo,
@@ -174,6 +191,7 @@ export async function GET(): Promise<Response> {
       },
       avisos: [
         ...decisao.avisos,
+        ...(exigeChavePropria ? [t(AVISO_SEM_CREDENCIAL_PROPRIA)] : []),
         // O aviso de capacidade é recalculado aqui porque só o servidor tem o
         // catálogo; o resolvedor puro não consulta banco.
         ...(capacidade && ponto.exige.tools === true && !capacidade.supports_tools
@@ -193,6 +211,8 @@ export async function GET(): Promise<Response> {
     // ponto; o que faltava era CHEGAR À TELA, e sem isso não havia como
     // mostrá-lo nem trocá-lo (invariante 6: toda configuração tem superfície).
     padrao: padraoDaOrganizacao,
+    sem_fallback_compartilhado: semFallback,
+    padrao_sem_chave_propria: semFallback && !temChavePropria(padraoDaOrganizacao.provider, llm.credential_id),
     provedores: PROVEDORES,
     credenciais: credsRes.data ?? [],
     modelos,
@@ -420,30 +440,32 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   // — `branding` (a marca da instalação) e `security` (a política de MFA) moram
   // nele. Um `update({ settings: { llm } })` ingênuo apaga os dois em silêncio, e
   // o sintoma aparece dias depois, longe daqui.
-  const { data: orgAtual } = await admin
+  const { data: orgAtual, error: leituraErr } = await admin
     .from("organizations")
     .select("settings")
     .eq("id", org.orgId)
     .maybeSingle();
 
-  const settingsAtuais = ((orgAtual?.settings ?? {}) as Record<string, unknown>) || {};
-  const settings = {
-    ...settingsAtuais,
-    llm: { provider: corpo.provider, default_model: corpo.default_model },
-  };
+  if (leituraErr || !orgAtual) return fail("save_failed", t("Não foi possível consultar ou trocar a chave padrão."), 500);
+  const settingsAtuais = (orgAtual.settings ?? {}) as Record<string, unknown>;
+  const llmAtual = (settingsAtuais.llm ?? {}) as Record<string, unknown>;
+  if (llmAtual.credential_id && llmAtual.provider !== corpo.provider) {
+    return fail("conflict", t("Confirme a troca do fornecedor padrão em Chaves de acesso à IA."), 409);
+  }
+  const llmNovo = { ...llmAtual, provider: corpo.provider, default_model: corpo.default_model };
+  const settings = { ...settingsAtuais, llm: llmNovo };
 
   const { data: gravado, error } = await admin
     .from("organizations")
     .update({ settings })
     .eq("id", org.orgId)
+    .eq("settings", JSON.stringify(orgAtual.settings))
     .select("settings")
     .maybeSingle();
 
   if (error) return fail("save_failed", error.message, 500);
   if (!gravado) {
-    // Mesma armadilha do PUT: no PostgREST, update que casa zero linhas volta
-    // como sucesso, e a tela diria "salvo" sem nada ter sido gravado.
-    return fail("save_failed", t("nada foi gravado — verifique as permissões da organização"), 500);
+    return fail("conflict", t("A configuração mudou. Recarregue e tente novamente."), 409);
   }
 
   void audit({

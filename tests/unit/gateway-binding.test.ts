@@ -355,3 +355,80 @@ describe("a credencial da organização só vale para modelo que o provider dela
     expect((r?.model as { modelId?: string }).modelId).toBe("anthropic/claude-haiku-4-5");
   });
 });
+
+describe("gateway com chave própria obrigatória", () => {
+  async function montarGateway(opcoes: {
+    settings?: Record<string, unknown>;
+    binding?: Record<string, unknown>;
+    credencial?: Record<string, unknown>;
+    falha?: "organizations" | "ai_purpose_bindings";
+  } = {}) {
+    const filtros = new Map<string, unknown>();
+    vi.doMock("@/lib/supabase/admin", () => ({
+      createAdminClient: () => ({
+        from(tabela: string) {
+          const chain = {
+            select: () => chain,
+            eq: (campo: string, valor: unknown) => {
+              filtros.set(`${tabela}.${campo}`, valor);
+              return chain;
+            },
+            is: () => chain,
+            not: () => chain,
+            order: () => chain,
+            limit: () => chain,
+            maybeSingle: async () => ({
+              error: opcoes.falha === tabela ? { code: "erro-ficticio" } : null,
+              data: tabela === "organizations"
+                ? { settings: { llm: { sem_fallback_compartilhado: true, provider: "openai", ...opcoes.settings } } }
+                : tabela === "ai_purpose_bindings" ? opcoes.binding : opcoes.credencial,
+            }),
+          };
+          return chain;
+        },
+      }),
+    }));
+    vi.resetModules();
+    const mod = await import("@/lib/ai/gateway-binding");
+    return {
+      filtros,
+      resolver: () => mod.resolverModeloDoPonto("sentiment_classify", ORG, "anthropic/modelo-legado"),
+    };
+  }
+
+  it("não usa a instalação ao faltar credencial para um vínculo explícito", async () => {
+    const { resolver, filtros } = await montarGateway({
+      binding: { provider: "openrouter", model_id: "modelo-ficticio", credential_id: "compartilhada" },
+    });
+    await expect(resolver()).rejects.toMatchObject({ name: "llm_own_credential_required" });
+    expect(filtros.get("ai_provider_credentials.origem")).toBe("propria");
+    expect(filtros.get("ai_provider_credentials.provider")).toBe("openrouter");
+  });
+
+  it("usa o modelo e o ponteiro próprios para um ponto sem vínculo", async () => {
+    const { resolver, filtros } = await montarGateway({
+      settings: { credential_id: "credencial-confirmada", default_model: "modelo-ficticio" },
+      credencial: { api_key_encrypted: "x", api_key_iv: "y", api_key_tag: "z" },
+    });
+    await expect(resolver()).resolves.toMatchObject({
+      origem: "credencial_da_organizacao", modelId: "modelo-ficticio",
+    });
+    expect(filtros.get("ai_provider_credentials.id")).toBe("credencial-confirmada");
+  });
+
+  it("respeita o modelo padrão da org estrita configurada antes de existir o ponteiro", async () => {
+    const { resolver, filtros } = await montarGateway({
+      settings: { default_model: "modelo-legado-da-org" },
+      credencial: { api_key_encrypted: "x", api_key_iv: "y", api_key_tag: "z" },
+    });
+    await expect(resolver()).resolves.toMatchObject({
+      origem: "credencial_da_organizacao", modelId: "modelo-legado-da-org",
+    });
+    expect(filtros.get("ai_provider_credentials.selecao_explicita")).toBe(false);
+  });
+
+  it.each(["organizations", "ai_purpose_bindings"] as const)("falha fechado se não puder ler %s", async (falha) => {
+    const { resolver } = await montarGateway({ falha });
+    await expect(resolver()).rejects.toMatchObject({ name: "llm_own_credential_required" });
+  });
+});

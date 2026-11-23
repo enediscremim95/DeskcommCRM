@@ -26,7 +26,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const SAFE_COLUMNS =
-  "id, organization_id, provider, label, api_key_last4, validated_at, validation_error, models_available, is_active, created_by, created_at, updated_at";
+  "id, organization_id, provider, label, api_key_last4, validated_at, validation_error, models_available, is_active, created_by, created_at, updated_at, origem";
 
 const createSchema = z.object({
   // Derivado de `lib/ai/pontos/provedores.ts`, a lista única desde a migration
@@ -95,6 +95,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     provider,
     label: input.label,
     apiKey: input.api_key,
+    selecaoExplicita: true,
     requestId,
   });
 

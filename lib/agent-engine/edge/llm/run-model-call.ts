@@ -25,7 +25,7 @@ import { scrubMessage } from '@/lib/sentry/scrub';
 
 import type { Logger } from '../../obs/logger';
 import { decidirParaOSeam } from './binding-do-ponto';
-import { resolveOrgLlmConfig, type LlmEdgeConfig, type OrcamentoDaOrg } from './credentials';
+import { resolveOrgLlmConfig, resolveOrgLlmConfigParaTranscricao, type LlmEdgeConfig, type OrcamentoDaOrg } from './credentials';
 import {
   AVISO_CORPO,
   AVISO_TITULO,
@@ -318,12 +318,15 @@ async function aplicarOrcamento(d: {
 export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunModelCallInput, deps: RunModelCallDeps = {}) {
   const registry = deps.registry ?? createDefaultRegistry();
   const purpose = input.purpose ?? 'agent_turn';
+  const resolverConfig = purpose === "percepcao_de_audio"
+    ? resolveOrgLlmConfigParaTranscricao
+    : resolveOrgLlmConfig;
 
   // A config da org é lida ANTES da decisão porque o resolvedor precisa dela
   // como último degrau da precedência (o padrão, quando ninguém mais opinou).
   const padrao = input.orgCredentialsOnly
     ? await resolveOrgLlmConfig(db, cfg, input.tenantId, input.llmOverride, 'metadata_only')
-    : await resolveOrgLlmConfig(db, cfg, input.tenantId, input.llmOverride);
+    : await resolverConfig(db, cfg, input.tenantId, input.llmOverride);
 
   // O painel de provedores entra AQUI, e é o que faz `purpose` deixar de ser
   // só um rótulo de custo e virar decisão. Sem binding configurado, `decisao`
@@ -364,7 +367,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   const config = input.orgCredentialsOnly
     ? await resolveOrgLlmConfig(db, cfg, input.tenantId, overrideDaDecisao, 'organization_only')
     : precisaOutraCredencial
-      ? await resolveOrgLlmConfig(db, cfg, input.tenantId, overrideDaDecisao)
+      ? await resolverConfig(db, cfg, input.tenantId, overrideDaDecisao)
       : padrao;
 
   const model = decisao.modelId;

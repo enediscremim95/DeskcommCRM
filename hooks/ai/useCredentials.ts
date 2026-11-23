@@ -12,6 +12,7 @@ import { PROVEDORES } from "@/lib/ai/pontos/provedores";
 export type Provider = (typeof PROVEDORES)[number]["id"];
 
 export interface CredentialRow {
+  origem: "propria" | "compartilhada";
   id: string;
   organization_id: string;
   provider: Provider;

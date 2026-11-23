@@ -374,3 +374,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261123120000` | `0314_precos_catalogo_llm` | Completa preços de referência do DeepSeek V4 Flash na OpenRouter e confere os dois modelos GPT mini da OpenAI. |
 | `20261123152953` | `0315_estado_compactacao_checkpoint` | Guarda no checkpoint o resumo incremental do histórico e o prefixo já coberto. |
 | `20261123154908` | `0316_alinha_preco_gpt_5_mini` | Alinha a tarifa de orçamento em `ai_pricing` à tarifa oficial do GPT-5 Mini registrada em `ai_models` pela 0314. |
+| `20261123160000` | `0318_origem_credencial_ia` | Identifica a origem da cobrança na view segura. O backfill marca o par OpenRouter e rótulo da trava de 17/11 sem ler a chave. Documenta o ponteiro opcional em `settings.llm.credential_id`. |
+| `20261123160001` | `0319_credencial_ia_padrao` | Prévia e troca transacional da credencial padrão. Cadastro exige seleção explícita, com republicação oficial, vínculos elegíveis e auditoria. |

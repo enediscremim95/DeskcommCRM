@@ -115,8 +115,8 @@ vi.mock("@/lib/messaging/media/waha-source", () => ({
 
 // resolveOrgLlmConfig e generateText mockados: o worker precisa de credencial p/
 // montar as deps, mas o teste não exercita rede.
-vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
-  resolveOrgLlmConfig: vi.fn(async () => ({
+vi.mock("@/lib/agent-engine/edge/llm/credentials", () => {
+  const resolver = vi.fn(async () => ({
     provider: "openai",
     apiKey: "sk-test",
     defaultModel: "gpt-5",
@@ -124,8 +124,9 @@ vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
     enabledModels: [],
     orcamento: { modo: "off", tetoCents: 0, efetivoEm: null, limiarPct: 80 },
     orcamentoIndisponivelPorque: null,
-  })),
-}));
+  }));
+  return { resolveOrgLlmConfig: resolver, resolveOrgLlmConfigParaTranscricao: resolver };
+});
 
 import { deriveMessageMedia } from "@/workers/media-derive-worker";
 import { extractPdfText } from "@/lib/ai/rag/extractors/pdf";

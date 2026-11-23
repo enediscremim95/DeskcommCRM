@@ -175,6 +175,36 @@ describe("o seam usa o modelo que o painel escolheu", () => {
     expect(resultado.avisos.join(" ")).toContain("modelo-da-variavel-de-ambiente");
   });
 
+  it.each([false, true])("exige chave própria no resumo com sem_fallback_compartilhado=%s", async (estrito) => {
+    const { pool, query } = poolFalso({
+      llmSettings: { provider: "anthropic", sem_fallback_compartilhado: estrito },
+      binding: {
+        provider: "openai",
+        credential_id: "22222222-2222-4222-8222-222222222222",
+        model_id: "gpt-5-mini",
+        base_url: null,
+        is_enabled: true,
+      },
+    });
+    const { registry, chamadas } = registrySpiao();
+
+    await expect(runModelCall(pool, cfg, {
+      tenantId: ORG,
+      purpose: "compaction",
+      orgCredentialsOnly: true,
+      messages: [{ role: "user", content: "histórico fictício" }],
+    }, { registry })).rejects.toThrow();
+
+    const consultasDeCredencial = query.mock.calls.filter(([sql]) =>
+      sql.includes("from ai_provider_credentials"),
+    );
+    expect(consultasDeCredencial).toEqual([[
+      expect.stringContaining("origem = 'propria'"),
+      [ORG, "22222222-2222-4222-8222-222222222222", "openai"],
+    ]]);
+    expect(chamadas).toHaveLength(0);
+  });
+
   it("binding desligado não é aplicado", async () => {
     const { chamadas } = await rodar({
       purpose: "compaction",

@@ -64,8 +64,9 @@ function fakeSeam(hasOrgCredential: boolean) {
       return { rows: [{ provider: 'openai', credential_id: credentialId, model_id: 'resumo-ficticio', is_enabled: true }] };
     }
     if (sql.includes('from ai_provider_credentials')) {
-      expect(params).toEqual([tenantId, credentialId]);
-      expect(sql).toContain('organization_id = $1 and id = $2');
+      expect(params).toEqual([tenantId, credentialId, 'openai']);
+      expect(sql).toContain('organization_id = $1 and id = $2 and provider = $3');
+      expect(sql).toContain("origem = 'propria'");
       return { rows: hasOrgCredential ? [{
         api_key_encrypted: Buffer.alloc(1),
         api_key_iv: Buffer.alloc(1),

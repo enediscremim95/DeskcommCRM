@@ -18,6 +18,7 @@
 import type pg from 'pg';
 import { z } from 'zod';
 
+import { CredencialPropriaObrigatoriaError } from "@/lib/ai/credenciais/sem-fallback";
 import { byteaToBuffer, decryptKey } from '@/lib/crypto/aes_gcm';
 import {
   LIMIAR_PADRAO_PCT,
@@ -165,6 +166,8 @@ const llmSettingsSchema = z
   .object({
     provider: z.string().min(1).catch('anthropic'),
     default_model: z.string().min(1).nullable().catch(null),
+    credential_id: z.uuid().nullish().catch(null),
+    sem_fallback_compartilhado: z.literal(true).optional().catch(undefined),
     params: z.record(z.string(), z.unknown()).catch({}),
     enabled_models: z.array(z.string()).catch([]),
   })
@@ -243,11 +246,32 @@ export interface LlmResolveOverride {
   credentialId?: string | null;
 }
 
-export async function resolveOrgLlmConfig(
+export function resolveOrgLlmConfig(
   db: pg.Pool,
   cfg: LlmEdgeConfig,
   organizationId: string,
   override?: LlmResolveOverride,
+  credentialMode: 'default' | 'metadata_only' | 'organization_only' = 'default',
+): Promise<OrgLlmConfig> {
+  return resolverConfig(db, cfg, organizationId, override, "chat", credentialMode);
+}
+
+/** A transcrição conserva a política de credenciais anterior à flag de chat. */
+export function resolveOrgLlmConfigParaTranscricao(
+  db: pg.Pool,
+  cfg: LlmEdgeConfig,
+  organizationId: string,
+  override?: LlmResolveOverride,
+): Promise<OrgLlmConfig> {
+  return resolverConfig(db, cfg, organizationId, override, "transcricao");
+}
+
+async function resolverConfig(
+  db: pg.Pool,
+  cfg: LlmEdgeConfig,
+  organizationId: string,
+  override: LlmResolveOverride | undefined,
+  uso: "chat" | "transcricao",
   credentialMode: 'default' | 'metadata_only' | 'organization_only' = 'default',
 ): Promise<OrgLlmConfig> {
   // ⚠️ O RESOLVEDOR NUNCA LANÇA POR SCHEMA DESATUALIZADO.
@@ -306,20 +330,28 @@ export async function resolveOrgLlmConfig(
   // Credencial: a ESCOLHIDA na versão publicada quando houver (ainda exigindo
   // ativa+validada — publish valida, mas a credencial pode ser revogada depois);
   // senão a mais recente ativa/validada do provider. Sempre escopada pela org.
-  const { rows: credRows } = override?.credentialId
-    ? await db.query<{
+  const estrito = uso === "chat" && settings.sem_fallback_compartilhado === true;
+  const credentialId = override?.credentialId ??
+    (uso === "chat" && provider === settings.provider ? settings.credential_id : null);
+  const apenasImplicita = uso === "chat" ? "and not selecao_explicita" : "";
+  // Resumos da conversa exigem chave própria mesmo com o fallback do chat liberado.
+  const exigePropria = estrito || credentialMode === 'organization_only';
+  const apenasPropria = exigePropria ? "and origem = 'propria' and validation_error is null" : "";
+  const consultaCredencial = credentialId
+    ? db.query<{
         api_key_encrypted: unknown;
         api_key_iv: unknown;
         api_key_tag: unknown;
       }>(
         `select api_key_encrypted, api_key_iv, api_key_tag
          from ai_provider_credentials
-         where organization_id = $1 and id = $2
+         where organization_id = $1 and id = $2 and provider = $3
            and is_active and validated_at is not null
+           ${apenasPropria}
          limit 1`,
-        [organizationId, override.credentialId],
+        [organizationId, credentialId, provider],
       )
-    : await db.query<{
+    : db.query<{
         api_key_encrypted: unknown;
         api_key_iv: unknown;
         api_key_tag: unknown;
@@ -328,29 +360,38 @@ export async function resolveOrgLlmConfig(
          from ai_provider_credentials
          where organization_id = $1 and provider = $2
            and is_active and validated_at is not null
+           ${apenasPropria} ${apenasImplicita}
          order by created_at desc
          limit 1`,
         [organizationId, provider],
       );
 
-  let apiKey: string;
-  const cred = credRows[0];
-  if (cred !== undefined) {
-    apiKey = decryptKey({
-      ciphertext: byteaToBuffer(cred.api_key_encrypted),
-      iv: byteaToBuffer(cred.api_key_iv),
-      tag: byteaToBuffer(cred.api_key_tag),
-    });
-  } else if (credentialMode === 'organization_only') {
-    throw new LlmNotConfiguredError();
-  } else if (provider === 'anthropic' && cfg.anthropicApiKey) {
-    apiKey = cfg.anthropicApiKey;
-  } else if (provider === 'openai' && cfg.openaiApiKey) {
-    apiKey = cfg.openaiApiKey;
-  } else if (provider === 'openrouter' && cfg.openrouterApiKey) {
-    apiKey = cfg.openrouterApiKey;
-  } else {
-    throw new LlmNotConfiguredError();
+  let apiKey: string | undefined;
+  try {
+    const { rows: [cred] } = await consultaCredencial;
+    if (cred !== undefined) {
+      apiKey = decryptKey({
+        ciphertext: byteaToBuffer(cred.api_key_encrypted),
+        iv: byteaToBuffer(cred.api_key_iv),
+        tag: byteaToBuffer(cred.api_key_tag),
+      });
+    }
+  } catch (error) {
+    if (!estrito) throw error;
+    throw new CredencialPropriaObrigatoriaError(organizationId, "credential_unavailable", { provider });
+  }
+
+  if (exigePropria) {
+    const chavesDaInstalacao = [cfg.anthropicApiKey, cfg.openaiApiKey, cfg.openrouterApiKey];
+    if (!apiKey || chavesDaInstalacao.includes(apiKey)) {
+      if (!estrito) throw new LlmNotConfiguredError();
+      throw new CredencialPropriaObrigatoriaError(organizationId, "credential_unavailable", { provider });
+    }
+  } else if (!apiKey) {
+    if (provider === 'anthropic' && cfg.anthropicApiKey) apiKey = cfg.anthropicApiKey;
+    else if (provider === 'openai' && cfg.openaiApiKey) apiKey = cfg.openaiApiKey;
+    else if (provider === 'openrouter' && cfg.openrouterApiKey) apiKey = cfg.openrouterApiKey;
+    else throw new LlmNotConfiguredError();
   }
 
   return { ...metadata, apiKey };

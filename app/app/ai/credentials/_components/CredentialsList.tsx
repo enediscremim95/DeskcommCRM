@@ -14,6 +14,7 @@ interface Props {
   initialData: CredentialRow[];
   canWrite: boolean;
   canDelete: boolean;
+  defaultCredentialId?: string;
   usageMap: Record<string, number>;
 }
 
@@ -25,7 +26,7 @@ const PROVIDER_LABELS: Record<string, string> = Object.fromEntries(
 
 const PROVIDER_ORDER: Provider[] = PROVEDORES.map((p) => p.id);
 
-export function CredentialsList({ initialData, canWrite, canDelete, usageMap }: Props) {
+export function CredentialsList({ initialData, canWrite, canDelete, usageMap, defaultCredentialId }: Props) {
   const t = useT();
   const { data } = useCredentialsList({ initialData });
   const [addOpen, setAddOpen] = useState(false);
@@ -90,6 +91,7 @@ export function CredentialsList({ initialData, canWrite, canDelete, usageMap }: 
                     credential={row}
                     canWrite={canWrite}
                     canDelete={canDelete}
+                    isDefault={row.id === defaultCredentialId}
                     usageCount={usageMap[row.id] ?? 0}
                   />
                 </li>

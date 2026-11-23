@@ -54,6 +54,7 @@ const SETTINGS_EXISTENTES = {
 interface EstadoDoBanco {
   atualizacao: Record<string, unknown> | null;
   modeloExiste: boolean;
+  settingsExistentes?: Record<string, unknown>;
 }
 
 function stubDoBanco(estado: EstadoDoBanco) {
@@ -75,7 +76,7 @@ function stubDoBanco(estado: EstadoDoBanco) {
             return Promise.resolve({
               data: estado.atualizacao
                 ? { settings: estado.atualizacao.settings }
-                : { settings: SETTINGS_EXISTENTES },
+                : { settings: estado.settingsExistentes ?? SETTINGS_EXISTENTES },
               error: null,
             });
           },
@@ -158,6 +159,29 @@ describe("PATCH /api/v1/ai/providers — padrão da organização", () => {
     // O que NÃO podia ser tocado:
     expect(settings.branding).toEqual(SETTINGS_EXISTENTES.branding);
     expect(settings.security).toEqual(SETTINGS_EXISTENTES.security);
+  });
+
+  it("preserva o bloqueio de fallback ao trocar o fornecedor", async () => {
+    estado.settingsExistentes = { llm: {
+      provider: "anthropic", default_model: "claude-sonnet-5",
+      sem_fallback_compartilhado: true,
+    } };
+    const { PATCH } = await import("./route");
+    const res = await PATCH(requisicao({ provider: "openai", default_model: "gpt-5.4-mini" }));
+    expect(res.status).toBe(200);
+    expect(estado.atualizacao?.settings).toEqual({ llm: {
+      provider: "openai", default_model: "gpt-5.4-mini", sem_fallback_compartilhado: true,
+    } });
+  });
+
+  it("pede confirmação em Credenciais ao tentar trocar um fornecedor confirmado", async () => {
+    estado.settingsExistentes = { llm: {
+      provider: "anthropic", default_model: "claude-sonnet-5", credential_id: "credencial-confirmada",
+    } };
+    const { PATCH } = await import("./route");
+    const res = await PATCH(requisicao({ provider: "openai", default_model: "gpt-5.4-mini" }));
+    expect(res.status).toBe(409);
+    expect(estado.atualizacao).toBeNull();
   });
 
   it("escreve pelo CLIENTE ADMIN, não pelo de sessão", async () => {
