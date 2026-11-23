@@ -1,3 +1,4 @@
+import { exigeMovimentoPermitido } from "@/lib/leads/kanban-guard";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
 /**
@@ -253,6 +254,17 @@ export async function createLeadHandler(
     reentry_guard_key?: string;
   },
 ): Promise<Record<string, unknown>> {
+  if (ctx.actor.type !== "user") {
+    const { data: entry, error } = await supabase.from("crm_stages")
+      .select("id").eq("organization_id", ctx.organization_id)
+      .eq("pipeline_id", input.pipeline_id).eq("is_archived", false)
+      .eq("is_won", false).eq("is_lost", false)
+      .order("position", { ascending: true }).order("id", { ascending: true })
+      .limit(1).maybeSingle();
+    if (error || !entry) throw new ApiError(422, "validation_failed", undefined, ctx.requestId,
+      "O funil precisa de uma etapa de entrada aberta.");
+    input = { ...input, stage_id: entry.id };
+  }
   // Validate stage belongs to pipeline within active org.
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
@@ -313,7 +325,7 @@ export async function createLeadHandler(
       expected_close_date: input.expected_close_date ?? null,
       tags: input.tags ?? [],
       source: input.source,
-      source_metadata: input.source_metadata ?? {},
+      source_metadata: { ...(input.source_metadata ?? {}), ...(input.source === "manual" ? { ai_starts_conversation: input.ai_starts_conversation !== false } : {}) },
       external_id: input.external_id ?? null,
       reentry_guard_until: input.reentry_guard_until ?? null,
       reentry_guard_key: input.reentry_guard_key ?? null,
@@ -608,7 +620,7 @@ export async function moveLeadHandler(
 
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
-    .select("id, pipeline_id, organization_id, name")
+    .select("id, pipeline_id, organization_id, name, position, is_won, is_lost, is_archived")
     .eq("id", input.to_stage_id)
     .eq("organization_id", ctx.organization_id)
     .maybeSingle();
@@ -632,6 +644,25 @@ export async function moveLeadHandler(
       ctx.requestId,
       traduzir("Move cross-pipeline não é permitido.", ctx.idioma ?? "pt-BR"),
     );
+  }
+
+  // GUARDA CENTRAL (mesmo para IA, automações, webhooks e bearer de integração):
+  // humano move livre; automático só avança, nunca sai/entra em Ganho/Perdido.
+  if (ctx.actor.type !== "user") {
+    if (lead.status === "won" || lead.status === "lost") {
+      throw new ApiError(403, "forbidden", { reason: "etapa_final_so_humano" }, ctx.requestId,
+        "Somente uma pessoa pode mover um negócio já ganho ou perdido.");
+    }
+    const { data: de, error: deErr } = await supabase
+      .from("crm_stages")
+      .select("id, pipeline_id, position, is_won, is_lost, is_archived")
+      .eq("id", lead.stage_id)
+      .eq("organization_id", ctx.organization_id)
+      .maybeSingle();
+    if (deErr || !de) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, deErr?.message ?? "Etapa de origem não encontrada.");
+    }
+    exigeMovimentoPermitido(ctx, de, stage);
   }
 
   let position = input.position_in_stage;

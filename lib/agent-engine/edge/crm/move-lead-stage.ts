@@ -90,6 +90,10 @@ export async function mirrorLeadStageToCrm(
         reason: 'not_configured',
         detail: 'o contato tem mais de um negócio aberto — nenhum foi movido',
       },
+      bloqueado_pelo_guarda: {
+        reason: 'not_configured',
+        detail: `o guarda do Kanban recusou (${r.detalhe ?? 'só avança'}) — o card fica onde está`,
+      },
       conflito_humano: {
         reason: 'human_conflict',
         detail: 'um humano moveu o card durante a operação — a decisão dele prevalece',

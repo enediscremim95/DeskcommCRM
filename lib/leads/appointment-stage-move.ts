@@ -1,5 +1,6 @@
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { avaliaMovimentoAutomatico } from "@/lib/leads/kanban-guard";
 
 import { logger } from "@/lib/logger";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
@@ -34,6 +35,7 @@ export interface ResultadoDoMovimentoDeAgendamento {
     | "lead_nao_encontrado"
     | "lead_fechado"
     | "conflito_humano"
+    | "bloqueado_pelo_guarda"
     | "falha_de_escrita"
     | "indisponivel";
 }
@@ -84,7 +86,7 @@ export async function moverLeadParaEtapaDeAgendamento(
 
   const { data: etapa, error: erroEtapa } = await admin
     .from("crm_stages")
-    .select("id, name")
+    .select("id, name, position, is_won, is_lost, is_archived")
     .eq("pipeline_id", leadRow.pipeline_id)
     .eq("slug", slugAlvo)
     .eq("is_archived", false)
@@ -100,10 +102,28 @@ export async function moverLeadParaEtapaDeAgendamento(
   if (!etapa) {
     return { moveu: false, motivo: "sem_etapa_mapeada" };
   }
-  const etapaRow = etapa as { id: string; name: string };
+  const etapaRow = etapa as { id: string; name: string; position: number; is_won: boolean; is_lost: boolean; is_archived: boolean };
 
   if (leadRow.stage_id === etapaRow.id) {
     return { moveu: false, motivo: "ja_esta_la" };
+  }
+
+  // GUARDA CENTRAL: só avança. Se o card já passou desta etapa (ex.: está em
+  // Agendado e chega um handoff/agendamento "anterior"), fica onde está.
+  const { data: atualRow, error: erroAtual } = await admin
+    .from("crm_stages")
+    .select("id, position, is_won, is_lost")
+    .eq("id", leadRow.stage_id)
+    .maybeSingle();
+  if (erroAtual || !atualRow) {
+    return { moveu: false, motivo: "indisponivel" };
+  }
+  const veredito = avaliaMovimentoAutomatico(
+    atualRow as { id: string; position: number; is_won: boolean; is_lost: boolean },
+    etapaRow,
+  );
+  if (!veredito.permitido) {
+    return { moveu: false, motivo: "bloqueado_pelo_guarda" };
   }
 
   // Nome da origem só enfeita o texto da timeline — erro descartado de

@@ -118,8 +118,8 @@ const ORG = "org-1";
 const CONTATO = "contato-1";
 const LEAD = { id: "lead-1", organization_id: ORG, pipeline_id: "pipe-1", stage_id: "s1", status: "open", created_at: "2026-01-01T00:00:00Z", last_activity_at: null };
 const STAGES = [
-  { id: "s1", name: "Primeiro contato", agent_stage_hint: "contacted", is_archived: false },
-  { id: "s2", name: "Proposta enviada", agent_stage_hint: "negotiating", is_archived: false },
+  { id: "s1", name: "Primeiro contato", agent_stage_hint: "contacted", is_archived: false, position: 1000, is_won: false, is_lost: false },
+  { id: "s2", name: "Proposta enviada", agent_stage_hint: "negotiating", is_archived: false, position: 2000, is_won: false, is_lost: false },
 ];
 
 function cenario(over: Partial<Cenario> = {}): Cenario {

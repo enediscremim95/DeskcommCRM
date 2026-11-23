@@ -121,3 +121,17 @@ it("PDF entregue inclui revisão pessoal e omite contexto privado", async () => 
   for (const value of ["CLAIM-PRIVADO", "FRONTEIRA-PRIVADA", "TRACE-PRIVADO"])
     expect(pdf.text).not.toContain(value);
 });
+
+it("PDF entregue inclui o texto do resumo da conversa", async () => {
+  const data = payload();
+  data.conversation_summaries = [{
+    id: "checkpoint-ficticio",
+    conversation_id: "conversa-ficticia",
+    created_at: "2030-01-02T13:05:00Z",
+    summary: "Cliente pediu retorno na sexta-feira.",
+  }];
+
+  const pdf = await rendered(data);
+  expect(pdf.text).toContain("Resumos de conversas");
+  expect(pdf.text).toContain("Cliente pediu retorno na sexta-feira.");
+});

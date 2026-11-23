@@ -19,6 +19,10 @@ export interface EstagioCandidato {
   name: string;
   agent_stage_hint: string | null;
   is_archived: boolean;
+  /** Ordem no funil — o guarda de Kanban só deixa o agente avançar por ela. */
+  position?: number;
+  is_won?: boolean | null;
+  is_lost?: boolean | null;
 }
 
 export type DestinoDoAgente =
@@ -76,6 +80,7 @@ export type { RiskBucket };
 /* ────────────────────────────────────────────────────────────────────────── */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { avaliaMovimentoAutomatico } from "@/lib/leads/kanban-guard";
 
 import { logger } from "@/lib/logger";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
@@ -102,6 +107,8 @@ export interface ResultadoDaSincronizacao {
     | "sem_negocio"
     | "ambiguo"
     | "conflito_humano"
+    /** O guarda (`kanban-guard.ts`) recusou: retrocesso, etapa final ou mesma posição. */
+    | "bloqueado_pelo_guarda"
     /**
      * O negócio está num funil que este agente não cuida (spec 17 passo 3).
      *
@@ -209,7 +216,7 @@ export async function sincronizaEstagioDoAgente(
 
   const { data: stageRows, error: erroStages } = await admin
     .from("crm_stages")
-    .select("id, name, agent_stage_hint, is_archived")
+    .select("id, name, agent_stage_hint, is_archived, position, is_won, is_lost")
     .eq("pipeline_id", lead.pipeline_id);
   // Mesmo motivo do SELECT acima: sem esta linha, banco fora = pipeline sem
   // hint nenhum = "sem_mapeamento", e o incidente se disfarça de configuração.
@@ -223,6 +230,23 @@ export async function sincronizaEstagioDoAgente(
     lead.stage_id,
   );
   if (!destino.move) return { moveu: false, motivo: destino.motivo, leadId: lead.id };
+
+  // GUARDA CENTRAL: o agente só avança. Voltar etapa (ex.: lead em Agendamento que
+  // responde mensagem e o passo mapeia para a 1ª etapa) ou mexer em Ganho/Perdido
+  // é recusado aqui, antes de qualquer escrita.
+  const estagios = (stageRows ?? []) as EstagioCandidato[];
+  const atual = estagios.find((e) => e.id === lead.stage_id);
+  const alvo = estagios.find((e) => e.id === destino.stageId)!;
+  if (!atual || atual.position === undefined || alvo.position === undefined) {
+    return { moveu: false, motivo: "indisponivel", leadId: lead.id, detalhe: "etapa de origem não encontrada no funil" };
+  }
+  const veredito = avaliaMovimentoAutomatico(
+    { id: atual.id, position: atual.position, is_won: atual.is_won, is_lost: atual.is_lost },
+    { id: alvo.id, position: alvo.position, is_won: alvo.is_won, is_lost: alvo.is_lost, is_archived: alvo.is_archived },
+  );
+  if (!veredito.permitido) {
+    return { moveu: false, motivo: "bloqueado_pelo_guarda", leadId: lead.id, detalhe: veredito.motivo };
+  }
 
   // O erro DESTE select é descartado de propósito — e a diferença para os dois de
   // cima (onde descartar produziu o defeito de tratar banco fora como rotina) é

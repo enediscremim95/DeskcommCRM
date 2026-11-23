@@ -79,6 +79,7 @@ describe("com binding, o painel manda", () => {
     const r = await resolverModeloDoPonto("sentiment_classify", ORG, "anthropic/claude-haiku-4-5");
     expect(r?.origem).toBe("binding");
     expect(r?.modelId).toBe("meta-llama/llama-3.3-70b-instruct");
+    expect(r?.provider).toBe("openrouter");
     // E NÃO é o objeto do padrão — se fosse, o teste acima passaria igual e
     // este aqui estaria medindo só o rótulo.
     expect((r?.model as { __padrao?: boolean }).__padrao).toBeUndefined();

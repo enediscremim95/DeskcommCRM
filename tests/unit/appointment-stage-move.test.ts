@@ -20,8 +20,9 @@ const LEAD = {
   contact_id: "contato-1",
   status: "open",
 };
-const ETAPA_AGENDADO = { id: "s-agendado", name: "Agendado" };
-const ETAPA_ORIGEM = { name: "Agendamento solicitado" };
+const FLAGS = { is_won: false, is_lost: false, is_archived: false };
+const ETAPA_AGENDADO = { id: "s-agendado", name: "Agendado", position: 3000, ...FLAGS };
+const ETAPA_ORIGEM = { id: "s1", name: "Contato", position: 1000, is_won: false, is_lost: false };
 
 interface Resposta {
   data: unknown;
@@ -49,7 +50,7 @@ interface ChamadaRpc {
 }
 
 /** Mesmo fake de query builder de `handoff-stage-move.test.ts`. */
-function fakeAdmin(c: Cenario, rpcs: ChamadaRpc[] = []) {
+function fakeAdmin(c: Cenario, rpcs: ChamadaRpc[] = [], origem: typeof ETAPA_ORIGEM = ETAPA_ORIGEM) {
   return {
     rpc(fn: string, args: Record<string, unknown>) {
       rpcs.push({ fn, args });
@@ -75,7 +76,7 @@ function fakeAdmin(c: Cenario, rpcs: ChamadaRpc[] = []) {
         maybeSingle: () => {
           if (tabela === "crm_leads") return Promise.resolve(c.lead);
           if (b._eqKeys.includes("slug")) return Promise.resolve(c.etapaDestino);
-          return Promise.resolve({ data: ETAPA_ORIGEM, error: null });
+          return Promise.resolve({ data: origem, error: null });
         },
         then(onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) {
           const r = b._update ? c.update : c.lead;
@@ -120,9 +121,21 @@ describe("moverLeadParaEtapaDeAgendamento", () => {
   });
 
   it("pending move para 'agendamento-solicitado'", async () => {
-    const etapa = { id: "s-solicitado", name: "Agendamento solicitado" };
+    const etapa = { id: "s-solicitado", name: "Agendamento solicitado", position: 2000, ...FLAGS };
     const r = await mover(cenario({ etapaDestino: { data: etapa, error: null } }), "pending");
     expect(r).toEqual({ moveu: true, motivo: "movido" });
+  });
+
+  it("pending com o card já em etapa mais à frente: não volta (só avança)", async () => {
+    const etapa = { id: "s-solicitado", name: "Agendamento solicitado", position: 2000, ...FLAGS };
+    // origem = Agendado (3000), destino pending = 2000 → retrocesso
+    const c = cenario({ etapaDestino: { data: etapa, error: null } });
+    const r = await moverLeadParaEtapaDeAgendamento(
+      fakeAdmin(c, [], { ...ETAPA_ORIGEM, position: 3000 }),
+      { organizationId: ORG, leadId: LEAD.id, transicao: "pending" },
+    );
+    expect(r).toEqual({ moveu: false, motivo: "bloqueado_pelo_guarda" });
+    expect(vi.mocked(emitLeadActivity)).not.toHaveBeenCalled();
   });
 
   it("transição sem mapa (ex.: cancelled) é no-op sem tocar o banco", async () => {

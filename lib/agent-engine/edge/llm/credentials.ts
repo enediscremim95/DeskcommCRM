@@ -248,6 +248,7 @@ export async function resolveOrgLlmConfig(
   cfg: LlmEdgeConfig,
   organizationId: string,
   override?: LlmResolveOverride,
+  credentialMode: 'default' | 'metadata_only' | 'organization_only' = 'default',
 ): Promise<OrgLlmConfig> {
   // ⚠️ O RESOLVEDOR NUNCA LANÇA POR SCHEMA DESATUALIZADO.
   //
@@ -291,6 +292,17 @@ export async function resolveOrgLlmConfig(
           limiarPct: Number(linha?.limiar_pct ?? LIMIAR_PADRAO_PCT),
         };
 
+  const metadata = {
+    provider,
+    defaultModel: settings.default_model ?? null,
+    params: settings.params,
+    enabledModels: settings.enabled_models,
+    orcamento,
+    orcamentoIndisponivelPorque,
+  };
+  // O seam usa só os metadados para decidir o ponto antes de resolver a chave.
+  if (credentialMode === 'metadata_only') return { ...metadata, apiKey: '' };
+
   // Credencial: a ESCOLHIDA na versão publicada quando houver (ainda exigindo
   // ativa+validada — publish valida, mas a credencial pode ser revogada depois);
   // senão a mais recente ativa/validada do provider. Sempre escopada pela org.
@@ -329,6 +341,8 @@ export async function resolveOrgLlmConfig(
       iv: byteaToBuffer(cred.api_key_iv),
       tag: byteaToBuffer(cred.api_key_tag),
     });
+  } else if (credentialMode === 'organization_only') {
+    throw new LlmNotConfiguredError();
   } else if (provider === 'anthropic' && cfg.anthropicApiKey) {
     apiKey = cfg.anthropicApiKey;
   } else if (provider === 'openai' && cfg.openaiApiKey) {
@@ -339,13 +353,5 @@ export async function resolveOrgLlmConfig(
     throw new LlmNotConfiguredError();
   }
 
-  return {
-    provider,
-    apiKey,
-    defaultModel: settings.default_model ?? null,
-    params: settings.params,
-    enabledModels: settings.enabled_models,
-    orcamento,
-    orcamentoIndisponivelPorque,
-  };
+  return { ...metadata, apiKey };
 }

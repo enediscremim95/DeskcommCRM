@@ -93,7 +93,7 @@ class FakeQuery implements PromiseLike<QResult> {
   }
 
   order(col: string, opts: { ascending: boolean }): this {
-    this.orderCol = col;
+    this.orderCol = this.orderCol ? `${this.orderCol} ${this.orderAsc ? "asc" : "desc"}, ${col}` : col;
     this.orderAsc = opts.ascending;
     return this;
   }
@@ -416,7 +416,8 @@ describe("create_or_move_lead (Task 9)", () => {
     const created = leadRow(createdId);
     expect(created.contact_id).toBe(CONTACT_T9);
     expect(created.pipeline_id).toBe(GOV_PIPELINE);
-    expect(created.stage_id).toBe(GOV_STAGE);
+    const entry = rows(`select id from crm_stages where pipeline_id='${GOV_PIPELINE}' and not is_archived and not is_won and not is_lost order by position,id limit 1`)[0]!;
+    expect(created.stage_id).toBe(entry.id);
 
     const found = rows(
       `select metadata from public.event_log where event_type = 'lead.created' and entity_id = '${createdId}' order by created_at desc limit 1`,

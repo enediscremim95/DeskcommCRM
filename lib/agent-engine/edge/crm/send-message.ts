@@ -101,6 +101,7 @@ export async function sendTurnMessage(
   const proactiveContext =
     sourceJobs[0]?.kind === 'followup_turn' && input.leadId
       ? {
+          automaticSilence: sourceJobs[0].payload.automatic_silence === true,
           organizationId: input.tenantId,
           contactId: input.leadId,
           jobId: input.jobId,

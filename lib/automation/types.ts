@@ -11,6 +11,8 @@ export interface ActionResultDetail {
 }
 
 export interface ActionCtx {
+  captureClaim?: import("@/lib/proactivity/capture-claim").CaptureClaim;
+  internalPhoneCandidate?: string;
   /** Privado à execução: nunca vem do payload nem do contexto de condições. */
   serviceBoundaries?: Map<string, Promise<ServiceBoundary>>;
   admin: SupabaseClient;

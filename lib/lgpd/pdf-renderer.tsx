@@ -35,6 +35,7 @@ import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-p
 import React from "react";
 
 import { env } from "@/lib/env";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 import type { ExportPayload } from "./export-collector";
 
@@ -337,6 +338,18 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
 
         {/* O fluxo entrega este PDF; armazenar as categorias só no JSON não
             as disponibiliza ao titular. Consumir apenas a projeção do coletor. */}
+        {data.conversation_summaries?.length ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{traduzir("Resumos de conversas", "pt-BR")}</Text>
+            {data.conversation_summaries.map((summary) => (
+              <View key={summary.id} style={styles.itemBlock}>
+                <Text style={styles.small}>{fmtDate(summary.created_at)}</Text>
+                <Text>{summary.summary}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         {data.reply_drafts?.length ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Sugestões e respostas revisadas</Text>

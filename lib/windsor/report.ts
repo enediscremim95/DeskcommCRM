@@ -291,6 +291,11 @@ function hasDelivery(bucket: Bucket): boolean {
     bucket.messaging_conversations,
   ].some((value) => value > 0);
 }
+const CAMPOS_DE_CONTAGEM = [
+  "landing_page_views", "add_to_cart", "initiate_checkout", "purchases",
+  "messaging_conversations", "impressions", "clicks", "link_clicks",
+  "video_views", "video_p25", "video_p50", "video_p75", "video_p95",
+] as const;
 function ratios(
   bucket: Bucket,
   model: DashboardModel,
@@ -298,15 +303,30 @@ function ratios(
   platform?: AdPlatform,
 ) {
   const budget = budgetOf(bucket);
+  // Leads e alcance são CONTAGENS de pessoas: inteiros. As fontes (Windsor/Meta)
+  // entregam conversões e alcance fracionados (atribuição ponderada, alcance
+  // estimado/deduplicado, linhas somadas de contas), e a soma bruta chegava à
+  // tela como "1.951,95 leads" e "535.025,46" de alcance. Arredondamos UMA vez,
+  // na saída, e todo custo por lead usa o mesmo inteiro que o cliente enxerga.
+  const leads = Math.round(bucket.conversions);
+  const reach = periodReach != null ? Math.round(periodReach) : null;
   const metricClicks = platform === "google_ads" ? bucket.clicks : bucket.link_clicks;
+  // Toda CONTAGEM sai inteira (leads, conversas, vendas, cliques, impressões,
+  // visualizações...) para qualquer organização e modelo. Os custos usam a soma
+  // bruta de `bucket` mais acima, para não distorcer o CPM/CTR.
+  const contagens = Object.fromEntries(
+    CAMPOS_DE_CONTAGEM.map((campo) => [campo, Math.round(bucket[campo])]),
+  ) as Record<(typeof CAMPOS_DE_CONTAGEM)[number], number>;
   return {
     ...bucket,
+    ...contagens,
     ...budget,
-    reach: periodReach,
-    frequency: periodReach != null && periodReach > 0 ? bucket.impressions / periodReach : null,
-    leads: bucket.conversions,
-    cost_per_conversion: bucket.conversions > 0 ? bucket.spend / bucket.conversions : null,
-    cost_per_lead: bucket.conversions > 0 ? bucket.spend / bucket.conversions : null,
+    conversions: leads,
+    reach,
+    frequency: reach != null && reach > 0 ? bucket.impressions / reach : null,
+    leads,
+    cost_per_conversion: leads > 0 ? bucket.spend / leads : null,
+    cost_per_lead: leads > 0 ? bucket.spend / leads : null,
     cost_per_landing_page_view:
       bucket.landing_page_views > 0 ? bucket.spend / bucket.landing_page_views : null,
     cost_per_add_to_cart: bucket.add_to_cart > 0 ? bucket.spend / bucket.add_to_cart : null,
@@ -318,10 +338,10 @@ function ratios(
     cpm: bucket.impressions > 0 ? (bucket.spend / bucket.impressions) * 1000 : null,
     ctr: bucket.impressions > 0 ? (metricClicks / bucket.impressions) * 100 : null,
     cpc: metricClicks > 0 ? bucket.spend / metricClicks : null,
-    conversion_rate: metricClicks > 0 ? (bucket.conversions / metricClicks) * 100 : null,
+    conversion_rate: metricClicks > 0 ? (leads / metricClicks) * 100 : null,
     roas: model === "ecommerce" && bucket.spend > 0 ? bucket.revenue / bucket.spend : null,
     average_order_value:
-      model === "ecommerce" && bucket.conversions > 0 ? bucket.revenue / bucket.conversions : null,
+      model === "ecommerce" && leads > 0 ? bucket.revenue / leads : null,
   };
 }
 export function buildTrafficReport(args: {
@@ -556,7 +576,7 @@ export function buildTrafficReport(args: {
             date,
             spend_meta: value.meta.spend,
             spend_google: value.google.spend,
-            conversions: value.total.conversions,
+            conversions: Math.round(value.total.conversions),
             revenue: value.total.revenue,
           })),
         platforms: [...group.platforms.entries()].map(([platform, value]) => ({

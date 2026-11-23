@@ -1,0 +1,13 @@
+> Atualização 16/11/2026 (tarde): a regra abaixo foi ajustada — IA/automação podem mover o card SÓ PARA A FRENTE (guarda único em `lib/leads/kanban-guard.ts`, migration 0312); retrocesso, voltar à 1ª etapa e mexer em Ganho/Perdido seguem só humanos.
+
+# Autoridade do Kanban — pedido de 16/11/2026
+
+Regra vigente: somente uma pessoa decide etapa e desfecho. IA/automação pode criar na primeira etapa aberta; nunca move, fecha ou reabre negócio existente. Esta regra substitui o espelhamento descrito na spec 16 e nas waves de sincronização do agente.
+
+Caminhos conferidos: os dois webhooks WAHA delegam a `lib/waha/ingest.ts`, que cria via `garantirLeadDaConversa` (não atualiza etapa). `createLeadHandler` força a entrada para ator automático. A ação legada `create_or_move_lead` preserva qualquer negócio existente, inclusive fechado. `sincronizaEstagioDoAgente`, `moverLeadParaEtapaDeHandoff` e `moverLeadParaEtapaDeAgendamento` devolvem decisão humana obrigatória sem ler/escrever o banco. Os handlers compartilhados de movimento, encerramento e reabertura e o arquivamento de etapa recusam atores automáticos. Bearer MCP é integração, inclusive sem escopo explícito de IA.
+
+O risk-watcher observa risco e produz propostas; `lead_reactivated` com payload de/para em_dia/em_risco/critico não é reabertura de Kanban. Scheduler, follow-up e workers não ganham permissão de etapa. O trigger de fechamento continua derivando ganho/perda em movimentos humanos; o novo trigger final recusa alterações protegidas com JWT service_role/anon, inclusive chamadas de função em lote. SQL administrativo direto permanece ferramenta de manutenção: a credencial de superusuário não deve ser exposta a agentes externos.
+
+Living System Checklist: entrada = evento WAHA/estado interno/handoff/agendamento; saída = conversa, atribuição e propostas existentes, com card preservado; registro = recusa 403 nos handlers e motivo explícito nos adaptadores; tela/porta = Kanban e timeline existentes; configuração = regra global, sem opt-out; continuidade = handoff existente preservado; anti-morte = radar e follow-up existentes preservados; retorno = testes de regressão e erro SQL 42501 para impedir nova mutação. Não há componente novo no grafo, apenas remoção de arestas automáticas para `crm_leads.stage_id`.
+
+Auditoria de produção não executada nesta sessão. Scripts somente leitura e instruções de backup preparados em `/workspace/crm-dev/vps-scripts/`. Contagens por organização não medidas; nenhuma devolução aplicada.

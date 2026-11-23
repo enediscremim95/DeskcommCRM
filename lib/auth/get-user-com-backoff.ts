@@ -43,7 +43,7 @@ export class AuthTemporariamenteIndisponivel extends Error {
 }
 
 /** Três chamadas no máximo; sem aceitar identidade não validada nem devolver null por falha. */
-export async function getUserComBackoff<T extends { error: unknown }>(
+async function getUserComBackoffInterno<T extends { error: unknown }>(
   getUser: () => Promise<T>,
   esperar: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 ): Promise<T> {
@@ -65,6 +65,24 @@ export async function getUserComBackoff<T extends { error: unknown }>(
     await esperar(150 * 2 ** tentativa);
   }
   throw new AuthTemporariamenteIndisponivel();
+}
+
+/** Prazo total inclui as tentativas e nunca promove identidade não validada. */
+export async function getUserComBackoff<T extends { error: unknown }>(
+  getUser: () => Promise<T>,
+  esperar?: (ms: number) => Promise<void>,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      getUserComBackoffInterno(getUser, esperar),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new AuthTemporariamenteIndisponivel()), 8_000);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /** Páginas públicas devem renderizar mesmo se o Auth estiver indisponível. */

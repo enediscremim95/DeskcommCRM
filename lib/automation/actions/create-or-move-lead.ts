@@ -1,6 +1,7 @@
 import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
 /**
- * Ação `create_or_move_lead` — reusa os handlers core de /api/v1/leads
+ * Ação legada `create_or_move_lead` — cria na entrada e só move para a frente (guarda central do Kanban).
+ * Reusa os handlers core de /api/v1/leads
  * (mesmo caminho que REST/MCP) em vez de duplicar a lógica de criação/move.
  *
  * Actor = `webhook_source` com id = ruleId (ator automático; audit registra
@@ -12,6 +13,7 @@ import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
+import { ApiError } from "@/lib/api/types";
 import { createLeadHandler, moveLeadHandler } from "@/app/api/v1/leads/_handler";
 
 async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
@@ -37,18 +39,14 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     : { kind: "unavailable", reason: "origin_capture_failed" };
 
   try {
-    // `message.received` hidrata o contato, não um lead específico. Antes de
-    // criar outro negócio, procura o aberto desse contato NO funil configurado.
-    // Sem isso o modelo "respondeu → próxima etapa" duplicaria o lead em vez de
-    // mover o que a pessoa acabou de responder.
+    // Preserva negócios existentes, inclusive Perdidos/Ganhos: nunca reabre nem move.
     if (!lead && contact) {
       const { data: existentes, error: buscaErro } = await ctx.admin
         .from("crm_leads")
         .select("id, pipeline_id, contact_id")
         .eq("organization_id", ctx.organizationId)
         .eq("contact_id", contact.id)
-        .eq("pipeline_id", pipelineId)
-        .eq("status", "open");
+        .eq("pipeline_id", pipelineId);
       if (buscaErro) {
         return { type: "create_or_move_lead", status: "failed", error: buscaErro.message };
       }
@@ -64,7 +62,18 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       if (lead.pipeline_id !== pipelineId) {
         return { type: "create_or_move_lead", status: "failed", error: "cross_pipeline_move_not_allowed" };
       }
-      await moveLeadHandler(ctx.admin, handlerCtx, lead.id, { to_stage_id: stageId });
+      // Só avança: o guarda central (`lib/leads/kanban-guard.ts`) recusa retrocesso,
+      // "voltar à 1ª etapa por mensagem" e Ganho/Perdido. Recusa não é falha da regra:
+      // o card fica onde está e o motivo vai para o resultado.
+      try {
+        await moveLeadHandler(ctx.admin, handlerCtx, lead.id, { to_stage_id: stageId, reason: `Regra de automação ${ctx.ruleId}` });
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 403) {
+          const motivo = (err.details as { reason?: string } | undefined)?.reason ?? "kanban_so_avanca";
+          return { type: "create_or_move_lead", status: "skipped", detail: { reason: motivo, preserved: lead.id } };
+        }
+        throw err;
+      }
       return { type: "create_or_move_lead", status: "success", detail: { moved: lead.id } };
     }
     if (contact) {

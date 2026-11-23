@@ -44,6 +44,7 @@ export const AUDIT_ACTIONS = [
   "nuvemshop.webhook_received",
   "nuvemshop.webhook_invalid_signature",
   "lead.created",
+  "lead.quick_reused",
   "lead.updated",
   "lead.note_created",
   "lead.note_deleted",
@@ -256,6 +257,8 @@ export const AUDIT_ACTIONS = [
   "leads.bulk_assigned",
   "attendant.availability_changed",
   "routing.config_changed",
+  "capture.proactivity_config_changed",
+  "proactivity.config_changed",
   // Mudar a régua do abandono (spec 16 §5.2) muda como TODO período passa a ser
   // lido — é mutação relevante, não preferência de exibição.
   "metrics.atrito_regua_changed",

@@ -365,3 +365,12 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 
 | `20261116021900` | `0309_juncao_operacional_so_servico` | Revoga as duas funções operacionais de junção de authenticated, PUBLIC e anon; mantém service_role e o desfazer gerencial existente. Não há call site de usuário para estas funções. |
 | `20261005180000` | `0285_retencao_dos_logs` | Expurga em lotes duas fontes de crescimento contínuo medidas na instalação Micro: `webhook_events_log` somente depois de o corpo já ter sido arquivado, com default de 14 dias e piso de 7 que preserva a deduplicação além das 48 horas de repetição da Nuvemshop; `event_log` somente em `done`/`dead`, 30 dias após a última mudança, com piso de 14. As duas funções são `security definer`, cedem lock em 1 segundo, pulam linhas concorrentes, revogam `PUBLIC`/`anon`/`authenticated` e concedem execução apenas à `service_role`. O cron diário limita o catch-up a cinco lotes de 2.000 por tabela, audita somente quando apaga algo e nunca toca `pending`/`processing`. A migration só instala a rotina; nenhuma linha é apagada durante a atualização. |
+
+| `20261116170000` | `0311_silence_origin` | Identifica matrículas automáticas por silêncio para opt-in por organização no envio. |
+| `20261116150000` | `0310_kanban_decisao_humana` | IA/automação só insere na entrada; serviço não muda etapa, pipeline nem desfecho. |
+| `20261116180000` | `0312_kanban_so_avanca` | Troca a trava total da 0310: serviço só muda etapa para a frente (posição maior, mesmo funil, fora de Ganho/Perdido/arquivada); retrocesso levanta `kanban_only_forward`; pipeline/status/fechamento seguem só humanos. Reversível (corpo da 0310 no cabeçalho). |
+
+| `20261117143000` | `0313_manual_capture_claim` | Primeiro contato manual: reserva por organização/telefone e guarda de histórico/opt-out no envio. |
+| `20261123120000` | `0314_precos_catalogo_llm` | Completa preços de referência do DeepSeek V4 Flash na OpenRouter e confere os dois modelos GPT mini da OpenAI. |
+| `20261123152953` | `0315_estado_compactacao_checkpoint` | Guarda no checkpoint o resumo incremental do histórico e o prefixo já coberto. |
+| `20261123154908` | `0316_alinha_preco_gpt_5_mini` | Alinha a tarifa de orçamento em `ai_pricing` à tarifa oficial do GPT-5 Mini registrada em `ai_models` pela 0314. |

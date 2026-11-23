@@ -17,8 +17,8 @@ const LEAD = {
   contact_id: "contato-1",
   status: "open",
 };
-const ETAPA_HANDOFF = { id: "s-handoff", name: "Chamar Humano" };
-const ETAPA_ORIGEM = { name: "Agendado" };
+const ETAPA_HANDOFF = { id: "s-handoff", name: "Chamar Humano", position: 2000, is_won: false, is_lost: false, is_archived: false };
+const ETAPA_ORIGEM = { id: "s1", name: "Agendado", position: 1000, is_won: false, is_lost: false };
 
 interface Resposta {
   data: unknown;
@@ -109,6 +109,13 @@ async function moverObservando(c: Cenario) {
 
 describe("moverLeadParaEtapaDeHandoff", () => {
   beforeEach(() => vi.mocked(emitLeadActivity).mockClear());
+
+  it("handoff que ficaria ATRÁS da etapa atual não move (só avança)", async () => {
+    const { r, eventos } = await moverObservando(cenario({ etapaDestino: { data: { ...ETAPA_HANDOFF, position: 500 }, error: null } }));
+    expect(r).toEqual({ moveu: false, motivo: "bloqueado_pelo_guarda" });
+    expect(eventos).toHaveLength(0);
+    expect(vi.mocked(emitLeadActivity)).not.toHaveBeenCalled();
+  });
 
   it("caminho feliz: move para a etapa de handoff e emite atividade + evento", async () => {
     const { r, eventos } = await moverObservando(cenario());

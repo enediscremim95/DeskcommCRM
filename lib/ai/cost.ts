@@ -1,145 +1,129 @@
-/**
- * Cost computation for AI invocations.
- *
- * Looks up `ai_pricing` (rarely changing global table) and converts token
- * usage to cost in *cents* (rounded up to integer to err on the side of
- * over-billing rather than free usage).
- */
+import type { Pool } from "pg";
 
+import { precoClaude, type TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-interface PricingRow {
-  model: string;
-  prompt_cents_per_million_tokens: string | number | null;
-  completion_cents_per_million_tokens: string | number | null;
-  embedding_cents_per_million_tokens: string | number | null;
+const COLUNAS = "provider, model_id, input_price_per_million_cents, output_price_per_million_cents";
+const TTL_MS = 60_000;
+const TAMANHO_PAGINA = 500;
+
+interface LinhaDePreco {
+  provider: string;
+  model_id: string;
+  input_price_per_million_cents: number | null;
+  output_price_per_million_cents: number | null;
 }
 
-let _pricingCache: Map<string, PricingRow> | null = null;
-let _pricingFetchedAt = 0;
-const PRICING_TTL_MS = 5 * 60 * 1000; // 5 minutes — enough for hot reload + cheap if missed.
+interface Catalogo {
+  linhas: LinhaDePreco[];
+  expiraEm: number;
+  consulta?: Promise<LinhaDePreco[]>;
+}
 
-async function loadPricing(): Promise<Map<string, PricingRow>> {
-  const now = Date.now();
-  if (_pricingCache && now - _pricingFetchedAt < PRICING_TTL_MS) {
-    return _pricingCache;
+const catalogoRest: Catalogo = { linhas: [], expiraEm: 0 };
+const catalogosPg = new WeakMap<Pool, Catalogo>();
+
+async function consultarCatalogo(db?: Pool): Promise<LinhaDePreco[]> {
+  if (db) {
+    const { rows } = await db.query<LinhaDePreco>(`select ${COLUNAS} from public.ai_models`);
+    return rows;
   }
+
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("ai_pricing")
-    .select(
-      "model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, embedding_cents_per_million_tokens",
-    )
-    .is("superseded_at", null);
-
-  if (error) {
-    // Surface but don't crash — cost will be 0 and the row stays auditable.
-    return _pricingCache ?? new Map();
+  const linhas: LinhaDePreco[] = [];
+  for (let inicio = 0; ; inicio += TAMANHO_PAGINA) {
+    const { data, error } = await admin
+      .from("ai_models")
+      .select(COLUNAS)
+      .order("id")
+      .range(inicio, inicio + TAMANHO_PAGINA - 1);
+    if (error) throw error;
+    linhas.push(...data);
+    if (data.length < TAMANHO_PAGINA) return linhas;
   }
-
-  const map = new Map<string, PricingRow>();
-  for (const row of (data ?? []) as PricingRow[]) {
-    map.set(row.model, row);
-  }
-  _pricingCache = map;
-  _pricingFetchedAt = now;
-  return map;
 }
 
-function toNumber(v: string | number | null | undefined): number {
-  if (v === null || v === undefined) return 0;
-  if (typeof v === "number") return v;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+function carregarCatalogo(db?: Pool): Promise<LinhaDePreco[]> {
+  const cache = (db && catalogosPg.get(db)) || { linhas: [], expiraEm: 0 };
+  const catalogo = db ? cache : catalogoRest;
+  if (db) catalogosPg.set(db, catalogo);
+  if (Date.now() < catalogo.expiraEm) return Promise.resolve(catalogo.linhas);
+
+  catalogo.consulta ??= consultarCatalogo(db)
+    .then((linhas) => {
+      catalogo.linhas = linhas;
+      return linhas;
+    })
+    .catch(() => {
+      logger.warn("[llm-calls] falha ao carregar preços do catálogo");
+      return catalogo.linhas;
+    })
+    .finally(() => {
+      catalogo.expiraEm = Date.now() + TTL_MS;
+      delete catalogo.consulta;
+    });
+  return catalogo.consulta;
 }
 
-export interface ComputeCostInput {
+function semData(modelo: string): string {
+  return modelo.replace(/-\d{4}-\d{2}-\d{2}$/, "");
+}
+
+function encontrarPreco(linhas: LinhaDePreco[], provider: string, id: string): LinhaDePreco | undefined {
+  const modelos = linhas.filter((linha) => linha.provider === provider);
+  const base = semData(id);
+  const exato = modelos.find((linha) => linha.model_id === id)
+    ?? modelos.find((linha) => linha.model_id === base);
+  if (exato) return exato;
+
+  const separador = base.indexOf("/");
+  if (provider !== "openrouter" && !base.startsWith(`${provider}/`)) return undefined;
+  if (separador >= 0) {
+    return modelos.find((linha) => linha.model_id === base.slice(separador + 1));
+  }
+
+  // Um id sem família só pode herdar a tarifa se houver uma família inequívoca.
+  const candidatos = modelos.filter((linha) => linha.model_id.endsWith(`/${base}`));
+  return candidatos.length === 1 ? candidatos[0] : undefined;
+}
+
+interface ComputeCostInput extends Partial<TokenUsage> {
+  provider: string;
   model: string;
-  promptTokens?: number;
-  completionTokens?: number;
-  /** For embedding-only models, treat tokens as embedding tokens. */
-  embeddingTokens?: number;
+}
+
+/** Custo estimado em centavos, com precisão fracionária para llm_calls. */
+export async function computeCost(input: ComputeCostInput, db?: Pool): Promise<number | null> {
+  const linha = encontrarPreco(await carregarCatalogo(db), input.provider, input.model);
+  const idClaude = input.model.replace(/^anthropic\//, "");
+  const claude = input.provider === "anthropic" ? precoClaude(idClaude) : undefined;
+  const entrada = linha?.input_price_per_million_cents ?? claude?.input;
+  const saida = linha?.output_price_per_million_cents ?? claude?.output;
+  if (entrada === undefined || saida === undefined) return null;
+
+  const leitura = input.cacheReadTokens ?? 0;
+  const escrita = input.cacheWriteTokens ?? 0;
+  const semCache = Math.max(0, (input.inputTokens ?? 0) - leitura - escrita);
+  return (
+    semCache * entrada +
+    leitura * (claude?.cacheRead ?? entrada) +
+    escrita * (claude?.cacheWrite ?? entrada) +
+    (input.outputTokens ?? 0) * saida
+  ) / 1_000_000;
 }
 
 /**
- * Preço do catálogo (`ai_models`), a tabela que o cron `sync-model-catalog`
- * mantém e a ÚNICA onde chega preço de modelo da OpenRouter.
+ * Deriva o provedor do id do modelo.
  *
- * `ai_pricing` é uma lista curta e escrita à mão, com os ids SEM prefixo de
- * provider. Os workers consultam com prefixo (`anthropic/claude-…`,
- * `meta-llama/llama-3.3-70b-instruct`), então o `get` exato errava sempre e o
- * custo ia 0 para `bot_respond` e para todo modelo OpenRouter — a tela de Uso
- * e a de Execuções mostrando R$ 0,00 com o dinheiro saindo, que é literalmente
- * o sintoma citado pela 0130 como motivo da unificação.
+ * Usado quando o caminho legado recebe apenas o id canônico; bindings e
+ * credenciais já trazem o provedor explícito.
  */
-async function precoDoCatalogo(
-  modelo: string,
-): Promise<{ prompt: number; completion: number } | null> {
-  const admin = createAdminClient();
-  // Duas formas do mesmo id: como veio, e sem o prefixo de provider. O catálogo
-  // guarda `model_id` como o provedor o nomeia — com prefixo na OpenRouter, sem
-  // ele na Anthropic/OpenAI.
-  const semPrefixo = modelo.includes("/") ? modelo.slice(modelo.indexOf("/") + 1) : modelo;
-  const { data } = await admin
-    .from("ai_models")
-    .select("model_id, input_price_per_million_cents, output_price_per_million_cents")
-    .in("model_id", [modelo, semPrefixo])
-    .is("deprecated_at", null)
-    .limit(2);
-
-  const linhas = (data ?? []) as Array<{
-    model_id: string;
-    input_price_per_million_cents: number | null;
-    output_price_per_million_cents: number | null;
-  }>;
-  // Preferir a correspondência EXATA: `llama-3.3-70b-instruct` pode existir em
-  // mais de um provedor com preços diferentes, e o id completo é quem desempata.
-  const linha = linhas.find((l) => l.model_id === modelo) ?? linhas[0];
-  if (!linha) return null;
-  const prompt = toNumber(linha.input_price_per_million_cents);
-  const completion = toNumber(linha.output_price_per_million_cents);
-  // Catálogo que conhece o modelo mas não tem preço não é melhor que ausência:
-  // devolver 0 aqui seria inventar "de graça".
-  if (prompt === 0 && completion === 0) return null;
-  return { prompt, completion };
-}
-
-/**
- * Returns cost in **cents**, rounded up. Zero when pricing missing.
- */
-export async function computeCost(input: ComputeCostInput): Promise<number> {
-  const pricing = await loadPricing();
-  const row = pricing.get(input.model);
-  if (!row) {
-    // `ai_pricing` não conhece: tenta o catálogo, que é onde o cron grava e
-    // onde a OpenRouter chega. Embedding não passa por aqui — o catálogo não
-    // guarda preço de embedding —, e nesse caso o desfecho é o mesmo de antes.
-    const doCatalogo = await precoDoCatalogo(input.model);
-    if (!doCatalogo) return 0;
-    const cents =
-      ((input.promptTokens ?? 0) * doCatalogo.prompt) / 1_000_000 +
-      ((input.completionTokens ?? 0) * doCatalogo.completion) / 1_000_000;
-    return Math.ceil(cents);
-  }
-
-  const promptRate = toNumber(row.prompt_cents_per_million_tokens);
-  const completionRate = toNumber(row.completion_cents_per_million_tokens);
-  const embeddingRate = toNumber(row.embedding_cents_per_million_tokens);
-
-  const promptTokens = input.promptTokens ?? 0;
-  const completionTokens = input.completionTokens ?? 0;
-  const embeddingTokens = input.embeddingTokens ?? 0;
-
-  const cents =
-    (promptTokens * promptRate) / 1_000_000 +
-    (completionTokens * completionRate) / 1_000_000 +
-    (embeddingTokens * embeddingRate) / 1_000_000;
-
-  return Math.ceil(cents);
-}
-
-/** Test-only: drop the in-memory pricing cache. */
-export function _resetPricingCacheForTests(): void {
-  _pricingCache = null;
-  _pricingFetchedAt = 0;
+export function providerDoModelo(model: string): string {
+  const m = model.toLowerCase();
+  if (m.startsWith("anthropic/") || m.startsWith("claude")) return "anthropic";
+  if (m.startsWith("openai/") || m.startsWith("gpt") || m.startsWith("text-embedding")) return "openai";
+  if (m.startsWith("google/") || m.startsWith("gemini")) return "google";
+  if (m.includes("/")) return "openrouter";
+  return "desconhecido";
 }

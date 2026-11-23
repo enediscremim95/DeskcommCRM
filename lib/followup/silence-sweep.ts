@@ -1,3 +1,4 @@
+import { proactivePolicy, proactiveDecision } from "@/lib/proactivity/policy";
 import { protecaoAgendaSupabase } from "@/lib/agenda/protecao-followup";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import { StaleServiceBoundaryError, parseServiceBoundary, assertCurrentServiceBoundary, type ServiceBoundary } from "@/lib/atendimento/fronteira";
@@ -180,6 +181,9 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
         trigger_config: unknown;
       }>) {
         if (!row.active_version_id) continue;
+        const org = await admin.from("organizations").select("settings").eq("id", row.organization_id).maybeSingle();
+        if (org.error) throw new Error(org.error.message);
+        if (!proactivePolicy(org.data?.settings).enabled) continue;
         const parsed = triggerConfigSchema.safeParse(row.trigger_config);
         if (!parsed.success || parsed.data.kind !== "silence") continue;
         pointers.push({
@@ -228,6 +232,9 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
         contacts: ContactEmbed;
         sessao: { metadata: Record<string, unknown> | null } | null;
       };
+      const policyRead = await admin.from("organizations").select("settings").eq("id", orgId).maybeSingle();
+      if (policyRead.error) throw new Error(policyRead.error.message);
+      const policy = proactivePolicy(policyRead.data?.settings);
       const cutoff = new Date(cutoffIso).getTime();
       const agora = new Date();
       const ttlMs = ttlDaAutorizacaoMs(process.env);
@@ -280,6 +287,10 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
         if (!v.permitidoPeloGate) continue;
         if (v.at > cutoff) continue; // conversou depois do corte — não é silêncio
         if (segments.length > 0 && !segments.some((s) => v.tags.includes(s))) continue;
+        const attempts = await admin.from("followup_enrollments").select("id", { count: "exact", head: true })
+          .eq("organization_id", orgId).eq("contact_id", contactId).gte("started_at", new Date(v.at).toISOString());
+        if (attempts.error) throw new Error(attempts.error.message);
+        if (proactiveDecision(policy, { now: agora, lastInbound: new Date(v.at).toISOString(), attempts: attempts.count ?? 0 })) continue;
         silentIds.push(contactId);
         origins.set(`${orgId}:${contactId}`, v.boundary);
       }
@@ -311,7 +322,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       const protection=(await protecaoAgendaSupabase(admin,input.organization_id,[input.contact_id])).get(input.contact_id);
       if(protection?.motivo==="leitura_indisponivel") throw new Error("agenda_read_failed");
       if(protection?.adiar) return {inserted:false};
-      const { error } = await admin.from("followup_enrollments").insert({ ...input, conversation_id: boundary.conversation_id, service_boundary: boundary });
+      const { error } = await admin.from("followup_enrollments").insert({ ...input, automatic_silence: true, conversation_id: boundary.conversation_id, service_boundary: boundary });
       if (error) {
         if (error.code === "23505") return { inserted: false };
         throw new Error(error.message);

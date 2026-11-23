@@ -75,6 +75,7 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  { tabela: "capture_contact_claims", razao: "tests/invariants/manual-capture-claim.test.ts — oito tenants sintéticos; privilégio público negado, JWT authenticated com grant temporário em rollback prova leitura local e zero cross-org por RLS" },
   {
     tabela: "organization_shipping_settings",
     razao:

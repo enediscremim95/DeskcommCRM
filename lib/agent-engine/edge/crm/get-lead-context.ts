@@ -194,6 +194,38 @@ interface HistoryRow {
   sent_via?: string;
 }
 
+async function readConversationHistory(
+  db: Queryable,
+  tenantId: string,
+  conversationId: string,
+  limit: number,
+): Promise<HistoryRow[]> {
+  const { rows } = await db.query<HistoryRow>(
+    `select id, direction, type, body, media_url, media_storage_path, media_mime,
+                  media_derived_text, media_derived_status, sent_at, sent_via
+           from messages
+           where organization_id = $1 and conversation_id = $2
+             and direction in ('inbound', 'outbound')
+             and exists(select 1 from conversations c where c.organization_id=$1 and c.id=$2
+               and ((messages.direction='inbound' and messages.service_revision=c.service_revision
+                 and messages.demanda_id is not distinct from c.current_demanda_id)
+                 or (messages.direction='outbound' and messages.sent_at >= c.service_started_at)))
+           order by sent_at desc, id desc
+           limit $3`,
+    [tenantId, conversationId, limit],
+  );
+  return rows.reverse();
+}
+
+/** Lê a mesma fronteira do contexto do lead, antes de aplicar o teto do prompt. */
+export async function readHistoryForCompaction(
+  db: Queryable,
+  input: { tenantId: string; conversationId: string; fuso: string; limit: number },
+): Promise<LeadContextMessage[]> {
+  const history = await readConversationHistory(db, input.tenantId, input.conversationId, input.limit);
+  return renderHistory(history, input.fuso);
+}
+
 export async function getLeadContext(
   db: Queryable,
   _cfg: CrmEdgeConfig,
@@ -245,23 +277,8 @@ export async function getLeadContext(
   );
   const lastHumanDecision = decisaoRows[0] ? paraDecisao(decisaoRows[0]) : null;
 
-  const history: HistoryRow[] = conversationId
-    ? (
-        await db.query<HistoryRow>(
-          `select id, direction, type, body, media_url, media_storage_path, media_mime,
-                  media_derived_text, media_derived_status, sent_at, sent_via
-           from messages
-           where organization_id = $1 and conversation_id = $2
-             and direction in ('inbound', 'outbound')
-             and exists(select 1 from conversations c where c.organization_id=$1 and c.id=$2
-               and ((messages.direction='inbound' and messages.service_revision=c.service_revision
-                 and messages.demanda_id is not distinct from c.current_demanda_id)
-                 or (messages.direction='outbound' and messages.sent_at >= c.service_started_at)))
-           order by sent_at desc, id desc
-           limit $3`,
-          [input.tenantId, conversationId, knobs.historyLimit],
-        )
-      ).rows.reverse()
+  const history = conversationId
+    ? await readConversationHistory(db, input.tenantId, conversationId, knobs.historyLimit)
     : [];
   let latestInboundMessageId: string | null = null;
   for (let i = history.length - 1; i >= 0; i -= 1) {
@@ -326,19 +343,8 @@ export async function getLeadContext(
   };
 }
 
-/**
- * Encaixa o payload no orçamento (determinístico):
- *   1. mensagens mais ANTIGAS caem primeiro;
- *   2. restando uma única mensagem que ainda estoura, o corpo é cortado ao meio
- *      repetidamente até caber. Nunca erro fatal.
- */
-function fitToBudget(
-  base: Omit<LeadContext, 'messages'>,
-  history: HistoryRow[],
-  maxTokens: number,
-  fuso: string,
-): LeadContext {
-  let messages: LeadContextMessage[] = history.map((m) => {
+function renderHistory(history: HistoryRow[], fuso: string): LeadContextMessage[] {
+  return history.map((m) => {
     const hasMedia = Boolean(m.media_storage_path || m.media_url);
     const derived = m.media_derived_text;
     // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM, e o derivado
@@ -359,6 +365,21 @@ function fitToBudget(
       ...(hasMedia ? { type: m.type, media_storage_path: m.media_storage_path, media_mime: m.media_mime } : {}),
     };
   });
+}
+
+/**
+ * Encaixa o payload no orçamento (determinístico):
+ *   1. mensagens mais ANTIGAS caem primeiro;
+ *   2. restando uma única mensagem que ainda estoura, o corpo é cortado ao meio
+ *      repetidamente até caber. Nunca erro fatal.
+ */
+function fitToBudget(
+  base: Omit<LeadContext, 'messages'>,
+  history: HistoryRow[],
+  maxTokens: number,
+  fuso: string,
+): LeadContext {
+  let messages = renderHistory(history, fuso);
   const build = (msgs: LeadContextMessage[]): LeadContext => ({ ...base, messages: msgs });
   const over = (msgs: LeadContextMessage[]): boolean =>
     countPayloadTokens(JSON.stringify(build(msgs))) > maxTokens;
