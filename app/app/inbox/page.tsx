@@ -34,11 +34,8 @@ export default async function InboxPage({
       </div>
     );
   }
-  const { id, conversation, message } = await searchParams;
-  // Decisão do dono (19/09/2026): o Inbox saiu do menu e deixa de ser a tela
-  // inicial. Todo pouso que caía aqui (login, troca de organização, fim do
-  // onboarding, fim do acompanhamento) vai para o quadro dos Funis. O Inbox
-  // só abre por link direto a uma conversa (Radar, execução de agente).
-  if (!id && !conversation && !message) redirect("/app/kanban");
+  const { id, conversation } = await searchParams;
+  // Sem conversa selecionada, o próprio layout mostra a lista e o estado vazio.
+  // O pouso do login continua sendo Funis, decidido por homeDaInterface.
   return <InboxLayout initialSelectedId={id ?? conversation ?? null} />;
 }

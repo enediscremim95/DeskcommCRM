@@ -19,6 +19,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { patchConversationSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
+import { enriquecerConversasComEstadoPessoal } from "@/lib/inbox/preferencias-pessoais";
 
 import { getConversationHandler, patchConversationHandler } from "../_handler";
 
@@ -61,7 +62,13 @@ async function GETComAuth(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     );
     // Mesma razão da listagem: o nome entra na borda HTTP, não no handler que o
     // MCP compartilha. Aqui é UM lookup, não N.
-    const [comNome] = await comNomeDoAtendente([conv]);
+    const [comEstado] = await enriquecerConversasComEstadoPessoal(
+      supabase,
+      activeOrg.orgId,
+      user.id,
+      [conv],
+    );
+    const [comNome] = await comNomeDoAtendente([comEstado ?? conv]);
     return ok(comNome ?? conv, { requestId });
   } catch (err) {
     if (err instanceof AuthTemporariamenteIndisponivel) throw err;

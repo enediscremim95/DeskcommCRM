@@ -14,6 +14,7 @@ import {
   type ConversationWithContact,
 } from "@/hooks/inbox/useConversationsRealtime";
 import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
+import { usePinnedConversations } from "@/hooks/inbox/useInboxPersonalState";
 import { ConversationList } from "./ConversationList";
 import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
 import { ChatThread, type ChatThreadHandle, type ThreadActivity } from "./ChatThread";
@@ -101,6 +102,8 @@ export function tabToFilter(
       // `Fechar` muda o status mas não solta o dono (de propósito: quem atendeu
       // é histórico). O lugar de "minhas fechadas" é a aba Fechadas.
       return { assigned_to: "me", exclude_finished: true };
+    case "favorites":
+      return { favorited: true };
     case "closed":
       return { status: "closed" };
     case "ai":
@@ -114,7 +117,7 @@ export function tabToFilter(
   }
 }
 
-const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "ai"];
+const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "favorites", "all", "closed", "ai"];
 
 /**
  * Lê ?filter= (G4-02, deep-link). ?filter=all é HONRADO mesmo para agent — a
@@ -248,6 +251,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   // We need the selected conversation object for header / composer / side panel.
   // Source it from the same query the list uses to avoid an extra request.
   const listQ = useConversationsRealtime(filters, orgId);
+  const pinnedQ = usePinnedConversations(filters, orgId);
   const inList = useMemo(() => {
     const all = listQ.data?.pages.flatMap((p) => p.data) ?? [];
     return all.find((c) => c.id === selectedId) ?? null;
@@ -522,6 +526,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
           <div className="min-h-0 flex-1 overflow-hidden">
             <ConversationList
               listQuery={listQ}
+              pinnedQuery={pinnedQ}
               filters={filters}
               selectedId={selectedId}
               onSelect={handleSelect}

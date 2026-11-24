@@ -235,7 +235,9 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await page.goto(tokenPath(acceptUrl));
     await expect(page.getByRole("heading", { name: /Aceitar convite/i })).toBeVisible();
     await page.getByRole("button", { name: /Aceitar convite/i }).click();
-    await page.waitForURL(/\/app\/inbox/);
+    // O pouso depois do aceite é o quadro dos Funis (homeDaInterface). O Inbox
+    // não é mais passagem obrigatória, então a espera é pelo destino final.
+    await page.waitForURL(/\/app\/(kanban|pipelines)/);
 
     // depois do aceite: membership agent criada
     expect(await membershipCount()).toBe(1);
@@ -290,11 +292,11 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     // 1º aceite (reaplica)
     await page.goto(`/team/accept-invite/${token}`);
     await page.getByRole("button", { name: /Aceitar convite/i }).click();
-    await page.waitForURL(/\/app\/inbox/);
+    await page.waitForURL(/\/app\/(kanban|pipelines)/);
     // 2º aceite do MESMO token
     await page.goto(`/team/accept-invite/${token}`);
     await page.getByRole("button", { name: /Aceitar convite/i }).click();
-    await page.waitForURL(/\/app\/inbox/);
+    await page.waitForURL(/\/app\/(kanban|pipelines)/);
     // sem duplicar membership
     expect(await membershipCount()).toBe(1);
     await ctx.close();

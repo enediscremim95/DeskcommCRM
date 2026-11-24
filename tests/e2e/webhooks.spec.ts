@@ -421,8 +421,9 @@ test.describe("webhooks & automações — fluxo completo", () => {
         await login(agentPage, creds.users.agent!.email);
         await expect(agentPage.getByRole("link", { name: "Integre seu site" })).toHaveCount(0);
         await agentPage.goto(`${APP_URL}/app/webhooks`);
-        await agentPage.waitForURL(/\/app\/inbox/);
-        expect(agentPage.url()).toMatch(/\/app\/inbox/);
+        // Sem permissão, a tela devolve ao pouso padrão (Funis).
+        await agentPage.waitForURL(/\/app\/(kanban|pipelines)/);
+        expect(agentPage.url()).toMatch(/\/app\/(kanban|pipelines)/);
       } finally {
         await agentContext.close();
       }

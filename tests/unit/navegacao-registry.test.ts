@@ -85,6 +85,7 @@ describe("sidebarGroups", () => {
 
   it("só inclui destino marcado como sidebar", () => {
     const hrefs = sidebarGroups(true, null).flatMap((g) => g.items.map((i) => i.href));
+    expect(hrefs).toContain("/app/inbox");
     expect(hrefs).toContain("/app/ai/atendimento");
     // Conhecimento saiu do menu junto com as outras telas de ajuste fino: o
     // fluxo do atendimento é a porta delas agora. O n8n continua fora.

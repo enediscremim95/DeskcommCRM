@@ -64,6 +64,8 @@ export {
   Copy,
   DownloadSimple,
   Archive,
+  Star,
+  PushPin,
   // origem de uma captação de formulário (página, IP, link para o lead)
   Globe,
   ArrowSquareOut,

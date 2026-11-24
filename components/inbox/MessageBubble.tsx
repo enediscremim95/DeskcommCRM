@@ -4,7 +4,7 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, Check, Checks, Copy, PaperPlaneTilt, Robot, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, Check, Checks, Copy, PaperPlaneTilt, Robot, Star, WarningOctagon } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
@@ -32,6 +32,7 @@ interface Props {
   /** Escolher esta mensagem para responder "em cima" dela. */
   onResponder?: (m: Message) => void;
   onEncaminhar?: (m: Message) => void;
+  onToggleStar?: (m: Message) => void;
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelection?: (m: Message) => void;
@@ -77,6 +78,7 @@ export function MessageBubble({
   debugCitations,
   onResponder,
   onEncaminhar,
+  onToggleStar,
   selectionMode = false,
   selected = false,
   onToggleSelection,
@@ -168,6 +170,17 @@ export function MessageBubble({
           aria-label={t("Selecionar esta mensagem")}
           className="h-4 w-4 shrink-0 accent-primary"
         />
+      )}
+      {onToggleStar && isOutbound && !selectionMode && (
+        <button
+          type="button"
+          onClick={() => onToggleStar(message)}
+          aria-pressed={Boolean(message.starred_at)}
+          aria-label={t(message.starred_at ? "Remover mensagem das favoritas" : "Favoritar mensagem")}
+          className="rounded-md p-1 text-muted-foreground opacity-100 transition-opacity hover:bg-muted [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <Star size={14} weight={message.starred_at ? "fill" : "regular"} />
+        </button>
       )}
       {/*
         RESPONDER — aparece ao passar o mouse, como no WhatsApp Web.
@@ -340,6 +353,9 @@ export function MessageBubble({
           {message.metadata?.forwarded === true && (
             <span className="mr-auto text-[10px] italic opacity-80">{t("Encaminhada")}</span>
           )}
+          {message.starred_at && (
+            <Star size={10} weight="fill" aria-label={t("Mensagem favorita")} />
+          )}
           <span>{time}</span>
           {showCitationButton && (
             <CitationButton citations={citations} messageId={message.id} />
@@ -364,6 +380,17 @@ export function MessageBubble({
           )}
         </div>
       </div>
+      {onToggleStar && !isOutbound && !selectionMode && (
+        <button
+          type="button"
+          onClick={() => onToggleStar(message)}
+          aria-pressed={Boolean(message.starred_at)}
+          aria-label={t(message.starred_at ? "Remover mensagem das favoritas" : "Favoritar mensagem")}
+          className="rounded-md p-1 text-muted-foreground opacity-100 transition-opacity hover:bg-muted [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <Star size={14} weight={message.starred_at ? "fill" : "regular"} />
+        </button>
+      )}
       {onResponder && !isOutbound && (
         <button
           type="button"

@@ -51,6 +51,9 @@ export interface Conversation {
   last_handoff_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Preferências pessoais do usuário atual, nunca compartilhadas no tenant. */
+  favorited_at?: string | null;
+  pinned_at?: string | null;
 }
 
 export interface Message {
@@ -92,6 +95,8 @@ export interface Message {
   /** A mensagem que esta responde (citação). `null` = envio solto. */
   reply_to_message_id: string | null;
   created_at: string;
+  /** Estrela pessoal do usuário atual. */
+  starred_at?: string | null;
 }
 
 /** Nota interna de conversa (Onda 5.2) — nunca vai ao cliente, tabela separada de messages. */

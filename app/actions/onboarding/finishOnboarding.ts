@@ -5,6 +5,7 @@
  * emits the `tenant.onboarded` domain event. Idempotent: only fires the
  * event the first time `onboarded_at` flips from NULL.
  */
+import { POUSO_PADRAO } from "@/lib/navigation/pouso";
 import { redirect } from "next/navigation";
 
 import { audit } from "@/lib/audit";
@@ -62,5 +63,5 @@ export async function finishOnboarding(): Promise<FinishOnboardingResult> {
     });
   }
 
-  redirect("/app/inbox");
+  redirect(POUSO_PADRAO);
 }

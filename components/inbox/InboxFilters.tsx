@@ -18,11 +18,12 @@ import { useConversationTagVocabulary } from "@/hooks/inbox/useConversationTags"
 import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
 import type { Role, VisibilityMode } from "@/lib/auth/types";
 
-export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "ai";
+export type InboxTab = "unassigned" | "mine" | "favorites" | "all" | "closed" | "ai";
 
 const INBOX_TABS: { value: InboxTab; label: string }[] = [
   { value: "unassigned", label: "Fila" },
   { value: "mine", label: "Minhas" },
+  { value: "favorites", label: "Favoritas" },
   { value: "all", label: "Todas" },
   { value: "closed", label: "Fechadas" },
   // "Automático", não "IA": a palavra deste ator já é contrato em quatro arquivos
@@ -244,7 +245,7 @@ export function InboxFilters({ value, onChange }: Props) {
         onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}
         className="px-3"
       >
-        <TabsList className="h-auto w-full [scrollbar-width:none] justify-between gap-2 rounded-none bg-transparent p-0">
+        <TabsList className="h-auto w-full justify-start gap-4 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
           {tabs.map((tab) => {
             const meta = INBOX_TABS.find((t) => t.value === tab)!;
             const count = countFor[tab];
