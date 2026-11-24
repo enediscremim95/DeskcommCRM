@@ -10049,6 +10049,14 @@ export const DICIONARIO: Traducoes = {
   "Uma tarefa para a equipe foi criada": { es: "Se creó una tarea para el equipo" },
   "Faça o que a tarefa pede (ligar, mandar mensagem) e registre o resultado em Tarefas.": { es: "Haz lo que pide la tarea (llamar, enviar un mensaje) y registra el resultado en Tareas." },
   "Tarefa para a equipe criada pelo follow-up": { es: "Tarea para el equipo creada por el seguimiento" },
+  // Agenda: convite por e-mail e escalonamento do lembrete (0320).
+  "Quando a IA marcar, enviar o convite da reunião para o e-mail do cliente (pelo Google Agenda)": { es: "Cuando la IA agende, enviar la invitación de la reunión al correo del cliente (por Google Calendar)" },
+  "Se o cliente não responder ao lembrete, passar para a equipe (tarefa, aviso e a IA pausa a conversa)": { es: "Si el cliente no responde al recordatorio, pasarlo al equipo (tarea, aviso y la IA pausa la conversación)" },
+  "Minutos depois do lembrete": { es: "Minutos después del recordatorio" },
+  "envia convite por e-mail": { es: "envía invitación por correo" },
+  "sem resposta, passa para a equipe em": { es: "sin respuesta, pasa al equipo en" },
+  "A espera antes de passar para a equipe precisa ser de pelo menos 5 minutos.": { es: "La espera antes de pasar al equipo debe ser de al menos 5 minutos." },
+  "A espera antes de passar para a equipe não pode passar de 720 minutos.": { es: "La espera antes de pasar al equipo no puede superar los 720 minutos." },
 };
 
 /**

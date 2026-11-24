@@ -35,7 +35,7 @@ export function criarFakeSupabase(
       };
       const executar = (): { data: unknown; error: { code?: string; message: string } | null } => {
         if (op === "insert") {
-          const novos = (Array.isArray(payload) ? payload : [payload!]).map((p) => ({ id: `id-${++seq}`, ...p }));
+          const novos = (Array.isArray(payload) ? payload : [payload!]).map((p): Linha => ({ id: `id-${++seq}`, ...p }));
           for (const novo of novos) {
             for (const cols of unicos[tabela] ?? []) {
               if (cols.some((c) => novo[c] === null || novo[c] === undefined)) continue;

@@ -637,6 +637,15 @@ export interface TipoDeAtendimento {
    */
   lembreteLigado: boolean;
   lembreteAntecedenciaMin: number;
+  /**
+   * Opt-in (migration 0320): o agendamento pela IA passa o e-mail do cliente
+   * como convidado do evento do Google, que manda o convite. A IA LÊ este
+   * campo (`crm_list_event_types`) para saber se vale pedir o e-mail.
+   */
+  conviteLigado: boolean;
+  /** Opt-in (0320): sem resposta N minutos depois do lembrete → tarefa + aviso + pessoa assume. */
+  escalonamentoLigado: boolean;
+  escalonamentoMinutos: number;
 }
 
 export type ResultadoDosTipos =
@@ -666,7 +675,7 @@ export async function listaTiposDeAtendimento(
   let q = supabase
     .from("calendar_event_types")
     .select(
-      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_enabled, reminder_minutes_before",
+      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_enabled, reminder_minutes_before, guest_invite_enabled, reminder_escalation_enabled, reminder_escalation_minutes",
     )
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
@@ -704,6 +713,10 @@ export async function listaTiposDeAtendimento(
       janelaDeAgendamentoDias: Number(t.booking_window_days),
       lembreteLigado: Boolean(t.reminder_enabled),
       lembreteAntecedenciaMin: Number(t.reminder_minutes_before),
+      // `=== true` e `?? 20`: um banco ainda sem a 0320 devolve ausente, e ausente é desligado.
+      conviteLigado: (t as { guest_invite_enabled?: unknown }).guest_invite_enabled === true,
+      escalonamentoLigado: (t as { reminder_escalation_enabled?: unknown }).reminder_escalation_enabled === true,
+      escalonamentoMinutos: Number((t as { reminder_escalation_minutes?: unknown }).reminder_escalation_minutes ?? 20),
     })),
   };
 }
