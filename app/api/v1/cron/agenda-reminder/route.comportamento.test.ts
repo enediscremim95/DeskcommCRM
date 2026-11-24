@@ -56,6 +56,7 @@ function montar(t = tipo(), templates: Record<string, unknown>[] = []) {
         meeting_state: "ready",
         meeting_url: "https://meet.google.com/abc-defg-hij",
         reminder_sent_at: null,
+        reminder_claimed_at: null,
         calendar_event_types: t,
       },
     ],
@@ -142,8 +143,74 @@ describe("cron agenda-reminder — comportamento", () => {
     envio.mockRejectedValueOnce(new Error("canal fora do ar"));
     await GET(req());
     expect(linha().reminder_sent_at).toBeNull();
+    expect(linha().reminder_claimed_at).toBeNull();
     await GET(req());
     expect(envio).toHaveBeenCalledTimes(2);
     expect(linha().reminder_message_id).toBe("msg-1");
   });
+
+  describe("o lembrete não some depois de uma queda (revisão 2)", () => {
+    it("reminder_sent_at só é gravado DEPOIS do envio, como na main", async () => {
+      montar();
+      envio.mockImplementationOnce(async () => {
+        expect(linha().reminder_sent_at).toBeNull();
+        expect(linha().reminder_claimed_at).not.toBeNull();
+        return { id: "msg-1", status: "sent" };
+      });
+      await GET(req());
+      expect(linha().reminder_sent_at).not.toBeNull();
+      expect(linha().reminder_claimed_at).toBeNull();
+    });
+
+    it("rodada que morreu com a posse: depois do lease (4 min) a próxima envia", async () => {
+      montar();
+      linha().reminder_claimed_at = new Date(Date.now() - 5 * 60_000).toISOString();
+      await GET(req());
+      expect(envio).toHaveBeenCalledTimes(1);
+      expect(linha().reminder_sent_at).not.toBeNull();
+    });
+
+    it("posse recente de outra rodada é respeitada (não envia em dobro)", async () => {
+      montar();
+      linha().reminder_claimed_at = new Date(Date.now() - 60_000).toISOString();
+      await GET(req());
+      expect(envio).not.toHaveBeenCalled();
+    });
+
+    it("carimbo falhou depois do envio: nada encerra; após o lease reenvia com o MESMO id (dedupe) e carimba", async () => {
+      montar();
+      const original = db.from.bind(db);
+      let falhou = false;
+      (db as { from: (t: string) => unknown }).from = (t: string) => {
+        const b = original(t) as { update: (p: Record<string, unknown>) => { eq: (...a: unknown[]) => unknown } };
+        if (t !== "calendar_appointments" || falhou) return b;
+        const update = b.update;
+        b.update = (p: Record<string, unknown>) => {
+          if ("reminder_sent_at" in p && p.reminder_sent_at) {
+            falhou = true;
+            const fake: Record<string, unknown> = {};
+            fake.eq = () => fake;
+            fake.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: null, error: { message: "rede" } }).then(res);
+            return fake as never;
+          }
+          return update(p) as never;
+        };
+        return b;
+      };
+      await GET(req());
+      // Nada foi encerrado: sem carimbo, sem referência — o escalonamento nem enxerga.
+      expect(linha().reminder_sent_at).toBeNull();
+      expect(linha().reminder_message_id ?? null).toBeNull();
+      expect(linha().reminder_claimed_at).not.toBeNull();
+      // Lease vence; a próxima rodada reencontra a mensagem pelo id determinístico.
+      linha().reminder_claimed_at = new Date(Date.now() - 5 * 60_000).toISOString();
+      await GET(req());
+      const ids = envio.mock.calls.map((c) => (c[1] as { internalMessageId: string }).internalMessageId);
+      expect(ids).toHaveLength(2);
+      expect(ids[0]).toBe(ids[1]);
+      expect(linha()).toMatchObject({ reminder_message_id: "msg-1", reminder_conversation_id: "conv-lembrete" });
+      expect(linha().reminder_sent_at).not.toBeNull();
+    });
+  });
 });
+

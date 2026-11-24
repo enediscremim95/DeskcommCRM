@@ -86,6 +86,13 @@ export const dynamic = "force-dynamic";
 /** Teto de compromissos examinados por rodada — a varredura roda a cada 5 min. */
 const LIMITE_DA_VARREDURA = 200;
 
+/**
+ * Validade da posse do ENVIO do lembrete. Menor que o intervalo do cron (5 min):
+ * uma rodada que morreu com a posse não atrasa a reentrega além da rodada seguinte
+ * — a mesma garantia da main, onde nada impedia o reenvio.
+ */
+const LEASE_DO_ENVIO_MS = 4 * 60_000;
+
 /** Maior antecedência aceita pela coluna (43200 min = 30 dias). */
 const MAIOR_ANTECEDENCIA_MS = 43_200 * 60_000;
 
@@ -340,18 +347,30 @@ async function handle(req: NextRequest): Promise<Response> {
       }
     }
 
-    // POSSE ANTES DO ENVIO. O carimbo vinha DEPOIS do envio: se ele falhasse
-    // (ou duas rodadas se cruzassem), o lembrete saía de novo na rodada
-    // seguinte. Agora `reminder_sent_at` é tomado atomicamente (`is null`)
-    // antes de qualquer efeito; quem não ganha, não envia.
+    // POSSE DO ENVIO (lease) — e NÃO o carimbo. Na main o carimbo vinha depois
+    // do envio: queda no meio = a rodada seguinte manda de novo. Isso continua
+    // valendo: `reminder_sent_at` só é gravado DEPOIS do envio (abaixo). O que a
+    // posse acrescenta é que duas rodadas cruzadas não enviam ao mesmo tempo; e
+    // ela EXPIRA em `LEASE_DO_ENVIO_MS` (menor que o intervalo do cron), então
+    // uma rodada que morreu com a posse não tira o compromisso da fila.
     const posse = new Date().toISOString();
-    const { data: tomou, error: posseErr } = await admin
+    const { error: libErr } = await admin
       .from("calendar_appointments")
-      .update({ reminder_sent_at: posse })
+      .update({ reminder_claimed_at: null })
       .eq("id", linha.id)
       .eq("organization_id", org)
       .is("reminder_sent_at", null)
-      .select("id");
+      .lt("reminder_claimed_at", new Date(Date.now() - LEASE_DO_ENVIO_MS).toISOString());
+    const { data: tomou, error: posseErr } = libErr
+      ? { data: null, error: libErr }
+      : await admin
+          .from("calendar_appointments")
+          .update({ reminder_claimed_at: posse })
+          .eq("id", linha.id)
+          .eq("organization_id", org)
+          .is("reminder_sent_at", null)
+          .is("reminder_claimed_at", null)
+          .select("id");
     if (posseErr || !tomou?.length) {
       pular("ja_em_envio");
       continue;
@@ -359,14 +378,16 @@ async function handle(req: NextRequest): Promise<Response> {
 
     await espacarEnvio(canal.id);
 
+    let enviada: { id?: string } | null = null;
+    let conversaId: string;
     try {
-      const conversaId = await ensureConversation(admin, org, contato.id, canal.id);
+      conversaId = await ensureConversation(admin, org, contato.id, canal.id);
       // `webhook_source` é o ator que esta base dá a envio nascido de worker —
       // o mesmo que `lib/followup/enviar-texto-fixo.ts` usa. O `id` é o
       // compromisso, para o audit da mensagem correlacionar com a linha que a
-      // originou. O id da MENSAGEM é determinístico pelo compromisso: um retry
-      // depois de falha reencontra a linha em vez de mandar de novo.
-      const enviada = await sendMessageHandler(
+      // originou. O id da MENSAGEM é determinístico pelo compromisso: a
+      // reentrega depois de uma queda reencontra a linha em vez de mandar de novo.
+      enviada = (await sendMessageHandler(
         admin,
         {
           organization_id: org,
@@ -378,33 +399,47 @@ async function handle(req: NextRequest): Promise<Response> {
         { conversation_id: conversaId, type: "text", body: corpo } as Parameters<
           typeof sendMessageHandler
         >[2],
-      );
-      // A TENTATIVA já está carimbada (a posse acima); aqui fica o que o
-      // escalonamento precisa: qual mensagem saiu e em que conversa.
-      const { error: refErr } = await admin
-        .from("calendar_appointments")
-        .update({
-          reminder_message_id: (enviada as { id?: string } | null)?.id ?? null,
-          reminder_conversation_id: conversaId,
-        })
-        .eq("id", linha.id)
-        .eq("organization_id", org);
-      if (refErr) {
-        logger.warn("[agenda-reminder] referência do envio não gravada", { appointmentId: linha.id, error: refErr.message });
-      }
-      enviados += 1;
+      )) as { id?: string } | null;
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : String(err);
       logger.error("[agenda-reminder] envio falhou", { appointmentId: linha.id, error: mensagem, requestId });
       // Exceção = o envio não aconteceu: devolve a posse para a próxima rodada.
       await admin
         .from("calendar_appointments")
-        .update({ reminder_sent_at: null })
+        .update({ reminder_claimed_at: null })
         .eq("id", linha.id)
         .eq("organization_id", org)
-        .eq("reminder_sent_at", posse);
+        .eq("reminder_claimed_at", posse);
       pular("erro_no_envio");
+      continue;
     }
+
+    // Carimba a TENTATIVA — o desfecho da entrega vive na mensagem. É o MESMO
+    // carimbo da main, gravado no MESMO ponto (depois do envio), e leva junto o
+    // que o escalonamento precisa: qual mensagem saiu e em que conversa. Um
+    // update só: o escalonamento nunca vê `reminder_sent_at` sem as referências.
+    // Se este update falhar, a posse expira e a rodada seguinte reencontra a
+    // mensagem pelo id determinístico (sem reenviar) e carimba.
+    const { error: carimboErr } = await admin
+      .from("calendar_appointments")
+      .update({
+        reminder_sent_at: new Date().toISOString(),
+        reminder_message_id: enviada?.id ?? null,
+        reminder_conversation_id: conversaId,
+        reminder_claimed_at: null,
+      })
+      .eq("id", linha.id)
+      .eq("organization_id", org)
+      .eq("reminder_claimed_at", posse);
+    if (carimboErr) {
+      logger.warn("[agenda-reminder] carimbo do envio não gravado; a próxima rodada reencontra a mensagem", {
+        appointmentId: linha.id,
+        error: carimboErr.message,
+      });
+      pular("carimbo_pendente");
+      continue;
+    }
+    enviados += 1;
   }
 
   // Rodada que não avisou ninguém NÃO é mutação, e não audita — a lei está no
