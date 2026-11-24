@@ -10050,6 +10050,7 @@ export const DICIONARIO: Traducoes = {
   "Faça o que a tarefa pede (ligar, mandar mensagem) e registre o resultado em Tarefas.": { es: "Haz lo que pide la tarea (llamar, enviar un mensaje) y registra el resultado en Tareas." },
   "Tarefa para a equipe criada pelo follow-up": { es: "Tarea para el equipo creada por el seguimiento" },
   // Agenda: convite por e-mail e escalonamento do lembrete (0320).
+  "Link da reunião": { es: "Enlace de la reunión" },
   "Quando a IA marcar, enviar o convite da reunião para o e-mail do cliente (pelo Google Agenda)": { es: "Cuando la IA agende, enviar la invitación de la reunión al correo del cliente (por Google Calendar)" },
   "Se o cliente não responder ao lembrete, passar para a equipe (tarefa, aviso e a IA pausa a conversa)": { es: "Si el cliente no responde al recordatorio, pasarlo al equipo (tarea, aviso y la IA pausa la conversación)" },
   "Minutos depois do lembrete": { es: "Minutos después del recordatorio" },

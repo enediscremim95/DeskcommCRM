@@ -68,7 +68,13 @@ import { ensureConversation } from "@/lib/automation/start-conversation";
 import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
 import { espacarEnvio } from "@/lib/automation/throttle";
 import { env } from "@/lib/env";
-import { tagDeIdioma } from "@/lib/i18n/datas";
+import {
+  aplicarVariaveisDoLembrete,
+  dataEHoraDoLembrete,
+  linkDaSala,
+  linkParaOModelo,
+} from "@/lib/agenda/lembrete";
+import { escalonarLembretesSemResposta } from "@/lib/agenda/escalonamento-do-lembrete";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
@@ -97,6 +103,8 @@ interface CompromissoAVencer {
   title: string;
   starts_at: string;
   location_details: string | null;
+  meeting_state?: string | null;
+  meeting_url?: string | null;
   calendar_event_types: TipoDoCompromisso | TipoDoCompromisso[] | null;
 }
 
@@ -135,23 +143,15 @@ export function montarLembrete(input: {
    * banco — o mesmo desenho de `montarPares` em `lib/metrics/atrito.ts`.
    */
   idioma?: Idioma;
+  /**
+   * Link da SALA pronta (Meet/Jitsi). Ausente = texto de antes, palavra por
+   * palavra. Igual ao endereço já impresso = não repete. Ver `lib/agenda/lembrete.ts`.
+   */
+  link?: string | null;
 }): string {
   const idioma = input.idioma ?? IDIOMA_PADRAO;
   const t = (texto: string) => traduzir(texto, idioma);
-  const etiqueta = tagDeIdioma(idioma);
-
-  const dia = new Intl.DateTimeFormat(etiqueta, {
-    timeZone: input.timezone,
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit",
-  }).format(input.quando);
-  const hora = new Intl.DateTimeFormat(etiqueta, {
-    timeZone: input.timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(input.quando);
+  const { data: dia, hora } = dataEHoraDoLembrete(input.quando, input.timezone, idioma);
 
   // Cada `t()` cobre só a parte FIXA da frase: nome, título, data e endereço
   // são dado do tenant e nunca passam por tradução.
@@ -163,9 +163,11 @@ export function montarLembrete(input: {
     ? `${t("Oi,")} ${input.nomeDoContato}!`
     : t("Oi!");
   const onde = input.local ? ` ${t("Endereço")}: ${input.local}.` : "";
+  const link = input.link?.trim();
+  const sala = link && link !== input.local?.trim() ? ` ${t("Link da reunião")}: ${link}` : "";
   return (
     `${saudacao} ${t("Passando pra lembrar do seu compromisso:")} ` +
-    `${input.titulo}, ${dia} ${t("às")} ${hora}.${onde}`
+    `${input.titulo}, ${dia} ${t("às")} ${hora}.${onde}${sala}`
   );
 }
 
@@ -199,7 +201,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("calendar_appointments")
     .select(
-      "id, organization_id, contact_id, title, starts_at, location_details, " +
+      "id, organization_id, contact_id, title, starts_at, location_details, meeting_state, meeting_url, " +
         "calendar_event_types!inner(name, reminder_enabled, reminder_minutes_before, reminder_template_name, location_details)",
     )
     .eq("status", "confirmed")
@@ -284,13 +286,17 @@ async function handle(req: NextRequest): Promise<Response> {
       .eq("id", org)
       .maybeSingle();
 
+    const nomeDoContato = contato.display_name ?? contato.name ?? null;
+    const fuso = organizacao?.timezone ?? "America/Sao_Paulo";
+    const idioma = normalizarIdioma(organizacao?.locale);
     let corpo = montarLembrete({
-      nomeDoContato: contato.display_name ?? contato.name ?? null,
+      nomeDoContato,
       titulo: linha.title,
       quando: new Date(linha.starts_at),
-      timezone: organizacao?.timezone ?? "America/Sao_Paulo",
+      timezone: fuso,
       local: linha.location_details ?? tipo.location_details ?? null,
-      idioma: normalizarIdioma(organizacao?.locale),
+      idioma,
+      link: linkDaSala(linha),
     });
 
     if (tipo.reminder_template_name) {
@@ -301,7 +307,19 @@ async function handle(req: NextRequest): Promise<Response> {
         .or(`shortcut.eq.${tipo.reminder_template_name},title.eq.${tipo.reminder_template_name}`)
         .limit(1)
         .maybeSingle();
-      if (modelo?.body) corpo = modelo.body;
+      if (modelo?.body) {
+        // Variáveis {{nome}} {{data}} {{hora}} {{link}} — modelo sem elas sai igual.
+        corpo = aplicarVariaveisDoLembrete(modelo.body, {
+          nome: nomeDoContato ?? "",
+          ...dataEHoraDoLembrete(new Date(linha.starts_at), fuso, idioma),
+          link: linkParaOModelo({
+            meeting_state: linha.meeting_state,
+            meeting_url: linha.meeting_url,
+            location_details: linha.location_details,
+            tipo_location_details: tipo.location_details,
+          }),
+        });
+      }
     }
 
     await espacarEnvio(canal.id);
@@ -349,7 +367,24 @@ async function handle(req: NextRequest): Promise<Response> {
     });
   }
 
-  return ok({ examinados: linhas.length, enviados, pulados, motivos }, { requestId });
+  // ESCALONAMENTO PÓS-LEMBRETE (migration 0320, opt-in por tipo). Mesma rodada,
+  // nenhum worker novo: só olha compromisso cujo tipo LIGOU o escalonamento.
+  const escalonamento = await escalonarLembretesSemResposta(admin, agora);
+  const decididos = escalonamento.escalados + escalonamento.confirmados + escalonamento.nao_aplicaveis;
+  if (decididos > 0) {
+    await audit({
+      action: "agenda.lembrete_escalonamento",
+      resourceType: "calendar_appointment",
+      requestId,
+      metadata: {
+        escalados: escalonamento.escalados,
+        confirmados: escalonamento.confirmados,
+        nao_aplicaveis: escalonamento.nao_aplicaveis,
+      },
+    });
+  }
+
+  return ok({ examinados: linhas.length, enviados, pulados, motivos, escalonamento }, { requestId });
 }
 
 export const GET = handle;
