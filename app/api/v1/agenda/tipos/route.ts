@@ -110,6 +110,7 @@ const camposDoTipo = {
    * escolhas de quem administra a agenda.
    */
   guest_invite_enabled: z.boolean().optional(),
+  reminder_rich_format: z.boolean().optional(),
   reminder_escalation_enabled: z.boolean().optional(),
   reminder_escalation_minutes: z
     .number()
@@ -184,6 +185,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       reminder_enabled: t.lembreteLigado,
       reminder_minutes_before: t.lembreteAntecedenciaMin,
       guest_invite_enabled: t.conviteLigado,
+      reminder_rich_format: t.lembreteRico,
       reminder_escalation_enabled: t.escalonamentoLigado,
       reminder_escalation_minutes: t.escalonamentoMinutos,
     })),

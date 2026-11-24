@@ -71,6 +71,7 @@ import { env } from "@/lib/env";
 import {
   aplicarVariaveisDoLembrete,
   dataEHoraDoLembrete,
+  idDaMensagemDoLembrete,
   linkDaSala,
   linkParaOModelo,
 } from "@/lib/agenda/lembrete";
@@ -89,6 +90,10 @@ const LIMITE_DA_VARREDURA = 200;
 const MAIOR_ANTECEDENCIA_MS = 43_200 * 60_000;
 
 interface TipoDoCompromisso {
+  /** A organização DO TIPO — `event_type_id` tem FK só por `id`; o tipo tem de ser da org do compromisso. */
+  organization_id?: string;
+  /** Opt-in (migration 0320): link da sala + variáveis no modelo. Ausente/false = texto de antes. */
+  reminder_rich_format?: boolean;
   name: string;
   reminder_enabled: boolean;
   reminder_minutes_before: number;
@@ -202,7 +207,7 @@ async function handle(req: NextRequest): Promise<Response> {
     .from("calendar_appointments")
     .select(
       "id, organization_id, contact_id, title, starts_at, location_details, meeting_state, meeting_url, " +
-        "calendar_event_types!inner(name, reminder_enabled, reminder_minutes_before, reminder_template_name, location_details)",
+        "calendar_event_types!inner(organization_id, name, reminder_enabled, reminder_minutes_before, reminder_template_name, location_details, reminder_rich_format)",
     )
     .eq("status", "confirmed")
     .eq("calendar_event_types.reminder_enabled", true)
@@ -240,6 +245,14 @@ async function handle(req: NextRequest): Promise<Response> {
 
     // ⚠️ organization_id SEMPRE da linha do compromisso — ver o cabeçalho.
     const org = linha.organization_id;
+
+    // O TIPO tem de ser da MESMA organização: a FK de `event_type_id` é só por
+    // `id`, e um vínculo cruzado (escrito por service role) emprestaria o
+    // opt-in, a antecedência, o modelo e o local de outro tenant.
+    if (tipo.organization_id !== org) {
+      pular("tipo_de_outra_org");
+      continue;
+    }
 
     const { data: contato } = await admin
       .from("contacts")
@@ -289,6 +302,9 @@ async function handle(req: NextRequest): Promise<Response> {
     const nomeDoContato = contato.display_name ?? contato.name ?? null;
     const fuso = organizacao?.timezone ?? "America/Sao_Paulo";
     const idioma = normalizarIdioma(organizacao?.locale);
+    // OPT-IN por tipo (migration 0320). Desligado = o lembrete de antes, byte a
+    // byte: sem a linha do link e com o modelo enviado sem interpolação.
+    const formatoRico = tipo.reminder_rich_format === true;
     let corpo = montarLembrete({
       nomeDoContato,
       titulo: linha.title,
@@ -296,7 +312,7 @@ async function handle(req: NextRequest): Promise<Response> {
       timezone: fuso,
       local: linha.location_details ?? tipo.location_details ?? null,
       idioma,
-      link: linkDaSala(linha),
+      link: formatoRico ? linkDaSala(linha) : null,
     });
 
     if (tipo.reminder_template_name) {
@@ -307,7 +323,9 @@ async function handle(req: NextRequest): Promise<Response> {
         .or(`shortcut.eq.${tipo.reminder_template_name},title.eq.${tipo.reminder_template_name}`)
         .limit(1)
         .maybeSingle();
-      if (modelo?.body) {
+      if (modelo?.body && !formatoRico) {
+        corpo = modelo.body;
+      } else if (modelo?.body) {
         // Variáveis {{nome}} {{data}} {{hora}} {{link}} — modelo sem elas sai igual.
         corpo = aplicarVariaveisDoLembrete(modelo.body, {
           nome: nomeDoContato ?? "",
@@ -322,6 +340,23 @@ async function handle(req: NextRequest): Promise<Response> {
       }
     }
 
+    // POSSE ANTES DO ENVIO. O carimbo vinha DEPOIS do envio: se ele falhasse
+    // (ou duas rodadas se cruzassem), o lembrete saía de novo na rodada
+    // seguinte. Agora `reminder_sent_at` é tomado atomicamente (`is null`)
+    // antes de qualquer efeito; quem não ganha, não envia.
+    const posse = new Date().toISOString();
+    const { data: tomou, error: posseErr } = await admin
+      .from("calendar_appointments")
+      .update({ reminder_sent_at: posse })
+      .eq("id", linha.id)
+      .eq("organization_id", org)
+      .is("reminder_sent_at", null)
+      .select("id");
+    if (posseErr || !tomou?.length) {
+      pular("ja_em_envio");
+      continue;
+    }
+
     await espacarEnvio(canal.id);
 
     try {
@@ -329,28 +364,45 @@ async function handle(req: NextRequest): Promise<Response> {
       // `webhook_source` é o ator que esta base dá a envio nascido de worker —
       // o mesmo que `lib/followup/enviar-texto-fixo.ts` usa. O `id` é o
       // compromisso, para o audit da mensagem correlacionar com a linha que a
-      // originou.
-      await sendMessageHandler(
+      // originou. O id da MENSAGEM é determinístico pelo compromisso: um retry
+      // depois de falha reencontra a linha em vez de mandar de novo.
+      const enviada = await sendMessageHandler(
         admin,
         {
           organization_id: org,
           actor: { type: "webhook_source", id: linha.id },
           requestId: `agenda-reminder:${linha.id}`,
+          internalMessageId: idDaMensagemDoLembrete(linha.id),
+          deduplicateInternalMessage: true,
         },
         { conversation_id: conversaId, type: "text", body: corpo } as Parameters<
           typeof sendMessageHandler
         >[2],
       );
-      // Carimba a TENTATIVA — o desfecho da entrega vive na mensagem.
-      await admin
+      // A TENTATIVA já está carimbada (a posse acima); aqui fica o que o
+      // escalonamento precisa: qual mensagem saiu e em que conversa.
+      const { error: refErr } = await admin
         .from("calendar_appointments")
-        .update({ reminder_sent_at: new Date().toISOString() })
+        .update({
+          reminder_message_id: (enviada as { id?: string } | null)?.id ?? null,
+          reminder_conversation_id: conversaId,
+        })
         .eq("id", linha.id)
         .eq("organization_id", org);
+      if (refErr) {
+        logger.warn("[agenda-reminder] referência do envio não gravada", { appointmentId: linha.id, error: refErr.message });
+      }
       enviados += 1;
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : String(err);
       logger.error("[agenda-reminder] envio falhou", { appointmentId: linha.id, error: mensagem, requestId });
+      // Exceção = o envio não aconteceu: devolve a posse para a próxima rodada.
+      await admin
+        .from("calendar_appointments")
+        .update({ reminder_sent_at: null })
+        .eq("id", linha.id)
+        .eq("organization_id", org)
+        .eq("reminder_sent_at", posse);
       pular("erro_no_envio");
     }
   }

@@ -137,7 +137,9 @@ describe("isolamento entre organizações (estrutural)", () => {
   });
 
   it("carimba o compromisso DENTRO da organização dele", () => {
-    const carimbo = fonte.slice(fonte.indexOf("reminder_sent_at: new Date()"));
+    // O carimbo virou POSSE antes do envio (`reminder_sent_at: posse`).
+    expect(fonte).toContain("reminder_sent_at: posse");
+    const carimbo = fonte.slice(fonte.indexOf("reminder_sent_at: posse"));
     expect(carimbo.slice(0, 400)).toContain('.eq("organization_id", org)');
   });
 

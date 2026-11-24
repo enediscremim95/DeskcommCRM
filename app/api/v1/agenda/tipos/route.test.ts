@@ -383,6 +383,7 @@ describe("GET /api/v1/agenda/tipos", () => {
           lembreteLigado: true,
           lembreteAntecedenciaMin: 180,
           conviteLigado: false,
+    lembreteRico: false,
           escalonamentoLigado: true,
           escalonamentoMinutos: 25,
         },

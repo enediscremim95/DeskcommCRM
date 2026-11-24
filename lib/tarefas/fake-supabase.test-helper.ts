@@ -75,6 +75,16 @@ export function criarFakeSupabase(
         in: (c: string, vs: unknown[]) => (filtros.push((l) => vs.includes(l[c])), builder),
         gt: (c: string, v: string) => (filtros.push((l) => String(l[c] ?? "") > v), builder),
         gte: (c: string, v: string) => (filtros.push((l) => String(l[c] ?? "") >= v), builder),
+        lt: (c: string, v: string) => (filtros.push((l) => valor(l, c) != null && String(valor(l, c)) < v), builder),
+        // Só o dialeto que o código usa: "a.eq.x,b.eq.y".
+        or: (expr: string) => {
+          const ramos = expr.split(",").map((r) => {
+            const [col, op, ...resto] = r.split(".");
+            return { col: col!, op, v: resto.join(".") };
+          });
+          filtros.push((l) => ramos.some((r) => r.op === "eq" && String(valor(l, r.col) ?? "") === r.v));
+          return builder;
+        },
         lte: (c: string, v: string) => (filtros.push((l) => l[c] != null && String(l[c]) <= v), builder),
         not: (c: string, _op: string, v: unknown) => (filtros.push((l) => (valor(l, c) ?? null) !== v), builder),
         order: (col: string, o?: { ascending?: boolean }) => ((ordem = { col, asc: o?.ascending ?? true }), builder),

@@ -15,12 +15,19 @@
  * salvo, ou Jitsi); sem sala, o local do compromisso/tipo (`location_details`).
  * Sem nenhum dos dois, vira vazio — nunca um link inventado.
  *
- * Decisão documentada: o modelo do dono MANDA. Se ele não escreveu `{{link}}`,
+ * ⚠️ TUDO ISTO É OPT-IN POR TIPO (`calendar_event_types.reminder_rich_format`,
+ * migration 0320). Desligado, o cron envia o lembrete de antes byte a byte: o
+ * texto padrão sem a linha do link e o modelo SEM interpolação — um modelo
+ * existente que por acaso contenha `{{nome}}` continua saindo literal.
+ *
+ * Decisão documentada (com o opt-in ligado): o modelo do dono MANDA. Se ele não escreveu `{{link}}`,
  * nada é acrescentado ao texto dele (pode ter colado o link fixo à mão). Já o
  * texto PADRÃO (sem modelo) ganha "Link da reunião: …" quando há sala pronta e
  * ela não é o próprio endereço já impresso — sem sala, o padrão é o de antes,
  * palavra por palavra.
  */
+import { createHash } from "node:crypto";
+
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 
@@ -71,4 +78,15 @@ export function aplicarVariaveisDoLembrete(modelo: string, v: VariaveisDoLembret
     const k = chave.toLowerCase() as keyof VariaveisDoLembrete;
     return v[k];
   });
+}
+
+/**
+ * Id da mensagem do lembrete, determinístico pelo compromisso (formato uuid).
+ * Com `deduplicateInternalMessage`, um retry reencontra a mesma linha em
+ * `messages` em vez de mandar o lembrete duas vezes.
+ */
+export function idDaMensagemDoLembrete(appointmentId: string): string {
+  const h = createHash("sha256").update(`agenda-reminder:${appointmentId}`).digest("hex");
+  const variante = ((parseInt(h[16]!, 16) & 0x3) | 0x8).toString(16);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${variante}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }

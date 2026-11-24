@@ -84,6 +84,7 @@ function tipo(over: Partial<TipoDeAtendimento> = {}): TipoDeAtendimento {
     lembreteAntecedenciaMin: 1440,
     // Migration 0320: convite e escalonamento nascem desligados.
     conviteLigado: false,
+    lembreteRico: false,
     escalonamentoLigado: false,
     escalonamentoMinutos: 20,
     ...over,
