@@ -295,6 +295,8 @@ describe("escalonarLembretesSemResposta", () => {
       m.deps.clock = () => (++chamadas === 1 ? new Date("2026-12-03T17:00:01Z") : agora);
       // A rodada começou às 16:25 (listagem), mas a decisão acontece às 17:00:01.
       expect(await rodar(m)).toMatchObject({ nao_aplicaveis: 1, escalados: 0 });
+      // A DECISÃO (e não só a conferência final) usa o relógio relido: nem tarefa nasce.
+      expect(m.criarTarefa).not.toHaveBeenCalled();
     });
 
     it("lead responde enquanto a tarefa é criada: tarefa fica, handoff não acontece", async () => {
