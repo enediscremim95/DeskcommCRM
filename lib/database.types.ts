@@ -542,6 +542,7 @@ export type Database = {
       }
       agent_inbox_items: {
         Row: {
+          dedupe_key: string | null
           appointment_revision: number | null
           body: string | null
           created_at: string
@@ -557,6 +558,7 @@ export type Database = {
           title: string
         }
         Insert: {
+          dedupe_key?: string | null
           appointment_revision?: number | null
           body?: string | null
           created_at?: string
@@ -572,6 +574,7 @@ export type Database = {
           title: string
         }
         Update: {
+          dedupe_key?: string | null
           appointment_revision?: number | null
           body?: string | null
           created_at?: string
@@ -2148,6 +2151,12 @@ export type Database = {
       }
       calendar_appointments: {
         Row: {
+          reminder_claimed_at: string | null
+          reminder_message_id: string | null
+          reminder_conversation_id: string | null
+          reminder_escalation_claimed_at: string | null
+          reminder_escalation_checked_at: string | null
+          reminder_escalation_result: string | null
           meeting_state: string
           meeting_request_id: string | null
           meeting_requested_at: string | null
@@ -2213,6 +2222,12 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          reminder_claimed_at?: string | null
+          reminder_message_id?: string | null
+          reminder_conversation_id?: string | null
+          reminder_escalation_claimed_at?: string | null
+          reminder_escalation_checked_at?: string | null
+          reminder_escalation_result?: string | null
           meeting_state?: string
           meeting_request_id?: string | null
           meeting_requested_at?: string | null
@@ -2278,6 +2293,12 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          reminder_claimed_at?: string | null
+          reminder_message_id?: string | null
+          reminder_conversation_id?: string | null
+          reminder_escalation_claimed_at?: string | null
+          reminder_escalation_checked_at?: string | null
+          reminder_escalation_result?: string | null
           meeting_state?: string
           meeting_request_id?: string | null
           meeting_requested_at?: string | null
@@ -2606,6 +2627,10 @@ export type Database = {
       }
       calendar_event_types: {
         Row: {
+          reminder_rich_format: boolean
+          guest_invite_enabled: boolean
+          reminder_escalation_enabled: boolean
+          reminder_escalation_minutes: number
           booking_window_days: number
           buffer_after_minutes: number
           buffer_before_minutes: number
@@ -2631,6 +2656,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          reminder_rich_format?: boolean
+          guest_invite_enabled?: boolean
+          reminder_escalation_enabled?: boolean
+          reminder_escalation_minutes?: number
           booking_window_days?: number
           buffer_after_minutes?: number
           buffer_before_minutes?: number
@@ -2656,6 +2685,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          reminder_rich_format?: boolean
+          guest_invite_enabled?: boolean
+          reminder_escalation_enabled?: boolean
+          reminder_escalation_minutes?: number
           booking_window_days?: number
           buffer_after_minutes?: number
           buffer_before_minutes?: number

@@ -11,6 +11,9 @@ const REDACT_KEYS = new Set([
   "token",
   "password",
   "cpf",
+  // E-mail do convidado do `crm_book_appointment` (migration 0320): dado
+  // pessoal de terceiro que não precisa morar em log persistido.
+  "guest_email",
 ]);
 
 function redactValue(value: unknown): unknown {

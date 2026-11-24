@@ -72,6 +72,7 @@ export const KIND_LABEL = {
   // chega à tela — vira frase de gente no corpo do aviso, escrito pelo worker.
   voice_call_missed: "Alguém ligou e ninguém atendeu",
   webhook_source_silent: "Uma página está há 48 horas sem enviar leads",
+  human_task: "Uma tarefa para a equipe foi criada",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

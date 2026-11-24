@@ -17,6 +17,7 @@
  * `ctx.organizationId` e filtra `organization_id` em toda query. Está escrito lá
  * dentro, e é o que separa esta chamada de um vazamento entre organizações.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import {
@@ -27,6 +28,8 @@ import {
   MAXIMO_DE_DIAS,
 } from "@/lib/agenda/consulta";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
+import { resolverEmailDoConvidado } from "@/lib/agenda/convite-por-email";
+import { logger } from "@/lib/logger";
 import { diaLocalISO } from "@/lib/agenda/fuso";
 import { rotuloLocal } from "@/lib/tempo/agora";
 import {
@@ -135,6 +138,8 @@ export const crmListEventTypes: McpToolDefinition<typeof tiposShape> = {
         // recebe. `rotuloDoLocal` é o MESMO tradutor que a tela usa.
         onde: rotuloDoLocal(t.localKind, t.localDetalhes) ?? null,
         precisa_confirmacao: t.precisaConfirmacao,
+        // true = vale pedir o e-mail do cliente: ele recebe o convite da reunião.
+        envia_convite_por_email: t.conviteLigado,
       })),
     };
   },
@@ -424,6 +429,65 @@ async function semDerrubarOTurno<T>(
   }
 }
 
+/** O que o modelo ouve sobre o convite — diz o que fazer, não só o que houve. */
+const ROTULO_DO_CONVITE = {
+  // "registrado", nunca "enviado": quem envia é o Google, na sincronização, e
+  // nada aqui observou isso acontecer (a conexão pode estar desconectada).
+  informado: "email_registrado_para_convite: o e-mail informado vai no convite quando a agenda sincronizar; não afirme que o convite já chegou",
+  contato: "email_registrado_para_convite: o e-mail do contato vai no convite quando a agenda sincronizar; não afirme que o convite já chegou",
+  sem_email: "sem_email: o horário está marcado, mas não há e-mail para o convite; não diga que o convite foi enviado",
+  invalido: "email_invalido: o horário está marcado, mas o e-mail informado não é válido; confirme o e-mail com a pessoa",
+} as const;
+
+/**
+ * Lê a opção do tipo e o e-mail do contato DENTRO da organização (service role
+ * não tem RLS) e decide o convidado. Ver `lib/agenda/convite-por-email.ts`.
+ */
+async function emailDoConvidado(
+  ctx: { supabase: SupabaseClient; organizationId: string },
+  tipoId: string,
+  contactId: string,
+  informado: string | undefined,
+) {
+  // Falha de leitura NUNCA impede a marcação: o horário é o que o cliente
+  // combinou; o convite é bônus. Sem leitura, sem convite (comportamento de antes).
+  try {
+    return await lerEmailDoConvidado(ctx, tipoId, contactId, informado);
+  } catch (err) {
+    logger.warn("[crm_book_appointment] opção de convite não lida; marcando sem convidado", {
+      error: err instanceof Error ? err.message.slice(0, 160) : String(err),
+    });
+    return resolverEmailDoConvidado({ ligado: false });
+  }
+}
+
+async function lerEmailDoConvidado(
+  ctx: { supabase: SupabaseClient; organizationId: string },
+  tipoId: string,
+  contactId: string,
+  informado: string | undefined,
+) {
+  const { data: tipo } = await ctx.supabase
+    .from("calendar_event_types")
+    .select("guest_invite_enabled")
+    .eq("organization_id", ctx.organizationId)
+    .eq("id", tipoId)
+    .maybeSingle();
+  const ligado = (tipo as { guest_invite_enabled?: unknown } | null)?.guest_invite_enabled === true;
+  if (!ligado) return resolverEmailDoConvidado({ ligado: false });
+  const { data: contato } = await ctx.supabase
+    .from("contacts")
+    .select("email")
+    .eq("organization_id", ctx.organizationId)
+    .eq("id", contactId)
+    .maybeSingle();
+  return resolverEmailDoConvidado({
+    ligado: true,
+    informado: informado ?? null,
+    doContato: (contato as { email?: string | null } | null)?.email ?? null,
+  });
+}
+
 const marcarShape = {
   event_type_slug: z.string().min(1).describe("o identificador legível do tipo de atendimento"),
   starts_at: z.string().datetime({ offset: true }).describe("o instante exato do início, vindo de `crm_find_free_slots`"),
@@ -431,6 +495,19 @@ const marcarShape = {
   owner_user_id: z.string().uuid().optional(),
   title: z.string().min(1).max(200).optional(),
   notes: z.string().max(2000).optional(),
+  /**
+   * String livre e validada no handler, não `z.email()`: um e-mail digitado
+   * errado pelo cliente não pode derrubar a marcação inteira — vira
+   * `convite: "email_invalido"` na resposta e o horário é marcado igual.
+   */
+  guest_email: z
+    .string()
+    .max(254)
+    .optional()
+    .describe(
+      "e-mail que o CLIENTE informou para receber o convite da reunião. Só tem efeito quando o tipo tem " +
+        "`envia_convite_por_email: true`; sem ele, usa o e-mail do contato se houver.",
+    ),
 };
 
 export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
@@ -443,7 +520,9 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
     "`crm_schedule_followup`. A diferença: aqui as DUAS partes combinaram e alguém vai esperar; " +
     "lá é decisão interna nossa e o cliente não sabe de nada. " +
     "Chame `crm_find_free_slots` ANTES e use um `starts_at` que veio de lá — marcar em horário que " +
-    "não está livre é recusado, e a recusa manda você consultar de novo.",
+    "não está livre é recusado, e a recusa manda você consultar de novo. " +
+    "Se o tipo veio com `envia_convite_por_email: true`, peça o e-mail do cliente antes de marcar e mande em " +
+    "`guest_email`: ele é registrado para o convite, que o Google envia ao sincronizar.",
   inputSchema: marcarShape,
   category: "write",
   requiresRole: "ai_operator",
@@ -458,6 +537,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
           mensagem: `não existe atendimento chamado "${input.event_type_slug}". Pergunte que tipo de atendimento a pessoa quer.`,
         };
       }
+      const convite = await emailDoConvidado(ctx, tipo.id, input.contact_id, input.guest_email);
       const r = await marcarAgendamentoHandler(
         ctx.supabase,
         { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId, meetingBooking: ctx.meetingBooking },
@@ -468,9 +548,15 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
           ...(input.owner_user_id ? { owner_user_id: input.owner_user_id } : {}),
           ...(input.title ? { title: input.title } : {}),
           ...(input.notes ? { notes: input.notes } : {}),
+          ...(convite.email ? { guest_email: convite.email } : {}),
         },
       );
-      return { marcado: true, compromisso: r, ...(r.meeting_state === "pending" ? { mensagem: "O compromisso foi marcado; o link ainda está sendo criado. Não invente um link nem afirme que ele já foi enviado." } : {}) };
+      return {
+        marcado: true,
+        compromisso: r,
+        ...(convite.origem === "desligado" ? {} : { convite: ROTULO_DO_CONVITE[convite.origem] }),
+        ...(r.meeting_state === "pending" ? { mensagem: "O compromisso foi marcado; o link ainda está sendo criado. Não invente um link nem afirme que ele já foi enviado." } : {}),
+      };
     }),
 };
 

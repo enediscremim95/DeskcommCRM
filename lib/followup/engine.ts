@@ -47,6 +47,13 @@ import {
   type AvisoRecuperacaoEsgotada,
 } from "./no-show-recuperacao-esgotada";
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
+import { moverEtapaDoFluxo, type ResultadoMoverEtapa } from "./mover-etapa";
+import {
+  criarTarefaHumana,
+  interpolarTarefa,
+  type NovaTarefaHumana,
+  type ResultadoTarefaHumana,
+} from "@/lib/tarefas/tarefa-humana";
 
 const MAX_STEPS = 80;
 const CLAIM_LEASE_SECONDS = 120;
@@ -140,6 +147,21 @@ export interface AdminClient {
    * `no-show-recuperacao-esgotada.ts`.
    */
   abrirAvisoRecuperacaoEsgotada?(item: AvisoRecuperacaoEsgotada): Promise<void>;
+  /**
+   * Ação interna `human_task` (migration 0320). Opcional na interface porque os
+   * adaptadores de teste que não exercitam a ação não precisam dela; o engine
+   * lança `efeito_indisponivel` se um grafo pedir e o adaptador não tiver.
+   */
+  criarTarefaHumana?(input: NovaTarefaHumana): Promise<ResultadoTarefaHumana>;
+  /** Ação interna `move_stage` — ver `mover-etapa.ts`. */
+  moverEtapa?(input: {
+    organizationId: string;
+    contactId: string;
+    stageId: string | null | undefined;
+    requestId: string;
+    flowPointerId: string;
+    origemLeadId?: string | null;
+  }): Promise<ResultadoMoverEtapa>;
   persistirRespostaFollowup(input: {
     organization_id: string;
     contact_id: string;
@@ -268,6 +290,76 @@ function turnPayloadExtras(
   return {};
 }
 
+/**
+ * Executa a ação INTERNA de um nó `action` (tarefa humana / mover etapa) e
+ * devolve o evento do passo. Idempotente pela chave do passo (`idemKey`): a
+ * tarefa usa `source_key` única; mover de novo cai em `ja_esta_la`.
+ */
+async function executarEfeitoInterno(
+  db: AdminClient,
+  enrollment: EnrollmentRow,
+  node: Extract<FlowNode, { type: "action" }>,
+  idemKey: string,
+  clock: () => Date,
+  nomeDoContato: string | null,
+  events: EnrollmentEventRef[] = [],
+): Promise<{ event_type: string; payload: Record<string, unknown> }> {
+  const config = node.config;
+  if (config.mode === "human_task") {
+    if (!db.criarTarefaHumana) throw new Error("efeito_indisponivel");
+    const r = await db.criarTarefaHumana({
+      organizationId: enrollment.organization_id,
+      sourceKey: `followup:${enrollment.id}:${idemKey}`,
+      title: interpolarTarefa(config.title, nomeDoContato),
+      description: config.description ? interpolarTarefa(config.description, nomeDoContato) : null,
+      ...(config.priority ? { priority: config.priority } : {}),
+      dueAt:
+        config.due_in_minutes !== undefined
+          ? new Date(clock().getTime() + config.due_in_minutes * 60_000)
+          : null,
+      contactId: enrollment.contact_id,
+      conversationId: enrollment.conversation_id,
+      tituloDoAviso: "Tarefa para a equipe criada pelo follow-up",
+    });
+    return {
+      event_type: "human_task_created",
+      payload: { task_id: r.taskId, assigned_to: r.assignedTo, origem: r.origem, criada: r.criada },
+    };
+  }
+  if (config.mode === "move_stage") {
+    if (!db.moverEtapa) throw new Error("efeito_indisponivel");
+    const r = await db.moverEtapa({
+      organizationId: enrollment.organization_id,
+      contactId: enrollment.contact_id,
+      stageId: config.stage_id ?? null,
+      requestId: `followup:${enrollment.id}:${idemKey}`,
+      flowPointerId: enrollment.pointer_id,
+      origemLeadId: origemDoEnrollment(events),
+    });
+    return r.movido
+      ? { event_type: "stage_move_done", payload: { lead_id: r.lead_id, to_stage_id: r.to_stage_id } }
+      : {
+          event_type: "stage_move_skipped",
+          payload: { motivo: r.motivo, stage_id: config.stage_id ?? null, ...(r.lead_id ? { lead_id: r.lead_id } : {}) },
+        };
+  }
+  throw new Error(`action mode "${config.mode}" is not internal`);
+}
+
+/**
+ * O negócio que originou a inscrição: o `lead_id` do PRIMEIRO evento
+ * `enrolled_by_*` (ex.: `enrolled_by_stage_change`). Só eventos de inscrição —
+ * o `lead_id` de um `stage_move_*` posterior não é origem.
+ */
+export function origemDoEnrollment(events: EnrollmentEventRef[]): string | null {
+  for (const e of events) {
+    if (!e.event_type?.startsWith("enrolled_by")) continue;
+    const id = e.payload?.lead_id;
+    if (typeof id === "string" && id) return id;
+  }
+  return null;
+}
+
 async function markDead(
   db: AdminClient,
   clock: () => Date,
@@ -347,6 +439,7 @@ async function applyResult(
   smartWaits: EsperaAdaptativa[] = [],
   events: EnrollmentEventRef[] = [],
   respostaParaGravar: string | null = null,
+  nomeDoContato: string | null = null,
 ): Promise<void> {
   const { db, clock, enqueueJob } = deps;
   await db.assertServiceBoundary?.(enrollment);
@@ -366,13 +459,26 @@ async function applyResult(
   }
 
   const idemKey = `${node.id}:${enrollment.steps_taken}`;
-  const wantedType = eventTypeFor(result);
+  let wantedType = eventTypeFor(result);
+  let payload = eventPayload(result);
+  if (result.kind === "advance" && result.efeito && node.type === "action") {
+    // Passo já gravado (replay depois de update perdido): o efeito já rodou —
+    // reusa o tipo do evento existente para o patch de avanço ser aplicado.
+    const jaGravado = events.find((e) => e.idempotency_key === idemKey && e.node_id === node.id);
+    if (jaGravado?.event_type) {
+      wantedType = jaGravado.event_type;
+    } else {
+      const efeito = await executarEfeitoInterno(db, enrollment, node, idemKey, clock, nomeDoContato, events);
+      wantedType = efeito.event_type;
+      payload = { ...payload, ...efeito.payload };
+    }
+  }
   const { inserted } = await db.insertEnrollmentEvent({
     organization_id: enrollment.organization_id,
     enrollment_id: enrollment.id,
     node_id: node.id,
     event_type: wantedType,
-    payload: eventPayload(result),
+    payload,
     idempotency_key: idemKey,
   });
   const isReplay = !inserted;
@@ -713,6 +819,7 @@ async function processEnrollment(
     smartWaits,
     events,
     node.type === "match_reply" && wokeEarly ? (lastInboundBody ?? "").trim() || null : null,
+    lead.contact_name ?? null,
   );
 }
 
@@ -935,6 +1042,12 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
     },
     async persistirRespostaFollowup(input) {
       await persistirRespostaFollowupSupabase(admin, input);
+    },
+    async criarTarefaHumana(input) {
+      return criarTarefaHumana(admin, input);
+    },
+    async moverEtapa(input) {
+      return moverEtapaDoFluxo(admin, input);
     },
   };
 }

@@ -182,7 +182,11 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
             ? "o agente escreve e envia a mensagem"
             : node.config.mode === "text"
               ? "envia um texto fixo"
-              : "envia uma mensagem de modelo pronto",
+              : node.config.mode === "human_task"
+                ? "cria uma tarefa para a equipe, sem enviar nada ao contato"
+                : node.config.mode === "move_stage"
+                  ? "avança o negócio de etapa, sem enviar nada ao contato"
+                  : "envia uma mensagem de modelo pronto",
       };
     case "end":
       return { ...base, resumo: `encerra — ${DESFECHO[node.config.outcome] ?? node.config.outcome}` };
@@ -322,6 +326,28 @@ function quandoLegivel(iso: unknown, idioma: string): string | null {
  * omitir produz uma linha que afirma menos do que se sabe. É a mesma escolha do
  * `refDoNo` acima — feio e verdadeiro ganha de bonito e mudo.
  */
+const ORIGEM_DA_TAREFA: Record<string, string> = {
+  atendente_da_conversa: "Responsável: quem atende a conversa",
+  responsavel_do_numero: "Responsável: quem responde pelo número",
+  dono_do_negocio: "Responsável: o dono do negócio",
+  administrador: "Responsável: a administração da organização",
+  sem_responsavel: "Sem responsável elegível; defina um na tarefa",
+};
+
+const MOTIVO_DE_NAO_MOVER: Record<string, string> = {
+  sem_destino: "o passo não tem etapa de destino configurada",
+  destino_invalido: "a etapa de destino não existe mais nesta organização",
+  sem_negocio: "o contato não tem negócio aberto no funil da etapa",
+  ambiguo: "o contato tem mais de um negócio aberto nesse funil",
+  ja_esta_la: "o negócio já estava nessa etapa",
+  so_avanca: "a automação só avança, e a etapa fica antes da atual",
+  etapa_final_so_humano: "Ganho e Perdido só uma pessoa decide",
+  outro_funil: "a etapa é de outro funil",
+  etapa_arquivada: "a etapa de destino está arquivada",
+  conflito: "o negócio mudou ao mesmo tempo",
+  recusado: "o movimento foi recusado",
+};
+
 export function descreveEvento(
   evento: EventoDeEnrollment,
   nos: Record<string, NoDoDossie>,
@@ -368,6 +394,20 @@ export function descreveEvento(
     }
     case "action_sent":
       return { titulo: "Mensagem enviada", detalhe: null, ...motor };
+    case "human_task_created":
+      return {
+        titulo: "Criou uma tarefa para a equipe",
+        detalhe: texto(p.origem) ? (ORIGEM_DA_TAREFA[texto(p.origem)!] ?? texto(p.origem)) : null,
+        ...motor,
+      };
+    case "stage_move_done":
+      return { titulo: "Avançou o negócio de etapa", detalhe: null, ...motor };
+    case "stage_move_skipped":
+      return {
+        titulo: "Não moveu o negócio de etapa",
+        detalhe: texto(p.motivo) ? (MOTIVO_DE_NAO_MOVER[texto(p.motivo)!] ?? texto(p.motivo)) : null,
+        ...motor,
+      };
     case "ai_classified":
       return {
         titulo: "O agente interpretou a resposta",

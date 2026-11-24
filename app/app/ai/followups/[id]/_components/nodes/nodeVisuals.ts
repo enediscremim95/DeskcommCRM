@@ -165,6 +165,8 @@ export function describeNodeConfig(
       const c = config as ConfigOf<"action">;
       if (c.mode === "ai_message") return c.prompt_hint;
       if (c.mode === "text") return c.body;
+      if (c.mode === "human_task") return `${t("Tarefa:")} ${c.title}`;
+      if (c.mode === "move_stage") return c.stage_id ? t("Avança o negócio de etapa") : t("Sem etapa de destino");
       return t("Template fixo");
     }
     case "end": {

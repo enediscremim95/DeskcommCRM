@@ -68,7 +68,14 @@ import { ensureConversation } from "@/lib/automation/start-conversation";
 import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
 import { espacarEnvio } from "@/lib/automation/throttle";
 import { env } from "@/lib/env";
-import { tagDeIdioma } from "@/lib/i18n/datas";
+import {
+  aplicarVariaveisDoLembrete,
+  dataEHoraDoLembrete,
+  idDaMensagemDoLembrete,
+  linkDaSala,
+  linkParaOModelo,
+} from "@/lib/agenda/lembrete";
+import { escalonarLembretesSemResposta } from "@/lib/agenda/escalonamento-do-lembrete";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
@@ -79,10 +86,69 @@ export const dynamic = "force-dynamic";
 /** Teto de compromissos examinados por rodada — a varredura roda a cada 5 min. */
 const LIMITE_DA_VARREDURA = 200;
 
+/**
+ * Validade da posse do ENVIO do lembrete. MENOR que o intervalo do cron (5 min,
+ * `docker/scheduler/entrypoint.sh`) e contada a partir do INÍCIO da rodada que a
+ * tomou (a posse grava `agora`, não o instante da linha): por mais que a rodada
+ * demore, a posse dela já venceu quando a rodada seguinte começa. Uma rodada que
+ * morreu com a posse nunca bloqueia a seguinte — inclusive a última elegível
+ * antes do compromisso —, que é a garantia da main, onde nada impedia o reenvio.
+ * Se o intervalo do scheduler mudar, este número tem de continuar menor.
+ */
+const LEASE_DO_ENVIO_MS = 4 * 60_000;
+
+/** Teto de elos (tentativas falhas antigas) LIDOS numa rodada antes do id aleatório. */
+const MAX_ELOS_DE_REENVIO = 20;
+
+/**
+ * Qual id esta tentativa usa — escolhido LENDO `messages`, sem chamar o
+ * handler (que é quem fala com o transporte).
+ *
+ * O id-base é determinístico pelo compromisso E pela CONVERSA atual: se o canal
+ * ou a conversa mudaram desde a tentativa sem carimbo, a corrente recomeça na
+ * conversa nova — como a main, que tentaria ali — em vez de ficar presa a um id
+ * que o handler recusa por ser de outra conversa.
+ *
+ * Elo que já existe e FALHOU numa tentativa anterior → o próximo elo. Elo
+ * inexistente, ainda `queued`/`sending` (o handler o envia) ou já enviado (o
+ * handler o devolve sem reenviar) → é este. Passado o teto, id aleatório: o que
+ * a main faz.
+ */
+async function idDaTentativa(
+  admin: ReturnType<typeof createAdminClient>,
+  org: string,
+  appointmentId: string,
+  conversaId: string,
+  posse: string,
+): Promise<string> {
+  let id = idDaMensagemDoLembrete(`${appointmentId}:${conversaId}`);
+  for (let elo = 0; elo < MAX_ELOS_DE_REENVIO; elo += 1) {
+    const { data, error } = await admin
+      .from("messages")
+      .select("id, status, created_at, conversation_id")
+      .eq("organization_id", org)
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    const m = data as { status?: string; created_at?: string; conversation_id?: string } | null;
+    if (!m) return id;
+    if (m.conversation_id !== conversaId) return randomUUID();
+    if (!(m.status === "failed" && m.created_at && m.created_at < posse)) return id;
+    id = idDaMensagemDoLembrete(`${appointmentId}:apos:${id}`);
+  }
+  return randomUUID();
+}
+
 /** Maior antecedência aceita pela coluna (43200 min = 30 dias). */
 const MAIOR_ANTECEDENCIA_MS = 43_200 * 60_000;
 
 interface TipoDoCompromisso {
+  /** A organização DO TIPO — `event_type_id` tem FK só por `id`; o tipo tem de ser da org do compromisso. */
+  organization_id?: string;
+  /** Opt-in (migration 0320): link da sala + variáveis no modelo. Ausente/false = texto de antes. */
+  reminder_rich_format?: boolean;
+  /** Opt-in (0320): só com ele ligado o envio usa posse/referências; desligado = caminho da main. */
+  reminder_escalation_enabled?: boolean;
   name: string;
   reminder_enabled: boolean;
   reminder_minutes_before: number;
@@ -97,6 +163,8 @@ interface CompromissoAVencer {
   title: string;
   starts_at: string;
   location_details: string | null;
+  meeting_state?: string | null;
+  meeting_url?: string | null;
   calendar_event_types: TipoDoCompromisso | TipoDoCompromisso[] | null;
 }
 
@@ -135,23 +203,15 @@ export function montarLembrete(input: {
    * banco — o mesmo desenho de `montarPares` em `lib/metrics/atrito.ts`.
    */
   idioma?: Idioma;
+  /**
+   * Link da SALA pronta (Meet/Jitsi). Ausente = texto de antes, palavra por
+   * palavra. Igual ao endereço já impresso = não repete. Ver `lib/agenda/lembrete.ts`.
+   */
+  link?: string | null;
 }): string {
   const idioma = input.idioma ?? IDIOMA_PADRAO;
   const t = (texto: string) => traduzir(texto, idioma);
-  const etiqueta = tagDeIdioma(idioma);
-
-  const dia = new Intl.DateTimeFormat(etiqueta, {
-    timeZone: input.timezone,
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit",
-  }).format(input.quando);
-  const hora = new Intl.DateTimeFormat(etiqueta, {
-    timeZone: input.timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(input.quando);
+  const { data: dia, hora } = dataEHoraDoLembrete(input.quando, input.timezone, idioma);
 
   // Cada `t()` cobre só a parte FIXA da frase: nome, título, data e endereço
   // são dado do tenant e nunca passam por tradução.
@@ -163,9 +223,11 @@ export function montarLembrete(input: {
     ? `${t("Oi,")} ${input.nomeDoContato}!`
     : t("Oi!");
   const onde = input.local ? ` ${t("Endereço")}: ${input.local}.` : "";
+  const link = input.link?.trim();
+  const sala = link && link !== input.local?.trim() ? ` ${t("Link da reunião")}: ${link}` : "";
   return (
     `${saudacao} ${t("Passando pra lembrar do seu compromisso:")} ` +
-    `${input.titulo}, ${dia} ${t("às")} ${hora}.${onde}`
+    `${input.titulo}, ${dia} ${t("às")} ${hora}.${onde}${sala}`
   );
 }
 
@@ -199,8 +261,8 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("calendar_appointments")
     .select(
-      "id, organization_id, contact_id, title, starts_at, location_details, " +
-        "calendar_event_types!inner(name, reminder_enabled, reminder_minutes_before, reminder_template_name, location_details)",
+      "id, organization_id, contact_id, title, starts_at, location_details, meeting_state, meeting_url, " +
+        "calendar_event_types!inner(organization_id, name, reminder_enabled, reminder_minutes_before, reminder_template_name, location_details, reminder_rich_format, reminder_escalation_enabled)",
     )
     .eq("status", "confirmed")
     .eq("calendar_event_types.reminder_enabled", true)
@@ -238,6 +300,14 @@ async function handle(req: NextRequest): Promise<Response> {
 
     // ⚠️ organization_id SEMPRE da linha do compromisso — ver o cabeçalho.
     const org = linha.organization_id;
+
+    // As OPÇÕES NOVAS (migration 0320) só valem se o tipo for da MESMA
+    // organização: a FK de `event_type_id` é só por `id`, e um vínculo cruzado
+    // emprestaria o opt-in de outro tenant. Com vínculo cruzado o lembrete segue
+    // exatamente como na main (que já usava o modelo e o local desse tipo), com
+    // as opções novas tratadas como DESLIGADAS.
+    const tipoDaOrg = tipo.organization_id === org;
+    const escalonamentoLigado = tipoDaOrg && tipo.reminder_escalation_enabled === true;
 
     const { data: contato } = await admin
       .from("contacts")
@@ -284,13 +354,20 @@ async function handle(req: NextRequest): Promise<Response> {
       .eq("id", org)
       .maybeSingle();
 
+    const nomeDoContato = contato.display_name ?? contato.name ?? null;
+    const fuso = organizacao?.timezone ?? "America/Sao_Paulo";
+    const idioma = normalizarIdioma(organizacao?.locale);
+    // OPT-IN por tipo (migration 0320). Desligado = o lembrete de antes, byte a
+    // byte: sem a linha do link e com o modelo enviado sem interpolação.
+    const formatoRico = tipoDaOrg && tipo.reminder_rich_format === true;
     let corpo = montarLembrete({
-      nomeDoContato: contato.display_name ?? contato.name ?? null,
+      nomeDoContato,
       titulo: linha.title,
       quando: new Date(linha.starts_at),
-      timezone: organizacao?.timezone ?? "America/Sao_Paulo",
+      timezone: fuso,
       local: linha.location_details ?? tipo.location_details ?? null,
-      idioma: normalizarIdioma(organizacao?.locale),
+      idioma,
+      link: formatoRico ? linkDaSala(linha) : null,
     });
 
     if (tipo.reminder_template_name) {
@@ -301,40 +378,191 @@ async function handle(req: NextRequest): Promise<Response> {
         .or(`shortcut.eq.${tipo.reminder_template_name},title.eq.${tipo.reminder_template_name}`)
         .limit(1)
         .maybeSingle();
-      if (modelo?.body) corpo = modelo.body;
+      if (modelo?.body && !formatoRico) {
+        corpo = modelo.body;
+      } else if (modelo?.body) {
+        // Variáveis {{nome}} {{data}} {{hora}} {{link}} — modelo sem elas sai igual.
+        corpo = aplicarVariaveisDoLembrete(modelo.body, {
+          nome: nomeDoContato ?? "",
+          ...dataEHoraDoLembrete(new Date(linha.starts_at), fuso, idioma),
+          link: linkParaOModelo({
+            meeting_state: linha.meeting_state,
+            meeting_url: linha.meeting_url,
+            location_details: linha.location_details,
+            tipo_location_details: tipo.location_details,
+          }),
+        });
+      }
+    }
+
+    // ═══ SEM ESCALONAMENTO: O CAMINHO DA MAIN, LITERAL ═══
+    //
+    // Mesma ordem, mesmo envio (sem id interno, sem dedupe), mesma reentrega e
+    // mesmo carimbo de `fork/main`. A única diferença permitida é o TEXTO,
+    // quando `reminder_rich_format` está ligado. Toda a maquinaria abaixo
+    // (posse, corrente de tentativas, referências da mensagem/conversa) existe
+    // para o escalonamento e só roda quando ele está ligado no tipo.
+    // `route.comportamento.test.ts` compara a sequência de chamadas com a main.
+    if (!escalonamentoLigado) {
+      await espacarEnvio(canal.id);
+
+      try {
+        const conversaId = await ensureConversation(admin, org, contato.id, canal.id);
+        // `webhook_source` é o ator que esta base dá a envio nascido de worker —
+        // o mesmo que `lib/followup/enviar-texto-fixo.ts` usa. O `id` é o
+        // compromisso, para o audit da mensagem correlacionar com a linha que a
+        // originou.
+        await sendMessageHandler(
+          admin,
+          {
+            organization_id: org,
+            actor: { type: "webhook_source", id: linha.id },
+            requestId: `agenda-reminder:${linha.id}`,
+          },
+          { conversation_id: conversaId, type: "text", body: corpo } as Parameters<
+            typeof sendMessageHandler
+          >[2],
+        );
+        // Carimba a TENTATIVA — o desfecho da entrega vive na mensagem.
+        await admin
+          .from("calendar_appointments")
+          .update({ reminder_sent_at: new Date().toISOString() })
+          .eq("id", linha.id)
+          .eq("organization_id", org);
+        enviados += 1;
+      } catch (err) {
+        const mensagem = err instanceof Error ? err.message : String(err);
+        logger.error("[agenda-reminder] envio falhou", { appointmentId: linha.id, error: mensagem, requestId });
+        pular("erro_no_envio");
+      }
+      continue;
+    }
+
+    // ═══ COM ESCALONAMENTO LIGADO ═══
+    // POSSE DO ENVIO (lease) — e NÃO o carimbo. Na main o carimbo vinha depois
+    // do envio: queda no meio = a rodada seguinte manda de novo. Isso continua
+    // valendo: `reminder_sent_at` só é gravado DEPOIS do envio (abaixo). O que a
+    // posse acrescenta é que duas rodadas cruzadas não enviam ao mesmo tempo; e
+    // ela EXPIRA em `LEASE_DO_ENVIO_MS` (menor que o intervalo do cron), então
+    // uma rodada que morreu com a posse não tira o compromisso da fila.
+    // A posse leva o INÍCIO DA RODADA, não o instante em que esta linha foi
+    // pega. Assim ela vence `LEASE_DO_ENVIO_MS` depois do início da rodada —
+    // sempre antes da rodada seguinte (o scheduler chama a cada 5 min,
+    // `docker/scheduler/entrypoint.sh`), por mais que esta rodada demore. Uma
+    // rodada que caiu nunca bloqueia a seguinte, inclusive a última elegível
+    // antes do compromisso.
+    const posse = agora.toISOString();
+    const { error: libErr } = await admin
+      .from("calendar_appointments")
+      .update({ reminder_claimed_at: null })
+      .eq("id", linha.id)
+      .eq("organization_id", org)
+      .is("reminder_sent_at", null)
+      .lt("reminder_claimed_at", new Date(agora.getTime() - LEASE_DO_ENVIO_MS).toISOString());
+    const { data: tomou, error: posseErr } = libErr
+      ? { data: null, error: libErr }
+      : await admin
+          .from("calendar_appointments")
+          .update({ reminder_claimed_at: posse })
+          .eq("id", linha.id)
+          .eq("organization_id", org)
+          .is("reminder_sent_at", null)
+          .is("reminder_claimed_at", null)
+          .select("id");
+    if (posseErr || !tomou?.length) {
+      pular("ja_em_envio");
+      continue;
     }
 
     await espacarEnvio(canal.id);
 
+    let enviada: { id?: string; status?: string; created_at?: string } | null = null;
+    let conversaId: string;
     try {
-      const conversaId = await ensureConversation(admin, org, contato.id, canal.id);
+      conversaId = await ensureConversation(admin, org, contato.id, canal.id);
       // `webhook_source` é o ator que esta base dá a envio nascido de worker —
       // o mesmo que `lib/followup/enviar-texto-fixo.ts` usa. O `id` é o
       // compromisso, para o audit da mensagem correlacionar com a linha que a
       // originou.
-      await sendMessageHandler(
-        admin,
-        {
-          organization_id: org,
-          actor: { type: "webhook_source", id: linha.id },
-          requestId: `agenda-reminder:${linha.id}`,
-        },
-        { conversation_id: conversaId, type: "text", body: corpo } as Parameters<
-          typeof sendMessageHandler
-        >[2],
-      );
-      // Carimba a TENTATIVA — o desfecho da entrega vive na mensagem.
-      await admin
-        .from("calendar_appointments")
-        .update({ reminder_sent_at: new Date().toISOString() })
-        .eq("id", linha.id)
-        .eq("organization_id", org);
-      enviados += 1;
+      //
+      // O id da MENSAGEM é determinístico pelo compromisso, e SEM
+      // `deduplicateInternalMessage` de propósito. Na reentrega depois de uma
+      // queda, `sendMessageHandler` reencontra a linha pelo id e:
+      //   - se ela ainda está `queued`/`sending` (a queda foi antes do envio
+      //     sair), segue o caminho normal e ENVIA — como a main, que mandava
+      //     uma mensagem nova;
+      //   - se ela já saiu (`sent`/`delivered`/`read`), devolve sem reenviar —
+      //     melhor que a main, que mandava em dobro;
+      //   - se ela FALHOU numa tentativa anterior, a main reenviaria depois da
+      //     queda; aqui também (abaixo), com um id derivado daquela falha.
+      const enviar = (internalMessageId: string) =>
+        sendMessageHandler(
+          admin,
+          {
+            organization_id: org,
+            actor: { type: "webhook_source", id: linha.id },
+            requestId: `agenda-reminder:${linha.id}`,
+            internalMessageId,
+          },
+          { conversation_id: conversaId, type: "text", body: corpo } as Parameters<
+            typeof sendMessageHandler
+          >[2],
+        ) as Promise<{ id?: string; status?: string; created_at?: string } | null>;
+      // UMA chamada ao handler por compromisso por rodada, como a main. A
+      // corrente de tentativas falhas é LIDA no banco só para escolher o id —
+      // nunca reenviada na mesma rodada. Se o elo escolhido voltar `failed`, o
+      // carimbo fecha a tentativa (como a main); se o carimbo cair, a rodada
+      // seguinte tenta de novo com o próximo elo.
+      // Falha ao LER a corrente nunca aborta o envio: cai no que a main faz
+      // (mensagem nova, id aleatório). Nunca menos tentativas que a main.
+      const id = await idDaTentativa(admin, org, linha.id, conversaId, posse).catch((err: unknown) => {
+        logger.warn("[agenda-reminder] corrente de tentativas não lida; enviando como a main (id novo)", {
+          appointmentId: linha.id,
+          error: err instanceof Error ? err.message.slice(0, 160) : String(err),
+        });
+        return randomUUID();
+      });
+      enviada = await enviar(id);
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : String(err);
       logger.error("[agenda-reminder] envio falhou", { appointmentId: linha.id, error: mensagem, requestId });
+      // Exceção = o envio não aconteceu: devolve a posse para a próxima rodada.
+      await admin
+        .from("calendar_appointments")
+        .update({ reminder_claimed_at: null })
+        .eq("id", linha.id)
+        .eq("organization_id", org)
+        .eq("reminder_claimed_at", posse);
       pular("erro_no_envio");
+      continue;
     }
+
+    // Carimba a TENTATIVA — o desfecho da entrega vive na mensagem. É o MESMO
+    // carimbo da main, gravado no MESMO ponto (depois do envio), e leva junto o
+    // que o escalonamento precisa: qual mensagem saiu e em que conversa. Um
+    // update só: o escalonamento nunca vê `reminder_sent_at` sem as referências.
+    // Se este update falhar, a posse expira e a rodada seguinte reencontra a
+    // mensagem pelo id determinístico (sem reenviar) e carimba.
+    const { error: carimboErr } = await admin
+      .from("calendar_appointments")
+      .update({
+        reminder_sent_at: new Date().toISOString(),
+        reminder_message_id: enviada?.id ?? null,
+        reminder_conversation_id: conversaId,
+        reminder_claimed_at: null,
+      })
+      .eq("id", linha.id)
+      .eq("organization_id", org)
+      .eq("reminder_claimed_at", posse);
+    if (carimboErr) {
+      logger.warn("[agenda-reminder] carimbo do envio não gravado; a próxima rodada reencontra a mensagem", {
+        appointmentId: linha.id,
+        error: carimboErr.message,
+      });
+      pular("carimbo_pendente");
+      continue;
+    }
+    enviados += 1;
   }
 
   // Rodada que não avisou ninguém NÃO é mutação, e não audita — a lei está no
@@ -349,7 +577,24 @@ async function handle(req: NextRequest): Promise<Response> {
     });
   }
 
-  return ok({ examinados: linhas.length, enviados, pulados, motivos }, { requestId });
+  // ESCALONAMENTO PÓS-LEMBRETE (migration 0320, opt-in por tipo). Mesma rodada,
+  // nenhum worker novo: só olha compromisso cujo tipo LIGOU o escalonamento.
+  const escalonamento = await escalonarLembretesSemResposta(admin, agora);
+  const decididos = escalonamento.escalados + escalonamento.confirmados + escalonamento.nao_aplicaveis;
+  if (decididos > 0) {
+    await audit({
+      action: "agenda.lembrete_escalonamento",
+      resourceType: "calendar_appointment",
+      requestId,
+      metadata: {
+        escalados: escalonamento.escalados,
+        confirmados: escalonamento.confirmados,
+        nao_aplicaveis: escalonamento.nao_aplicaveis,
+      },
+    });
+  }
+
+  return ok({ examinados: linhas.length, enviados, pulados, motivos, escalonamento }, { requestId });
 }
 
 export const GET = handle;

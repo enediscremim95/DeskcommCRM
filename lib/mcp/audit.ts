@@ -26,6 +26,9 @@ const ARGS_REDACT_KEYS = new Set([
   "token",
   "password",
   "cpf",
+  // E-mail do convidado do `crm_book_appointment` (migration 0320): dado
+  // pessoal de terceiro que não precisa morar em log persistido.
+  "guest_email",
 ]);
 
 function redactArgs(args: Record<string, unknown>): Record<string, unknown> {

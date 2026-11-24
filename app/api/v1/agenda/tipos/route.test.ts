@@ -382,6 +382,10 @@ describe("GET /api/v1/agenda/tipos", () => {
           janelaDeAgendamentoDias: 60,
           lembreteLigado: true,
           lembreteAntecedenciaMin: 180,
+          conviteLigado: false,
+    lembreteRico: false,
+          escalonamentoLigado: true,
+          escalonamentoMinutos: 25,
         },
       ],
     });
@@ -395,5 +399,10 @@ describe("GET /api/v1/agenda/tipos", () => {
     };
     expect(corpo.data[0]?.reminder_enabled).toBe(true);
     expect(corpo.data[0]?.reminder_minutes_before).toBe(180);
+    expect(corpo.data[0]).toMatchObject({
+      guest_invite_enabled: false,
+      reminder_escalation_enabled: true,
+      reminder_escalation_minutes: 25,
+    });
   });
 });

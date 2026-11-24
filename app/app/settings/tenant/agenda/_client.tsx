@@ -27,6 +27,11 @@ export interface TipoRow {
   is_active: boolean;
   reminder_enabled: boolean;
   reminder_minutes_before: number;
+  /** Migration 0320 — opcionais para uma linha lida antes da migration seguir valendo. */
+  guest_invite_enabled?: boolean;
+  reminder_rich_format?: boolean;
+  reminder_escalation_enabled?: boolean;
+  reminder_escalation_minutes?: number;
 }
 
 /**
@@ -127,6 +132,65 @@ function LembreteDoCompromisso({ tipo }: { tipo: TipoRow }) {
           disabled={!ligado}
           defaultValue={tipo.reminder_minutes_before}
           data-testid={`editar-lembrete-minutos-${tipo.id}`}
+          className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text disabled:opacity-50"
+        />
+      </label>
+    </>
+  );
+}
+
+/**
+ * CONVITE E ESCALONAMENTO (migration 0320) — os dois opt-in do procedimento
+ * "confirmação da apresentação". Mesmo desenho do `LembreteDoCompromisso`: o
+ * campo de minutos só fica ativo com a caixa marcada, e desabilitado não entra
+ * no `FormData` (desligar não apaga os minutos escolhidos).
+ */
+function ConviteEEscalonamento({ tipo }: { tipo: TipoRow }) {
+  const t = useT();
+  const [escalaLigado, setEscalaLigado] = React.useState(tipo.reminder_escalation_enabled === true);
+  return (
+    <>
+      <label className="flex items-center gap-2 text-xs text-text-muted sm:col-span-3">
+        <input
+          type="checkbox"
+          name="guest_invite_enabled"
+          defaultChecked={tipo.guest_invite_enabled === true}
+          data-testid={`editar-convite-${tipo.id}`}
+          className="size-4 rounded-sm border-border accent-accent"
+        />
+        {t("Quando a IA marcar, enviar o convite da reunião para o e-mail do cliente (pelo Google Agenda)")}
+      </label>
+      <label className="flex items-center gap-2 text-xs text-text-muted sm:col-span-3">
+        <input
+          type="checkbox"
+          name="reminder_rich_format"
+          defaultChecked={tipo.reminder_rich_format === true}
+          data-testid={`editar-lembrete-rico-${tipo.id}`}
+          className="size-4 rounded-sm border-border accent-accent"
+        />
+        {t("No lembrete, incluir o link da reunião e aceitar {{nome}}, {{data}}, {{hora}} e {{link}} no modelo")}
+      </label>
+      <label className="flex items-center gap-2 text-xs text-text-muted sm:col-span-2">
+        <input
+          type="checkbox"
+          name="reminder_escalation_enabled"
+          checked={escalaLigado}
+          data-testid={`editar-escalonamento-${tipo.id}`}
+          onChange={(e) => setEscalaLigado(e.target.checked)}
+          className="size-4 rounded-sm border-border accent-accent"
+        />
+        {t("Se o cliente não responder ao lembrete, passar para a equipe (tarefa, aviso e a IA pausa a conversa)")}
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-text-muted">
+        {t("Minutos depois do lembrete")}
+        <input
+          name="reminder_escalation_minutes"
+          type="number"
+          min={5}
+          max={720}
+          disabled={!escalaLigado}
+          defaultValue={tipo.reminder_escalation_minutes ?? 20}
+          data-testid={`editar-escalonamento-minutos-${tipo.id}`}
           className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text disabled:opacity-50"
         />
       </label>
@@ -378,6 +442,16 @@ export function TiposDeAgendamentoClient({
                   {t("avisa o cliente")} {tipo.reminder_minutes_before} min {t("antes")}
                 </span>
               ) : null}
+              {tipo.guest_invite_enabled ? (
+                <span data-testid={`convite-ligado-${tipo.id}`} className="text-xs text-text-muted">
+                  {t("envia convite por e-mail")}
+                </span>
+              ) : null}
+              {tipo.reminder_escalation_enabled ? (
+                <span data-testid={`escalonamento-ligado-${tipo.id}`} className="text-xs tabular-nums text-text-muted">
+                  {t("sem resposta, passa para a equipe em")} {tipo.reminder_escalation_minutes ?? 20} min
+                </span>
+              ) : null}
               {!tipo.is_active ? <span className="text-xs text-text-subtle">{t("desativado")}</span> : null}
               {podeEditar ? (
                 <span className="ml-auto flex gap-1">
@@ -466,6 +540,12 @@ export function TiposDeAgendamentoClient({
                               ),
                             }
                           : {}),
+                        guest_invite_enabled: dados.get("guest_invite_enabled") === "on",
+                        reminder_rich_format: dados.get("reminder_rich_format") === "on",
+                        reminder_escalation_enabled: dados.get("reminder_escalation_enabled") === "on",
+                        ...(dados.get("reminder_escalation_minutes")
+                          ? { reminder_escalation_minutes: Number(dados.get("reminder_escalation_minutes")) }
+                          : {}),
                       }),
                     "Tipo alterado.",
                   );
@@ -510,6 +590,7 @@ export function TiposDeAgendamentoClient({
                   </select>
                 </label>
                 <LembreteDoCompromisso tipo={tipo} />
+                <ConviteEEscalonamento tipo={tipo} />
                 <div className="flex justify-end sm:col-span-3">
                   <Button type="submit" size="sm" data-testid={`salvar-${tipo.id}`} disabled={salvando}>
                     {salvando ? t("Salvando…") : t("Salvar")}

@@ -104,6 +104,20 @@ const camposDoTipo = {
     .min(15, { message: "O lembrete precisa sair pelo menos 15 minutos antes do compromisso." })
     .max(10_080, { message: "O lembrete não pode sair mais de 7 dias (10080 minutos) antes." })
     .optional(),
+  /**
+   * Migration 0320 — os três nascem DESLIGADOS (default da coluna) e nada aqui
+   * os liga por conta própria: convite por e-mail e passagem para pessoa são
+   * escolhas de quem administra a agenda.
+   */
+  guest_invite_enabled: z.boolean().optional(),
+  reminder_rich_format: z.boolean().optional(),
+  reminder_escalation_enabled: z.boolean().optional(),
+  reminder_escalation_minutes: z
+    .number()
+    .int()
+    .min(5, { message: "A espera antes de passar para a equipe precisa ser de pelo menos 5 minutos." })
+    .max(720, { message: "A espera antes de passar para a equipe não pode passar de 720 minutos." })
+    .optional(),
 };
 
 const criarSchema = z.object(camposDoTipo);
@@ -170,6 +184,10 @@ export async function GET(req: NextRequest): Promise<Response> {
       // leitura não conta é o mesmo controle decorativo, do outro lado.
       reminder_enabled: t.lembreteLigado,
       reminder_minutes_before: t.lembreteAntecedenciaMin,
+      guest_invite_enabled: t.conviteLigado,
+      reminder_rich_format: t.lembreteRico,
+      reminder_escalation_enabled: t.escalonamentoLigado,
+      reminder_escalation_minutes: t.escalonamentoMinutos,
     })),
     { requestId },
   );

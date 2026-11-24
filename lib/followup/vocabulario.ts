@@ -433,6 +433,16 @@ export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
   text: "Texto fixo",
   ai_message: "Mensagem escrita pela IA",
   template: "Modelo de mensagem pronto",
+  human_task: "Tarefa para a equipe (não envia ao contato)",
+  move_stage: "Avançar o negócio de etapa (não envia ao contato)",
+};
+
+/** Prioridade da tarefa criada pela ação "Tarefa para a equipe" — mesmo vocabulário de `crm_tasks`. */
+export const PRIORIDADES_DA_TAREFA_DO_FLUXO: Record<"low" | "medium" | "high" | "urgent", string> = {
+  low: "Baixa",
+  medium: "Média",
+  high: "Alta",
+  urgent: "Urgente",
 };
 
 // ─── nó final ────────────────────────────────────────────────────────────

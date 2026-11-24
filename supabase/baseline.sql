@@ -10071,10 +10071,13 @@ on conflict (model) do update set
 -- migration que reconstrói a constraint. `kind-check-migration-x-baseline.test.ts`
 -- reprova quando as duas divergem.
 
+-- (migration 0320) A troca é UM `alter table` com `drop, add ... not valid`:
+-- atômica (nunca há janela sem constraint no `update.sh`) e sem varredura sob
+-- lock exclusivo. A varredura é o `validate constraint` logo abaixo da lista,
+-- que roda em outra instrução (psql em autocommit) com lock que não bloqueia
+-- escrita.
 alter table public.agent_inbox_items
-  drop constraint if exists agent_inbox_items_kind_check;
-
-alter table public.agent_inbox_items
+  drop constraint if exists agent_inbox_items_kind_check,
   add constraint agent_inbox_items_kind_check check (kind in (
     'appointment_outcome_required',
     'appointment_recovery_review',
@@ -10153,8 +10156,13 @@ alter table public.agent_inbox_items
     -- deixa de falhar em silêncio e aparece na Central.
     'webhook_source_silent',
     'followup_suggestion',
+    -- (migration 0320) Tarefa que o automático passou a uma pessoa (nó "tarefa
+    -- humana" do follow-up, lembrete de reunião sem confirmação).
+    'human_task',
     'other'
-  ));
+  )) not valid;
+
+alter table public.agent_inbox_items validate constraint agent_inbox_items_kind_check;
 
 
 
@@ -32843,6 +32851,102 @@ grant execute on function public.fn_usar_credencial_ia_padrao(uuid, uuid, uuid, 
   to service_role;
 
 notify pgrst, 'reload schema';
+
+-- ---- Tarefa humana do follow-up, convite, lembrete rico e escalonamento (migrations 0320/0321/0322/0323) ----
+-- Aditivo e idempotente: o `update.sh` re-aplica este arquivo inteiro, e o
+-- `test:db` o faz com ON_ERROR_STOP=1. Constraints entram `NOT VALID` (via
+-- `do` com checagem no catálogo, para o re-aplicar não errar) e são validadas
+-- em instrução própria; índices novos são PARCIAIS e `CONCURRENTLY` (este
+-- arquivo roda em autocommit, então o build não segura lock de escrita).
+-- Ver o cabeçalho da migration 0320.
+alter table public.crm_tasks
+  add column if not exists source_key text,
+  add column if not exists alerted_at timestamptz;
+
+create unique index concurrently if not exists uniq_crm_tasks_source_key
+  on public.crm_tasks (organization_id, source_key)
+  where source_key is not null;
+
+comment on column public.crm_tasks.source_key is
+  'Chave do fato automático que criou a tarefa (passo de follow-up, escalonamento de lembrete). Única por organização: retry não duplica. Nula em tarefa criada por pessoa.';
+comment on column public.crm_tasks.alerted_at is
+  'Quando o aviso da tarefa automática foi aberto na Central. Nulo = aviso ainda não confirmado (o aviso tem dedupe_key própria).';
+
+alter table public.agent_inbox_items
+  add column if not exists dedupe_key text;
+
+create unique index concurrently if not exists uniq_agent_inbox_dedupe_key
+  on public.agent_inbox_items (organization_id, dedupe_key)
+  where dedupe_key is not null;
+
+comment on column public.agent_inbox_items.dedupe_key is
+  'Chave do efeito que abriu o aviso (ex.: crm_task:<id>). Única por organização quando presente: o mesmo efeito nunca abre dois avisos.';
+
+-- (o kind 'human_task' entra no bloco ÚNICO de agent_inbox_items_kind_check, acima)
+
+alter table public.calendar_event_types
+  add column if not exists guest_invite_enabled boolean not null default false,
+  add column if not exists reminder_rich_format boolean not null default false,
+  add column if not exists reminder_escalation_enabled boolean not null default false,
+  add column if not exists reminder_escalation_minutes integer not null default 20;
+
+alter table public.calendar_appointments
+  add column if not exists reminder_claimed_at timestamptz,
+  add column if not exists reminder_message_id uuid,
+  add column if not exists reminder_conversation_id uuid,
+  add column if not exists reminder_escalation_claimed_at timestamptz,
+  add column if not exists reminder_escalation_checked_at timestamptz,
+  add column if not exists reminder_escalation_result text;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'calendar_event_types_escalonamento_sensato') then
+    alter table public.calendar_event_types
+      add constraint calendar_event_types_escalonamento_sensato
+      check (reminder_escalation_minutes between 5 and 720) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'calendar_appointments_reminder_message_fk') then
+    alter table public.calendar_appointments
+      add constraint calendar_appointments_reminder_message_fk
+      foreign key (reminder_message_id) references public.messages(id) on delete set null not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'calendar_appointments_reminder_conversation_fk') then
+    alter table public.calendar_appointments
+      add constraint calendar_appointments_reminder_conversation_fk
+      foreign key (reminder_conversation_id) references public.conversations(id) on delete set null not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'calendar_appointments_escalonamento_resultado') then
+    alter table public.calendar_appointments
+      add constraint calendar_appointments_escalonamento_resultado
+      check (reminder_escalation_result in ('confirmed', 'escalated', 'not_applicable')) not valid;
+  end if;
+end $$;
+
+alter table public.calendar_event_types validate constraint calendar_event_types_escalonamento_sensato;
+alter table public.calendar_appointments validate constraint calendar_appointments_reminder_message_fk;
+alter table public.calendar_appointments validate constraint calendar_appointments_reminder_conversation_fk;
+alter table public.calendar_appointments validate constraint calendar_appointments_escalonamento_resultado;
+
+comment on column public.calendar_event_types.guest_invite_enabled is
+  'Opt-in: o agendamento pela IA registra o e-mail informado (ou o do contato) como convidado do evento do Google, que envia o convite na sincronização.';
+comment on column public.calendar_event_types.reminder_rich_format is
+  'Opt-in: o lembrete passa a levar o link da sala pronta e o modelo aceita {{nome}} {{data}} {{hora}} {{link}}. Desligado = texto e modelo de antes, sem alteração.';
+comment on column public.calendar_event_types.reminder_escalation_enabled is
+  'Opt-in: N minutos após o lembrete entregue, sem resposta do cliente naquela conversa, cria tarefa + aviso e passa a conversa para uma pessoa.';
+comment on column public.calendar_event_types.reminder_escalation_minutes is
+  'Minutos depois do envio do lembrete até decidir o escalonamento (5 a 720, padrão 20).';
+comment on column public.calendar_appointments.reminder_claimed_at is
+  'Posse do ENVIO do lembrete por uma rodada do cron (lease de 4 min, menor que o intervalo do cron). reminder_sent_at só é gravado depois do envio, junto com a mensagem e a conversa: uma queda no meio não some com o lembrete.';
+comment on column public.calendar_appointments.reminder_message_id is
+  'A mensagem do lembrete que saiu. O escalonamento só conta prazo se ela não falhou.';
+comment on column public.calendar_appointments.reminder_conversation_id is
+  'A conversa em que o lembrete saiu: é nela que a resposta do cliente é procurada e é ela que passa para uma pessoa.';
+comment on column public.calendar_appointments.reminder_escalation_claimed_at is
+  'Posse do escalonamento por uma rodada do cron (lease de 10 min). Tomada atomicamente ANTES de qualquer efeito.';
+comment on column public.calendar_appointments.reminder_escalation_checked_at is
+  'Quando o escalonamento pós-lembrete foi decidido. Preenchido uma vez: é a idempotência do escalonamento.';
+comment on column public.calendar_appointments.reminder_escalation_result is
+  'confirmed = o cliente respondeu depois do lembrete; escalated = tarefa + aviso + passagem para pessoa; not_applicable = lembrete falhou, compromisso já começou, deixou de estar marcado ou a opção foi desligada.';
 
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.
