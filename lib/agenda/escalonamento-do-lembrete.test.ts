@@ -416,6 +416,32 @@ describe("escalonarLembretesSemResposta", () => {
       expect(m.criarTarefa).toHaveBeenCalledWith(m.db, expect.objectContaining({ sourceKey: "agenda:curto:lembrete_sem_confirmacao" }));
     });
 
+    it("prazo filtrado ANTES do teto: 60 nunca olhados ainda na espera não tiram a vez de um vencido que já tirou soneca", async () => {
+      const naEspera = Array.from({ length: 60 }, (_, i) =>
+        compromisso({ id: `espera-${i}`, reminder_sent_at: "2026-12-03T16:20:00.000Z", reminder_message_id: `msg-e-${i}` }),
+      );
+      const m = montar({
+        apts: [...naEspera, compromisso({ id: "vencido", reminder_escalation_claimed_at: "2026-12-03T16:00:00.000Z" })],
+      });
+      await rodar(m);
+      expect(m.criarTarefa).toHaveBeenCalledWith(m.db, expect.objectContaining({ sourceKey: "agenda:vencido:lembrete_sem_confirmacao" }));
+    });
+
+    it("entre grupos de minutos, o nunca olhado vem antes dos sonecados que vencem mais cedo", async () => {
+      const sonecados = Array.from({ length: 60 }, (_, i) =>
+        compromisso({ id: `soneca-${i}`, event_type_id: "tipo-curto", reminder_sent_at: "2026-12-03T15:00:00.000Z", reminder_escalation_claimed_at: "2026-12-03T16:00:00.000Z", reminder_message_id: `msg-s-${i}` }),
+      );
+      const m = montar({
+        apts: [...sonecados, compromisso({ id: "novo", event_type_id: "tipo-longo", reminder_sent_at: "2026-12-03T15:00:00.000Z" })],
+        tipos: [
+          { id: "tipo-curto", organization_id: "org-A", reminder_escalation_enabled: true, reminder_escalation_minutes: 20 },
+          { id: "tipo-longo", organization_id: "org-A", reminder_escalation_enabled: true, reminder_escalation_minutes: 60 },
+        ],
+      });
+      await rodar(m);
+      expect(m.criarTarefa).toHaveBeenCalledWith(m.db, expect.objectContaining({ sourceKey: "agenda:novo:lembrete_sem_confirmacao" }));
+    });
+
     it("quem acordou de soneca não passa na frente de quem nunca foi olhado", async () => {
       const sonecados = Array.from({ length: 60 }, (_, i) =>
         compromisso({ id: `soneca-${i}`, reminder_sent_at: "2026-12-03T15:00:00.000Z", reminder_escalation_claimed_at: "2026-12-03T16:00:00.000Z", reminder_message_id: `msg-s-${i}` }),
