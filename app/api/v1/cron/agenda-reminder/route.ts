@@ -93,15 +93,46 @@ const LIMITE_DA_VARREDURA = 200;
  */
 const LEASE_DO_ENVIO_MS = 4 * 60_000;
 
-/** Teto de tentativas falhas antigas seguidas numa rodada antes do id aleatório. */
+/** Teto de elos (tentativas falhas antigas) LIDOS numa rodada antes do id aleatório. */
 const MAX_ELOS_DE_REENVIO = 20;
 
-/** A mensagem devolvida é uma falha de tentativa ANTERIOR (não desta posse)? */
-function ehFalhaAnterior(
-  m: { id?: string; status?: string; created_at?: string } | null,
+/**
+ * Qual id esta tentativa usa — escolhido LENDO `messages`, sem chamar o
+ * handler (que é quem fala com o transporte).
+ *
+ * O id-base é determinístico pelo compromisso E pela CONVERSA atual: se o canal
+ * ou a conversa mudaram desde a tentativa sem carimbo, a corrente recomeça na
+ * conversa nova — como a main, que tentaria ali — em vez de ficar presa a um id
+ * que o handler recusa por ser de outra conversa.
+ *
+ * Elo que já existe e FALHOU numa tentativa anterior → o próximo elo. Elo
+ * inexistente, ainda `queued`/`sending` (o handler o envia) ou já enviado (o
+ * handler o devolve sem reenviar) → é este. Passado o teto, id aleatório: o que
+ * a main faz.
+ */
+async function idDaTentativa(
+  admin: ReturnType<typeof createAdminClient>,
+  org: string,
+  appointmentId: string,
+  conversaId: string,
   posse: string,
-): boolean {
-  return Boolean(m?.id && m.status === "failed" && m.created_at && m.created_at < posse);
+): Promise<string> {
+  let id = idDaMensagemDoLembrete(`${appointmentId}:${conversaId}`);
+  for (let elo = 0; elo < MAX_ELOS_DE_REENVIO; elo += 1) {
+    const { data, error } = await admin
+      .from("messages")
+      .select("id, status, created_at, conversation_id")
+      .eq("organization_id", org)
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    const m = data as { status?: string; created_at?: string; conversation_id?: string } | null;
+    if (!m) return id;
+    if (m.conversation_id !== conversaId) return randomUUID();
+    if (!(m.status === "failed" && m.created_at && m.created_at < posse)) return id;
+    id = idDaMensagemDoLembrete(`${appointmentId}:apos:${id}`);
+  }
+  return randomUUID();
 }
 
 /** Maior antecedência aceita pela coluna (43200 min = 30 dias). */
@@ -421,20 +452,12 @@ async function handle(req: NextRequest): Promise<Response> {
             typeof sendMessageHandler
           >[2],
         ) as Promise<{ id?: string; status?: string; created_at?: string } | null>;
-      // Cada falha de uma tentativa ANTERIOR (criada antes desta posse) aponta
-      // para a próxima tentativa, com id derivado dela. A corrente é seguida até
-      // uma tentativa NOVA — então, como na main, toda rodada sem carimbo tenta
-      // enviar de novo, por mais tentativas falhas que já existam. Passado o
-      // teto de elos por rodada, um id aleatório: exatamente o que a main faz.
-      enviada = await enviar(idDaMensagemDoLembrete(linha.id));
-      for (let elo = 0; ehFalhaAnterior(enviada, posse); elo += 1) {
-        enviada = await enviar(
-          elo < MAX_ELOS_DE_REENVIO
-            ? idDaMensagemDoLembrete(`${linha.id}:apos:${enviada!.id}`)
-            : randomUUID(),
-        );
-        if (elo >= MAX_ELOS_DE_REENVIO) break;
-      }
+      // UMA chamada ao handler por compromisso por rodada, como a main. A
+      // corrente de tentativas falhas é LIDA no banco só para escolher o id —
+      // nunca reenviada na mesma rodada. Se o elo escolhido voltar `failed`, o
+      // carimbo fecha a tentativa (como a main); se o carimbo cair, a rodada
+      // seguinte tenta de novo com o próximo elo.
+      enviada = await enviar(await idDaTentativa(admin, org, linha.id, conversaId, posse));
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : String(err);
       logger.error("[agenda-reminder] envio falhou", { appointmentId: linha.id, error: mensagem, requestId });

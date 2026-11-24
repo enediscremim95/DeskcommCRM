@@ -223,13 +223,22 @@ describe("cron agenda-reminder — comportamento", () => {
    */
   describe("reentrega depois de queda com a mensagem já inserida (revisão 3)", () => {
     const naRede: string[] = [];
-    const caixa = new Map<string, { id: string; status: string; created_at: string }>();
+    const chamadas: string[] = [];
+    type Msg = { id: string; status: string; created_at: string; conversation_id: string; organization_id: string };
+    const msgs = () => (db.tabelas.messages ??= []) as unknown as Msg[];
+    const antigo = () => new Date(Date.now() - 10 * 60_000).toISOString();
+    function semear(id: string, status: string, conv = "conv-lembrete") {
+      msgs().push({ id, status, created_at: antigo(), conversation_id: conv, organization_id: "org-A" });
+    }
+    /** Imita o handler real: id existente de outra conversa = recusa; sent/…/failed volta sem enviar; queued/sending envia. */
     function handlerReal(statusDoEnvio = "sent") {
-      envio.mockImplementation(async (_db: unknown, ctx: { internalMessageId: string; deduplicateInternalMessage?: boolean }) => {
-        const ja = caixa.get(ctx.internalMessageId);
-        if (ja && (ctx.deduplicateInternalMessage || ["sent", "delivered", "read", "failed"].includes(ja.status))) return { ...ja };
-        const m = ja ?? { id: ctx.internalMessageId, status: "queued", created_at: new Date().toISOString() };
-        caixa.set(m.id, m);
+      envio.mockImplementation(async (_db: unknown, ctx: { internalMessageId: string }, input: { conversation_id: string }) => {
+        chamadas.push(ctx.internalMessageId);
+        const ja = msgs().find((m) => m.id === ctx.internalMessageId);
+        if (ja && ja.conversation_id !== input.conversation_id) throw new Error("inline_message_identity_mismatch");
+        if (ja && ["sent", "delivered", "read", "failed"].includes(ja.status)) return { ...ja };
+        const m = ja ?? { id: ctx.internalMessageId, status: "queued", created_at: new Date().toISOString(), conversation_id: input.conversation_id, organization_id: "org-A" };
+        if (!ja) msgs().push(m);
         naRede.push(m.id);
         m.status = statusDoEnvio;
         return { ...m };
@@ -237,15 +246,16 @@ describe("cron agenda-reminder — comportamento", () => {
     }
     beforeEach(() => {
       naRede.length = 0;
-      caixa.clear();
+      chamadas.length = 0;
     });
-    const idDoLembrete = async () => (await import("@/lib/agenda/lembrete")).idDaMensagemDoLembrete("ap-1");
+    const lembrete = async () => (await import("@/lib/agenda/lembrete")).idDaMensagemDoLembrete;
+    const idDoLembrete = async (conv = "conv-lembrete") => (await lembrete())(`ap-1:${conv}`);
 
     it("mensagem ficou QUEUED (queda antes de sair): a reentrega de fato envia", async () => {
       montar();
       handlerReal();
       const id = await idDoLembrete();
-      caixa.set(id, { id, status: "queued", created_at: new Date(Date.now() - 10 * 60_000).toISOString() });
+      semear(id, "queued");
       await GET(req());
       expect(naRede).toEqual([id]);
       expect(linha()).toMatchObject({ reminder_message_id: id });
@@ -256,17 +266,17 @@ describe("cron agenda-reminder — comportamento", () => {
       montar();
       handlerReal();
       const id = await idDoLembrete();
-      caixa.set(id, { id, status: "sent", created_at: new Date(Date.now() - 10 * 60_000).toISOString() });
+      semear(id, "sent");
       await GET(req());
       expect(naRede).toEqual([]);
       expect(linha()).toMatchObject({ reminder_message_id: id });
     });
 
-    it("mensagem FALHOU numa tentativa anterior: reenvia com id derivado (como a main faria)", async () => {
+    it("mensagem FALHOU numa tentativa anterior: tenta com id derivado (como a main faria)", async () => {
       montar();
       handlerReal();
       const id = await idDoLembrete();
-      caixa.set(id, { id, status: "failed", created_at: new Date(Date.now() - 10 * 60_000).toISOString() });
+      semear(id, "failed");
       await GET(req());
       expect(naRede).toHaveLength(1);
       expect(naRede[0]).not.toBe(id);
@@ -276,39 +286,62 @@ describe("cron agenda-reminder — comportamento", () => {
     it("tentativa DERIVADA também falhou sem carimbo: a próxima rodada tenta de novo (revisão 4)", async () => {
       montar();
       handlerReal();
-      const { idDaMensagemDoLembrete } = await import("@/lib/agenda/lembrete");
-      const antigo = new Date(Date.now() - 10 * 60_000).toISOString();
-      const id0 = idDaMensagemDoLembrete("ap-1");
-      const id1 = idDaMensagemDoLembrete(`ap-1:apos:${id0}`);
-      caixa.set(id0, { id: id0, status: "failed", created_at: antigo });
-      caixa.set(id1, { id: id1, status: "failed", created_at: antigo });
+      const f = await lembrete();
+      const id0 = await idDoLembrete();
+      const id1 = f(`ap-1:apos:${id0}`);
+      semear(id0, "failed");
+      semear(id1, "failed");
       await GET(req());
       expect(naRede).toHaveLength(1);
       expect([id0, id1]).not.toContain(naRede[0]);
       expect(linha().reminder_message_id).toBe(naRede[0]);
     });
 
-    it("corrente maior que o teto de elos: cai num id novo, como a main", async () => {
+    it("UMA chamada ao handler por rodada: elo derivado antigo em queued que volta failed NÃO dispara um segundo envio (revisão 5)", async () => {
+      montar();
+      handlerReal("failed");
+      const f = await lembrete();
+      const id0 = await idDoLembrete();
+      const id1 = f(`ap-1:apos:${id0}`);
+      semear(id0, "failed");
+      semear(id1, "queued");
+      await GET(req());
+      expect(chamadas).toEqual([id1]);
+      expect(naRede).toEqual([id1]);
+    });
+
+    it("conversa mudou desde a tentativa sem carimbo: id novo na conversa atual (revisão 5)", async () => {
       montar();
       handlerReal();
-      const { idDaMensagemDoLembrete } = await import("@/lib/agenda/lembrete");
-      const antigo = new Date(Date.now() - 10 * 60_000).toISOString();
+      const idVelho = await idDoLembrete("conv-antiga");
+      semear(idVelho, "queued", "conv-antiga");
+      await GET(req());
+      expect(chamadas).toHaveLength(1);
+      expect(chamadas[0]).not.toBe(idVelho);
+      expect(naRede).toHaveLength(1);
+      expect(linha()).toMatchObject({ reminder_conversation_id: "conv-lembrete", reminder_message_id: naRede[0] });
+    });
+
+    it("corrente maior que o teto de elos: cai num id novo, com uma chamada só", async () => {
+      montar();
+      handlerReal();
+      const f = await lembrete();
       const corrente: string[] = [];
-      let id = idDaMensagemDoLembrete("ap-1");
+      let id = await idDoLembrete();
       for (let i = 0; i < 25; i++) {
-        caixa.set(id, { id, status: "failed", created_at: antigo });
+        semear(id, "failed");
         corrente.push(id);
-        id = idDaMensagemDoLembrete(`ap-1:apos:${id}`);
+        id = f(`ap-1:apos:${id}`);
       }
       await GET(req());
+      expect(chamadas).toHaveLength(1);
       expect(naRede).toHaveLength(1);
       expect(corrente).not.toContain(naRede[0]);
     });
 
-    it("comparado à main: N rodadas que caem sem carimbo = N tentativas de envio (sem opções novas)", async () => {
+    it("comparado à main: N rodadas que caem sem carimbo = N chamadas e N tentativas de envio (sem opções novas)", async () => {
       // A main não tem posse nem id determinístico: toda rodada sem
-      // `reminder_sent_at` cria e tenta enviar uma mensagem. Aqui, com todo
-      // envio falhando e o carimbo caindo, cada rodada também tenta uma vez.
+      // `reminder_sent_at` faz UMA chamada e tenta enviar. Aqui também.
       montar();
       handlerReal("failed");
       const original = db.from.bind(db);
@@ -332,9 +365,10 @@ describe("cron agenda-reminder — comportamento", () => {
         // Cada rodada começa depois da anterior ter "caído": a posse dela venceu
         // e as tentativas já gravadas são anteriores à posse nova.
         linha().reminder_claimed_at = new Date(Date.now() - 5 * 60_000).toISOString();
-        for (const m of caixa.values()) m.created_at = new Date(Date.now() - 10 * 60_000).toISOString();
+        for (const m of msgs()) m.created_at = antigo();
         await GET(req());
       }
+      expect(chamadas).toHaveLength(RODADAS);
       expect(naRede).toHaveLength(RODADAS);
       expect(new Set(naRede).size).toBe(RODADAS);
       expect(linha().reminder_sent_at).toBeNull();
@@ -344,6 +378,7 @@ describe("cron agenda-reminder — comportamento", () => {
       montar();
       handlerReal("failed");
       await GET(req());
+      expect(chamadas).toHaveLength(1);
       expect(naRede).toHaveLength(1);
       expect(linha().reminder_sent_at).not.toBeNull();
     });
