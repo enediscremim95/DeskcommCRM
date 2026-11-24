@@ -55,14 +55,16 @@ export function criarFakeSupabase(
             }
           }
           tabelas[tabela]!.push(...novos);
-          return { data: novos, error: null };
+          return { data: novos.map((l) => ({ ...l })), error: null };
         }
         if (op === "update") {
           const alvo = linhas();
           for (const l of alvo) Object.assign(l, payload);
-          return { data: alvo, error: null };
+          return { data: alvo.map((l) => ({ ...l })), error: null };
         }
-        return { data: linhas(), error: null };
+        // Cópias, como um banco de verdade: o que foi lido não muda sozinho
+        // quando a linha muda depois.
+        return { data: linhas().map((l) => ({ ...l })), error: null };
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- idem: imita o query builder do supabase-js
       const builder: any = {
