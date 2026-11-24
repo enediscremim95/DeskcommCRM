@@ -52,7 +52,7 @@ describe("fiação — caso humano aberto move o lead pra etapa de handoff", () 
 
 describe("fiação — lead urgente represado pelo cap de warm-up gera alerta crítico", () => {
   it("o bloco de reagendamento por cap checa detectUrgencySignal e abre agent_inbox_items kind='handoff'", () => {
-    const i = FONTE_INBOUND.indexOf("pacingCapVeto !== null && outcomes.length === 0");
+    const i = FONTE_INBOUND.indexOf("veto !== null && outcomes.length === 0");
     expect(i).toBeGreaterThan(-1);
     const janela = FONTE_INBOUND.slice(i, i + 2000);
     // A fonte do sinal mudou de "a última inbound do histórico" para "todo inbound
@@ -60,6 +60,9 @@ describe("fiação — lead urgente represado pelo cap de warm-up gera alerta cr
     // que chega na 2ª mensagem entra de carona no job da 1ª e, lido só pela
     // mensagem do job, não existiria. O que esta guarda protege é o mesmo — o
     // bloco do cap CHECA urgência antes de adiar — e agora protege mais.
+    // O bloco também adia follow-up fora da janela do fluxo, mas o alerta
+    // crítico de urgência continua só para warmup_cap/daily_cap.
+    expect(janela).toContain("veto.code === 'warmup_cap' || veto.code === 'daily_cap'");
     expect(janela).toContain("inboundsPendentes.some((texto) => detectUrgencySignal(texto))");
     expect(janela).toMatch(/kind:\s*'handoff'/);
     expect(janela).toMatch(/severity:\s*'critical'/);

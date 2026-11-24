@@ -425,6 +425,7 @@ export const ALVOS_DA_CLASSIFICACAO: Record<AlvoDaClassificacao, string> = {
 
 export const MODOS_DE_ESPERA: Record<ModoDeEspera, string> = {
   fixed: "Tempo fixo",
+  business_hours: "Horas úteis",
   smart: "A IA escolhe a hora",
 };
 

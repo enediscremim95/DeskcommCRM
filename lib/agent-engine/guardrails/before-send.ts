@@ -1,3 +1,4 @@
+import type { SendWindow } from "@/lib/tempo/janela-followup";
 import { assertAgentOperationPg, type AgentOperationContext } from '@/lib/ai/agents/operation';
 import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/replies/delivery';
 import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
@@ -45,7 +46,7 @@ import type { ChannelSendResult } from '../channel-adapter';
 import type { Logger } from '../obs/logger';
 import { emitVetoActivity } from '@/lib/leads/veto-activity';
 import type { Queryable } from '../queue/queue';
-import { decidePacing } from '../pacing/engine';
+import { alinharEnvioDoFluxo, decidePacing } from '../pacing/engine';
 import type { PacingState } from '../pacing/engine';
 import type { PacingKnobs } from '../pacing/defaults';
 import { loadChannelKnobs, loadPacingState, recordSend } from '../pacing/store';
@@ -81,6 +82,7 @@ import type { ChannelProvider } from '@/lib/channels/capabilities';
 
 /** O que os gates enxergam — carregado UMA vez sob o lock, por tentativa de envio. */
 export interface GateContext {
+  followupWindow?: SendWindow | undefined;
   now: Date;
   /** corpo candidato (para o gate de spinning). */
   body: string;
@@ -594,8 +596,22 @@ export const pacingGate: Gate = {
         pass: false,
         code: decision.code,
         reason: decision.reason,
-        nextAllowedAt: decision.nextAllowedAt,
+        nextAllowedAt: ctx.followupWindow
+          ? alinharEnvioDoFluxo(decision.nextAllowedAt, ctx.pacing.knobs, ctx.followupWindow)
+          : decision.nextAllowedAt,
       };
+    }
+    if (ctx.followupWindow) {
+      const envio = new Date(ctx.now.getTime() + decision.waitMs);
+      const abertura = alinharEnvioDoFluxo(envio, ctx.pacing.knobs, ctx.followupWindow);
+      if (abertura > envio) {
+        return {
+          pass: false,
+          code: 'outside_followup_window',
+          reason: 'Fora da janela de envio do fluxo.',
+          nextAllowedAt: abertura,
+        };
+      }
     }
     return banRisk
       ? { pass: true, waitMs: decision.waitMs }
@@ -748,6 +764,9 @@ export type BeforeSendResult =
     };
 
 export interface RunBeforeSendArgs {
+  followupWindow?: SendWindow | undefined;
+  /** Relógio do turno para conferir a janela após o throttle. */
+  followupClock?: (() => Date) | undefined;
   agentOperation?: AgentOperationContext;
   approvedReply?: ApprovedReplyContext;
   /** Contexto interno do único comando Meet; a origem é relida, nunca um booleano de bypass. */
@@ -961,8 +980,9 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       args.channelSessionId,
       args.log,
     );
+    const pacingNow = args.followupClock?.() ?? args.now;
     const pacingState = await loadPacingState(client, args.tenantId, args.channelSessionId, {
-      now: args.now,
+      now: pacingNow,
       timezone: pacingCfg.knobs.timezone,
       numberActivatedAt: pacingCfg.numberActivatedAt,
     });
@@ -1003,7 +1023,8 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     );
 
     const ctx: GateContext = {
-      now: args.now,
+      followupWindow: args.followupWindow,
+      now: pacingNow,
       body: args.body,
       optedOut,
       provider,
@@ -1097,6 +1118,26 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // Throttle: espera o gap restante (bounded pelos knobs) antes do envio.
     if (throttleWaitMs > 0) await (args.sleep ?? realSleep)(throttleWaitMs);
 
+    if (args.followupWindow && args.followupClock) {
+      const agora = args.followupClock();
+      // A contagem diária acima pertence ao dia de pacingNow. Aqui só se
+      // reconferem as janelas, mantendo o cap serializado sob o mesmo lock.
+      const abertura = alinharEnvioDoFluxo(agora, ctx.pacing.knobs, args.followupWindow);
+      if (abertura > agora) {
+        const veto = {
+          gate: 'pacing',
+          code: 'outside_followup_window',
+          message: 'Fora da janela de envio do fluxo.',
+          nextAllowedAt: abertura,
+        };
+        const traceFinal: GateTraceEntry[] = [{ gate: veto.gate, verdict: 'veto', code: veto.code }];
+        emitTrace(args.log, args.channelSessionId, traceFinal);
+        await persistTrace(args, traceFinal, veto);
+        await client.query('rollback');
+        return { status: 'vetoed', trace: traceFinal, ...veto };
+      }
+    }
+
     // ctx.body é o corpo FINAL (emendado pelo disclosureGate F4-05 quando aplicável).
     if (args.approvedReply && ctx.body !== args.body)
       throw new Error('reply_body_changed_reapproval_required');
@@ -1106,7 +1147,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // já foram (ou serão) contabilizados na tentativa original — o ledger F2-06 faz as
     // repetições curto-circuitarem, então re-registrar aqui inflaria o cap.
     if (outcome.kind === 'sent') {
-      await recordSend(client, args.tenantId, args.channelSessionId, args.now);
+      await recordSend(client, args.tenantId, args.channelSessionId, args.followupClock?.() ?? args.now);
       // Simetria com o gate desarmado: quem não é julgado pela janela não entra
       // nela. Ver `GateContext.spinningEnforced`.
       if (args.enforceSpinning !== false) {

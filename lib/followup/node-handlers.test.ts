@@ -1049,3 +1049,15 @@ describe("processNode — repeat", () => {
     expect(result).toMatchObject({ kind: "advance", next_node_id: "de-novo" });
   });
 });
+
+it("grava o próximo tick depois de acumular horas úteis", () => {
+  const node: FlowNode = {
+    id: "n1", label: "Esperar", type: "wait", position: { x: 0, y: 0 },
+    config: { mode: "business_hours", hours: 3 },
+  };
+  expect(processNode({
+    node, edges: [], enrollment: enrollment(), lead: lead(),
+    clock: () => new Date("2026-11-27T19:00:00Z"),
+    sendWindow: { timezone: "America/Sao_Paulo", start: "09:00", end: "18:00", weekdays: [1, 2, 3, 4, 5, 6] },
+  })).toEqual({ kind: "wait", next_eval_at: new Date("2026-11-28T13:00:00Z") });
+});

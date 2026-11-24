@@ -1,3 +1,4 @@
+import { HORA_MS, type SendWindow } from "@/lib/tempo/janela-followup";
 import type { FlowGraph, FlowEdge, FlowNode } from './graph-schema';
 import { branchIdForCondition, nodeBranches } from './graph-schema';
 import { rotuloDoRamo } from './rotulo-do-ramo';
@@ -8,6 +9,7 @@ import { rotuloDoRamo } from './rotulo-do-ramo';
  */
 
 export const PUBLISH_ERROR_CODES = [
+  'send_window_required',
   'no_trigger',
   'multiple_triggers',
   'unreachable_node',
@@ -40,6 +42,7 @@ const MIN_CYCLE_WAIT_MS = 300_000; // 5min
 const MAX_PATH_STEPS = 30;
 
 function waitMs(config: Extract<FlowNode, { type: 'wait' }>['config']): number {
+  if (config.mode === 'business_hours') return config.hours * HORA_MS;
   return config.mode === 'fixed' ? config.duration_ms : config.max_ms;
 }
 
@@ -47,6 +50,7 @@ function waitMs(config: Extract<FlowNode, { type: 'wait' }>['config']): number {
 function isSufficientWaitNode(node: FlowNode): boolean {
   if (node.type === 'match_reply') return node.config.grace_timeout_ms >= MIN_CYCLE_WAIT_MS;
   if (node.type !== 'wait') return false;
+  if (node.config.mode === 'business_hours') return true;
   return node.config.mode === 'fixed'
     ? node.config.duration_ms >= MIN_CYCLE_WAIT_MS
     : node.config.min_ms >= MIN_CYCLE_WAIT_MS;
@@ -268,9 +272,20 @@ function cobrirRamos(
   }
 }
 
-export function validateFlowForPublish(graph: FlowGraph): PublishValidationResult {
+export function validateFlowForPublish(graph: FlowGraph, sendWindow?: SendWindow): PublishValidationResult {
   const { nodes, edges } = graph;
   const errors: PublishValidationError[] = [];
+  if (!sendWindow) {
+    for (const node of nodes) {
+      if (node.type === 'wait' && node.config.mode === 'business_hours') {
+        errors.push({
+          node_id: node.id,
+          code: 'send_window_required',
+          message: 'Configure a janela de envio do fluxo para publicar uma espera em horas úteis.',
+        });
+      }
+    }
+  }
   const nodesById = new Map(nodes.map((n) => [n.id, n]));
   const outEdges = buildOutEdges(edges);
   const inEdges = buildOutEdges(edges.map((e) => ({ ...e, source: e.target, target: e.source })));

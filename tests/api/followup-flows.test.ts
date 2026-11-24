@@ -817,3 +817,33 @@ vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));
+
+it("salva a janela por PATCH e só publica a espera em horas úteis com a janela", async () => {
+  const id = "33333333-3333-4333-8333-333333333333";
+  const draft_graph: FlowGraph = {
+    nodes: [trigger("t1"), {
+      id: "w1", type: "wait", label: "Horas úteis", position: pos, config: { mode: "business_hours", hours: 3 },
+    }, end("e1")],
+    edges: [edge("edge1", "t1", "w1"), edge("edge2", "w1", "e1")],
+  };
+  const db = makeDb([{ id, organization_id: ORG_ID, status: "draft", draft_graph, trigger_config: { kind: "manual" } }], []);
+  session("manager", db);
+  const { PATCH } = await import("@/app/api/v1/ai/followup-flows/[id]/route");
+  const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+
+  const bloqueado = await POST(req("POST"), ctx(id));
+  expect(bloqueado.status).toBe(422);
+  expect(await bloqueado.json()).toMatchObject({
+    error: { details: { errors: [{ code: "send_window_required", node_id: "w1" }] } },
+  });
+
+  const send_window = { timezone: "America/Sao_Paulo", start: "09:00", end: "18:00", weekdays: [1, 2, 3, 4, 5, 6] };
+  const invalido = await PATCH(req("PATCH", {
+    trigger_config: { kind: "manual", send_window: { ...send_window, weekdays: [] } },
+  }), ctx(id));
+  expect(invalido.status).toBe(422);
+  const salvo = await PATCH(req("PATCH", { trigger_config: { kind: "manual", send_window } }), ctx(id));
+  expect(salvo.status).toBe(200);
+  expect(await salvo.json()).toMatchObject({ data: { trigger_config: { send_window } } });
+  expect((await POST(req("POST"), ctx(id))).status).toBe(200);
+});

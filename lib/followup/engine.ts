@@ -1,3 +1,4 @@
+import { FOLLOWUP_DEFERRED, lerJanelaDoFluxo, type SendWindow } from "@/lib/tempo/janela-followup";
 import type { JobClaim } from "@/lib/agent-engine/queue/claim";
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
@@ -101,6 +102,8 @@ export interface AdminClient {
   assertServiceBoundary?(enrollment: EnrollmentRow): Promise<void>;
   assertAgenda?(enrollment:EnrollmentRow):Promise<void>;
   claimDueEnrollments(limit: number, leaseSeconds: number): Promise<EnrollmentRow[]>;
+  loadSendWindow?(orgId: string, pointerId: string): Promise<SendWindow | undefined>;
+  loadDeferredSend?(enrollment: EnrollmentRow, stepKey: string, now: Date): Promise<string | null>;
   loadFlowGraph(orgId: string, versionId: string): Promise<FlowGraph | null>;
   loadLeadFacts(orgId: string, contactId: string): Promise<{
     lead_stage: string | null;
@@ -614,8 +617,34 @@ async function processEnrollment(
     }
     if (node.type === "action") {
       actionEnqueued = waitElapsed;
-      actionRecheckCount = occupancyEventCount(events, node.id);
+      actionRecheckCount = occupancyEventCount(events.filter((event) => event.event_type !== "send_deferred"), node.id);
       actionCompleted = actionTurnCompleted(events, node.id);
+      if (actionEnqueued && !actionCompleted) {
+        const envio = events.findLast((event) => event.node_id === node.id
+          && event.event_type === "turn_enqueued" && event.payload?.purpose === "send_message");
+        const stepKey = envio?.idempotency_key;
+        const reavaliarEm = stepKey
+          ? await db.loadDeferredSend?.(enrollment, stepKey, clock())
+          : null;
+        if (stepKey && reavaliarEm) {
+          // O job mantém a estadia no nó. Não consome passos nem rechecks durante o adiamento.
+          const patch = { next_eval_at: reavaliarEm, claimed_until: null };
+          // Sufixo não numérico: o evento não representa avanço do motor.
+          const idempotencyKey = `${stepKey}:defer:${reavaliarEm}`;
+          if (db.applyEnrollmentStep && !events.some((event) => event.idempotency_key === idempotencyKey)) {
+            await db.applyEnrollmentStep(enrollment.id, enrollment.organization_id, patch, {
+              node_id: node.id,
+              event_type: "send_deferred",
+              payload: { next_eval_at: reavaliarEm },
+              idempotency_key: idempotencyKey,
+            });
+          } else {
+            await db.updateEnrollment(enrollment.id, enrollment.organization_id, patch);
+          }
+          summary.scheduled++;
+          return;
+        }
+      }
     }
   }
   const textoInbound = inboundBodyOverride?.trim() ?? "";
@@ -652,8 +681,12 @@ async function processEnrollment(
   const nextAlways = selectEdge(graph.edges, node.id, { type: "always" });
   const proximo = nextAlways ? (graph.nodes.find((n) => n.id === nextAlways.target) ?? null) : null;
 
+  const sendWindow = node.type === "wait" && node.config.mode === "business_hours" && !waitElapsed && !wokeEarly
+    ? await db.loadSendWindow?.(enrollment.organization_id, enrollment.pointer_id)
+    : undefined;
   const result = processNode({
     node,
+    sendWindow,
     edges: graph.edges,
     enrollment,
     lead,
@@ -828,6 +861,34 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       if(error?.code==="40001") throw new StaleServiceBoundaryError();
       if(error) throw new Error(error.message);
       revisions.set(id,Number(data));
+    },
+    async loadSendWindow(orgId, pointerId) {
+      const { data, error } = await admin.from("followup_flow_pointers")
+        .select("trigger_config")
+        .eq("organization_id", orgId)
+        .eq("id", pointerId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return lerJanelaDoFluxo(data?.trigger_config);
+    },
+    async loadDeferredSend(enrollment, stepKey, now) {
+      const { data, error } = await admin.from("job_queue")
+        .select("run_after")
+        .eq("organization_id", enrollment.organization_id)
+        .eq("contact_id", enrollment.contact_id)
+        .eq("kind", "followup_turn")
+        .eq("status", "pending")
+        .eq("payload->>followup_enrollment_id", enrollment.id)
+        .eq("payload->>node_id", enrollment.current_node_id)
+        .eq("payload->>purpose", "send_message")
+        .eq("payload->>source_step_key", stepKey)
+        .like("last_error", `${FOLLOWUP_DEFERRED}%`)
+        .gt("run_after", now.toISOString())
+        .order("run_after", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return data?.run_after ?? null;
     },
     async loadFlowPointerName(orgId, pointerId) {
       const { data, error } = await admin

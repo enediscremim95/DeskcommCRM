@@ -1,5 +1,6 @@
 "use client";
 
+import { sendWindowSchema, type SendWindow } from "@/lib/tempo/janela-followup";
 import { useT } from "@/hooks/i18n/useT";
 
 import { useQuery } from "@tanstack/react-query";
@@ -63,10 +64,15 @@ interface TriggerFormState {
   stageId: string;
   cancelOnReply: boolean;
   eventTypeIds: string[];
+  sendWindow?: SendWindow | undefined;
 }
 
 const DEFAULT_THRESHOLD_MINUTES = 60;
 const MIN_THRESHOLD_MINUTES = 5;
+const SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const JANELA_INICIAL: SendWindow = {
+  timezone: "America/Sao_Paulo", start: "09:00", end: "18:00", weekdays: [1, 2, 3, 4, 5],
+};
 
 const KIND_LABEL: Record<TriggerKind, string> = {
   appointment_no_show:"Falta confirmada pela equipe",
@@ -102,7 +108,9 @@ function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
             : "manual";
   const params =
     (raw.params as { threshold_minutes?: number; segments?: string[]; stage_id?: string; event_type_ids?: string[] } | undefined) ?? {};
+  const sendWindow = sendWindowSchema.safeParse(raw.send_window);
   return {
+    sendWindow: sendWindow.success ? sendWindow.data : undefined,
     kind,
     eventTypeIds: Array.isArray(params.event_type_ids) ? params.event_type_ids : [],
     thresholdMinutes:
@@ -198,7 +206,9 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
   // Gatilho de etapa sem etapa escolhida não é rascunho: é um fluxo que ficaria
   // ativo sem nunca disparar. O publish recusa; o Salvar recusa antes.
   const stageInvalid = form.kind === "stage_change" && form.stageId.trim().length === 0;
+  const janelaInvalida = form.sendWindow && !sendWindowSchema.safeParse(form.sendWindow).success;
   const dirty =
+    JSON.stringify(form.sendWindow) !== JSON.stringify(saved.sendWindow) ||
     form.kind !== saved.kind ||
     (form.kind === "appointment_no_show" && form.eventTypeIds.join() !== saved.eventTypeIds.join()) ||
     form.cancelOnReply !== saved.cancelOnReply ||
@@ -206,13 +216,20 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
     (form.kind === "stage_change" && form.stageId !== saved.stageId);
 
   const onSave = () => {
-    if (thresholdInvalid || stageInvalid) return;
-    update.mutate(toTriggerConfig(form), {
+    if (thresholdInvalid || stageInvalid || janelaInvalida) return;
+    update.mutate({
+      ...toTriggerConfig(form),
+      ...(form.sendWindow ? { send_window: form.sendWindow } : {}),
+    }, {
       onSuccess: () => {
         setSaved(form);
         setOpen(false);
       },
     });
+  };
+
+  const editarJanela = (patch: Partial<SendWindow>) => {
+    setForm((f) => f.sendWindow ? { ...f, sendWindow: { ...f.sendWindow, ...patch } } : f);
   };
 
   // Agrupa por funil preservando a ordem em que as etapas chegaram (ordem do
@@ -235,7 +252,7 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
           {summaryLabel(triggerConfig, etapaSalva ?? null, t)}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80" align="end" data-testid="trigger-config-panel">
+      <PopoverContent className="max-h-[var(--radix-popover-content-available-height)] w-80 overflow-y-auto" align="end" data-testid="trigger-config-panel">
         <div className="space-y-3">
           <div className="space-y-2">
             <Label htmlFor="trigger-kind">{t("Tipo de gatilho")}</Label>
@@ -364,11 +381,63 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
             />
           </div>
 
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="followup-send-window">{t("Limitar horário de envio")}</Label>
+              <Switch
+                id="followup-send-window"
+                checked={form.sendWindow !== undefined}
+                onCheckedChange={(checked) => setForm((f) => ({
+                  ...f, sendWindow: checked ? JANELA_INICIAL : undefined,
+                }))}
+              />
+            </div>
+            {form.sendWindow && (
+              <>
+                <Label htmlFor="followup-send-timezone">{t("Fuso horário (IANA)")}</Label>
+                <Input id="followup-send-timezone" value={form.sendWindow.timezone}
+                  onChange={(e) => editarJanela({ timezone: e.target.value })} />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label htmlFor="followup-send-start">{t("Início")}</Label>
+                    <Input id="followup-send-start" type="time" value={form.sendWindow.start}
+                      onChange={(e) => editarJanela({ start: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="followup-send-end">{t("Fim")}</Label>
+                    <Input id="followup-send-end" type="time" value={form.sendWindow.end}
+                      onChange={(e) => editarJanela({ end: e.target.value })} />
+                  </div>
+                </div>
+                <fieldset className="flex flex-wrap gap-2">
+                  <legend className="text-sm">{t("Dias de envio")}</legend>
+                  {SEMANA.map((nome, dia) => {
+                    const dias = form.sendWindow?.weekdays ?? [];
+                    return (
+                      <label key={nome} className="flex items-center gap-1 text-xs">
+                        <input type="checkbox" checked={dias.includes(dia)}
+                          onChange={(e) => editarJanela({
+                            weekdays: e.target.checked ? [...dias, dia].sort() : dias.filter((d) => d !== dia),
+                          })} />
+                        {t(nome)}
+                      </label>
+                    );
+                  })}
+                </fieldset>
+                {janelaInvalida && (
+                  <p role="alert" className="text-xs text-error-fg">
+                    {t("Informe um fuso válido, horários no mesmo dia e pelo menos um dia de envio.")}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+
           <Button
             type="button"
             size="sm"
             className="w-full"
-            disabled={!dirty || thresholdInvalid || stageInvalid || update.isPending}
+            disabled={!dirty || thresholdInvalid || stageInvalid || Boolean(janelaInvalida) || update.isPending}
             onClick={onSave}
             data-testid="trigger-config-save"
           >

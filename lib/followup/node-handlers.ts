@@ -1,3 +1,4 @@
+import { somarHorasUteis, type SendWindow } from "@/lib/tempo/janela-followup";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 /**
  * Node handlers for the follow-up flow engine (Task 4.1) — PURE, no DB access.
@@ -341,6 +342,7 @@ function evaluateCondition(
  * classify turn with the real reply instead of auto-advancing via `no_reply`.
  */
 export function processNode(input: {
+  sendWindow?: SendWindow | undefined;
   node: FlowNode;
   edges: FlowEdge[];
   enrollment: EnrollmentRow;
@@ -432,6 +434,9 @@ export function processNode(input: {
         return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
       }
       if (!waitElapsed) {
+        if (node.config.mode === "business_hours") {
+          return { kind: "wait", next_eval_at: somarHorasUteis(input.sendWindow, clock(), node.config.hours) };
+        }
         // Adaptativo: o instante vem do plano decidido no acionamento. Sem plano
         // legível para ESTE nó (enrollment anterior à feature, fluxo v1, jsonb
         // corrompido), cai no máximo — que era o comportamento único até aqui.

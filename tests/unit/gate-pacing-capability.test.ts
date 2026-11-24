@@ -200,3 +200,62 @@ describe('o skipped do gate chega em before_send_traces', () => {
     expect(waha.trace[0]?.verdict).toBe('veto');
   });
 });
+
+describe('janela de follow-up somada ao pacing', () => {
+  const followupWindow = {
+    timezone: 'America/Sao_Paulo', start: '09:00', end: '18:00', weekdays: [1, 2, 3, 4, 5, 6],
+  };
+
+  it('adiciona atraso no domingo somente ao fluxo com janela', () => {
+    const now = new Date('2026-11-29T15:00:00Z');
+    expect(pacingGate.evaluate(baseCtx({ now })).pass).toBe(true);
+    expect(pacingGate.evaluate(baseCtx({ now, followupWindow }))).toMatchObject({
+      pass: false,
+      code: 'outside_followup_window',
+      nextAllowedAt: new Date('2026-11-30T12:00:00Z'),
+    });
+    expect(pacingGate.evaluate(baseCtx({ now: COMERCIAL, followupWindow })).pass).toBe(true);
+  });
+
+  it('preserva o warm-up e adia para as 9h do próximo dia do fluxo', () => {
+    const now = new Date('2026-11-28T15:00:00Z');
+    const { pacing } = baseCtx();
+    pacing.state.sentToday = 20;
+    expect(pacingGate.evaluate(baseCtx({ now, pacing, followupWindow }))).toMatchObject({
+      pass: false, code: 'warmup_cap', nextAllowedAt: new Date('2026-11-30T12:00:00Z'),
+    });
+  });
+
+  it('respeita o fechamento de sábado do canal e o throttle na borda', () => {
+    const { pacing } = baseCtx();
+    const now = new Date('2026-11-27T20:59:59.500Z');
+    pacing.state.lastSentAt = now;
+    pacing.knobs = { ...PACING_DEFAULTS, windowSaturdayEndHour: 9 };
+    expect(pacingGate.evaluate(baseCtx({ now, pacing, followupWindow }))).toMatchObject({
+      pass: false, code: 'outside_followup_window', nextAllowedAt: new Date('2026-11-30T12:00:00Z'),
+    });
+  });
+});
+
+it('reconfere a janela imediatamente antes do transporte', async () => {
+  const antes = new Date('2026-11-27T20:59:59.000Z');
+  const depois = new Date('2026-11-27T21:00:00.000Z');
+  const followupClock = vi.fn().mockReturnValueOnce(antes).mockReturnValue(depois);
+  const send = vi.fn();
+  const client = { query: vi.fn().mockResolvedValue({ rows: [] }), release: vi.fn() };
+  const pool = { connect: vi.fn().mockResolvedValue(client), query: vi.fn().mockResolvedValue({ rows: [] }) } as unknown as pg.Pool;
+  const result = await runBeforeSend({
+    pool,
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    tenantId: 'org', leadId: 'lead', channelSessionId: 'channel', body: 'Olá!',
+    optedOutThisTurn: false, crmDailyLimit: null, now: antes, rng: () => 0,
+    followupWindow: {
+      timezone: 'America/Sao_Paulo', start: '09:00', end: '18:00', weekdays: [1, 2, 3, 4, 5, 6],
+    },
+    followupClock, send, gates: [pacingGate],
+  });
+  expect(result).toMatchObject({
+    status: 'vetoed', code: 'outside_followup_window', nextAllowedAt: new Date('2026-11-28T12:00:00Z'),
+  });
+  expect(send).not.toHaveBeenCalled();
+});

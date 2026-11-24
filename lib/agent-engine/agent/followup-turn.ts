@@ -1,6 +1,7 @@
+import { FOLLOWUP_DEFERRED, lerJanelaDoFluxo, type SendWindow } from "@/lib/tempo/janela-followup";
 import {claimOfJob,type JobClaim} from "../queue/claim";
 import {resultadoDoEnvioDoFollowup} from "../edge/crm/send-ledger";
-import { parseServiceBoundary } from "@/lib/atendimento/fronteira";
+import { parseServiceBoundary, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-server";
 /**
  * Handler do job `followup_turn` (F3-03; blueprint 1.3) — a peça BUILD da
@@ -23,7 +24,7 @@ import { z } from 'zod';
 import type pg from 'pg';
 
 import { withFields } from '../obs/logger';
-import type { JobRow } from '../queue/queue';
+import { rescheduleJob, type JobRow } from '../queue/queue';
 import { getLeadContext, type LeadContext } from '../edge/crm/get-lead-context';
 import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
@@ -357,10 +358,18 @@ async function runFlowDrivenTurn(
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
 
   if (input.purpose === 'send_message') {
+    const { rows } = await pool.query<{ trigger_config: unknown }>(
+      `select p.trigger_config from followup_enrollments e
+       join followup_flow_pointers p on p.organization_id=e.organization_id and p.id=e.pointer_id
+       where e.organization_id=$1 and e.id=$2 and e.contact_id=$3`,
+      [target.tenantId, enrollmentId, target.leadId],
+    );
+    if (!rows[0]) throw new StaleServiceBoundaryError();
+    const followupWindow = lerJanelaDoFluxo(rows[0].trigger_config);
     const body = await resolveFlowSendBody(pool, target.tenantId, input);
     if (body !== null) {
       // Texto do operador: sem camada semântica (ver o cabeçalho de sendFixedOutbound).
-      const sent = await sendFixedOutbound(deps, job, pool, ctx, clock, target, body, false);
+      const sent = await sendFixedOutbound(deps, job, pool, ctx, clock, target, body, false, followupWindow);
       if (sent === 'sent') {
         await complete(pool, { jobId:job.id,jobClaim:claimOfJob(job), organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'sent' } });
       } else if(sent === 'skipped') {
@@ -369,6 +378,7 @@ async function runFlowDrivenTurn(
       return;
     }
     await runAgentTurn(deps, job, pool, ctx, {
+      followupWindow,
       channelSessionId: target.channelSessionId,
       conversationId: target.conversationId,
       buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) => {
@@ -544,6 +554,7 @@ async function sendFixedOutbound(
   body: string,
   /** `true` só na re-entrada por template — ver o cabeçalho. */
   comCamadaSemantica: boolean,
+  followupWindow?: SendWindow,
 ): Promise<"sent" | "deferred" | "skipped"> {
   const { tenantId, leadId, channelSessionId, conversationId } = target;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
@@ -586,6 +597,7 @@ async function sendFixedOutbound(
     optedOutThisTurn,
     crmDailyLimit: null,
     now: clock(),
+    ...(followupWindow ? { followupWindow, followupClock: clock } : {}),
     sleep: deps.sleep,
     lgpd: context.lgpd,
     ...(deps.knobs.disclosureMode !== undefined ? { disclosureMode: deps.knobs.disclosureMode } : {}),
@@ -605,6 +617,18 @@ async function sendFixedOutbound(
   });
 
   if (chain.status === 'vetoed') {
+    if (followupWindow && chain.nextAllowedAt !== undefined) {
+      await rescheduleJob(pool, job.id, ctx.workerId, {
+        acquiredAt: claimOfJob(job)?.acquired_at,
+        delayMs: Math.max(chain.nextAllowedAt.getTime() - clock().getTime(), 1_000),
+        reason: `${FOLLOWUP_DEFERRED} ${chain.code}`,
+      });
+      runLog.info('follow-up fixo adiado pelas regras de envio', {
+        code: chain.code,
+        next_run_at: chain.nextAllowedAt.toISOString(),
+      });
+      throw new JobSettledError('follow-up fixo adiado pelas regras de envio');
+    }
     if (chain.code === 'outside_window' && chain.nextAllowedAt !== undefined) {
       await rescheduleReentry(pool, {
         tenantId,
