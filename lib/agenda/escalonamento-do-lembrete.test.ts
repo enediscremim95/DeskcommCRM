@@ -237,11 +237,11 @@ describe("escalonarLembretesSemResposta", () => {
     expect(linha(m)).toMatchObject({ reminder_escalation_checked_at: null, reminder_escalation_claimed_at: null });
   });
 
-  it("dentro da espera: aguarda sem tomar posse", async () => {
+  it("dentro da espera: nem entra no lote (filtro de prazo no banco), sem posse", async () => {
     const m = montar({
       tipos: [{ id: "tipo-1", organization_id: "org-A", reminder_escalation_enabled: true, reminder_escalation_minutes: 40 }],
     });
-    expect(await rodar(m)).toMatchObject({ aguardando: 1, escalados: 0 });
+    expect(await rodar(m)).toMatchObject({ examinados: 0, escalados: 0 });
     expect(linha(m).reminder_escalation_claimed_at).toBeNull();
   });
 
@@ -352,6 +352,77 @@ describe("escalonarLembretesSemResposta", () => {
     it("reunião que já começou sai da janela (não ocupa o lote)", async () => {
       const m = montar({ apts: [compromisso({ starts_at: "2026-12-03T16:00:00.000Z" })] });
       expect((await rodar(m)).examinados).toBe(0);
+    });
+  });
+
+  describe("corte do 'confirmou' pelo envio da mensagem (revisão 3)", () => {
+    it("resposta entre o envio e o carimbo conta como confirmação", async () => {
+      // O carimbo é gravado DEPOIS do envio (16:05); a mensagem saiu às 16:00;
+      // o lead respondeu às 16:02.
+      const m = montar({
+        apts: [compromisso({ reminder_sent_at: "2026-12-03T16:05:00.000Z" })],
+        mensagens: [{ id: "in-1", organization_id: "org-A", conversation_id: "conv-lembrete", direction: "inbound", sent_at: "2026-12-03T16:02:00.000Z" }],
+      });
+      m.db.tabelas.messages![0]!.sent_at = "2026-12-03T16:00:00.000Z";
+      expect(await rodar(m)).toMatchObject({ confirmados: 1, escalados: 0 });
+      expect(m.handoff).not.toHaveBeenCalled();
+    });
+
+    it("sem sent_at, o created_at da mensagem é o corte", async () => {
+      const m = montar({
+        apts: [compromisso({ reminder_sent_at: "2026-12-03T16:05:00.000Z" })],
+        mensagens: [{ id: "in-1", organization_id: "org-A", conversation_id: "conv-lembrete", direction: "inbound", sent_at: "2026-12-03T16:02:00.000Z" }],
+      });
+      m.db.tabelas.messages![0]!.sent_at = null;
+      m.db.tabelas.messages![0]!.created_at = "2026-12-03T16:00:00.000Z";
+      expect(await rodar(m)).toMatchObject({ confirmados: 1 });
+    });
+  });
+
+  describe("tetos sem deixar elegível vencer (revisão 3)", () => {
+    it("tipos paginados: o tipo depois dos primeiros 1000 ainda é lido", async () => {
+      const outros = Array.from({ length: 1200 }, (_, i) => ({
+        id: `aaa-${String(i).padStart(5, "0")}`, organization_id: `org-${i}`, reminder_escalation_enabled: true, reminder_escalation_minutes: 20,
+      }));
+      const m = montar({
+        apts: [compromisso({ event_type_id: "zzz-tipo" })],
+        tipos: [...outros, { id: "zzz-tipo", organization_id: "org-A", reminder_escalation_enabled: true, reminder_escalation_minutes: 20 }],
+      });
+      expect((await rodar(m)).escalados).toBe(1);
+    });
+
+    it("dentro da org, 60 ainda na espera NÃO ocupam o teto de quem já venceu", async () => {
+      const naEspera = Array.from({ length: 60 }, (_, i) =>
+        compromisso({ id: `espera-${i}`, reminder_sent_at: "2026-12-03T16:20:00.000Z", starts_at: "2026-12-03T16:30:00.000Z", reminder_message_id: `msg-e-${i}` }),
+      );
+      const m = montar({ apts: [...naEspera, compromisso({ id: "vencido", starts_at: "2026-12-03T18:00:00.000Z" })] });
+      const r = await rodar(m);
+      expect(r.escalados).toBe(1);
+      expect(m.criarTarefa).toHaveBeenCalledWith(m.db, expect.objectContaining({ sourceKey: "agenda:vencido:lembrete_sem_confirmacao" }));
+    });
+
+    it("prazos diferentes por tipo: cada grupo filtra pelo seu prazo", async () => {
+      const m = montar({
+        apts: [
+          compromisso({ id: "curto", event_type_id: "tipo-curto" }),
+          compromisso({ id: "longo", event_type_id: "tipo-longo" }),
+        ],
+        tipos: [
+          { id: "tipo-curto", organization_id: "org-A", reminder_escalation_enabled: true, reminder_escalation_minutes: 20 },
+          { id: "tipo-longo", organization_id: "org-A", reminder_escalation_enabled: true, reminder_escalation_minutes: 60 },
+        ],
+      });
+      expect(await rodar(m)).toMatchObject({ escalados: 1 });
+      expect(m.criarTarefa).toHaveBeenCalledWith(m.db, expect.objectContaining({ sourceKey: "agenda:curto:lembrete_sem_confirmacao" }));
+    });
+
+    it("quem acordou de soneca não passa na frente de quem nunca foi olhado", async () => {
+      const sonecados = Array.from({ length: 60 }, (_, i) =>
+        compromisso({ id: `soneca-${i}`, reminder_sent_at: "2026-12-03T15:00:00.000Z", reminder_escalation_claimed_at: "2026-12-03T16:00:00.000Z", reminder_message_id: `msg-s-${i}` }),
+      );
+      const m = montar({ apts: [...sonecados, compromisso({ id: "novo" })] });
+      await rodar(m);
+      expect(m.criarTarefa).toHaveBeenCalledWith(m.db, expect.objectContaining({ sourceKey: "agenda:novo:lembrete_sem_confirmacao" }));
     });
   });
 });

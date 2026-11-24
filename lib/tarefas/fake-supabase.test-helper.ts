@@ -34,13 +34,24 @@ export function criarFakeSupabase(
       let op: "select" | "insert" | "update" = "select";
       let payload: Linha | Linha[] | null = null;
       let limite: number | null = null;
-      let ordem: { col: string; asc: boolean } | null = null;
+      let inicio = 0;
+      const ordens: Array<{ col: string; asc: boolean; nullsFirst: boolean }> = [];
       const linhas = () => {
         let r = tabelas[tabela]!.filter((l) => filtros.every((f) => f(l)));
-        if (ordem) {
-          const { col, asc } = ordem;
-          r = [...r].sort((a, b) => String(a[col] ?? "").localeCompare(String(b[col] ?? "")) * (asc ? 1 : -1));
+        if (ordens.length) {
+          r = [...r].sort((a, b) => {
+            for (const { col, asc, nullsFirst } of ordens) {
+              const va = valor(a, col) ?? null;
+              const vb = valor(b, col) ?? null;
+              if (va === vb) continue;
+              if (va === null) return nullsFirst ? -1 : 1;
+              if (vb === null) return nullsFirst ? 1 : -1;
+              return String(va).localeCompare(String(vb)) * (asc ? 1 : -1);
+            }
+            return 0;
+          });
         }
+        r = r.slice(inicio);
         return limite === null ? r : r.slice(0, limite);
       };
       const executar = (): { data: unknown; error: { code?: string; message: string } | null } => {
@@ -97,7 +108,11 @@ export function criarFakeSupabase(
         },
         lte: (c: string, v: string) => (filtros.push((l) => l[c] != null && String(l[c]) <= v), builder),
         not: (c: string, _op: string, v: unknown) => (filtros.push((l) => (valor(l, c) ?? null) !== v), builder),
-        order: (col: string, o?: { ascending?: boolean }) => ((ordem = { col, asc: o?.ascending ?? true }), builder),
+        // Como o Postgres: nulls por ÚLTIMO no ascendente, salvo `nullsFirst`.
+        order: (col: string, o?: { ascending?: boolean; nullsFirst?: boolean }) => (
+          ordens.push({ col, asc: o?.ascending ?? true, nullsFirst: o?.nullsFirst ?? !(o?.ascending ?? true) }), builder
+        ),
+        range: (de: number, ate: number) => ((inicio = de), (limite = ate - de + 1), builder),
         limit: (n: number) => ((limite = n), builder),
         maybeSingle: async () => {
           const r = executar();

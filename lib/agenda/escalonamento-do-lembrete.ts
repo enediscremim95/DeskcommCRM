@@ -74,14 +74,12 @@ export type DecisaoDoEscalonamento = "aguardar" | "confirmed" | "escalated" | "n
 const STATUS_VIVOS = new Set(["confirmed", "pending"]);
 const ENVIO_OK = new Set(["sent", "delivered", "read"]);
 const ENVIO_EM_VOO = new Set(["queued", "sending", "pending"]);
-/** Teto de tipos com escalonamento ligado lidos por rodada (tabela pequena). */
-const LIMITE = 1000;
+/** Página da leitura dos tipos ligados — paginada, sem teto silencioso. */
+const PAGINA_DE_TIPOS = 1000;
 /** Teto por organização em cada rodada — ninguém consome o lote inteiro. */
 const LIMITE_POR_ORG = 50;
 /** Quanto tempo quem espera o envio (`queued`) fica fora do lote. */
 const SONECA_MS = 5 * 60_000;
-/** Menor espera aceita pela coluna — o corte grosso da consulta. */
-const MENOR_ESPERA_MS = 5 * 60_000;
 /** Posse mais velha que isto é de uma rodada que morreu. */
 const LEASE_MS = 10 * 60_000;
 /** Recusas do orquestrador que são infraestrutura, não estado: ficam para retry. */
@@ -131,6 +129,7 @@ interface CompromissoLembrado {
   reminder_message_id: string | null;
   reminder_conversation_id: string | null;
   reminder_escalation_checked_at?: string | null;
+  reminder_escalation_claimed_at?: string | null;
 }
 
 export interface ResumoDoEscalonamento {
@@ -151,7 +150,8 @@ export interface DepsDoEscalonamento {
 
 const COLUNAS =
   "id, organization_id, event_type_id, contact_id, conversation_id, title, status, starts_at, " +
-  "reminder_sent_at, reminder_message_id, reminder_conversation_id, reminder_escalation_checked_at";
+  "reminder_sent_at, reminder_message_id, reminder_conversation_id, reminder_escalation_checked_at, " +
+  "reminder_escalation_claimed_at";
 
 /** O tipo DESTE compromisso, lido na organização DELE. Null = vínculo inválido. */
 async function tipoDaMesmaOrg(admin: SupabaseClient, l: CompromissoLembrado): Promise<TipoEmbutido | null> {
@@ -169,7 +169,11 @@ async function tipoDaMesmaOrg(admin: SupabaseClient, l: CompromissoLembrado): Pr
 interface EnvioDoLembrete {
   /** Status da mensagem, ou null quando as referências não fecham. */
   status: string | null;
-  /** Instante do envio EFETIVO (a mensagem), nunca o da posse. */
+  /**
+   * Instante do envio EFETIVO: `sent_at` (ou `created_at`) da mensagem
+   * outbound registrada — nem a posse, nem o carimbo gravado depois do envio.
+   * É a base do prazo e o corte do "confirmou".
+   */
   enviadoEm: string;
 }
 
@@ -182,12 +186,18 @@ async function envioDoLembrete(admin: SupabaseClient, l: CompromissoLembrado): P
   if (!l.reminder_message_id || !l.reminder_conversation_id || !l.contact_id) return semEnvio;
   const { data: msg, error } = await admin
     .from("messages")
-    .select("status, sent_at, conversation_id, direction")
+    .select("status, sent_at, created_at, conversation_id, direction")
     .eq("organization_id", l.organization_id)
     .eq("id", l.reminder_message_id)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  const m = msg as { status?: string; sent_at?: string | null; conversation_id?: string; direction?: string } | null;
+  const m = msg as {
+    status?: string;
+    sent_at?: string | null;
+    created_at?: string | null;
+    conversation_id?: string;
+    direction?: string;
+  } | null;
   if (!m || m.conversation_id !== l.reminder_conversation_id || m.direction !== "outbound") return semEnvio;
   const { data: conv, error: cErr } = await admin
     .from("conversations")
@@ -197,7 +207,9 @@ async function envioDoLembrete(admin: SupabaseClient, l: CompromissoLembrado): P
     .maybeSingle();
   if (cErr) throw new Error(cErr.message);
   if ((conv as { contact_id?: string } | null)?.contact_id !== l.contact_id) return semEnvio;
-  const enviadoEm = [l.reminder_sent_at, m.sent_at ?? ""].sort().at(-1) || l.reminder_sent_at;
+  // O instante da PRÓPRIA mensagem, não o carimbo gravado depois dela: uma
+  // resposta que chega entre o envio e o carimbo é resposta ao lembrete.
+  const enviadoEm = m.sent_at || m.created_at || l.reminder_sent_at;
   return { status: m.status ?? null, enviadoEm };
 }
 
@@ -305,51 +317,80 @@ export async function escalonarLembretesSemResposta(
   // uma com seu teto. Quem diz quais organizações (e quais tipos) é a tabela
   // pequena dos tipos com o escalonamento ligado — e o compromisso só entra se
   // o `event_type_id` for de um tipo DA MESMA organização (isolamento no filtro).
-  const { data: tiposLigados, error: tErr } = await admin
-    .from("calendar_event_types")
-    .select("id, organization_id, reminder_escalation_enabled, reminder_escalation_minutes")
-    .eq("reminder_escalation_enabled", true)
-    .limit(LIMITE);
-  if (tErr) {
-    logger.error("[agenda-reminder] consulta dos tipos do escalonamento falhou", { error: tErr.message });
-    resumo.erros += 1;
-    return resumo;
-  }
+  // Todos os tipos ligados, PAGINADOS: um teto fixo cortaria tipos em silêncio.
   const tiposPorOrg = new Map<string, Map<string, TipoEmbutido>>();
-  for (const t of (tiposLigados ?? []) as Array<TipoEmbutido & { id: string; organization_id: string }>) {
-    const m = tiposPorOrg.get(t.organization_id) ?? new Map<string, TipoEmbutido>();
-    m.set(t.id, t);
-    tiposPorOrg.set(t.organization_id, m);
+  for (let desde = 0; ; desde += PAGINA_DE_TIPOS) {
+    const { data: pagina, error: tErr } = await admin
+      .from("calendar_event_types")
+      .select("id, organization_id, reminder_escalation_enabled, reminder_escalation_minutes")
+      .eq("reminder_escalation_enabled", true)
+      .order("id", { ascending: true })
+      .range(desde, desde + PAGINA_DE_TIPOS - 1);
+    if (tErr) {
+      logger.error("[agenda-reminder] consulta dos tipos do escalonamento falhou", { error: tErr.message });
+      resumo.erros += 1;
+      return resumo;
+    }
+    const linhas = (pagina ?? []) as Array<TipoEmbutido & { id: string; organization_id: string }>;
+    for (const t of linhas) {
+      const m = tiposPorOrg.get(t.organization_id) ?? new Map<string, TipoEmbutido>();
+      m.set(t.id, t);
+      tiposPorOrg.set(t.organization_id, m);
+    }
+    if (linhas.length < PAGINA_DE_TIPOS) break;
   }
 
-  const candidatos: Array<{ c: CompromissoLembrado; tipo: TipoEmbutido }> = [];
+  const limiteDaPosse = new Date(agora.getTime() - LEASE_MS).toISOString();
+  const candidatos: Array<{ c: CompromissoLembrado; tipo: TipoEmbutido; venceEm: number }> = [];
   for (const [orgId, tipos] of tiposPorOrg) {
-    const { data, error } = await admin
-      .from("calendar_appointments")
-      .select(COLUNAS)
-      .eq("organization_id", orgId)
-      .in("event_type_id", [...tipos.keys()])
-      .not("reminder_sent_at", "is", null)
-      .is("reminder_escalation_checked_at", null)
-      .lte("reminder_sent_at", new Date(agora.getTime() - MENOR_ESPERA_MS).toISOString())
-      // Só quem ainda não começou: reunião passada sai da janela sozinha.
-      .gt("starts_at", agora.toISOString())
-      // Posse ativa (inclusive soneca) fica fora do lote.
-      .or(
-        `reminder_escalation_claimed_at.is.null,reminder_escalation_claimed_at.lt.${new Date(agora.getTime() - LEASE_MS).toISOString()}`,
-      )
-      // O mais urgente primeiro — não o lembrete mais antigo.
-      .order("starts_at", { ascending: true })
-      .limit(LIMITE_POR_ORG);
-    if (error) {
-      logger.error("[agenda-reminder] consulta do escalonamento falhou", { organizationId: orgId, error: error.message });
-      resumo.erros += 1;
-      continue;
+    // O PRAZO VENCIDO entra no filtro, ANTES do teto: senão o teto se enchia de
+    // quem ainda está dentro da espera e deixava os vencidos de fora. O prazo
+    // depende dos minutos de cada tipo, então a consulta é por grupo de minutos.
+    const porMinutos = new Map<number, string[]>();
+    for (const [id, t] of tipos) {
+      const min = Number(t.reminder_escalation_minutes ?? 20);
+      porMinutos.set(min, [...(porMinutos.get(min) ?? []), id]);
     }
-    for (const c of (data ?? []) as unknown as CompromissoLembrado[]) {
-      const tipo = c.event_type_id ? tipos.get(c.event_type_id) : undefined;
-      if (tipo && c.organization_id === orgId) candidatos.push({ c, tipo });
+    const daOrg: Array<{ c: CompromissoLembrado; tipo: TipoEmbutido; venceEm: number }> = [];
+    for (const [min, ids] of porMinutos) {
+      const { data, error } = await admin
+        .from("calendar_appointments")
+        .select(COLUNAS)
+        .eq("organization_id", orgId)
+        .in("event_type_id", ids)
+        .not("reminder_sent_at", "is", null)
+        .is("reminder_escalation_checked_at", null)
+        // Só os de prazo VENCIDO (pelo carimbo; a decisão refina pelo envio efetivo).
+        .lte("reminder_sent_at", new Date(agora.getTime() - min * 60_000).toISOString())
+        // Só quem ainda não começou: reunião passada sai da janela sozinha.
+        .gt("starts_at", agora.toISOString())
+        // Posse ativa (inclusive soneca) fica fora do lote.
+        .or(`reminder_escalation_claimed_at.is.null,reminder_escalation_claimed_at.lt.${limiteDaPosse}`)
+        // Quem nunca foi olhado vem antes de quem acordou de uma soneca; depois,
+        // o prazo mais antigo primeiro.
+        .order("reminder_escalation_claimed_at", { ascending: true, nullsFirst: true })
+        .order("reminder_sent_at", { ascending: true })
+        .limit(LIMITE_POR_ORG);
+      if (error) {
+        logger.error("[agenda-reminder] consulta do escalonamento falhou", { organizationId: orgId, error: error.message });
+        resumo.erros += 1;
+        continue;
+      }
+      for (const c of (data ?? []) as unknown as CompromissoLembrado[]) {
+        const tipo = c.event_type_id ? tipos.get(c.event_type_id) : undefined;
+        if (tipo && c.organization_id === orgId) {
+          daOrg.push({ c, tipo, venceEm: new Date(c.reminder_sent_at).getTime() + min * 60_000 });
+        }
+      }
     }
+    // O teto vale para a ORGANIZAÇÃO, aplicado depois do filtro de prazo e na
+    // mesma ordem: nunca olhados primeiro, depois o prazo mais antigo.
+    daOrg.sort(
+      (x, y) =>
+        Number(Boolean(x.c.reminder_escalation_claimed_at)) - Number(Boolean(y.c.reminder_escalation_claimed_at)) ||
+        x.venceEm - y.venceEm,
+    );
+    candidatos.push(...daOrg.slice(0, LIMITE_POR_ORG));
   }
 
   for (const { c: candidato, tipo: grosso } of candidatos) {
