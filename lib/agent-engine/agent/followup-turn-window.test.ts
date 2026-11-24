@@ -49,7 +49,7 @@ function setup(fixedBody?: string) {
       followup_enrollment_id: "00000000-0000-4000-8000-000000000001",
       node_id: "action", purpose: "send_message", fixed_body: fixedBody,
     },
-  } as JobRow;
+  } as unknown as JobRow;
 
   return { query, job, run: () => createFollowupTurnHandler(deps)(job, { query } as unknown as pg.Pool, { workerId: "worker" }) };
 }
