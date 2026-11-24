@@ -23,8 +23,10 @@
  * O chamador passa uma chave estável do FATO que pede a tarefa (passo do fluxo,
  * compromisso escalado). O índice único `(organization_id, source_key)` faz o
  * retry cair em 23505, e aí a tarefa existente é devolvida. O aviso na Central
- * só é aberto enquanto `alerted_at` estiver nulo — retry depois de um crash
- * entre a tarefa e o aviso abre o aviso que faltou, e não um segundo.
+ * tem chave única própria (`agent_inbox_items.dedupe_key = crm_task:<id>`), e
+ * `alerted_at` é só o atalho para não tentar de novo: retry depois de um crash
+ * entre a tarefa e o aviso abre o aviso que faltou, e corrida entre duas
+ * rodadas cai em 23505 — nunca um segundo aviso.
  *
  * ⚠️ `organization_id` vem SEMPRE do chamador confiável (enrollment, linha do
  * compromisso) e filtra TODA leitura e escrita — service role não tem RLS.
@@ -82,7 +84,9 @@ export function escolherResponsavel(f: FatosDoResponsavel): {
 /** `{{nome}}` → nome do contato. Sem nome, "o contato" — "Ligar para " solto não diz nada. */
 export function interpolarTarefa(texto: string, nomeDoContato: string | null | undefined): string {
   const nome = nomeDoContato?.trim() || "o contato";
-  return texto.replaceAll("{{nome}}", nome);
+  // Callback, não string: `replaceAll(x, "str")` interpreta `$&`, `$'`, `$$`
+  // dentro do NOME do contato — que é dado de terceiro.
+  return texto.replaceAll("{{nome}}", () => nome);
 }
 
 export interface NovaTarefaHumana {
@@ -279,22 +283,26 @@ export async function criarTarefaHumana(
     const corpo =
       `${input.title.slice(0, 200)}. Responsável: ${ROTULO_DA_ORIGEM[escolha.origem]}. ` +
       "A tarefa está em Tarefas; nenhuma mensagem foi enviada ao contato por este passo.";
+    // `dedupe_key` única por organização (migration 0320): duas rodadas
+    // concorrentes, ou um retry depois de crash entre o aviso e o `alerted_at`,
+    // caem em 23505 em vez de abrir um segundo aviso.
     const { error: avisoErr } = await admin.from("agent_inbox_items").insert({
       organization_id: org,
       kind: "human_task",
       severity: "warn",
       title: input.tituloDoAviso,
       body: corpo,
+      dedupe_key: `crm_task:${taskId}`,
       ...ref,
     });
-    if (avisoErr) throw new Error(avisoErr.message);
+    if (avisoErr && avisoErr.code !== "23505") throw new Error(avisoErr.message);
     const { error: marcaErr } = await admin
       .from("crm_tasks")
       .update({ alerted_at: new Date().toISOString() })
       .eq("organization_id", org)
       .eq("id", taskId);
     if (marcaErr) throw new Error(marcaErr.message);
-    avisoAberto = true;
+    avisoAberto = !avisoErr;
   }
 
   return {

@@ -43,6 +43,10 @@ describe("escolherResponsavel — a régua de quem recebe", () => {
     expect(interpolarTarefa("Ligar para {{nome}}", "Ana")).toBe("Ligar para Ana");
     expect(interpolarTarefa("Ligar para {{nome}}", "  ")).toBe("Ligar para o contato");
   });
+
+  it("nome com $&, $' ou $$ entra literal (callback, não padrão de replace)", () => {
+    expect(interpolarTarefa("Ligar para {{nome}}", "A$&B$'C$$D")).toBe("Ligar para A$&B$'C$$D");
+  });
 });
 
 function banco() {
@@ -69,7 +73,7 @@ function banco() {
       crm_tasks: [],
       agent_inbox_items: [],
     },
-    { crm_tasks: [["organization_id", "source_key"]] },
+    { crm_tasks: [["organization_id", "source_key"]], agent_inbox_items: [["organization_id", "dedupe_key"]] },
   );
 }
 
@@ -118,6 +122,24 @@ describe("criarTarefaHumana", () => {
     expect(r).toMatchObject({ taskId: "t-velha", criada: false, avisoAberto: true });
     expect(db.tabelas.crm_tasks).toHaveLength(1);
     expect(db.tabelas.agent_inbox_items).toHaveLength(1);
+  });
+
+  it("crash DEPOIS do aviso e ANTES do alerted_at: o retry não abre segundo aviso (dedupe_key)", async () => {
+    const db = banco();
+    db.tabelas.crm_tasks!.push({ id: "t-velha", organization_id: "org-A", source_key: entrada.sourceKey, assigned_to: "sdr-A", alerted_at: null });
+    db.tabelas.agent_inbox_items!.push({ id: "aviso-velho", organization_id: "org-A", kind: "human_task", dedupe_key: "crm_task:t-velha" });
+    const r = await criarTarefaHumana(db as unknown as SupabaseClient, entrada);
+    expect(r).toMatchObject({ taskId: "t-velha", avisoAberto: false });
+    expect(db.tabelas.agent_inbox_items).toHaveLength(1);
+    expect(db.tabelas.crm_tasks![0]!.alerted_at).not.toBeNull();
+  });
+
+  it("execuções concorrentes do mesmo passo: uma tarefa, um aviso", async () => {
+    const db = banco();
+    await Promise.all([1, 2, 3].map(() => criarTarefaHumana(db as unknown as SupabaseClient, entrada)));
+    expect(db.tabelas.crm_tasks).toHaveLength(1);
+    expect(db.tabelas.agent_inbox_items).toHaveLength(1);
+    expect(db.tabelas.agent_inbox_items![0]).toMatchObject({ dedupe_key: `crm_task:${db.tabelas.crm_tasks![0]!.id}` });
   });
 
   it("a mesma chave em outra organização é outra tarefa (isolamento)", async () => {

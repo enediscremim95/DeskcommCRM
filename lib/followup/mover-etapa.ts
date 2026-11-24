@@ -13,6 +13,16 @@
  *
  * ⚠️ O destino é resolvido DENTRO da organização do enrollment. Um `stage_id`
  * de outra organização é indistinguível de um id inexistente: `destino_invalido`.
+ *
+ * ⚠️ QUEM ESCOLHE O NEGÓCIO É A ORIGEM DO FLUXO, NUNCA O DESTINO. Antes o
+ * negócio era achado pelo funil da etapa de destino — um fluxo que nasceu do
+ * negócio do funil A, com destino configurado no funil B, movia o OUTRO negócio
+ * do contato. Agora:
+ *   1. `origemLeadId` (o `lead_id` gravado no evento de inscrição, ex.:
+ *      `enrolled_by_stage_change`) manda: precisa ser da organização, do
+ *      contato e estar aberto; destino em outro funil = `outro_funil`;
+ *   2. sem origem, o contato precisa ter UM negócio aberto na organização
+ *      (qualquer funil). Mais de um = `ambiguo`, no-op.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -55,6 +65,8 @@ export async function moverEtapaDoFluxo(
     requestId: string;
     /** Ator automático: o ponteiro do fluxo. */
     flowPointerId: string;
+    /** Negócio que originou a inscrição (evento `enrolled_by_*`), quando houver. */
+    origemLeadId?: string | null;
   },
   deps: { mover?: typeof moveLeadHandler } = {},
 ): Promise<ResultadoMoverEtapa> {
@@ -70,18 +82,38 @@ export async function moverEtapaDoFluxo(
   if (eErr) throw new Error(eErr.message);
   if (!etapa) return { movido: false, motivo: "destino_invalido" };
 
-  const { data: leads, error: lErr } = await admin
-    .from("crm_leads")
-    .select("id")
-    .eq("organization_id", org)
-    .eq("contact_id", input.contactId)
-    .eq("pipeline_id", etapa.pipeline_id)
-    .eq("status", "open")
-    .limit(2);
-  if (lErr) throw new Error(lErr.message);
-  if (!leads || leads.length === 0) return { movido: false, motivo: "sem_negocio" };
-  if (leads.length > 1) return { movido: false, motivo: "ambiguo" };
-  const leadId = String(leads[0]!.id);
+  let leadId: string;
+  if (input.origemLeadId) {
+    const { data: origem, error: oErr } = await admin
+      .from("crm_leads")
+      .select("id, pipeline_id, contact_id, status")
+      .eq("organization_id", org)
+      .eq("id", input.origemLeadId)
+      .maybeSingle();
+    if (oErr) throw new Error(oErr.message);
+    if (!origem || origem.contact_id !== input.contactId || origem.status !== "open") {
+      return { movido: false, motivo: "sem_negocio" };
+    }
+    if (origem.pipeline_id !== etapa.pipeline_id) {
+      return { movido: false, motivo: "outro_funil", lead_id: String(origem.id) };
+    }
+    leadId = String(origem.id);
+  } else {
+    const { data: leads, error: lErr } = await admin
+      .from("crm_leads")
+      .select("id, pipeline_id")
+      .eq("organization_id", org)
+      .eq("contact_id", input.contactId)
+      .eq("status", "open")
+      .limit(2);
+    if (lErr) throw new Error(lErr.message);
+    if (!leads || leads.length === 0) return { movido: false, motivo: "sem_negocio" };
+    if (leads.length > 1) return { movido: false, motivo: "ambiguo" };
+    if (leads[0]!.pipeline_id !== etapa.pipeline_id) {
+      return { movido: false, motivo: "outro_funil", lead_id: String(leads[0]!.id) };
+    }
+    leadId = String(leads[0]!.id);
+  }
 
   const ctx: HandlerCtx = {
     organization_id: org,

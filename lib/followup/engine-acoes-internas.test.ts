@@ -179,3 +179,21 @@ describe("engine — mover etapa", () => {
     );
   });
 });
+
+describe("engine — mover etapa usa a origem da inscrição", () => {
+  it("repassa o lead_id do evento enrolled_by_* (e ignora lead_id de outros eventos)", async () => {
+    const { db, moverEtapa } = montarDb({ mode: "move_stage" }, [
+      { node_id: "trigger", idempotency_key: "x", event_type: "stage_move_done", payload: { lead_id: "lead-errado" } },
+      { node_id: "trigger", idempotency_key: "gatilho-etapa:1", event_type: "enrolled_by_stage_change", payload: { lead_id: "lead-origem" } },
+    ]);
+    await runFollowupTick({ db, enqueueJob: vi.fn(), clock: () => now });
+    expect(moverEtapa).toHaveBeenCalledWith(expect.objectContaining({ origemLeadId: "lead-origem" }));
+  });
+
+  it("sem evento de inscrição com lead: origem nula", async () => {
+    const { db, moverEtapa } = montarDb({ mode: "move_stage" });
+    await runFollowupTick({ db, enqueueJob: vi.fn(), clock: () => now });
+    expect(moverEtapa).toHaveBeenCalledWith(expect.objectContaining({ origemLeadId: null }));
+  });
+});
+

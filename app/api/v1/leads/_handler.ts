@@ -713,6 +713,7 @@ export async function moveLeadHandler(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   const finalLead = (fresh ?? updated) as Record<string, unknown>;
 
@@ -746,6 +747,7 @@ export async function moveLeadHandler(
     .from("crm_stages")
     .select("name")
     .eq("id", lead.stage_id)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   const atividade = await emitLeadActivity(supabase, {

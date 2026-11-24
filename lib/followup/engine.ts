@@ -160,6 +160,7 @@ export interface AdminClient {
     stageId: string | null | undefined;
     requestId: string;
     flowPointerId: string;
+    origemLeadId?: string | null;
   }): Promise<ResultadoMoverEtapa>;
   persistirRespostaFollowup(input: {
     organization_id: string;
@@ -301,6 +302,7 @@ async function executarEfeitoInterno(
   idemKey: string,
   clock: () => Date,
   nomeDoContato: string | null,
+  events: EnrollmentEventRef[] = [],
 ): Promise<{ event_type: string; payload: Record<string, unknown> }> {
   const config = node.config;
   if (config.mode === "human_task") {
@@ -332,6 +334,7 @@ async function executarEfeitoInterno(
       stageId: config.stage_id ?? null,
       requestId: `followup:${enrollment.id}:${idemKey}`,
       flowPointerId: enrollment.pointer_id,
+      origemLeadId: origemDoEnrollment(events),
     });
     return r.movido
       ? { event_type: "stage_move_done", payload: { lead_id: r.lead_id, to_stage_id: r.to_stage_id } }
@@ -341,6 +344,20 @@ async function executarEfeitoInterno(
         };
   }
   throw new Error(`action mode "${config.mode}" is not internal`);
+}
+
+/**
+ * O negócio que originou a inscrição: o `lead_id` do PRIMEIRO evento
+ * `enrolled_by_*` (ex.: `enrolled_by_stage_change`). Só eventos de inscrição —
+ * o `lead_id` de um `stage_move_*` posterior não é origem.
+ */
+export function origemDoEnrollment(events: EnrollmentEventRef[]): string | null {
+  for (const e of events) {
+    if (!e.event_type?.startsWith("enrolled_by")) continue;
+    const id = e.payload?.lead_id;
+    if (typeof id === "string" && id) return id;
+  }
+  return null;
 }
 
 async function markDead(
@@ -451,7 +468,7 @@ async function applyResult(
     if (jaGravado?.event_type) {
       wantedType = jaGravado.event_type;
     } else {
-      const efeito = await executarEfeitoInterno(db, enrollment, node, idemKey, clock, nomeDoContato);
+      const efeito = await executarEfeitoInterno(db, enrollment, node, idemKey, clock, nomeDoContato, events);
       wantedType = efeito.event_type;
       payload = { ...payload, ...efeito.payload };
     }
