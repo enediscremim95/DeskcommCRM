@@ -21,8 +21,9 @@
  *   1. `origemLeadId` (o `lead_id` gravado no evento de inscrição, ex.:
  *      `enrolled_by_stage_change`) manda: precisa ser da organização, do
  *      contato e estar aberto; destino em outro funil = `outro_funil`;
- *   2. sem origem, o contato precisa ter UM negócio aberto na organização
- *      (qualquer funil). Mais de um = `ambiguo`, no-op.
+ *   2. sem origem, o contato precisa ter UM negócio na organização — contando
+ *      qualquer situação, não só os abertos — e ele precisa estar aberto. Mais
+ *      de um = `ambiguo`, no-op.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -99,16 +100,21 @@ export async function moverEtapaDoFluxo(
     }
     leadId = String(origem.id);
   } else {
+    // Sem origem gravada, conta TODOS os negócios do contato, de qualquer
+    // situação: se o de origem foi fechado (ou a proveniência não chegou a ser
+    // gravada) e sobrou um único aberto de OUTRO funil, contar só os abertos
+    // escolheria esse outro negócio. Mais de um negócio na vida do contato =
+    // não há como saber qual é o do fluxo → no-op.
     const { data: leads, error: lErr } = await admin
       .from("crm_leads")
-      .select("id, pipeline_id")
+      .select("id, pipeline_id, status")
       .eq("organization_id", org)
       .eq("contact_id", input.contactId)
-      .eq("status", "open")
       .limit(2);
     if (lErr) throw new Error(lErr.message);
     if (!leads || leads.length === 0) return { movido: false, motivo: "sem_negocio" };
     if (leads.length > 1) return { movido: false, motivo: "ambiguo" };
+    if (leads[0]!.status !== "open") return { movido: false, motivo: "sem_negocio" };
     if (leads[0]!.pipeline_id !== etapa.pipeline_id) {
       return { movido: false, motivo: "outro_funil", lead_id: String(leads[0]!.id) };
     }

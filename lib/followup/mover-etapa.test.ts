@@ -111,6 +111,25 @@ describe("moverEtapaDoFluxo", () => {
       expect(mover).not.toHaveBeenCalled();
     });
 
+    it("sem origem, o de origem FECHADO e um aberto em outro funil: ambíguo (nunca move o outro)", async () => {
+      const db = banco();
+      db.tabelas.crm_leads![0]!.status = "lost";
+      db.tabelas.crm_leads!.push({ id: "lead-A2", organization_id: "org-A", contact_id: "c-A", pipeline_id: "funil-A2", status: "open" });
+      const mover = vi.fn();
+      expect(
+        await moverEtapaDoFluxo(db as unknown as SupabaseClient, { ...base, stageId: ETAPA_A2 }, { mover }),
+      ).toEqual({ movido: false, motivo: "ambiguo" });
+      expect(mover).not.toHaveBeenCalled();
+    });
+
+    it("sem origem e o único negócio fechado: no-op", async () => {
+      const db = banco();
+      db.tabelas.crm_leads![0]!.status = "won";
+      expect(
+        await moverEtapaDoFluxo(db as unknown as SupabaseClient, { ...base, stageId: ETAPA_A }, { mover: vi.fn() }),
+      ).toEqual({ movido: false, motivo: "sem_negocio" });
+    });
+
     it("origem de OUTRA organização (ou de outro contato) não é lida", async () => {
       const db = banco();
       db.tabelas.crm_leads!.push({ id: "lead-B", organization_id: "org-B", contact_id: "c-A", pipeline_id: "funil-A", status: "open" });
