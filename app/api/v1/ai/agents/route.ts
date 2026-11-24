@@ -45,7 +45,7 @@ const AGENT_COLUMNS =
  */
 const AGENT_COLUMNS_COM_VERSAO =
   AGENT_COLUMNS +
-  ", versao_publicada:ai_agent_versions!ai_agents_published_version_id_fkey(provider, model)";
+  ", versao_publicada:ai_agent_versions!ai_agents_published_version_id_fkey(provider, model, version_number, published_at, channel_session_id, canal:channel_sessions!ai_agent_versions_channel_session_id_fkey(id, phone_number, display_name, status, automatic_attendance_enabled))";
 
 const VERSION_COLUMNS =
   "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,skill_names,channel_config,provisioning_origin,mcp_api_token_id,mcp_change_summary";
