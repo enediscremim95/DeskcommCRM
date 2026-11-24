@@ -10153,6 +10153,9 @@ alter table public.agent_inbox_items
     -- deixa de falhar em silêncio e aparece na Central.
     'webhook_source_silent',
     'followup_suggestion',
+    -- (migration 0320) Tarefa que o automático passou a uma pessoa (nó "tarefa
+    -- humana" do follow-up, lembrete de reunião sem confirmação).
+    'human_task',
     'other'
   ));
 
@@ -32843,6 +32846,47 @@ grant execute on function public.fn_usar_credencial_ia_padrao(uuid, uuid, uuid, 
   to service_role;
 
 notify pgrst, 'reload schema';
+
+-- ---- Tarefa humana do follow-up, convite e escalonamento do lembrete (migration 0320) ----
+-- Aditivo e idempotente (`if not exists`). Ver o cabeçalho da migration 0320.
+alter table public.crm_tasks
+  add column if not exists source_key text,
+  add column if not exists alerted_at timestamptz;
+
+create unique index if not exists uniq_crm_tasks_source_key
+  on public.crm_tasks (organization_id, source_key)
+  where source_key is not null;
+
+comment on column public.crm_tasks.source_key is
+  'Chave do fato automático que criou a tarefa (passo de follow-up, escalonamento de lembrete). Única por organização: retry não duplica. Nula em tarefa criada por pessoa.';
+comment on column public.crm_tasks.alerted_at is
+  'Quando o aviso da tarefa automática foi aberto na Central. Nulo = aviso ainda não saiu.';
+
+-- (o kind 'human_task' entra no bloco ÚNICO de agent_inbox_items_kind_check, acima)
+
+alter table public.calendar_event_types
+  add column if not exists guest_invite_enabled boolean not null default false,
+  add column if not exists reminder_escalation_enabled boolean not null default false,
+  add column if not exists reminder_escalation_minutes integer not null default 20
+    check (reminder_escalation_minutes between 5 and 720);
+
+comment on column public.calendar_event_types.guest_invite_enabled is
+  'Opt-in: o agendamento pela IA usa o e-mail informado (ou o do contato) como convidado do evento do Google, que envia o convite.';
+comment on column public.calendar_event_types.reminder_escalation_enabled is
+  'Opt-in: N minutos após o lembrete, sem resposta do cliente, cria tarefa + aviso e passa a conversa para uma pessoa.';
+comment on column public.calendar_event_types.reminder_escalation_minutes is
+  'Minutos depois do envio do lembrete até decidir o escalonamento (5 a 720, padrão 20).';
+
+alter table public.calendar_appointments
+  add column if not exists reminder_escalation_checked_at timestamptz,
+  add column if not exists reminder_escalation_result text
+    check (reminder_escalation_result in ('confirmed', 'escalated', 'not_applicable'));
+
+comment on column public.calendar_appointments.reminder_escalation_checked_at is
+  'Quando o escalonamento pós-lembrete foi decidido. Preenchido uma vez: é a idempotência do escalonamento.';
+comment on column public.calendar_appointments.reminder_escalation_result is
+  'confirmed = o cliente respondeu depois do lembrete; escalated = tarefa + aviso + passagem para pessoa; not_applicable = compromisso já começou ou deixou de estar marcado.';
+
 
 -- ---- VARREDURA anon: bloco final auto-curativo (migration 0116) ----
 -- Este bloco precisa continuar no fim do baseline. Apêndices novos entram antes.

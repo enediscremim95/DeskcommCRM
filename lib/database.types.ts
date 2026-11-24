@@ -2148,6 +2148,8 @@ export type Database = {
       }
       calendar_appointments: {
         Row: {
+          reminder_escalation_checked_at: string | null
+          reminder_escalation_result: string | null
           meeting_state: string
           meeting_request_id: string | null
           meeting_requested_at: string | null
@@ -2213,6 +2215,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          reminder_escalation_checked_at?: string | null
+          reminder_escalation_result?: string | null
           meeting_state?: string
           meeting_request_id?: string | null
           meeting_requested_at?: string | null
@@ -2278,6 +2282,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          reminder_escalation_checked_at?: string | null
+          reminder_escalation_result?: string | null
           meeting_state?: string
           meeting_request_id?: string | null
           meeting_requested_at?: string | null
@@ -2606,6 +2612,9 @@ export type Database = {
       }
       calendar_event_types: {
         Row: {
+          guest_invite_enabled: boolean
+          reminder_escalation_enabled: boolean
+          reminder_escalation_minutes: number
           booking_window_days: number
           buffer_after_minutes: number
           buffer_before_minutes: number
@@ -2631,6 +2640,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          guest_invite_enabled?: boolean
+          reminder_escalation_enabled?: boolean
+          reminder_escalation_minutes?: number
           booking_window_days?: number
           buffer_after_minutes?: number
           buffer_before_minutes?: number
@@ -2656,6 +2668,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          guest_invite_enabled?: boolean
+          reminder_escalation_enabled?: boolean
+          reminder_escalation_minutes?: number
           booking_window_days?: number
           buffer_after_minutes?: number
           buffer_before_minutes?: number
