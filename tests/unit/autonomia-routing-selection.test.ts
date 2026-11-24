@@ -58,7 +58,11 @@ function setup(a: PublishedAgentConfig, b: PublishedAgentConfig, sticky: boolean
   // These remain valid alternatives; returning B here would hide the original bypass.
   mocks.bySession.mockResolvedValue(a);
   mocks.conversationAgent.mockResolvedValue(a);
-  const query = vi.fn(async (_sql: string, values: unknown[]) => {
+  const query = vi.fn(async (sql: string, values: unknown[]) => {
+    if (sql.includes('from messages resposta')) {
+      expect(values).toEqual([ids.org, ids.conversation, 'B', job.payload.inbound_message_id]);
+      return { rows: [{ respondido: false }] };
+    }
     expect(values).toEqual([ids.org, ids.conversation]);
     return { rows: [{ active_ai_agent_id: sticky ? 'A' : null, active_intent: sticky ? 'vendas' : null,
       body: 'Agora preciso de suporte técnico' }] };
