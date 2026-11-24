@@ -115,12 +115,14 @@ describe("cron agenda-reminder — comportamento", () => {
     expect(corpoEnviado()).toBe("Oi Ana! Sala: https://meet.google.com/abc-defg-hij");
   });
 
-  it("guarda mensagem e conversa do envio, com id de mensagem determinístico e dedupe", async () => {
+  it("guarda mensagem e conversa do envio, com id de mensagem determinístico (sem pular o envio de mensagem não enviada)", async () => {
     montar();
     await GET(req());
     const ctx = envio.mock.calls[0]![1] as { internalMessageId?: string; deduplicateInternalMessage?: boolean };
     expect(ctx.internalMessageId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-    expect(ctx.deduplicateInternalMessage).toBe(true);
+    // SEM `deduplicateInternalMessage`: com ele, o handler devolveria uma
+    // mensagem `queued` reencontrada sem enviá-la.
+    expect(ctx.deduplicateInternalMessage).toBeUndefined();
     expect(linha()).toMatchObject({ reminder_message_id: "msg-1", reminder_conversation_id: "conv-lembrete" });
     expect(linha().reminder_sent_at).not.toBeNull();
   });
@@ -177,7 +179,7 @@ describe("cron agenda-reminder — comportamento", () => {
       expect(envio).not.toHaveBeenCalled();
     });
 
-    it("carimbo falhou depois do envio: nada encerra; após o lease reenvia com o MESMO id (dedupe) e carimba", async () => {
+    it("carimbo falhou depois do envio: nada encerra; após o lease chama de novo com o MESMO id e carimba", async () => {
       montar();
       const original = db.from.bind(db);
       let falhou = false;
@@ -209,6 +211,73 @@ describe("cron agenda-reminder — comportamento", () => {
       expect(ids).toHaveLength(2);
       expect(ids[0]).toBe(ids[1]);
       expect(linha()).toMatchObject({ reminder_message_id: "msg-1", reminder_conversation_id: "conv-lembrete" });
+      expect(linha().reminder_sent_at).not.toBeNull();
+    });
+  });
+
+  /**
+   * Dublê que imita a regra REAL de `sendMessageHandler` quando o id interno já
+   * existe (app/api/v1/messages/_handler.ts): sem `deduplicateInternalMessage`,
+   * `sent/delivered/read/failed` voltam sem enviar; `queued/sending` seguem o
+   * caminho normal e ENVIAM.
+   */
+  describe("reentrega depois de queda com a mensagem já inserida (revisão 3)", () => {
+    const naRede: string[] = [];
+    const caixa = new Map<string, { id: string; status: string; created_at: string }>();
+    function handlerReal(statusDoEnvio = "sent") {
+      envio.mockImplementation(async (_db: unknown, ctx: { internalMessageId: string; deduplicateInternalMessage?: boolean }) => {
+        const ja = caixa.get(ctx.internalMessageId);
+        if (ja && (ctx.deduplicateInternalMessage || ["sent", "delivered", "read", "failed"].includes(ja.status))) return { ...ja };
+        const m = ja ?? { id: ctx.internalMessageId, status: "queued", created_at: new Date().toISOString() };
+        caixa.set(m.id, m);
+        naRede.push(m.id);
+        m.status = statusDoEnvio;
+        return { ...m };
+      });
+    }
+    beforeEach(() => {
+      naRede.length = 0;
+      caixa.clear();
+    });
+    const idDoLembrete = async () => (await import("@/lib/agenda/lembrete")).idDaMensagemDoLembrete("ap-1");
+
+    it("mensagem ficou QUEUED (queda antes de sair): a reentrega de fato envia", async () => {
+      montar();
+      handlerReal();
+      const id = await idDoLembrete();
+      caixa.set(id, { id, status: "queued", created_at: new Date(Date.now() - 10 * 60_000).toISOString() });
+      await GET(req());
+      expect(naRede).toEqual([id]);
+      expect(linha()).toMatchObject({ reminder_message_id: id });
+      expect(linha().reminder_sent_at).not.toBeNull();
+    });
+
+    it("mensagem já SAIU (queda depois do envio): não reenvia, só carimba", async () => {
+      montar();
+      handlerReal();
+      const id = await idDoLembrete();
+      caixa.set(id, { id, status: "sent", created_at: new Date(Date.now() - 10 * 60_000).toISOString() });
+      await GET(req());
+      expect(naRede).toEqual([]);
+      expect(linha()).toMatchObject({ reminder_message_id: id });
+    });
+
+    it("mensagem FALHOU numa tentativa anterior: reenvia com id derivado (como a main faria)", async () => {
+      montar();
+      handlerReal();
+      const id = await idDoLembrete();
+      caixa.set(id, { id, status: "failed", created_at: new Date(Date.now() - 10 * 60_000).toISOString() });
+      await GET(req());
+      expect(naRede).toHaveLength(1);
+      expect(naRede[0]).not.toBe(id);
+      expect(linha().reminder_message_id).toBe(naRede[0]);
+    });
+
+    it("falha NESTA tentativa é o desfecho (sem laço de reenvio)", async () => {
+      montar();
+      handlerReal("failed");
+      await GET(req());
+      expect(naRede).toHaveLength(1);
       expect(linha().reminder_sent_at).not.toBeNull();
     });
   });

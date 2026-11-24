@@ -378,28 +378,42 @@ async function handle(req: NextRequest): Promise<Response> {
 
     await espacarEnvio(canal.id);
 
-    let enviada: { id?: string } | null = null;
+    let enviada: { id?: string; status?: string; created_at?: string } | null = null;
     let conversaId: string;
     try {
       conversaId = await ensureConversation(admin, org, contato.id, canal.id);
       // `webhook_source` é o ator que esta base dá a envio nascido de worker —
       // o mesmo que `lib/followup/enviar-texto-fixo.ts` usa. O `id` é o
       // compromisso, para o audit da mensagem correlacionar com a linha que a
-      // originou. O id da MENSAGEM é determinístico pelo compromisso: a
-      // reentrega depois de uma queda reencontra a linha em vez de mandar de novo.
-      enviada = (await sendMessageHandler(
-        admin,
-        {
-          organization_id: org,
-          actor: { type: "webhook_source", id: linha.id },
-          requestId: `agenda-reminder:${linha.id}`,
-          internalMessageId: idDaMensagemDoLembrete(linha.id),
-          deduplicateInternalMessage: true,
-        },
-        { conversation_id: conversaId, type: "text", body: corpo } as Parameters<
-          typeof sendMessageHandler
-        >[2],
-      )) as { id?: string } | null;
+      // originou.
+      //
+      // O id da MENSAGEM é determinístico pelo compromisso, e SEM
+      // `deduplicateInternalMessage` de propósito. Na reentrega depois de uma
+      // queda, `sendMessageHandler` reencontra a linha pelo id e:
+      //   - se ela ainda está `queued`/`sending` (a queda foi antes do envio
+      //     sair), segue o caminho normal e ENVIA — como a main, que mandava
+      //     uma mensagem nova;
+      //   - se ela já saiu (`sent`/`delivered`/`read`), devolve sem reenviar —
+      //     melhor que a main, que mandava em dobro;
+      //   - se ela FALHOU numa tentativa anterior, a main reenviaria depois da
+      //     queda; aqui também (abaixo), com um id derivado daquela falha.
+      const enviar = (internalMessageId: string) =>
+        sendMessageHandler(
+          admin,
+          {
+            organization_id: org,
+            actor: { type: "webhook_source", id: linha.id },
+            requestId: `agenda-reminder:${linha.id}`,
+            internalMessageId,
+          },
+          { conversation_id: conversaId, type: "text", body: corpo } as Parameters<
+            typeof sendMessageHandler
+          >[2],
+        ) as Promise<{ id?: string; status?: string; created_at?: string } | null>;
+      enviada = await enviar(idDaMensagemDoLembrete(linha.id));
+      if (enviada?.status === "failed" && enviada.created_at && enviada.created_at < posse && enviada.id) {
+        enviada = await enviar(idDaMensagemDoLembrete(`${linha.id}:apos:${enviada.id}`));
+      }
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : String(err);
       logger.error("[agenda-reminder] envio falhou", { appointmentId: linha.id, error: mensagem, requestId });
