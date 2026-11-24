@@ -38,6 +38,10 @@ function tipo(over: Record<string, unknown> = {}) {
     reminder_template_name: null,
     location_details: null,
     reminder_rich_format: false,
+    // Ligado por padrão NESTE arquivo: a maior parte dos casos abaixo exercita
+    // a maquinaria do escalonamento (posse, corrente, referências). Os de
+    // paridade com a main passam `false` explicitamente.
+    reminder_escalation_enabled: true,
     ...over,
   };
 }
@@ -77,11 +81,18 @@ describe("cron agenda-reminder — comportamento", () => {
     envio.mockResolvedValue({ id: "msg-1", status: "sent" });
   });
 
-  it("tipo de OUTRA organização no vínculo: não envia", async () => {
-    montar(tipo({ organization_id: "org-B" }));
+  it("tipo de OUTRA organização no vínculo: segue como a main, com as opções novas DESLIGADAS", async () => {
+    // A main enviava (com o modelo/local do tipo vinculado). As opções novas do
+    // tipo alheio — escalonamento e formato rico — não valem aqui.
+    montar(tipo({ organization_id: "org-B", reminder_rich_format: true }));
     await GET(req());
-    expect(envio).not.toHaveBeenCalled();
-    expect(linha().reminder_sent_at).toBeNull();
+    expect(envio).toHaveBeenCalledTimes(1);
+    const ctx = envio.mock.calls[0]![1] as { internalMessageId?: string };
+    expect(ctx.internalMessageId).toBeUndefined();
+    expect(corpoEnviado()).not.toContain("meet.google.com");
+    expect(linha().reminder_claimed_at).toBeNull();
+    expect(linha().reminder_message_id ?? null).toBeNull();
+    expect(linha().reminder_sent_at).not.toBeNull();
   });
 
   it("formato novo DESLIGADO: texto padrão de antes, sem o link, byte a byte", async () => {
@@ -441,6 +452,167 @@ describe("cron agenda-reminder — comportamento", () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  /**
+   * PARIDADE COM A MAIN quando o escalonamento está desligado (revisão 7).
+   *
+   * O registro anota cada chamada ao banco (`tabela:operação`) e ao handler de
+   * envio, na ordem. A sequência esperada é a do laço de `fork/main`
+   * (`git show fork/main:app/api/v1/cron/agenda-reminder/route.ts`): contato →
+   * canal → organização → [modelo] → envio → carimbo. Sem posse, sem leitura
+   * de `messages`, sem referências. Quando o ref `fork/main` existe neste
+   * clone, o MESMO cenário roda também sobre o arquivo da main e as duas
+   * sequências têm de ser idênticas.
+   */
+  describe("escalonamento DESLIGADO: mesma sequência de chamadas da main (revisão 7)", () => {
+    type Registro = string[];
+    function gravar(reg: Registro) {
+      const original = db.from.bind(db);
+      (db as { from: (t: string) => unknown }).from = (t: string) => {
+        const b = original(t) as Record<string, (...a: unknown[]) => unknown>;
+        for (const op of ["select", "update", "insert"] as const) {
+          const f = b[op]!;
+          b[op] = (...a: unknown[]) => {
+            if (!(op === "select" && reg.at(-1) === `${t}:update`)) reg.push(`${t}:${op}`);
+            return f(...a);
+          };
+        }
+        return b;
+      };
+      envio.mockImplementation(async (_db: unknown, ctx: { internalMessageId?: string }) => {
+        reg.push(`envio${ctx.internalMessageId ? `:${ctx.internalMessageId}` : ""}`);
+        return { id: "msg-x", status: statusDoEnvio };
+      });
+    }
+    let statusDoEnvio = "sent";
+    const ESPERADA = [
+      "calendar_appointments:select",
+      "contacts:select",
+      "channel_sessions:select",
+      "organizations:select",
+      "envio",
+      "calendar_appointments:update",
+    ];
+    const desligado = () => tipo({ reminder_escalation_enabled: false });
+
+    async function daMain(cenario: (r: Registro) => void): Promise<Registro | null> {
+      const { execSync } = await import("node:child_process");
+      const { writeFileSync, rmSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      let fonte: string;
+      try {
+        fonte = execSync("git show fork/main:app/api/v1/cron/agenda-reminder/route.ts", {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        });
+      } catch {
+        return null; // clone sem o ref (CI raso): fica a sequência explícita
+      }
+      const arq = join(__dirname, ".route-da-main.tmp.ts");
+      writeFileSync(arq, fonte);
+      try {
+        const main = (await import(/* @vite-ignore */ arq)) as { GET: typeof GET };
+        const reg: Registro = [];
+        cenario(reg);
+        await main.GET(req());
+        return reg;
+      } finally {
+        rmSync(arq, { force: true });
+      }
+    }
+
+    async function comparar(prepara: () => void, aposMontar: (reg: Registro) => void = () => {}) {
+      const nossa: Registro = [];
+      prepara();
+      gravar(nossa);
+      aposMontar(nossa);
+      await GET(req());
+      const main = await daMain((reg) => {
+        prepara();
+        gravar(reg);
+        aposMontar(reg);
+      });
+      return { nossa, main };
+    }
+
+    beforeEach(() => {
+      statusDoEnvio = "sent";
+    });
+
+    it("cenário normal", async () => {
+      const { nossa, main } = await comparar(() => montar(desligado()));
+      expect(nossa).toEqual(ESPERADA);
+      if (main) expect(nossa).toEqual(main);
+    });
+
+    it("CONTROLE: neste clone a comparação roda de verdade sobre o arquivo da main", async () => {
+      const { execSync } = await import("node:child_process");
+      let temRef = true;
+      try {
+        execSync("git rev-parse --verify -q fork/main", { stdio: "ignore" });
+      } catch {
+        temRef = false;
+      }
+      const { main } = await comparar(() => montar(desligado()));
+      // Sem o ref (CI raso), `main` é null e só a sequência explícita vale.
+      expect(main === null).toBe(!temRef);
+      if (main) expect(main).toEqual(ESPERADA);
+    });
+
+    it("cenário normal com formato rico ligado: só o texto muda, a sequência não", async () => {
+      const { nossa } = await comparar(() => montar(desligado()));
+      montar(tipo({ reminder_escalation_enabled: false, reminder_rich_format: true }));
+      const rico: Registro = [];
+      gravar(rico);
+      await GET(req());
+      expect(rico).toEqual(nossa);
+    });
+
+    it("envio volta FAILED: carimba como a main (a tentativa é o desfecho)", async () => {
+      statusDoEnvio = "failed";
+      const { nossa, main } = await comparar(() => montar(desligado()));
+      expect(nossa).toEqual(ESPERADA);
+      if (main) expect(nossa).toEqual(main);
+      expect(linha().reminder_sent_at).not.toBeNull();
+    });
+
+    it("QUEDA (exceção no envio): sem carimbo, a rodada seguinte tenta de novo — como a main", async () => {
+      const cair = (reg: Registro) =>
+        envio.mockImplementationOnce(async () => {
+          reg.push("envio");
+          throw new Error("canal caiu");
+        });
+      const { nossa, main } = await comparar(() => montar(desligado()), cair);
+      const semCarimbo = ESPERADA.slice(0, -1);
+      expect(nossa).toEqual(semCarimbo);
+      if (main) expect(nossa).toEqual(main);
+      // Rodada seguinte: tenta de novo.
+      montar(desligado());
+      const seguinte: Registro = [];
+      gravar(seguinte);
+      await GET(req());
+      expect(seguinte).toEqual(ESPERADA);
+    });
+
+    it("FALHA DE LEITURA do contato: pula como a main, sem tocar em messages nem em posse", async () => {
+      const quebraContato = () => {
+        const original = db.from.bind(db);
+        (db as { from: (t: string) => unknown }).from = (t: string) => {
+          if (t !== "contacts") return original(t);
+          const q: Record<string, unknown> = {};
+          for (const k of ["select", "eq"]) q[k] = () => q;
+          q.maybeSingle = async () => ({ data: null, error: { message: "leitura falhou" } });
+          return q;
+        };
+      };
+      const { nossa, main } = await comparar(() => {
+        montar(desligado());
+        quebraContato();
+      });
+      expect(nossa).toEqual(["calendar_appointments:select", "contacts:select"]);
+      if (main) expect(nossa).toEqual(main);
     });
   });
 });
