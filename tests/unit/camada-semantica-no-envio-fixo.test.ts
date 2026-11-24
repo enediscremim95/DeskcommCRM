@@ -107,6 +107,9 @@ function fakePool(camadaDaOrg: boolean) {
     if (/from conversations/.test(sql)) {
       return { rows: [{ id: CONVERSA, channel_session_id: CANAL, archived_at: null }] };
     }
+    if (/followup_flow_pointers/.test(sql) && /trigger_config/.test(sql)) {
+      return { rows: [{ trigger_config: {} }] };
+    }
     return { rows: [] };
   });
   return { pool: { query } as never, query };
