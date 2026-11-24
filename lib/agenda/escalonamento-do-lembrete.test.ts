@@ -438,6 +438,8 @@ describe("escalonarLembretesSemResposta", () => {
           { id: "tipo-longo", organization_id: "org-A", reminder_escalation_enabled: true, reminder_escalation_minutes: 60 },
         ],
       });
+      // A mensagem do lembrete do "novo" saiu às 15:00 (o prazo conta pela mensagem).
+      m.db.tabelas.messages![0]!.sent_at = "2026-12-03T15:00:00.000Z";
       await rodar(m);
       expect(m.criarTarefa).toHaveBeenCalledWith(m.db, expect.objectContaining({ sourceKey: "agenda:novo:lembrete_sem_confirmacao" }));
     });
