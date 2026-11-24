@@ -87,9 +87,13 @@ export const dynamic = "force-dynamic";
 const LIMITE_DA_VARREDURA = 200;
 
 /**
- * Validade da posse do ENVIO do lembrete. Menor que o intervalo do cron (5 min):
- * uma rodada que morreu com a posse não atrasa a reentrega além da rodada seguinte
- * — a mesma garantia da main, onde nada impedia o reenvio.
+ * Validade da posse do ENVIO do lembrete. MENOR que o intervalo do cron (5 min,
+ * `docker/scheduler/entrypoint.sh`) e contada a partir do INÍCIO da rodada que a
+ * tomou (a posse grava `agora`, não o instante da linha): por mais que a rodada
+ * demore, a posse dela já venceu quando a rodada seguinte começa. Uma rodada que
+ * morreu com a posse nunca bloqueia a seguinte — inclusive a última elegível
+ * antes do compromisso —, que é a garantia da main, onde nada impedia o reenvio.
+ * Se o intervalo do scheduler mudar, este número tem de continuar menor.
  */
 const LEASE_DO_ENVIO_MS = 4 * 60_000;
 
@@ -395,14 +399,20 @@ async function handle(req: NextRequest): Promise<Response> {
     // posse acrescenta é que duas rodadas cruzadas não enviam ao mesmo tempo; e
     // ela EXPIRA em `LEASE_DO_ENVIO_MS` (menor que o intervalo do cron), então
     // uma rodada que morreu com a posse não tira o compromisso da fila.
-    const posse = new Date().toISOString();
+    // A posse leva o INÍCIO DA RODADA, não o instante em que esta linha foi
+    // pega. Assim ela vence `LEASE_DO_ENVIO_MS` depois do início da rodada —
+    // sempre antes da rodada seguinte (o scheduler chama a cada 5 min,
+    // `docker/scheduler/entrypoint.sh`), por mais que esta rodada demore. Uma
+    // rodada que caiu nunca bloqueia a seguinte, inclusive a última elegível
+    // antes do compromisso.
+    const posse = agora.toISOString();
     const { error: libErr } = await admin
       .from("calendar_appointments")
       .update({ reminder_claimed_at: null })
       .eq("id", linha.id)
       .eq("organization_id", org)
       .is("reminder_sent_at", null)
-      .lt("reminder_claimed_at", new Date(Date.now() - LEASE_DO_ENVIO_MS).toISOString());
+      .lt("reminder_claimed_at", new Date(agora.getTime() - LEASE_DO_ENVIO_MS).toISOString());
     const { data: tomou, error: posseErr } = libErr
       ? { data: null, error: libErr }
       : await admin
@@ -457,7 +467,16 @@ async function handle(req: NextRequest): Promise<Response> {
       // nunca reenviada na mesma rodada. Se o elo escolhido voltar `failed`, o
       // carimbo fecha a tentativa (como a main); se o carimbo cair, a rodada
       // seguinte tenta de novo com o próximo elo.
-      enviada = await enviar(await idDaTentativa(admin, org, linha.id, conversaId, posse));
+      // Falha ao LER a corrente nunca aborta o envio: cai no que a main faz
+      // (mensagem nova, id aleatório). Nunca menos tentativas que a main.
+      const id = await idDaTentativa(admin, org, linha.id, conversaId, posse).catch((err: unknown) => {
+        logger.warn("[agenda-reminder] corrente de tentativas não lida; enviando como a main (id novo)", {
+          appointmentId: linha.id,
+          error: err instanceof Error ? err.message.slice(0, 160) : String(err),
+        });
+        return randomUUID();
+      });
+      enviada = await enviar(id);
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : String(err);
       logger.error("[agenda-reminder] envio falhou", { appointmentId: linha.id, error: mensagem, requestId });

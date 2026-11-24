@@ -383,5 +383,65 @@ describe("cron agenda-reminder — comportamento", () => {
       expect(linha().reminder_sent_at).not.toBeNull();
     });
   });
+
+  describe("caminho sem opt-in nunca faz menos tentativas que a main (revisão 6)", () => {
+    it("falha ao LER a corrente em messages: envia mesmo assim, com id novo (como a main)", async () => {
+      montar();
+      const original = db.from.bind(db);
+      (db as { from: (t: string) => unknown }).from = (t: string) => {
+        if (t !== "messages") return original(t);
+        const quebrado: Record<string, unknown> = {};
+        for (const k of ["select", "eq", "in", "is", "gt", "lt", "order", "limit"]) quebrado[k] = () => quebrado;
+        quebrado.maybeSingle = async () => ({ data: null, error: { message: "leitura falhou" } });
+        return quebrado;
+      };
+      await GET(req());
+      expect(envio).toHaveBeenCalledTimes(1);
+      const ctx = envio.mock.calls[0]![1] as { internalMessageId: string };
+      expect(ctx.internalMessageId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(linha().reminder_sent_at).not.toBeNull();
+    });
+
+    it("a posse leva o INÍCIO da rodada, mesmo quando a linha é pega minutos depois", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        const t0 = new Date(Date.now());
+        vi.setSystemTime(t0);
+        montar();
+        // A rodada demorou: esta linha só chega à posse 3 min depois do início.
+        const janela = await import("@/lib/automation/janela-do-canal");
+        vi.mocked(janela.adiarAteAJanelaAbrir).mockImplementationOnce(async () => {
+          vi.setSystemTime(new Date(t0.getTime() + 3 * 60_000));
+          return null;
+        });
+        let posseVista: unknown = null;
+        envio.mockImplementationOnce(async () => {
+          posseVista = linha().reminder_claimed_at;
+          return { id: "msg-1", status: "sent" };
+        });
+        await GET(req());
+        expect(posseVista).toBe(t0.toISOString());
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("rodada que caiu com a posse tomada tarde não bloqueia a rodada seguinte (5 min depois)", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        const t0 = new Date(Date.now());
+        montar();
+        // A rodada anterior começou em t0 e caiu depois de tomar a posse.
+        linha().reminder_claimed_at = t0.toISOString();
+        // Próxima rodada do scheduler: t0 + 5 min.
+        vi.setSystemTime(new Date(t0.getTime() + 5 * 60_000));
+        await GET(req());
+        expect(envio).toHaveBeenCalledTimes(1);
+        expect(linha().reminder_sent_at).not.toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });
 
