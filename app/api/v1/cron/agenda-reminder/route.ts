@@ -93,6 +93,17 @@ const LIMITE_DA_VARREDURA = 200;
  */
 const LEASE_DO_ENVIO_MS = 4 * 60_000;
 
+/** Teto de tentativas falhas antigas seguidas numa rodada antes do id aleatório. */
+const MAX_ELOS_DE_REENVIO = 20;
+
+/** A mensagem devolvida é uma falha de tentativa ANTERIOR (não desta posse)? */
+function ehFalhaAnterior(
+  m: { id?: string; status?: string; created_at?: string } | null,
+  posse: string,
+): boolean {
+  return Boolean(m?.id && m.status === "failed" && m.created_at && m.created_at < posse);
+}
+
 /** Maior antecedência aceita pela coluna (43200 min = 30 dias). */
 const MAIOR_ANTECEDENCIA_MS = 43_200 * 60_000;
 
@@ -410,9 +421,19 @@ async function handle(req: NextRequest): Promise<Response> {
             typeof sendMessageHandler
           >[2],
         ) as Promise<{ id?: string; status?: string; created_at?: string } | null>;
+      // Cada falha de uma tentativa ANTERIOR (criada antes desta posse) aponta
+      // para a próxima tentativa, com id derivado dela. A corrente é seguida até
+      // uma tentativa NOVA — então, como na main, toda rodada sem carimbo tenta
+      // enviar de novo, por mais tentativas falhas que já existam. Passado o
+      // teto de elos por rodada, um id aleatório: exatamente o que a main faz.
       enviada = await enviar(idDaMensagemDoLembrete(linha.id));
-      if (enviada?.status === "failed" && enviada.created_at && enviada.created_at < posse && enviada.id) {
-        enviada = await enviar(idDaMensagemDoLembrete(`${linha.id}:apos:${enviada.id}`));
+      for (let elo = 0; ehFalhaAnterior(enviada, posse); elo += 1) {
+        enviada = await enviar(
+          elo < MAX_ELOS_DE_REENVIO
+            ? idDaMensagemDoLembrete(`${linha.id}:apos:${enviada!.id}`)
+            : randomUUID(),
+        );
+        if (elo >= MAX_ELOS_DE_REENVIO) break;
       }
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : String(err);

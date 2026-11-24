@@ -273,6 +273,73 @@ describe("cron agenda-reminder — comportamento", () => {
       expect(linha().reminder_message_id).toBe(naRede[0]);
     });
 
+    it("tentativa DERIVADA também falhou sem carimbo: a próxima rodada tenta de novo (revisão 4)", async () => {
+      montar();
+      handlerReal();
+      const { idDaMensagemDoLembrete } = await import("@/lib/agenda/lembrete");
+      const antigo = new Date(Date.now() - 10 * 60_000).toISOString();
+      const id0 = idDaMensagemDoLembrete("ap-1");
+      const id1 = idDaMensagemDoLembrete(`ap-1:apos:${id0}`);
+      caixa.set(id0, { id: id0, status: "failed", created_at: antigo });
+      caixa.set(id1, { id: id1, status: "failed", created_at: antigo });
+      await GET(req());
+      expect(naRede).toHaveLength(1);
+      expect([id0, id1]).not.toContain(naRede[0]);
+      expect(linha().reminder_message_id).toBe(naRede[0]);
+    });
+
+    it("corrente maior que o teto de elos: cai num id novo, como a main", async () => {
+      montar();
+      handlerReal();
+      const { idDaMensagemDoLembrete } = await import("@/lib/agenda/lembrete");
+      const antigo = new Date(Date.now() - 10 * 60_000).toISOString();
+      const corrente: string[] = [];
+      let id = idDaMensagemDoLembrete("ap-1");
+      for (let i = 0; i < 25; i++) {
+        caixa.set(id, { id, status: "failed", created_at: antigo });
+        corrente.push(id);
+        id = idDaMensagemDoLembrete(`ap-1:apos:${id}`);
+      }
+      await GET(req());
+      expect(naRede).toHaveLength(1);
+      expect(corrente).not.toContain(naRede[0]);
+    });
+
+    it("comparado à main: N rodadas que caem sem carimbo = N tentativas de envio (sem opções novas)", async () => {
+      // A main não tem posse nem id determinístico: toda rodada sem
+      // `reminder_sent_at` cria e tenta enviar uma mensagem. Aqui, com todo
+      // envio falhando e o carimbo caindo, cada rodada também tenta uma vez.
+      montar();
+      handlerReal("failed");
+      const original = db.from.bind(db);
+      (db as { from: (t: string) => unknown }).from = (t: string) => {
+        const b = original(t) as { update: (p: Record<string, unknown>) => unknown };
+        if (t !== "calendar_appointments") return b;
+        const update = b.update;
+        b.update = (p: Record<string, unknown>) => {
+          if ("reminder_sent_at" in p && p.reminder_sent_at) {
+            const fake: Record<string, unknown> = {};
+            fake.eq = () => fake;
+            fake.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: null, error: { message: "queda" } }).then(res);
+            return fake;
+          }
+          return update(p);
+        };
+        return b;
+      };
+      const RODADAS = 4;
+      for (let i = 0; i < RODADAS; i++) {
+        // Cada rodada começa depois da anterior ter "caído": a posse dela venceu
+        // e as tentativas já gravadas são anteriores à posse nova.
+        linha().reminder_claimed_at = new Date(Date.now() - 5 * 60_000).toISOString();
+        for (const m of caixa.values()) m.created_at = new Date(Date.now() - 10 * 60_000).toISOString();
+        await GET(req());
+      }
+      expect(naRede).toHaveLength(RODADAS);
+      expect(new Set(naRede).size).toBe(RODADAS);
+      expect(linha().reminder_sent_at).toBeNull();
+    });
+
     it("falha NESTA tentativa é o desfecho (sem laço de reenvio)", async () => {
       montar();
       handlerReal("failed");
