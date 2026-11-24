@@ -228,7 +228,40 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
     mode: z.literal('template'),
     template_id: z.string().uuid(),
   }),
+  /**
+   * Tarefa para uma PESSOA da equipe (o "SDR humano"): cria uma linha em
+   * `crm_tasks` atribuída a quem atende a conversa/número (fallbacks em
+   * `lib/tarefas/tarefa-humana.ts`), abre um aviso na Central e NÃO envia
+   * nada ao contato. `{{nome}}` vira o nome do contato.
+   */
+  z.strictObject({
+    mode: z.literal('human_task'),
+    title: z.string().trim().min(1).max(200),
+    description: z.string().max(2000).optional(),
+    priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+    /** Prazo da tarefa a partir do momento em que o fluxo passa pelo nó. Ausente = sem prazo. */
+    due_in_minutes: z.number().int().min(0).max(43_200).optional(),
+  }),
+  /**
+   * Avança o negócio do contato para `stage_id` — SÓ para a frente, pela mesma
+   * guarda do Kanban (`lib/leads/kanban-guard.ts`). Sem destino, destino de
+   * outra organização/funil ou recusa da guarda = o fluxo segue sem mover e o
+   * motivo fica registrado no passo. Nunca cria etapa.
+   */
+  z.strictObject({
+    mode: z.literal('move_stage'),
+    stage_id: z.string().uuid().optional(),
+  }),
 ]);
+
+/** Modos da ação que NÃO falam com o contato — o motor executa e segue, sem turno de envio. */
+export const MODOS_DE_ACAO_INTERNA = ['human_task', 'move_stage'] as const;
+export type ModoDeAcaoInterna = (typeof MODOS_DE_ACAO_INTERNA)[number];
+export function ehAcaoInterna(
+  config: z.infer<typeof actionConfigSchema>,
+): config is Extract<z.infer<typeof actionConfigSchema>, { mode: ModoDeAcaoInterna }> {
+  return (MODOS_DE_ACAO_INTERNA as readonly string[]).includes(config.mode);
+}
 
 /**
  * One rule of a `condition` node. In `branching: 'per_check'` it IS a branch,

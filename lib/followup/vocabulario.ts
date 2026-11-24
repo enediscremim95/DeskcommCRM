@@ -433,6 +433,8 @@ export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
   text: "Texto fixo",
   ai_message: "Mensagem escrita pela IA",
   template: "Modelo de mensagem pronto",
+  human_task: "Tarefa para a equipe (não envia ao contato)",
+  move_stage: "Avançar o negócio de etapa (não envia ao contato)",
 };
 
 // ─── nó final ────────────────────────────────────────────────────────────

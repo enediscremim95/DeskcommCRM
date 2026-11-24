@@ -78,11 +78,15 @@ export interface EnrollmentEventRef {
   payload?: Record<string, unknown> | null;
 }
 
+/** Ação que não fala com o contato — executada pelo engine, sem turno de envio. */
+export type EfeitoInterno = "human_task" | "move_stage";
+
 export type NodeResult =
   // `reason` só aparece quando o avanço NÃO é o avanço comum: hoje, o trigger
   // desistindo do plano de tempo (o turno nunca voltou). Vira event_type próprio
   // no engine — seguir sem plano é um fato que o operador precisa poder ler.
-  | { kind: "advance"; next_node_id: string; next_eval_at: Date; reason?: "plan_timeout"; repeat?: { index: number; total: number } }
+  // `efeito` marca a ação INTERNA (tarefa humana / mover etapa): o engine a executa antes de gravar o passo.
+  | { kind: "advance"; next_node_id: string; next_eval_at: Date; reason?: "plan_timeout"; repeat?: { index: number; total: number }; efeito?: EfeitoInterno }
   // stays on the node. `wake_status` parks `match_reply` in waiting_reply without a job.
   | { kind: "wait"; next_eval_at: Date; wake_status?: "active" | "waiting_reply" }
   | {
@@ -607,6 +611,14 @@ export function processNode(input: {
     }
 
     case "action": {
+      // Ação INTERNA (tarefa humana, mover etapa): nada vai ao contato, então não
+      // há turno de envio, recheck nem dead-man — o engine executa o efeito
+      // (idempotente pela chave do passo) e o fluxo segue pela saída `always`.
+      if (node.config.mode === "human_task" || node.config.mode === "move_stage") {
+        const edge = selectEdge(edges, node.id, { type: "always" });
+        if (!edge) return { kind: "fail", error: `action node "${node.id}" has no outbound edge` };
+        return { kind: "advance", next_node_id: edge.target, next_eval_at: clock(), efeito: node.config.mode };
+      }
       // At-most-once send: enqueue the turn EXACTLY ONCE per occupancy. First entry
       // (no prior occupancy event) enqueues; a recheck fired while the turn is still in
       // flight — completeTurnForEnrollment (turn-bridge) hasn't advanced the enrollment

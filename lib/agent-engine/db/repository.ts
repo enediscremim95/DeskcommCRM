@@ -73,6 +73,10 @@ export type InboxKind =
   // lê a Central os dois pedem a mesma coisa: alguém precisa ligar de volta.
   | 'voice_call_missed'
   | 'webhook_source_silent'
+  // (migration 0320) Trabalho que o automático passou a uma PESSOA: tarefa humana
+  // de fluxo de follow-up ou lembrete de reunião sem confirmação. A tarefa mora
+  // em `crm_tasks`; o aviso é o que faz alguém olhar para ela.
+  | 'human_task'
   | 'other';
 
 export interface InboxItemRow {

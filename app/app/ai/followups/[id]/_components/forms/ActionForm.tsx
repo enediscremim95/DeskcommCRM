@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -14,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { actionConfigSchema } from "@/lib/followup/graph-schema";
 import { MODOS_DA_ACAO, opcoes, type ModoDaAcao } from "@/lib/followup/vocabulario";
 import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
+import { useEtapasDeGatilho } from "@/hooks/followup/useEtapasDeGatilho";
 import { useT } from "@/hooks/i18n/useT";
 
 import type { ConfigOf } from "./shared";
@@ -75,6 +77,40 @@ function SeletorDeModelo({
   );
 }
 
+/** Etapa de destino do "avançar etapa" — nome do funil e da etapa, nunca o uuid. */
+function SeletorDeEtapa({ valor, onChange }: { valor: string; onChange: (stageId: string) => void }) {
+  const t = useT();
+  const { etapas, carregando } = useEtapasDeGatilho();
+  if (carregando) return <p className="text-xs text-text-muted">{t("Carregando as etapas do funil…")}</p>;
+  if (!etapas.length) {
+    return <p className="text-xs text-text-muted">{t("Nenhuma etapa de funil encontrada nesta organização.")}</p>;
+  }
+  const SEM_ETAPA = "__nenhuma__";
+  return (
+    <Select value={valor === "" ? SEM_ETAPA : valor} onValueChange={(v) => onChange(v === SEM_ETAPA ? "" : v)}>
+      <SelectTrigger id="action-stage-id">
+        <SelectValue placeholder={t("Escolha a etapa")} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={SEM_ETAPA}>{t("Nenhuma (o passo não move nada)")}</SelectItem>
+        {etapas.map((e) => (
+          <SelectItem key={e.stageId} value={e.stageId}>
+            {e.pipelineName} · {e.stageName}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+const PRIORIDADES_DO_PASSO = [
+  ["low", "Baixa"],
+  ["medium", "Média"],
+  ["high", "Alta"],
+  ["urgent", "Urgente"],
+] as const;
+type PrioridadeDoPasso = (typeof PRIORIDADES_DO_PASSO)[number][0];
+
 export function ActionForm({
   config,
   onChange,
@@ -90,6 +126,17 @@ export function ActionForm({
     config.mode === "ai_message" ? (config.fallback_template_id ?? "") : "",
   );
   const [templateId, setTemplateId] = useState(config.mode === "template" ? config.template_id : "");
+  const [taskTitle, setTaskTitle] = useState(config.mode === "human_task" ? config.title : "");
+  const [taskDescription, setTaskDescription] = useState(
+    config.mode === "human_task" ? (config.description ?? "") : "",
+  );
+  const [taskPriority, setTaskPriority] = useState<PrioridadeDoPasso>(
+    config.mode === "human_task" ? (config.priority ?? "high") : "high",
+  );
+  const [taskDueMin, setTaskDueMin] = useState(
+    config.mode === "human_task" && config.due_in_minutes !== undefined ? String(config.due_in_minutes) : "",
+  );
+  const [stageId, setStageId] = useState(config.mode === "move_stage" ? (config.stage_id ?? "") : "");
   const [error, setError] = useState<string | null>(null);
 
   const commit = (next: {
@@ -98,7 +145,13 @@ export function ActionForm({
     promptHint: string;
     fallbackTemplateId: string;
     templateId: string;
+    taskTitle: string;
+    taskDescription: string;
+    taskPriority: PrioridadeDoPasso;
+    taskDueMin: string;
+    stageId: string;
   }) => {
+    const prazo = next.taskDueMin.trim() === "" ? undefined : Number(next.taskDueMin);
     const candidate =
       next.mode === "text"
         ? { mode: "text" as const, body: next.body }
@@ -108,7 +161,17 @@ export function ActionForm({
               prompt_hint: next.promptHint,
               ...(next.fallbackTemplateId.trim() ? { fallback_template_id: next.fallbackTemplateId } : {}),
             }
-          : { mode: "template" as const, template_id: next.templateId };
+          : next.mode === "human_task"
+            ? {
+                mode: "human_task" as const,
+                title: next.taskTitle,
+                ...(next.taskDescription.trim() ? { description: next.taskDescription } : {}),
+                priority: next.taskPriority,
+                ...(prazo !== undefined ? { due_in_minutes: prazo } : {}),
+              }
+            : next.mode === "move_stage"
+              ? { mode: "move_stage" as const, ...(next.stageId ? { stage_id: next.stageId } : {}) }
+              : { mode: "template" as const, template_id: next.templateId };
     const parsed = actionConfigSchema.safeParse(candidate);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? t("Configuração inválida."));
@@ -118,12 +181,22 @@ export function ActionForm({
     onChange(parsed.data);
   };
 
-  const fields = { body, promptHint, fallbackTemplateId, templateId };
+  const fields = {
+    body,
+    promptHint,
+    fallbackTemplateId,
+    templateId,
+    taskTitle,
+    taskDescription,
+    taskPriority,
+    taskDueMin,
+    stageId,
+  };
 
   return (
     <div className="space-y-3">
       <div className="space-y-2">
-        <Label htmlFor="action-mode">{t("Como escrever a mensagem")}</Label>
+        <Label htmlFor="action-mode">{t("O que este passo faz")}</Label>
         <Select
           value={mode}
           onValueChange={(v) => {
@@ -188,6 +261,90 @@ export function ActionForm({
             />
           </div>
         </>
+      ) : mode === "human_task" ? (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="action-task-title">{t("Título da tarefa")}</Label>
+            <Input
+              id="action-task-title"
+              maxLength={200}
+              value={taskTitle}
+              placeholder={t("Ligar para {{nome}}")}
+              onChange={(e) => {
+                setTaskTitle(e.target.value);
+                commit({ mode, ...fields, taskTitle: e.target.value });
+              }}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="action-task-description">{t("Descrição (opcional)")}</Label>
+            <Textarea
+              id="action-task-description"
+              maxLength={2000}
+              value={taskDescription}
+              onChange={(e) => {
+                setTaskDescription(e.target.value);
+                commit({ mode, ...fields, taskDescription: e.target.value });
+              }}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-2">
+              <Label htmlFor="action-task-priority">{t("Prioridade")}</Label>
+              <Select
+                value={taskPriority}
+                onValueChange={(v) => {
+                  const p = v as PrioridadeDoPasso;
+                  setTaskPriority(p);
+                  commit({ mode, ...fields, taskPriority: p });
+                }}
+              >
+                <SelectTrigger id="action-task-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORIDADES_DO_PASSO.map(([valor, rotulo]) => (
+                    <SelectItem key={valor} value={valor}>
+                      {t(rotulo)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="action-task-due">{t("Prazo (minutos)")}</Label>
+              <Input
+                id="action-task-due"
+                type="number"
+                min={0}
+                max={43200}
+                value={taskDueMin}
+                onChange={(e) => {
+                  setTaskDueMin(e.target.value);
+                  commit({ mode, ...fields, taskDueMin: e.target.value });
+                }}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-text-muted">
+            {t("Nada é enviado ao contato. A tarefa vai para quem atende a conversa ou o número; sem ninguém, para o dono do negócio e depois para a administração. Um aviso abre na Central.")}{" "}
+            {t("{{nome}}")} {t("vira o nome do contato.")}
+          </p>
+        </>
+      ) : mode === "move_stage" ? (
+        <div className="space-y-2">
+          <Label htmlFor="action-stage-id">{t("Etapa de destino")}</Label>
+          <SeletorDeEtapa
+            valor={stageId}
+            onChange={(v) => {
+              setStageId(v);
+              commit({ mode, ...fields, stageId: v });
+            }}
+          />
+          <p className="text-xs text-text-muted">
+            {t("Só avança: se a etapa estiver antes da atual, for Ganho ou Perdido, ou de outro funil, o negócio fica onde está e o motivo aparece no acompanhamento. Nada é enviado ao contato.")}
+          </p>
+        </div>
       ) : (
         <div className="space-y-2">
           <Label htmlFor="action-template-id">{t("Modelo de mensagem")}</Label>

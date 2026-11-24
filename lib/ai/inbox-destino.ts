@@ -71,6 +71,7 @@ export const POLITICAS_DE_AVISO = {
   // aviso, escrito pelo worker.
   voice_call_missed: { refs: ["contact"], orientacao: "Retorne a ligação quando puder — quem ligou não foi atendido." },
   webhook_source_silent: { refs: ["webhook_source"], orientacao: "Abra a fonte, teste a entrada e confira o formulário publicado." },
+  human_task: { refs: ["conversation", "contact"], orientacao: "Faça o que a tarefa pede (ligar, mandar mensagem) e registre o resultado em Tarefas." },
   other: { refs: ["lead", "channel_session", "appointment", "ai_agent"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 
