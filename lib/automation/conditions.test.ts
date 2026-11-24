@@ -7,7 +7,12 @@ const ctx = {
     added_tags: ["vip", "novo"],
     channel_session_id: "canal-novo",
   },
-  lead: { title: "Ana", custom_fields: { utm_source: "instagram" }, value_cents: 5000 },
+  lead: {
+    title: "Ana",
+    source: "webhook",
+    custom_fields: { utm_source: "instagram" },
+    value_cents: 5000,
+  },
   contact: { tags: ["cliente", "fluxo_padrinhos_orcamento"] },
 };
 
@@ -35,6 +40,20 @@ describe("evaluateConditions", () => {
     expect(evaluateConditions([{ field: "lead.value_cents", op: "eq", value: "5000" }], ctx)).toBe(true));
   it("neq", () =>
     expect(evaluateConditions([{ field: "event.to_stage_id", op: "neq", value: "s1" }], ctx)).toBe(true));
+  it("lead.source com eq inclui a origem exata", () =>
+    expect(
+      evaluateConditions([{ field: "lead.source", op: "eq", value: "webhook" }], ctx),
+    ).toBe(true));
+  it("lead.source com neq exclui quem chegou pelo WhatsApp", () => {
+    const condition = [{ field: "lead.source", op: "neq" as const, value: "whatsapp" }];
+    expect(evaluateConditions(condition, ctx)).toBe(true);
+    expect(
+      evaluateConditions(condition, {
+        ...ctx,
+        lead: { ...ctx.lead, source: "whatsapp" },
+      }),
+    ).toBe(false);
+  });
   it("contains em array", () =>
     expect(evaluateConditions([{ field: "event.added_tags", op: "contains", value: "vip" }], ctx)).toBe(true));
   it("contains em string (case-insensitive)", () =>

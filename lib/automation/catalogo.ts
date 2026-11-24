@@ -1,4 +1,7 @@
-import type { CreateAutomationRuleInput } from "@/lib/schemas/webhooks";
+import {
+  AUTOMATION_CONDITION_FIELDS,
+  type CreateAutomationRuleInput,
+} from "@/lib/schemas/webhooks";
 
 export const MODELO_ATENDIMENTO_PREFIXO = "Modelo para revisar:";
 
@@ -28,16 +31,7 @@ export const AUTOMATION_CATALOG = {
   ],
   conditions: {
     operators: ["eq", "neq", "contains"],
-    fields: [
-      "lead.title",
-      "lead.tags",
-      "lead.source_metadata.utm_source",
-      "event.to_stage_id",
-      "event.body_preview",
-      "event.channel_session_id",
-      "event.added_tags",
-      "contact.tags",
-    ],
+    fields: AUTOMATION_CONDITION_FIELDS,
     faz: "Todas as condições precisam ser verdadeiras para a regra executar.",
   },
   guards: {
