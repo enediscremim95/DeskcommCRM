@@ -139,7 +139,7 @@ describe("cron agenda-reminder — comportamento", () => {
 
   it("exceção no envio devolve a posse para a próxima rodada", async () => {
     montar();
-    envio.mockRejectedValueOnce(new Error("waha fora"));
+    envio.mockRejectedValueOnce(new Error("canal fora do ar"));
     await GET(req());
     expect(linha().reminder_sent_at).toBeNull();
     await GET(req());
