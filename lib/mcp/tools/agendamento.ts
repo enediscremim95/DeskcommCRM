@@ -17,6 +17,7 @@
  * `ctx.organizationId` e filtra `organization_id` em toda query. Está escrito lá
  * dentro, e é o que separa esta chamada de um vazamento entre organizações.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import {
@@ -441,7 +442,7 @@ const ROTULO_DO_CONVITE = {
  * não tem RLS) e decide o convidado. Ver `lib/agenda/convite-por-email.ts`.
  */
 async function emailDoConvidado(
-  ctx: { supabase: import("@supabase/supabase-js").SupabaseClient; organizationId: string },
+  ctx: { supabase: SupabaseClient; organizationId: string },
   tipoId: string,
   contactId: string,
   informado: string | undefined,
@@ -459,7 +460,7 @@ async function emailDoConvidado(
 }
 
 async function lerEmailDoConvidado(
-  ctx: { supabase: import("@supabase/supabase-js").SupabaseClient; organizationId: string },
+  ctx: { supabase: SupabaseClient; organizationId: string },
   tipoId: string,
   contactId: string,
   informado: string | undefined,

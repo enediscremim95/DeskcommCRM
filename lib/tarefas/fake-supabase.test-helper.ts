@@ -23,6 +23,7 @@ export interface FakeSupabase {
 export function criarFakeSupabase(
   tabelas: Record<string, Linha[]>,
   unicos: Record<string, string[][]> = {},
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dublê de teste: o builder é encadeável e dinâmico
 ): FakeSupabase & { from: (t: string) => any } {
   let seq = 0;
   const fake = {
@@ -63,6 +64,7 @@ export function criarFakeSupabase(
         }
         return { data: linhas(), error: null };
       };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- idem: imita o query builder do supabase-js
       const builder: any = {
         select: () => builder,
         insert: (p: Linha | Linha[]) => ((op = "insert"), (payload = p), builder),
