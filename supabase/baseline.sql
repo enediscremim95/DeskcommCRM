@@ -32852,7 +32852,7 @@ grant execute on function public.fn_usar_credencial_ia_padrao(uuid, uuid, uuid, 
 
 notify pgrst, 'reload schema';
 
--- ---- Tarefa humana do follow-up, convite, lembrete rico e escalonamento (migrations 0320/0321) ----
+-- ---- Tarefa humana do follow-up, convite, lembrete rico e escalonamento (migrations 0320/0321/0322) ----
 -- Aditivo e idempotente: o `update.sh` re-aplica este arquivo inteiro, e o
 -- `test:db` o faz com ON_ERROR_STOP=1. Constraints entram `NOT VALID` (via
 -- `do` com checagem no catálogo, para o re-aplicar não errar) e são validadas
@@ -32891,6 +32891,7 @@ alter table public.calendar_event_types
   add column if not exists reminder_escalation_minutes integer not null default 20;
 
 alter table public.calendar_appointments
+  add column if not exists reminder_claimed_at timestamptz,
   add column if not exists reminder_message_id uuid,
   add column if not exists reminder_conversation_id uuid,
   add column if not exists reminder_escalation_claimed_at timestamptz,
@@ -32934,6 +32935,8 @@ comment on column public.calendar_event_types.reminder_escalation_enabled is
   'Opt-in: N minutos após o lembrete entregue, sem resposta do cliente naquela conversa, cria tarefa + aviso e passa a conversa para uma pessoa.';
 comment on column public.calendar_event_types.reminder_escalation_minutes is
   'Minutos depois do envio do lembrete até decidir o escalonamento (5 a 720, padrão 20).';
+comment on column public.calendar_appointments.reminder_claimed_at is
+  'Posse do ENVIO do lembrete por uma rodada do cron (lease de 4 min, menor que o intervalo do cron). reminder_sent_at só é gravado depois do envio, junto com a mensagem e a conversa: uma queda no meio não some com o lembrete.';
 comment on column public.calendar_appointments.reminder_message_id is
   'A mensagem do lembrete que saiu. O escalonamento só conta prazo se ela não falhou.';
 comment on column public.calendar_appointments.reminder_conversation_id is

@@ -13,13 +13,10 @@
 -- * A troca do vocabulário de `agent_inbox_items.kind` é UM `alter table` com
 --   `drop ... , add ... not valid`: atômica (nunca há janela sem a constraint) e
 --   sem varredura.
--- * Índices: o runner roda em transação, então `CREATE INDEX CONCURRENTLY` não é
---   possível AQUI. Os dois índices são PARCIAIS sobre colunas novas (todas nulas
---   na criação): o build lê a tabela uma vez sob lock SHARE (bloqueia escrita, não
---   leitura) e indexa zero linhas. `crm_tasks` e `agent_inbox_items` são tabelas
---   de ordem de milhares de linhas nas instalações medidas. O kit self-host
---   (`baseline.sql`, aplicado por `psql -f` em autocommit) cria os mesmos índices
---   com `CONCURRENTLY`.
+-- * Índices: NÃO moram aqui. Criá-los na mesma transação que adiciona as
+--   colunas prolongaria o lock ACCESS EXCLUSIVE do `add column` pela varredura do
+--   build. Eles estão na 0322, transação própria (ver o cabeçalho dela). O kit
+--   self-host (`baseline.sql`, `psql -f` em autocommit) os cria com `CONCURRENTLY`.
 --
 -- ─── O QUE ENTRA ────────────────────────────────────────────────────────────
 -- 1. crm_tasks.source_key / alerted_at — tarefa criada por automação carrega a
@@ -31,7 +28,9 @@
 --    agendamento pela IA), reminder_rich_format (lembrete com link e variáveis;
 --    desligado = texto de antes byte a byte), reminder_escalation_enabled e
 --    reminder_escalation_minutes (padrão 20).
--- 5. calendar_appointments: reminder_message_id / reminder_conversation_id (o
+-- 5. calendar_appointments: reminder_claimed_at (lease do ENVIO do lembrete;
+--    reminder_sent_at só depois do envio, como na main), reminder_message_id /
+--    reminder_conversation_id (o
 --    envio que de fato saiu — o prazo do escalonamento conta a partir dele e a
 --    resposta é procurada NAQUELA conversa), reminder_escalation_claimed_at
 --    (posse atômica antes de efeito), reminder_escalation_checked_at / _result
@@ -41,10 +40,6 @@ alter table public.crm_tasks
   add column if not exists source_key text,
   add column if not exists alerted_at timestamptz;
 
-create unique index if not exists uniq_crm_tasks_source_key
-  on public.crm_tasks (organization_id, source_key)
-  where source_key is not null;
-
 comment on column public.crm_tasks.source_key is
   'Chave do fato automático que criou a tarefa (passo de follow-up, escalonamento de lembrete). Única por organização: retry não duplica. Nula em tarefa criada por pessoa.';
 comment on column public.crm_tasks.alerted_at is
@@ -52,10 +47,6 @@ comment on column public.crm_tasks.alerted_at is
 
 alter table public.agent_inbox_items
   add column if not exists dedupe_key text;
-
-create unique index if not exists uniq_agent_inbox_dedupe_key
-  on public.agent_inbox_items (organization_id, dedupe_key)
-  where dedupe_key is not null;
 
 comment on column public.agent_inbox_items.dedupe_key is
   'Chave do efeito que abriu o aviso (ex.: crm_task:<id>). Única por organização quando presente: o mesmo efeito nunca abre dois avisos.';
@@ -94,6 +85,7 @@ comment on column public.calendar_event_types.reminder_escalation_minutes is
   'Minutos depois do envio do lembrete até decidir o escalonamento (5 a 720, padrão 20).';
 
 alter table public.calendar_appointments
+  add column if not exists reminder_claimed_at timestamptz,
   add column if not exists reminder_message_id uuid,
   add column if not exists reminder_conversation_id uuid,
   add column if not exists reminder_escalation_claimed_at timestamptz,
@@ -111,6 +103,8 @@ alter table public.calendar_appointments
   add constraint calendar_appointments_escalonamento_resultado
     check (reminder_escalation_result in ('confirmed', 'escalated', 'not_applicable')) not valid;
 
+comment on column public.calendar_appointments.reminder_claimed_at is
+  'Posse do ENVIO do lembrete por uma rodada do cron (lease de 4 min, menor que o intervalo do cron). reminder_sent_at só é gravado depois do envio, junto com a mensagem e a conversa: uma queda no meio não some com o lembrete.';
 comment on column public.calendar_appointments.reminder_message_id is
   'A mensagem do lembrete que saiu. O escalonamento só conta prazo se ela não falhou.';
 comment on column public.calendar_appointments.reminder_conversation_id is

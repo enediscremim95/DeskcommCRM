@@ -2151,6 +2151,7 @@ export type Database = {
       }
       calendar_appointments: {
         Row: {
+          reminder_claimed_at: string | null
           reminder_message_id: string | null
           reminder_conversation_id: string | null
           reminder_escalation_claimed_at: string | null
@@ -2221,6 +2222,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          reminder_claimed_at?: string | null
           reminder_message_id?: string | null
           reminder_conversation_id?: string | null
           reminder_escalation_claimed_at?: string | null
@@ -2291,6 +2293,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          reminder_claimed_at?: string | null
           reminder_message_id?: string | null
           reminder_conversation_id?: string | null
           reminder_escalation_claimed_at?: string | null
