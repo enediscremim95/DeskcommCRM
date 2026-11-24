@@ -16,8 +16,10 @@
  *
  * ─── Quando o prazo começa ──────────────────────────────────────────────────
  *
- * Só depois de um envio que NÃO falhou: a mensagem do lembrete
- * (`reminder_message_id`) precisa estar `sent`/`delivered`/`read`. `failed` =
+ * Só depois de um envio que NÃO falhou, e contado a partir do ENVIO EFETIVO (o
+ * maior entre o carimbo gravado depois do envio e o `sent_at` da mensagem),
+ * nunca da posse: a mensagem do lembrete (`reminder_message_id`) precisa estar
+ * `sent`/`delivered`/`read`. Respostas contam a partir do mesmo instante. `failed` =
  * `not_applicable` (não dá para cobrar resposta de quem não recebeu);
  * `queued`/`sending` = espera. Lembrete enviado antes desta versão (sem
  * `reminder_message_id`) = `not_applicable`: não há como provar que saiu.
@@ -41,6 +43,22 @@
  * (`dedupe_key`). Limite conhecido: se o orquestrador falhar DEPOIS de avisar o
  * lead, o retry pode avisá-lo de novo — o handoff oficial não tem chave de envio.
  *
+ * ─── Janela e justiça entre organizações ────────────────────────────────────
+ *
+ * Só entram compromissos que AINDA NÃO COMEÇARAM, ordenados pelo início mais
+ * próximo (o mais urgente primeiro). Quem está esperando o envio sair (`queued`)
+ * tira uma SONECA: a posse fica com prazo curto e a linha sai do lote até ela
+ * vencer, em vez de voltar todo ciclo e ocupar a vez dos outros. E há um teto
+ * por organização em cada rodada, para um tenant com fila presa não consumir o
+ * lote inteiro.
+ *
+ * ─── As referências precisam fechar ─────────────────────────────────────────
+ *
+ * A mensagem `reminder_message_id` tem de ser OUTBOUND, da conversa
+ * `reminder_conversation_id`, e essa conversa tem de ser do CONTATO do
+ * compromisso — tudo na mesma organização. Qualquer elo solto = `not_applicable`
+ * sem efeito: um handoff não pode cair na conversa de outra pessoa.
+ *
  * ⚠️ `organization_id` SEMPRE da linha do compromisso, em toda leitura/escrita —
  * inclusive do TIPO: `event_type_id` tem FK só por `id`, então um vínculo
  * cruzado entre organizações não pode emprestar opt-in, prazo ou modelo.
@@ -56,7 +74,12 @@ export type DecisaoDoEscalonamento = "aguardar" | "confirmed" | "escalated" | "n
 const STATUS_VIVOS = new Set(["confirmed", "pending"]);
 const ENVIO_OK = new Set(["sent", "delivered", "read"]);
 const ENVIO_EM_VOO = new Set(["queued", "sending", "pending"]);
-const LIMITE = 200;
+/** Teto de tipos com escalonamento ligado lidos por rodada (tabela pequena). */
+const LIMITE = 1000;
+/** Teto por organização em cada rodada — ninguém consome o lote inteiro. */
+const LIMITE_POR_ORG = 50;
+/** Quanto tempo quem espera o envio (`queued`) fica fora do lote. */
+const SONECA_MS = 5 * 60_000;
 /** Menor espera aceita pela coluna — o corte grosso da consulta. */
 const MENOR_ESPERA_MS = 5 * 60_000;
 /** Posse mais velha que isto é de uma rodada que morreu. */
@@ -108,7 +131,6 @@ interface CompromissoLembrado {
   reminder_message_id: string | null;
   reminder_conversation_id: string | null;
   reminder_escalation_checked_at?: string | null;
-  calendar_event_types?: TipoEmbutido | TipoEmbutido[] | null;
 }
 
 export interface ResumoDoEscalonamento {
@@ -123,17 +145,13 @@ export interface ResumoDoEscalonamento {
 export interface DepsDoEscalonamento {
   criarTarefa?: typeof criarTarefaHumana;
   handoff?: typeof triggerHandoff;
+  /** Relógio relido depois da posse e antes do handoff. Padrão: `new Date()`. */
+  clock?: () => Date;
 }
 
 const COLUNAS =
   "id, organization_id, event_type_id, contact_id, conversation_id, title, status, starts_at, " +
   "reminder_sent_at, reminder_message_id, reminder_conversation_id, reminder_escalation_checked_at";
-
-function embutido(l: CompromissoLembrado): TipoEmbutido | null {
-  const t = l.calendar_event_types;
-  if (!t) return null;
-  return Array.isArray(t) ? (t[0] ?? null) : t;
-}
 
 /** O tipo DESTE compromisso, lido na organização DELE. Null = vínculo inválido. */
 async function tipoDaMesmaOrg(admin: SupabaseClient, l: CompromissoLembrado): Promise<TipoEmbutido | null> {
@@ -148,19 +166,46 @@ async function tipoDaMesmaOrg(admin: SupabaseClient, l: CompromissoLembrado): Pr
   return (data as TipoEmbutido | null) ?? null;
 }
 
-async function statusDoEnvio(admin: SupabaseClient, l: CompromissoLembrado): Promise<string | null> {
-  if (!l.reminder_message_id) return null;
-  const { data, error } = await admin
+interface EnvioDoLembrete {
+  /** Status da mensagem, ou null quando as referências não fecham. */
+  status: string | null;
+  /** Instante do envio EFETIVO (a mensagem), nunca o da posse. */
+  enviadoEm: string;
+}
+
+/**
+ * A mensagem do lembrete, só se as referências FECHAM: outbound, da conversa
+ * registrada, e a conversa é do contato do compromisso — na mesma organização.
+ */
+async function envioDoLembrete(admin: SupabaseClient, l: CompromissoLembrado): Promise<EnvioDoLembrete> {
+  const semEnvio = { status: null, enviadoEm: l.reminder_sent_at };
+  if (!l.reminder_message_id || !l.reminder_conversation_id || !l.contact_id) return semEnvio;
+  const { data: msg, error } = await admin
     .from("messages")
-    .select("status")
+    .select("status, sent_at, conversation_id, direction")
     .eq("organization_id", l.organization_id)
     .eq("id", l.reminder_message_id)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return (data as { status?: string } | null)?.status ?? null;
+  const m = msg as { status?: string; sent_at?: string | null; conversation_id?: string; direction?: string } | null;
+  if (!m || m.conversation_id !== l.reminder_conversation_id || m.direction !== "outbound") return semEnvio;
+  const { data: conv, error: cErr } = await admin
+    .from("conversations")
+    .select("contact_id")
+    .eq("organization_id", l.organization_id)
+    .eq("id", l.reminder_conversation_id)
+    .maybeSingle();
+  if (cErr) throw new Error(cErr.message);
+  if ((conv as { contact_id?: string } | null)?.contact_id !== l.contact_id) return semEnvio;
+  const enviadoEm = [l.reminder_sent_at, m.sent_at ?? ""].sort().at(-1) || l.reminder_sent_at;
+  return { status: m.status ?? null, enviadoEm };
 }
 
-async function respondeuNaConversaDoLembrete(admin: SupabaseClient, l: CompromissoLembrado): Promise<boolean> {
+async function respondeuNaConversaDoLembrete(
+  admin: SupabaseClient,
+  l: CompromissoLembrado,
+  desde: string,
+): Promise<boolean> {
   if (!l.reminder_conversation_id) return false;
   const { data, error } = await admin
     .from("messages")
@@ -168,7 +213,7 @@ async function respondeuNaConversaDoLembrete(admin: SupabaseClient, l: Compromis
     .eq("organization_id", l.organization_id)
     .eq("conversation_id", l.reminder_conversation_id)
     .eq("direction", "inbound")
-    .gt("sent_at", l.reminder_sent_at)
+    .gt("sent_at", desde)
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -210,6 +255,17 @@ async function devolverPosse(admin: SupabaseClient, l: CompromissoLembrado, poss
   if (error) throw new Error(error.message);
 }
 
+/** Fica com a posse, mas curta: a linha sai do lote até `SONECA_MS`. */
+async function sonecar(admin: SupabaseClient, l: CompromissoLembrado, posse: string, agora: Date): Promise<void> {
+  const { error } = await admin
+    .from("calendar_appointments")
+    .update({ reminder_escalation_claimed_at: new Date(agora.getTime() - LEASE_MS + SONECA_MS).toISOString() })
+    .eq("id", l.id)
+    .eq("organization_id", l.organization_id)
+    .eq("reminder_escalation_claimed_at", posse);
+  if (error) throw new Error(error.message);
+}
+
 async function carimbar(
   admin: SupabaseClient,
   l: CompromissoLembrado,
@@ -234,6 +290,7 @@ export async function escalonarLembretesSemResposta(
 ): Promise<ResumoDoEscalonamento> {
   const criarTarefa = deps.criarTarefa ?? criarTarefaHumana;
   const handoff = deps.handoff ?? triggerHandoff;
+  const clock = deps.clock ?? (() => new Date());
   const resumo: ResumoDoEscalonamento = {
     examinados: 0,
     escalados: 0,
@@ -243,32 +300,59 @@ export async function escalonarLembretesSemResposta(
     erros: 0,
   };
 
-  // O embed `!inner` é só o corte GROSSO (tipo ligado). A palavra final sobre o
-  // tipo é `tipoDaMesmaOrg`, lido na organização do compromisso.
-  const { data, error } = await admin
-    .from("calendar_appointments")
-    .select(
-      `${COLUNAS}, calendar_event_types!inner(organization_id, reminder_escalation_enabled, reminder_escalation_minutes)`,
-    )
-    .eq("calendar_event_types.reminder_escalation_enabled", true)
-    .not("reminder_sent_at", "is", null)
-    .is("reminder_escalation_checked_at", null)
-    .lte("reminder_sent_at", new Date(agora.getTime() - MENOR_ESPERA_MS).toISOString())
-    .gt("starts_at", new Date(agora.getTime() - 86_400_000).toISOString())
-    .order("reminder_sent_at", { ascending: true })
+  // JUSTIÇA ENTRE ORGANIZAÇÕES: um lote global ordenado deixava a fila presa de
+  // um tenant ocupar o lote inteiro. Agora a consulta é POR ORGANIZAÇÃO, cada
+  // uma com seu teto. Quem diz quais organizações (e quais tipos) é a tabela
+  // pequena dos tipos com o escalonamento ligado — e o compromisso só entra se
+  // o `event_type_id` for de um tipo DA MESMA organização (isolamento no filtro).
+  const { data: tiposLigados, error: tErr } = await admin
+    .from("calendar_event_types")
+    .select("id, organization_id, reminder_escalation_enabled, reminder_escalation_minutes")
+    .eq("reminder_escalation_enabled", true)
     .limit(LIMITE);
-  if (error) {
-    logger.error("[agenda-reminder] consulta do escalonamento falhou", { error: error.message });
+  if (tErr) {
+    logger.error("[agenda-reminder] consulta dos tipos do escalonamento falhou", { error: tErr.message });
     resumo.erros += 1;
     return resumo;
   }
+  const tiposPorOrg = new Map<string, Map<string, TipoEmbutido>>();
+  for (const t of (tiposLigados ?? []) as Array<TipoEmbutido & { id: string; organization_id: string }>) {
+    const m = tiposPorOrg.get(t.organization_id) ?? new Map<string, TipoEmbutido>();
+    m.set(t.id, t);
+    tiposPorOrg.set(t.organization_id, m);
+  }
 
-  for (const candidato of (data ?? []) as unknown as CompromissoLembrado[]) {
-    const grosso = embutido(candidato);
-    // Tipo de OUTRA organização no embed: nem olha. (A releitura abaixo também barra.)
-    if (!grosso?.reminder_escalation_enabled || (grosso.organization_id && grosso.organization_id !== candidato.organization_id)) {
+  const candidatos: Array<{ c: CompromissoLembrado; tipo: TipoEmbutido }> = [];
+  for (const [orgId, tipos] of tiposPorOrg) {
+    const { data, error } = await admin
+      .from("calendar_appointments")
+      .select(COLUNAS)
+      .eq("organization_id", orgId)
+      .in("event_type_id", [...tipos.keys()])
+      .not("reminder_sent_at", "is", null)
+      .is("reminder_escalation_checked_at", null)
+      .lte("reminder_sent_at", new Date(agora.getTime() - MENOR_ESPERA_MS).toISOString())
+      // Só quem ainda não começou: reunião passada sai da janela sozinha.
+      .gt("starts_at", agora.toISOString())
+      // Posse ativa (inclusive soneca) fica fora do lote.
+      .or(
+        `reminder_escalation_claimed_at.is.null,reminder_escalation_claimed_at.lt.${new Date(agora.getTime() - LEASE_MS).toISOString()}`,
+      )
+      // O mais urgente primeiro — não o lembrete mais antigo.
+      .order("starts_at", { ascending: true })
+      .limit(LIMITE_POR_ORG);
+    if (error) {
+      logger.error("[agenda-reminder] consulta do escalonamento falhou", { organizationId: orgId, error: error.message });
+      resumo.erros += 1;
       continue;
     }
+    for (const c of (data ?? []) as unknown as CompromissoLembrado[]) {
+      const tipo = c.event_type_id ? tipos.get(c.event_type_id) : undefined;
+      if (tipo && c.organization_id === orgId) candidatos.push({ c, tipo });
+    }
+  }
+
+  for (const { c: candidato, tipo: grosso } of candidatos) {
     // Corte barato: o prazo nem venceu, nada a tocar.
     const venceEm = new Date(candidato.reminder_sent_at).getTime() + Number(grosso.reminder_escalation_minutes ?? 20) * 60_000;
     if (agora.getTime() < venceEm) {
@@ -296,24 +380,29 @@ export async function escalonarLembretesSemResposta(
         continue;
       }
       const tipo = await tipoDaMesmaOrg(admin, l);
+      const envio = await envioDoLembrete(admin, l);
+      // Relógio RELIDO depois da posse: a decisão não usa o instante do início da rodada.
+      const agoraDaDecisao = clock();
       const decisao = decidirEscalonamento({
-        agora,
-        lembreteEnviadoEm: new Date(l.reminder_sent_at),
+        agora: agoraDaDecisao,
+        // Prazo a partir do envio EFETIVO (a mensagem), nunca da posse.
+        lembreteEnviadoEm: new Date(envio.enviadoEm),
         esperaMin: Number(tipo?.reminder_escalation_minutes ?? 20),
         comecaEm: new Date(l.starts_at),
         status: l.status,
         ligado: Boolean(tipo?.reminder_escalation_enabled),
-        envio: await statusDoEnvio(admin, l),
-        respondeuDepois: await respondeuNaConversaDoLembrete(admin, l),
+        envio: envio.status,
+        respondeuDepois: await respondeuNaConversaDoLembrete(admin, l, envio.enviadoEm),
       });
 
       if (decisao === "aguardar") {
-        await devolverPosse(admin, l, posse);
+        // Soneca: fica fora do lote por SONECA_MS em vez de voltar todo ciclo.
+        await sonecar(admin, l, posse, agoraDaDecisao);
         resumo.aguardando += 1;
         continue;
       }
       if (decisao !== "escalated") {
-        await carimbar(admin, l, decisao, posse, agora);
+        await carimbar(admin, l, decisao, posse, agoraDaDecisao);
         if (decisao === "confirmed") resumo.confirmados += 1;
         else resumo.nao_aplicaveis += 1;
         continue;
@@ -345,6 +434,31 @@ export async function escalonarLembretesSemResposta(
         conversationId: conversa,
         tituloDoAviso: "Cliente não confirmou a reunião depois do lembrete",
       });
+      // Última conferência antes do efeito visível ao lead: a criação da tarefa
+      // leva tempo, e o lead pode ter respondido ou o compromisso ter sido
+      // cancelado nesse meio. A tarefa já criada fica (é trabalho para a equipe
+      // conferir); o handoff não acontece.
+      const { data: agoraRow, error: aErr } = await admin
+        .from("calendar_appointments")
+        .select("status, starts_at")
+        .eq("id", l.id)
+        .eq("organization_id", org)
+        .maybeSingle();
+      if (aErr) throw new Error(aErr.message);
+      const ainda = agoraRow as { status?: string; starts_at?: string } | null;
+      const respondeuAgora = await respondeuNaConversaDoLembrete(admin, l, envio.enviadoEm);
+      if (
+        respondeuAgora ||
+        !ainda ||
+        !STATUS_VIVOS.has(ainda.status ?? "") ||
+        new Date(ainda.starts_at ?? l.starts_at).getTime() <= clock().getTime()
+      ) {
+        const fim = respondeuAgora ? "confirmed" : "not_applicable";
+        await carimbar(admin, l, fim, posse, clock());
+        if (fim === "confirmed") resumo.confirmados += 1;
+        else resumo.nao_aplicaveis += 1;
+        continue;
+      }
       if (conversa) {
         const r = await handoff({
           conversationId: conversa,
@@ -368,7 +482,7 @@ export async function escalonarLembretesSemResposta(
           logger.info("[agenda-reminder] escalonamento sem handoff", { appointmentId: l.id, motivo: r.reason });
         }
       }
-      await carimbar(admin, l, "escalated", posse, agora);
+      await carimbar(admin, l, "escalated", posse, clock());
       resumo.escalados += 1;
     } catch (err) {
       resumo.erros += 1;
