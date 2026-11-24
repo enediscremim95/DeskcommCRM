@@ -13,7 +13,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { actionConfigSchema } from "@/lib/followup/graph-schema";
-import { MODOS_DA_ACAO, opcoes, type ModoDaAcao } from "@/lib/followup/vocabulario";
+import {
+  MODOS_DA_ACAO,
+  PRIORIDADES_DA_TAREFA_DO_FLUXO,
+  opcoes,
+  type ModoDaAcao,
+} from "@/lib/followup/vocabulario";
 import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { useEtapasDeGatilho } from "@/hooks/followup/useEtapasDeGatilho";
 import { useT } from "@/hooks/i18n/useT";
@@ -103,13 +108,7 @@ function SeletorDeEtapa({ valor, onChange }: { valor: string; onChange: (stageId
   );
 }
 
-const PRIORIDADES_DO_PASSO = [
-  ["low", "Baixa"],
-  ["medium", "Média"],
-  ["high", "Alta"],
-  ["urgent", "Urgente"],
-] as const;
-type PrioridadeDoPasso = (typeof PRIORIDADES_DO_PASSO)[number][0];
+type PrioridadeDoPasso = keyof typeof PRIORIDADES_DA_TAREFA_DO_FLUXO;
 
 export function ActionForm({
   config,
@@ -303,7 +302,7 @@ export function ActionForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PRIORIDADES_DO_PASSO.map(([valor, rotulo]) => (
+                  {opcoes(PRIORIDADES_DA_TAREFA_DO_FLUXO).map(({ valor, rotulo }) => (
                     <SelectItem key={valor} value={valor}>
                       {t(rotulo)}
                     </SelectItem>

@@ -437,6 +437,14 @@ export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
   move_stage: "Avançar o negócio de etapa (não envia ao contato)",
 };
 
+/** Prioridade da tarefa criada pela ação "Tarefa para a equipe" — mesmo vocabulário de `crm_tasks`. */
+export const PRIORIDADES_DA_TAREFA_DO_FLUXO: Record<"low" | "medium" | "high" | "urgent", string> = {
+  low: "Baixa",
+  medium: "Média",
+  high: "Alta",
+  urgent: "Urgente",
+};
+
 // ─── nó final ────────────────────────────────────────────────────────────
 
 /**
