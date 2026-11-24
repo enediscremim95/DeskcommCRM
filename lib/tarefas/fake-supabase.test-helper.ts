@@ -6,6 +6,15 @@
  */
 type Linha = Record<string, unknown>;
 
+/** `tabela.coluna` lê dentro do objeto embutido (o `!inner` do PostgREST). */
+function valor(l: Linha, c: string): unknown {
+  if (!c.includes(".")) return l[c];
+  const [rel, col] = c.split(".") as [string, string];
+  const emb = l[rel] as Linha | Linha[] | undefined;
+  const alvo = Array.isArray(emb) ? emb[0] : emb;
+  return alvo?.[col];
+}
+
 export interface FakeSupabase {
   tabelas: Record<string, Linha[]>;
   from(tabela: string): unknown;
@@ -58,14 +67,14 @@ export function criarFakeSupabase(
         select: () => builder,
         insert: (p: Linha | Linha[]) => ((op = "insert"), (payload = p), builder),
         update: (p: Linha) => ((op = "update"), (payload = p), builder),
-        eq: (c: string, v: unknown) => (filtros.push((l) => l[c] === v), builder),
+        eq: (c: string, v: unknown) => (filtros.push((l) => valor(l, c) === v), builder),
         neq: (c: string, v: unknown) => (filtros.push((l) => l[c] !== v), builder),
-        is: (c: string, v: unknown) => (filtros.push((l) => (l[c] ?? null) === v), builder),
+        is: (c: string, v: unknown) => (filtros.push((l) => (valor(l, c) ?? null) === v), builder),
         in: (c: string, vs: unknown[]) => (filtros.push((l) => vs.includes(l[c])), builder),
         gt: (c: string, v: string) => (filtros.push((l) => String(l[c] ?? "") > v), builder),
         gte: (c: string, v: string) => (filtros.push((l) => String(l[c] ?? "") >= v), builder),
         lte: (c: string, v: string) => (filtros.push((l) => l[c] != null && String(l[c]) <= v), builder),
-        not: (c: string, _op: string, v: unknown) => (filtros.push((l) => (l[c] ?? null) !== v), builder),
+        not: (c: string, _op: string, v: unknown) => (filtros.push((l) => (valor(l, c) ?? null) !== v), builder),
         order: (col: string, o?: { ascending?: boolean }) => ((ordem = { col, asc: o?.ascending ?? true }), builder),
         limit: (n: number) => ((limite = n), builder),
         maybeSingle: async () => {

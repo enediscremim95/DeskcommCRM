@@ -50,7 +50,13 @@ export type HandoffReason =
    * a MESMA constante que o engine grava: dois caminhos param a IA pelo mesmo
    * motivo, e duas grafias fariam quem filtra por uma achar metade das conversas.
    */
-  | "orcamento_de_ia";
+  | "orcamento_de_ia"
+  /**
+   * O cliente não respondeu ao lembrete da reunião dentro do prazo que a
+   * organização configurou (opt-in por tipo de agendamento, migration 0320).
+   * Quem dispara é o cron `agenda-reminder` (`lib/agenda/escalonamento-do-lembrete.ts`).
+   */
+  | "lembrete_sem_confirmacao";
 
 export interface TriggerHandoffInput {
   serviceBoundary?: ServiceBoundary;
