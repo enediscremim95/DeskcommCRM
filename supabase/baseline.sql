@@ -32852,7 +32852,7 @@ grant execute on function public.fn_usar_credencial_ia_padrao(uuid, uuid, uuid, 
 
 notify pgrst, 'reload schema';
 
--- ---- Tarefa humana do follow-up, convite, lembrete rico e escalonamento (migrations 0320/0321/0322) ----
+-- ---- Tarefa humana do follow-up, convite, lembrete rico e escalonamento (migrations 0320/0321/0322/0323) ----
 -- Aditivo e idempotente: o `update.sh` re-aplica este arquivo inteiro, e o
 -- `test:db` o faz com ON_ERROR_STOP=1. Constraints entram `NOT VALID` (via
 -- `do` com checagem no catálogo, para o re-aplicar não errar) e são validadas

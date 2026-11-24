@@ -28,8 +28,8 @@
 --    agendamento pela IA), reminder_rich_format (lembrete com link e variáveis;
 --    desligado = texto de antes byte a byte), reminder_escalation_enabled e
 --    reminder_escalation_minutes (padrão 20).
--- 5. calendar_appointments: reminder_claimed_at (lease do ENVIO do lembrete;
---    reminder_sent_at só depois do envio, como na main), reminder_message_id /
+-- 5. calendar_appointments (o lease do envio, reminder_claimed_at, está na 0323):
+--    reminder_message_id /
 --    reminder_conversation_id (o
 --    envio que de fato saiu — o prazo do escalonamento conta a partir dele e a
 --    resposta é procurada NAQUELA conversa), reminder_escalation_claimed_at
@@ -85,7 +85,6 @@ comment on column public.calendar_event_types.reminder_escalation_minutes is
   'Minutos depois do envio do lembrete até decidir o escalonamento (5 a 720, padrão 20).';
 
 alter table public.calendar_appointments
-  add column if not exists reminder_claimed_at timestamptz,
   add column if not exists reminder_message_id uuid,
   add column if not exists reminder_conversation_id uuid,
   add column if not exists reminder_escalation_claimed_at timestamptz,
@@ -103,8 +102,6 @@ alter table public.calendar_appointments
   add constraint calendar_appointments_escalonamento_resultado
     check (reminder_escalation_result in ('confirmed', 'escalated', 'not_applicable')) not valid;
 
-comment on column public.calendar_appointments.reminder_claimed_at is
-  'Posse do ENVIO do lembrete por uma rodada do cron (lease de 4 min, menor que o intervalo do cron). reminder_sent_at só é gravado depois do envio, junto com a mensagem e a conversa: uma queda no meio não some com o lembrete.';
 comment on column public.calendar_appointments.reminder_message_id is
   'A mensagem do lembrete que saiu. O escalonamento só conta prazo se ela não falhou.';
 comment on column public.calendar_appointments.reminder_conversation_id is
