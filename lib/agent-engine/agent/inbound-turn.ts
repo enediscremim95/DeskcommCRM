@@ -1,3 +1,4 @@
+import { FOLLOWUP_DEFERRED, type SendWindow } from '@/lib/tempo/janela-followup';
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import {
@@ -138,6 +139,7 @@ import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memor
 import { loadPublishedAgentConfig, matchesHandoffKeyword } from './agent-config';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
 import {
+  alinharEnvioDoFluxo,
   descricaoDaJanela,
   janelaDeEnvioAberta,
   proximaAberturaDaJanela,
@@ -1428,6 +1430,7 @@ export function agruparMensagensDoTurno(
  * no SUFIXO — depois do prefixo cacheável, sem invalidar o cache F2-17).
  */
 export interface AgentTurnInput {
+  followupWindow?: SendWindow | undefined;
   resolvedAgent?: TurnAgentResolution;
   /** número (channel_sessions.id do CRM) — chave da serialização anti-ban do envio. */
   channelSessionId: string;
@@ -1766,6 +1769,18 @@ async function executarTurnoDoAgente(
   if (!preview && turnoVaiFalarComOLead(liveJob())) {
     const { knobs } = await loadChannelKnobs(pool, tenantId, input.channelSessionId, runLog);
     const agora = clock();
+    const aberturaDoFluxo = input.followupWindow
+      ? alinharEnvioDoFluxo(agora, knobs, input.followupWindow)
+      : agora;
+    if (aberturaDoFluxo > agora) {
+      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
+        acquiredAt: claimOfJob(liveJob())?.acquired_at,
+        delayMs: aberturaDoFluxo.getTime() - agora.getTime(),
+        reason: `${FOLLOWUP_DEFERRED} janela de envio`,
+      });
+      runLog.info('follow-up adiado pela janela de envio', { next_run_at: aberturaDoFluxo.toISOString() });
+      throw new JobSettledError('follow-up adiado pela janela de envio');
+    }
     if (!janelaDeEnvioAberta(agora, knobs)) {
       const abertura = proximaAberturaDaJanela(agora, knobs);
       const janela = descricaoDaJanela(knobs);
@@ -2441,7 +2456,17 @@ async function executarTurnoDoAgente(
   // abaixo). Diferente da janela horária (checada ANTES do modelo rodar, linha ~1233):
   // o cap depende de quanto já saiu HOJE, que muda com o turno concorrente — só dá pra
   // saber com certeza no momento do envio, não antes.
+  const janelaDoFollowup = input.followupWindow
+    ? { followupWindow: input.followupWindow, followupClock: clock }
+    : {};
   let pacingCapVeto: { code: string; nextAllowedAt: Date } | null = null;
+  const adiamentoPendente = () => pacingCapVeto;
+  const guardarAdiamento = (veto: { code: string; nextAllowedAt?: Date }, aceitarCapSemJanela = false) => {
+    const cap = veto.code === 'warmup_cap' || veto.code === 'daily_cap';
+    if (veto.nextAllowedAt && (input.followupWindow || (aceitarCapSemJanela && cap))) {
+      pacingCapVeto = { code: veto.code, nextAllowedAt: veto.nextAllowedAt };
+    }
+  };
   // Best-effort: move o lead pra etapa `crm_stages.slug='chamar-humano'` do pipeline
   // dele (se o tenant tiver criado essa etapa — opt-in, ver `lib/leads/handoff-stage-move.ts`)
   // sempre que um caso humano abre neste turno, deliberado (open_human_case) ou pelo
@@ -2662,6 +2687,7 @@ async function executarTurnoDoAgente(
         });
 
         const chain = await runBeforeSend({
+          ...janelaDoFollowup,
           pool,
           log: runLog,
           agentOperation,
@@ -2694,6 +2720,7 @@ async function executarTurnoDoAgente(
         });
 
         if (chain.status === 'vetoed') {
+          guardarAdiamento(chain);
           return { ok: false, error: { code: chain.code, message: chain.message } };
         }
         const outcome = chain.outcome;
@@ -2839,6 +2866,7 @@ async function executarTurnoDoAgente(
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
+            ...janelaDoFollowup,
             pool,
             log: runLog,
             agentOperation,
@@ -3058,12 +3086,7 @@ async function executarTurnoDoAgente(
             // pra reagendar o JOB inteiro depois que o turno terminar (mesmo padrão de
             // `rescheduleJob` já usado pra janela horária), em vez de deixar o lead sem
             // resposta até a próxima mensagem dele chegar (ou nunca).
-            if (
-              (chain.code === 'warmup_cap' || chain.code === 'daily_cap') &&
-              chain.nextAllowedAt !== undefined
-            ) {
-              pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
-            }
+            guardarAdiamento(chain, true);
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
             // modelo o vê no turno seguinte. NÃO é exceção — não derruba o run.
             return { ok: false, error: { code: chain.code, message: chain.message } };
@@ -3397,6 +3420,7 @@ async function executarTurnoDoAgente(
                   ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
                   : false;
               const chain = await runBeforeSend({
+                ...janelaDoFollowup,
                 pool,
                 log: runLog,
                 agentOperation,
@@ -3442,6 +3466,7 @@ async function executarTurnoDoAgente(
                 },
               });
               if (chain.status === 'vetoed') {
+                guardarAdiamento(chain);
                 return { status: 'failed' as const, code: chain.code, message: chain.message };
               }
               const outcome = chain.outcome;
@@ -3640,6 +3665,7 @@ async function executarTurnoDoAgente(
                     ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
                     : false;
                 const chain = await runBeforeSend({
+                ...janelaDoFollowup,
                   pool,
                   log: runLog,
                   agentOperation,
@@ -3686,6 +3712,7 @@ async function executarTurnoDoAgente(
                   },
                 });
                 if (chain.status === 'vetoed') {
+                  guardarAdiamento(chain);
                   return { status: 'failed' as const, code: chain.code, message: chain.message };
                 }
                 const outcome = chain.outcome;
@@ -3749,6 +3776,7 @@ async function executarTurnoDoAgente(
                         ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
                         : false;
                     const chain = await runBeforeSend({
+                      ...janelaDoFollowup,
                       pool,
                       log: runLog,
                       agentOperation,
@@ -3794,6 +3822,7 @@ async function executarTurnoDoAgente(
                       },
                     });
                     if (chain.status === 'vetoed') {
+                      guardarAdiamento(chain);
                       return { status: 'failed', code: chain.code, message: chain.message };
                     }
                     const outcome = chain.outcome;
@@ -4805,23 +4834,22 @@ async function executarTurnoDoAgente(
       );
     }
 
-    // Cap de warm-up/diário vetou toda tentativa de envio deste turno e nada saiu: sem
+    // Cap de warm-up/diário ou a janela do fluxo vetou o envio e nada saiu: sem
     // isto, o job terminava 'ok' com `messages_sent: 0` e o lead ficava sem resposta até
     // escrever de novo por conta própria (ou nunca) — medido em produção, 2026-08-29
     // (número no dia 0 de warm-up, cap batido pelo volume da própria conversa de teste).
     // Mesmo contrato da janela anti-ban (linha ~1233): adia sem gastar `attempts`, o job
     // volta a 'pending' na hora certa e o mesmo turno roda de novo, com o mesmo contexto.
-    if (pacingCapVeto !== null && outcomes.length === 0) {
-      // Capturado num `const`: `pacingCapVeto` é reatribuído numa closure em outro ponto do
-      // turno, e o TS reabre a união (perde o `!== null`) depois de qualquer chamada — o
-      // valor JÁ CHECADO não muda, só a inferência precisa de um nome que não reatribui.
-      const veto = pacingCapVeto;
+    const veto = adiamentoPendente();
+    if (veto !== null && outcomes.length === 0) {
       await rescheduleJob(pool, liveJob().id, ctx.workerId, {
         acquiredAt: claimOfJob(liveJob())?.acquired_at,
         delayMs: Math.max(veto.nextAllowedAt.getTime() - clock().getTime(), 1_000),
-        reason: `cap de envio (${veto.code}) atingido — turno adiado para a próxima abertura`,
+        reason: input.followupWindow
+          ? `${FOLLOWUP_DEFERRED} ${veto.code}`
+          : `cap de envio (${veto.code}) atingido — turno adiado para a próxima abertura`,
       });
-      runLog.info('turno adiado — cap de envio atingido antes de qualquer mensagem sair', {
+      runLog.info(input.followupWindow ? 'follow-up adiado pelas regras de envio' : 'turno adiado — cap de envio atingido antes de qualquer mensagem sair', {
         code: veto.code,
         proxima_abertura: veto.nextAllowedAt.toISOString(),
       });
@@ -4833,7 +4861,8 @@ async function executarTurnoDoAgente(
       // produto, não deste guardrail), abre um alerta CRÍTICO na Central agora, pra um
       // humano poder responder manualmente pelo próprio WhatsApp enquanto o número
       // aquece. Dedupe por (kind, ref) — não reabre um já aberto pra esta conversa.
-      if (inboundsPendentes.some((texto) => detectUrgencySignal(texto))) {
+      if ((veto.code === 'warmup_cap' || veto.code === 'daily_cap')
+        && inboundsPendentes.some((texto) => detectUrgencySignal(texto))) {
         await insertInboxItem(
           pool,
           tenantId,
@@ -4857,7 +4886,9 @@ async function executarTurnoDoAgente(
         });
       }
       throw new JobSettledError(
-        'cap de envio atingido — job reagendado para a próxima abertura, sem mensagem enviada',
+        input.followupWindow
+          ? 'follow-up reagendado para o próximo horário de envio'
+          : 'cap de envio atingido — job reagendado para a próxima abertura, sem mensagem enviada',
       );
     }
 

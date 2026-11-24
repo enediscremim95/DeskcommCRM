@@ -1,3 +1,4 @@
+import { FOLLOWUP_DEFERRED, lerJanelaDoFluxo } from "@/lib/tempo/janela-followup";
 import type {JobClaim} from "@/lib/agent-engine/queue/claim";
 import { assertAgendaEffectPg } from "@/lib/agenda/efeito";
 import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
@@ -345,6 +346,26 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
         revisions.set(id,Number(rows[0]!.revision));
       } catch(error){if((error as {code?:string}).code==="40001") throw new StaleServiceBoundaryError();throw error;}
 
+    },
+    async loadSendWindow(orgId, pointerId) {
+      const { rows } = await pool.query<{ trigger_config: unknown }>(
+        "select trigger_config from followup_flow_pointers where organization_id=$1 and id=$2",
+        [orgId, pointerId],
+      );
+      return lerJanelaDoFluxo(rows[0]?.trigger_config);
+    },
+    async loadDeferredSend(enrollment, stepKey, now) {
+      const { rows } = await pool.query<{ run_after: Date }>(
+        `select run_after from job_queue
+         where organization_id=$1 and contact_id=$2 and kind='followup_turn' and status='pending'
+           and payload->>'followup_enrollment_id'=$3 and payload->>'node_id'=$4
+           and payload->>'purpose'='send_message' and payload->>'source_step_key'=$5
+           and last_error like $6 and run_after>$7
+         order by run_after limit 1`,
+        [enrollment.organization_id, enrollment.contact_id, enrollment.id, enrollment.current_node_id,
+          stepKey, `${FOLLOWUP_DEFERRED}%`, now],
+      );
+      return rows[0]?.run_after.toISOString() ?? null;
     },
     async loadFlowPointerName(orgId, pointerId) {
       const { rows } = await pool.query<{ name: string }>(

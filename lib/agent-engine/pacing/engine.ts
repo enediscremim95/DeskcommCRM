@@ -1,3 +1,4 @@
+import { alinharJanela, type SendWindow } from "@/lib/tempo/janela-followup";
 /**
  * Motor de pacing anti-ban (F2-11) — decisão PURA: dado (relógio, knobs, estado
  * de envios do número, limite diário do CRM, rng) devolve {allow, waitMs} ou
@@ -304,4 +305,19 @@ function formatInTz(instant: Date, timezone: string): string {
     dateStyle: 'short',
     timeStyle: 'medium',
   }).format(instant)} (${timezone})`;
+}
+
+/** Encontra a interseção sem alterar os knobs nem o cálculo dos limites do canal. */
+export function alinharEnvioDoFluxo(now: Date, knobs: PacingKnobs, window: SendWindow): Date {
+  let candidato = alinharJanela(window, now);
+  let primeiraReavaliacao = candidato > now ? candidato : undefined;
+  // Quando as janelas não se cruzam, o job acorda para reler as configurações.
+  for (let tentativa = 0; tentativa < 14; tentativa++) {
+    if (janelaDeEnvioAberta(candidato, knobs)) return candidato;
+    const canal = proximaAberturaDaJanela(candidato, knobs, () => 0);
+    if (canal <= candidato) break;
+    candidato = alinharJanela(window, canal);
+    primeiraReavaliacao ??= candidato;
+  }
+  return primeiraReavaliacao ?? candidato;
 }

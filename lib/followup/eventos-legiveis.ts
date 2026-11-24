@@ -153,7 +153,9 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
         resumo:
           node.config.mode === "fixed"
             ? `espera ${duracaoLegivel(node.config.duration_ms)}`
-            : `espera adaptativa, entre ${duracaoLegivel(node.config.min_ms)} e ${duracaoLegivel(node.config.max_ms)}`,
+            : node.config.mode === "business_hours"
+              ? `espera ${node.config.hours} h úteis`
+              : `espera adaptativa, entre ${duracaoLegivel(node.config.min_ms)} e ${duracaoLegivel(node.config.max_ms)}`,
       };
     case "condition":
       return {
@@ -352,6 +354,10 @@ export function descreveEvento(
         : { titulo: "Pediu ao agente para escrever a mensagem", detalhe: null, ...motor };
     case "classify_enqueued":
       return { titulo: "Pediu ao agente para interpretar a resposta", detalhe: null, ...motor };
+    case "send_deferred": {
+      const ate = quandoLegivel(p.next_eval_at, idioma);
+      return { titulo: "Mensagem reagendada", detalhe: ate ? `volta a tentar em ${ate}` : null, ...motor };
+    }
     case "action_recheck": {
       const ate = quandoLegivel(p.next_eval_at, idioma);
       return {

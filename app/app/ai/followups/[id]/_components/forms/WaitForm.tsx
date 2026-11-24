@@ -26,7 +26,9 @@ export function WaitForm({
   onChange: (c: ConfigOf<"wait">) => void;
 }) {
   const t = useT();
-  const [mode, setMode] = useState<"fixed" | "smart">(config.mode);
+  type Mode = ConfigOf<"wait">["mode"];
+  const [mode, setMode] = useState<Mode>(config.mode);
+  const [hours, setHours] = useState(config.mode === "business_hours" ? config.hours : 1);
   const [durationMin, setDurationMin] = useState(
     config.mode === "fixed" ? msToMin(config.duration_ms) : 10,
   );
@@ -36,7 +38,8 @@ export function WaitForm({
   const [error, setError] = useState<string | null>(null);
 
   const commit = (next: {
-    mode: "fixed" | "smart";
+    mode: Mode;
+    hours?: number;
     durationMin: number;
     minMin: number;
     maxMin: number;
@@ -45,7 +48,9 @@ export function WaitForm({
     const candidate =
       next.mode === "fixed"
         ? { mode: "fixed" as const, duration_ms: minToMs(next.durationMin) }
-        : {
+        : next.mode === "business_hours"
+          ? { mode: "business_hours" as const, hours: next.hours ?? hours }
+          : {
             mode: "smart" as const,
             min_ms: minToMs(next.minMin),
             max_ms: minToMs(next.maxMin),
@@ -67,7 +72,7 @@ export function WaitForm({
         <Select
           value={mode}
           onValueChange={(v) => {
-            const next = v as "fixed" | "smart";
+            const next = v as Mode;
             setMode(next);
             commit({ mode: next, durationMin, minMin, maxMin, guidance });
           }}
@@ -97,6 +102,21 @@ export function WaitForm({
               const v = Number(e.target.value);
               setDurationMin(v);
               commit({ mode, durationMin: v, minMin, maxMin, guidance });
+            }}
+          />
+        </div>
+      ) : mode === "business_hours" ? (
+        <div className="space-y-2">
+          <Label htmlFor="wait-business-hours">{t("Duração (horas úteis)")}</Label>
+          <Input
+            id="wait-business-hours"
+            type="number"
+            step="any"
+            value={hours}
+            onChange={(e) => {
+              const value = Number(e.target.value);
+              setHours(value);
+              commit({ mode, hours: value, durationMin, minMin, maxMin, guidance });
             }}
           />
         </div>

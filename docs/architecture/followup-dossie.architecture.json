@@ -236,9 +236,29 @@
       "type": "service",
       "label": "followup-gatilho-presenca.v1 + fn_appointment_recover",
       "sublabel": "falta confirmada → inscrição ou impedimento terminal visível"
+    },
+    {
+      "id": "janela-envio",
+      "lane": "regra",
+      "col": 7,
+      "type": "service",
+      "label": "Janela de envio do fluxo",
+      "sublabel": "trigger_config.send_window · fuso e dias do fluxo · guardrails do canal preservados"
     }
   ],
   "edges": [
+    {
+      "id": "janela-motor",
+      "from": "janela-envio",
+      "to": "engine",
+      "label": "calcula horas úteis e lê o próximo horário do job reagendado"
+    },
+    {
+      "id": "janela-evento",
+      "from": "engine",
+      "to": "eventos",
+      "label": "send_deferred · próximo horário de tentativa, sem avançar o passo"
+    },
     {
       "id": "e1",
       "from": "fila",

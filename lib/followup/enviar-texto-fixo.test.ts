@@ -38,7 +38,7 @@ const JOB = {
 const statusUpdates: string[] = [];
 
 /** Admin stub: job_queue (select pending / claim / status) + followup_enrollments. */
-function admin(jobs = [JOB]) {
+function admin(jobs = [JOB], trigger_config: Record<string, unknown> = { kind: "manual" }) {
   const make = (table: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
@@ -62,7 +62,8 @@ function admin(jobs = [JOB]) {
       maybeSingle: () => {
         if (table === "job_queue" && chain._upd) return Promise.resolve({ data: { id: JOB.id, locked_by:chain._upd.locked_by, locked_at:chain._upd.locked_at }, error: null });
         if (table === "followup_enrollments")
-          return Promise.resolve({ data: { current_node_id: "node-1",status:"active",revision:1 }, error: null });
+          return Promise.resolve({ data: { current_node_id: "node-1",status:"active",revision:1,pointer_id:"ptr-1" }, error: null });
+        if (table === "followup_flow_pointers") return Promise.resolve({ data: { trigger_config }, error: null });
         return Promise.resolve({ data: null, error: null });
       },
       then: (r: (v: unknown) => unknown) => {
@@ -125,5 +126,14 @@ it("retry do contato não é escondido por cinco pendências de outros contatos"
 });
 it("lista vazia não pode processar contatos de outra chamada", async () => {
   expect(await enviarTextoFixoPendente(admin(), [])).toBe(0);
+  expect(sendMessageHandler).not.toHaveBeenCalled();
+});
+
+it("deixa o texto fixo com janela para a cadeia de envio do worker", async () => {
+  const send_window = {
+    timezone: "America/Sao_Paulo", start: "09:00", end: "18:00", weekdays: [1, 2, 3, 4, 5, 6],
+  };
+  expect(await enviarTextoFixoPendente(admin([JOB], { kind: "manual", send_window }))).toBe(0);
+  expect(statusUpdates).toEqual([]);
   expect(sendMessageHandler).not.toHaveBeenCalled();
 });

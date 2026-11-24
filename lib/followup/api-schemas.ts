@@ -4,6 +4,7 @@
  * `graph-schema.ts`; publish-time semantic checks (reachability, coverage)
  * live in `validate-publish.ts`. This file only covers request bodies.
  */
+import { sendWindowSchema } from "@/lib/tempo/janela-followup";
 import { z } from "zod";
 import { flowGraphSchema } from "./graph-schema";
 
@@ -21,16 +22,19 @@ export const createFollowupFlowSchema = z.strictObject({
 // política de REAÇÃO À RESPOSTA, ortogonal a como o fluxo foi disparado — vale
 // pros kinds igualmente. Default false quando ausente (fluxos existentes
 // continuam acordando o classify, comportamento inalterado).
-const CANCEL_ON_REPLY = { cancel_on_reply: z.boolean().optional() };
+const FLOW_POLICIES = {
+  cancel_on_reply: z.boolean().optional(),
+  send_window: sendWindowSchema.optional(),
+};
 
 export const triggerConfigSchema = z.discriminatedUnion("kind", [
-  z.strictObject({kind:z.literal("appointment_no_show"),params:z.strictObject({event_type_ids:z.array(z.string().uuid()).optional()}).optional(),...CANCEL_ON_REPLY}),
-  z.strictObject({ kind: z.literal("manual"), ...CANCEL_ON_REPLY }),
-  z.strictObject({ kind: z.literal("webhook"), ...CANCEL_ON_REPLY }),
+  z.strictObject({kind:z.literal("appointment_no_show"),params:z.strictObject({event_type_ids:z.array(z.string().uuid()).optional()}).optional(),...FLOW_POLICIES}),
+  z.strictObject({ kind: z.literal("manual"), ...FLOW_POLICIES }),
+  z.strictObject({ kind: z.literal("webhook"), ...FLOW_POLICIES }),
   z.strictObject({
     kind: z.literal("stage_change"),
     params: z.strictObject({ stage_id: z.string().uuid() }),
-    ...CANCEL_ON_REPLY,
+    ...FLOW_POLICIES,
   }),
   z.strictObject({
     kind: z.literal("silence"),
@@ -38,7 +42,7 @@ export const triggerConfigSchema = z.discriminatedUnion("kind", [
       threshold_minutes: z.number().int().min(5).max(10_080),
       segments: z.array(z.string()).optional(),
     }),
-    ...CANCEL_ON_REPLY,
+    ...FLOW_POLICIES,
   }),
   z.strictObject({
     kind: z.literal("case_opened"),
@@ -48,12 +52,12 @@ export const triggerConfigSchema = z.discriminatedUnion("kind", [
     // falha seria muda. Sem params porque não há o que casar: todo caso aberto
     // da organização dispara todo fluxo armado por caso.
     params: z.strictObject({}).optional(),
-    ...CANCEL_ON_REPLY,
+    ...FLOW_POLICIES,
   }),
   z.strictObject({
     kind: z.literal("conversation_end"),
     params: z.strictObject({}),
-    ...CANCEL_ON_REPLY,
+    ...FLOW_POLICIES,
   }),
 ]);
 export type TriggerConfig = z.infer<typeof triggerConfigSchema>;

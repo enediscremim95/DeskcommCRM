@@ -637,3 +637,16 @@ describe('validateFlowForPublish — cobertura por ramo num repeat', () => {
     expect(result.errors.some((e) => e.branch_id === 'body')).toBe(true);
   });
 });
+
+it('exige janela de envio para publicar horas úteis', () => {
+  const g = graph(
+    [trigger('t1'), wait('w1', { mode: 'business_hours', hours: 3 }), end('e1')],
+    [edge('t1', 'w1', always()), edge('w1', 'e1', always())],
+  );
+  expect(validateFlowForPublish(g)).toMatchObject({
+    ok: false, errors: [{ node_id: 'w1', code: 'send_window_required' }],
+  });
+  expect(validateFlowForPublish(g, {
+    timezone: 'America/Sao_Paulo', start: '09:00', end: '18:00', weekdays: [1, 2, 3, 4, 5, 6],
+  })).toEqual({ ok: true });
+});

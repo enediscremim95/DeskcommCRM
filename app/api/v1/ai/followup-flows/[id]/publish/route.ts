@@ -21,6 +21,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { validateFlowForPublish } from "@/lib/followup/validate-publish";
 import { publishFollowupFlowVersion } from "@/lib/followup/publish";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
+import { lerJanelaDoFluxo } from "@/lib/tempo/janela-followup";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -138,7 +139,17 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   }
 
   const graph = pointer.draft_graph as unknown as FlowGraph;
-  const validation = validateFlowForPublish(graph);
+  let sendWindow;
+  try {
+    sendWindow = lerJanelaDoFluxo(pointer.trigger_config);
+  } catch {
+    const message = t("A janela de envio do fluxo é inválida.");
+    return fail("validation_failed", message, 422, {
+      requestId,
+      details: { errors: [{ node_id: null, code: "invalid_send_window", message }] },
+    });
+  }
+  const validation = validateFlowForPublish(graph, sendWindow);
   if (!validation.ok) {
     return fail("validation_failed", t("Fluxo reprovado na validação de publish."), 422, {
       requestId,

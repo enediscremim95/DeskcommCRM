@@ -1,3 +1,4 @@
+import { temJanelaDoFluxo } from "@/lib/tempo/janela-followup";
 import {sendWithLedger,supabaseSendLedger} from "@/lib/agent-engine/edge/crm/send-ledger";
 import { randomUUID } from "node:crypto";
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
@@ -77,6 +78,20 @@ export async function enviarTextoFixoPendente(
     const contactId = job.contact_id as string | null;
     if (typeof body !== "string" || !body || !enrollmentId || !nodeId || !contactId) continue;
     if (somenteContactIds && !somenteContactIds.includes(contactId)) continue;
+
+    // Uma janela configurada precisa passar pela cadeia serializada de pacing
+    // do worker. O caminho inline continua disponível para fluxos sem janela.
+    const { data: alvo, error: alvoErr } = await admin.from("followup_enrollments")
+      .select("pointer_id").eq("id", enrollmentId)
+      .eq("organization_id", job.organization_id).eq("contact_id", contactId).maybeSingle();
+    if (alvoErr) throw new Error(alvoErr.message);
+    if (alvo?.pointer_id) {
+      const { data: pointer, error: pointerErr } = await admin.from("followup_flow_pointers")
+        .select("trigger_config").eq("id", alvo.pointer_id)
+        .eq("organization_id", job.organization_id).maybeSingle();
+      if (pointerErr) throw new Error(pointerErr.message);
+      if (temJanelaDoFluxo(pointer?.trigger_config)) continue;
+    }
 
     const { data: claimed, error: claimErr } = await admin
       .from("job_queue")

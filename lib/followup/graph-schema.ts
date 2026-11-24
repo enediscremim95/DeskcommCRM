@@ -79,15 +79,20 @@ export const edgeBranchIdSchema = z
 
 /**
  * Wait node configuration schema.
- * Supports two modes:
+ * Modos:
  * - fixed: absolute wait duration in milliseconds (5 min to 90 days)
  * - smart: adaptive wait with min/max range and optional guidance
+ * - business_hours: espera acumulada dentro da janela do fluxo
  */
 export const waitConfigSchema = z
   .discriminatedUnion('mode', [
     z.strictObject({
       mode: z.literal('fixed'),
       duration_ms: z.number().int().min(300_000).max(7_776_000_000),
+    }),
+    z.strictObject({
+      mode: z.literal('business_hours'),
+      hours: z.number().min(1 / 12).max(2160),
     }),
     z.strictObject({
       mode: z.literal('smart'),

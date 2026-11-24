@@ -132,7 +132,9 @@ export function describeNodeConfig(
       const c = config as ConfigOf<"wait">;
       return c.mode === "fixed"
         ? `${Math.round(c.duration_ms / 60_000)} min`
-        : `${Math.round(c.min_ms / 60_000)}–${Math.round(c.max_ms / 60_000)} min ${t("(adaptativo)")}`;
+        : c.mode === "business_hours"
+          ? `${c.hours} ${t("h úteis")}`
+          : `${Math.round(c.min_ms / 60_000)}–${Math.round(c.max_ms / 60_000)} min ${t("(adaptativo)")}`;
     }
     case "condition": {
       const c = config as ConfigOf<"condition">;
