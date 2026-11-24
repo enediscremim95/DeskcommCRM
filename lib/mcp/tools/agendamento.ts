@@ -431,8 +431,10 @@ async function semDerrubarOTurno<T>(
 
 /** O que o modelo ouve sobre o convite — diz o que fazer, não só o que houve. */
 const ROTULO_DO_CONVITE = {
-  informado: "convite_enviado_ao_email_informado",
-  contato: "convite_enviado_ao_email_do_contato",
+  // "registrado", nunca "enviado": quem envia é o Google, na sincronização, e
+  // nada aqui observou isso acontecer (a conexão pode estar desconectada).
+  informado: "email_registrado_para_convite: o e-mail informado vai no convite quando a agenda sincronizar; não afirme que o convite já chegou",
+  contato: "email_registrado_para_convite: o e-mail do contato vai no convite quando a agenda sincronizar; não afirme que o convite já chegou",
   sem_email: "sem_email: o horário está marcado, mas não há e-mail para o convite; não diga que o convite foi enviado",
   invalido: "email_invalido: o horário está marcado, mas o e-mail informado não é válido; confirme o e-mail com a pessoa",
 } as const;
@@ -520,7 +522,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
     "Chame `crm_find_free_slots` ANTES e use um `starts_at` que veio de lá — marcar em horário que " +
     "não está livre é recusado, e a recusa manda você consultar de novo. " +
     "Se o tipo veio com `envia_convite_por_email: true`, peça o e-mail do cliente antes de marcar e mande em " +
-    "`guest_email`: o convite da reunião vai para ele.",
+    "`guest_email`: ele é registrado para o convite, que o Google envia ao sincronizar.",
   inputSchema: marcarShape,
   category: "write",
   requiresRole: "ai_operator",

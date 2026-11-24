@@ -68,13 +68,15 @@ describe("crm_book_appointment — convidado por e-mail", () => {
   it("ligado: o e-mail informado vence e vira convidado", async () => {
     const r = await crmBookAppointment.handler({ ...pedido, guest_email: " Ana@Exemplo.com " }, ctxCom(true, "c@exemplo.com"));
     expect(guestPassado()).toBe("ana@exemplo.com");
-    expect(r).toMatchObject({ marcado: true, convite: "convite_enviado_ao_email_informado" });
+    expect(r).toMatchObject({ marcado: true, convite: expect.stringContaining("email_registrado_para_convite") });
+    // Nada observou o Google enviar: a resposta não pode afirmar envio.
+    expect(JSON.stringify(r)).not.toMatch(/convite_enviado|convite foi enviado/);
   });
 
   it("ligado sem e-mail informado: usa o do contato da MESMA organização", async () => {
     const r = await crmBookAppointment.handler(pedido, ctxCom(true, "contato@exemplo.com"));
     expect(guestPassado()).toBe("contato@exemplo.com");
-    expect(r).toMatchObject({ convite: "convite_enviado_ao_email_do_contato" });
+    expect(r).toMatchObject({ convite: expect.stringContaining("email_registrado_para_convite") });
   });
 
   it("ligado, e-mail inválido: marca sem convidado e avisa o modelo", async () => {
